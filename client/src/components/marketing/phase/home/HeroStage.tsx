@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Pause, Play } from "lucide-react";
+import { CircleCheck, FileCheck2, Languages, Pause, Play } from "lucide-react";
 import type { SiteLocale } from "../routes";
 import { useCountUp, useInView, usePrefersReducedMotion } from "./motion";
 import { useMarketingText, type MarketingKey } from "./text";
@@ -15,6 +15,8 @@ import {
   formatFils,
   toFils,
 } from "./hero/model";
+import { usePointerTilt } from "./hero/tilt";
+import "./hero/stage-depth.css";
 
 const NAV: readonly MarketingKey[] = [
   "hxHeroNavDashboard",
@@ -55,6 +57,7 @@ export default function HeroStage({ locale }: { locale: SiteLocale }) {
   const animated = !reduced && typeof IntersectionObserver !== "undefined";
   const [paused, setPaused] = useState(false);
   const running = animated && inView && !hidden && !paused;
+  usePointerTilt(ref, animated);
 
   const [position, setPosition] = useState(0);
   const [cycle, setCycle] = useState(0);
@@ -94,7 +97,7 @@ export default function HeroStage({ locale }: { locale: SiteLocale }) {
   const status = frame.status;
 
   return (
-    <div className="mz-stage-wrap">
+    <div className="mz-stage-wrap" data-float={running ? "true" : "false"}>
       <div
         ref={ref}
         className="mz-stage"
@@ -208,6 +211,22 @@ export default function HeroStage({ locale }: { locale: SiteLocale }) {
             </div>
           </div>
         </div>
+      </div>
+      {/* Depth chips: decorative labels floating in front of the stage (the stage's own
+          aria-label describes the picture). Hidden on narrow screens. */}
+      <div className="mz-stage-chips" aria-hidden="true" dir={dirOf(locale)} lang={locale}>
+        <span className="mz-stage-chip" data-slot="a">
+          <FileCheck2 />
+          {text("hxChipPint")}
+        </span>
+        <span className="mz-stage-chip" data-slot="b">
+          <Languages />
+          {text("hxChipBilingual")}
+        </span>
+        <span className="mz-stage-chip mz-stage-chip--live" data-slot="c">
+          <CircleCheck />
+          {text("hxHeroStDelivered")}
+        </span>
       </div>
       {animated && (
         <button

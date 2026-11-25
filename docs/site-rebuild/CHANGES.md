@@ -140,3 +140,28 @@ loaded only on `/en` and `/ar`.
 - The mobile hero stage has a small blank gap between the expense card and the VAT card.
 - Seven files under `phase/` show as modified in `git status` from line-ending noise only; they
   have no content changes and were left uncommitted.
+
+## 5. Depth and motion pass (25 Nov 2026)
+
+Visual only; no claims, prices or comparison facts changed.
+
+- Elevation scale `--mz-shadow-1/2/3/dark` and the shared easing live in `phase/phase.css`.
+  Buttons, cards, popovers and the sticky header (now translucent with a blur) use them.
+- Hero: aurora light fields, an eyebrow pill (`hxHeroEyebrow`, EN and AR), and a stage that sits in
+  3D. `hero/tilt.ts` writes `--mz-px` / `--mz-py` on the hero band while a mouse moves over it (one
+  write per frame, nothing on touch); `hero/stage-depth.css` turns them into tilt, glare, inner
+  parallax and three decorative chips. That file ships with the lazy `HeroStage` chunk
+  (4.1 kB CSS, JS unchanged at 3.1 kB gzip).
+- `home/depth.css` (imported last by `PhaseSite.tsx`): glass deadline panel, floating product-tour
+  window, showcase and firms windows with a resting 3D angle that squares up on hover or focus,
+  lifting trust / migration / pricing cards, FAQ questions as soft cards, lit final CTA.
+- Reduced motion: every new animation and transition is off, the 3D windows sit flat, hover lifts
+  are removed. Outlines are not touched, so focus rings are unchanged.
+- Type: headings moved from 700 to 600 with looser tracking; section padding is a little larger.
+- Bundle baseline: `PhaseSite.css` 83.3 kB to 97.6 kB raw (14.9 kB to 17.8 kB gzip), over the 10%
+  tolerance, so its entry and the new `HeroStage.css` entry were updated by hand in
+  `scripts/qa/bundle-baseline.json`. No other entry was touched.
+- CI fixes in the same push: Arabic `hxSavSwTheirs` now reads "your current software: {name}";
+  the e-invoicing FAQ answer says "included in every Muhasib plan" (was the `{brand}` variable,
+  which renders "Muhasib.ai"); the public crawl accepts the intended `/pricing` to `/en/pricing`
+  redirect.

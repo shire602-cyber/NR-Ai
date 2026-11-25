@@ -374,6 +374,10 @@
       "bytes": 3197,
       "gzipBytes": 1156
     },
+    "HeroStage.css": {
+      "bytes": 4129,
+      "gzipBytes": 1365
+    },
     "HeroStage.js": {
       "bytes": 7802,
       "gzipBytes": 2885
@@ -539,8 +543,8 @@
       "gzipBytes": 660
     },
     "PhaseSite.css": {
-      "bytes": 83329,
-      "gzipBytes": 14917
+      "bytes": 97640,
+      "gzipBytes": 17843
     },
     "PhaseSite.js": {
       "bytes": 84215,

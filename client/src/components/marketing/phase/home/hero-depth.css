@@ -1,0 +1,134 @@
+/*
+ * Hero depth layer, first-paint part ("mz-hero-"). Scope: .phase-site. Logical properties only.
+ * The hero band owns --mz-px / --mz-py (-1..1, written by hero/tilt.ts while a mouse is over the
+ * band; 0 at rest, on touch screens and under reduced motion). Everything here reads them: aurora
+ * drift here; stage tilt, glare, inner parallax and the floating chips in hero/stage-depth.css,
+ * which loads with the lazy HeroStage chunk. Transform and opacity only.
+ */
+.phase-site .mz-hero {
+  --mz-px: 0;
+  --mz-py: 0;
+  overflow: hidden;
+  overflow: clip;
+}
+
+/* Aurora: three soft light fields behind the copy. Blurred once, then only transformed. */
+.phase-site .mz-hero-aurora {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  translate: calc(var(--mz-px) * 18px) calc(var(--mz-py) * 12px);
+  transition: translate 0.9s var(--mz-ease);
+}
+.phase-site .mz-hero-aurora i {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  will-change: transform;
+}
+.phase-site .mz-hero-aurora i:nth-child(1) {
+  inset-block-start: -18%;
+  inset-inline-end: -6%;
+  inline-size: min(52vw, 720px);
+  aspect-ratio: 1;
+  background: radial-gradient(circle, rgb(15 138 96 / 0.6), transparent 66%);
+  animation: mz-aurora-a 19s ease-in-out infinite alternate;
+}
+.phase-site .mz-hero-aurora i:nth-child(2) {
+  inset-block-end: -8%;
+  inset-inline-start: -10%;
+  inline-size: min(46vw, 620px);
+  aspect-ratio: 1.2;
+  background: radial-gradient(circle, rgb(93 242 180 / 0.2), transparent 64%);
+  animation: mz-aurora-b 23s ease-in-out infinite alternate;
+}
+.phase-site .mz-hero-aurora i:nth-child(3) {
+  inset-block-start: 34%;
+  inset-inline-start: 38%;
+  inline-size: min(34vw, 460px);
+  aspect-ratio: 1.6;
+  background: radial-gradient(circle, rgb(243 236 223 / 0.1), transparent 62%);
+  animation: mz-aurora-c 27s ease-in-out infinite alternate;
+}
+@keyframes mz-aurora-a {
+  to {
+    transform: translate3d(-7%, 9%, 0) scale(1.12);
+  }
+}
+@keyframes mz-aurora-b {
+  to {
+    transform: translate3d(9%, -7%, 0) scale(1.16);
+  }
+}
+@keyframes mz-aurora-c {
+  to {
+    transform: translate3d(-12%, -10%, 0) scale(0.9);
+  }
+}
+
+/* Eyebrow: a glass pill with the one live dot. */
+.phase-site .mz-band .mz-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-block-end: clamp(18px, 2.2vw, 26px);
+  padding-block: 7px;
+  padding-inline: 12px 16px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0.04));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.14),
+    0 10px 30px -14px rgb(0 0 0 / 0.6);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #e6f3ec;
+}
+.phase-site .mz-hero-eyebrow::before {
+  content: "";
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--mz-mint);
+  box-shadow: 0 0 0 4px rgb(93 242 180 / 0.2);
+  animation: mz-pulse 2.4s ease-in-out infinite;
+}
+
+/* Copy settles in once. The h1 keeps full opacity (it is the server-rendered LCP element). */
+.phase-site .mz-hero-copy > :not(h1) {
+  animation: mz-hero-rise 0.8s var(--mz-ease) both;
+}
+.phase-site .mz-hero-copy > .mz-lead {
+  animation-delay: 0.08s;
+}
+.phase-site .mz-hero-copy > .mz-hero-cta {
+  animation-delay: 0.16s;
+}
+@keyframes mz-hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* Stage in 3D: a resting tilt on wide screens, pointer tilt on top of it. */
+.phase-site .mz-hero-visual {
+  perspective: 1800px;
+  perspective-origin: 50% 30%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-site .mz-hero-aurora,
+  .phase-site .mz-hero-aurora i,
+  .phase-site .mz-hero-copy > *,
+  .phase-site .mz-hero-eyebrow::before {
+    animation: none !important;
+    transition: none !important;
+  }
+}

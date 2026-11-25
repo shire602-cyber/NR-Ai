@@ -107,6 +107,53 @@ describe("Hero", () => {
   });
 });
 
+describe("hero depth layer", () => {
+  it.each([
+    ["en", "UAE e-invoicing included on every plan"],
+    ["ar", "الفوترة الإلكترونية في الإمارات مشمولة في كل باقة"],
+  ] as const)("shows the eyebrow from the locale file in %s", async (locale, eyebrow) => {
+    await renderSection("Hero", locale);
+    expect(container.querySelector(".mz-hero-eyebrow")?.textContent).toBe(eyebrow);
+    // The eyebrow sits before the h1, which stays the only level-one heading.
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+  });
+
+  it("keeps the aurora and the floating chips out of the accessibility tree", async () => {
+    await renderSection("Hero", "ar");
+    expect(container.querySelector(".mz-hero-aurora")?.getAttribute("aria-hidden")).toBe("true");
+    const chips = container.querySelector(".mz-stage-chips");
+    expect(chips?.getAttribute("aria-hidden")).toBe("true");
+    expect(chips?.getAttribute("dir")).toBe("rtl");
+    expect(chips?.querySelectorAll(".mz-stage-chip")).toHaveLength(3);
+    expect(chips?.querySelector("a, button, [tabindex]")).toBeNull();
+    expect(chips?.textContent).toContain("تم التسليم");
+  });
+
+  it("does not float or tilt without motion support", async () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    await renderSection("Hero", "en");
+    const hero = container.querySelector<HTMLElement>(".mz-hero")!;
+    expect(container.querySelector(".mz-stage-wrap")?.getAttribute("data-float")).toBe("false");
+    await act(async () => {
+      hero.dispatchEvent(new MouseEvent("pointermove", { clientX: 40, clientY: 40 }));
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(hero.style.getPropertyValue("--mz-px")).toBe("");
+  });
+
+  it("maps the pointer to -1..1 from the centre of the stage, clamped", async () => {
+    const { tiltFromPointer } =
+      await import("../../client/src/components/marketing/phase/home/hero/tilt");
+    const rect = { left: 100, top: 50, width: 400, height: 200 };
+    expect(tiltFromPointer(rect, 300, 150)).toEqual({ x: 0, y: 0 });
+    expect(tiltFromPointer(rect, 100, 50)).toEqual({ x: -1, y: -1 });
+    expect(tiltFromPointer(rect, 500, 250)).toEqual({ x: 1, y: 1 });
+    expect(tiltFromPointer(rect, 400, 100)).toEqual({ x: 0.5, y: -0.5 });
+    expect(tiltFromPointer(rect, 9000, -9000)).toEqual({ x: 1, y: -1 });
+    expect(tiltFromPointer({ left: 0, top: 0, width: 0, height: 0 }, 5, 5)).toEqual({ x: 0, y: 0 });
+  });
+});
+
 describe("hero model", () => {
   it("VAT on the sample invoice is exactly 5% of the net, in integer fils", async () => {
     const { INVOICE, vatOnNet, formatFils, RECEIPT } =

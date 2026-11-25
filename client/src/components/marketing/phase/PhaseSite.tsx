@@ -44,6 +44,8 @@ import "@fontsource/noto-sans-arabic/arabic-400.css";
 import "@fontsource/noto-sans-arabic/arabic-700.css";
 import "./phase.css";
 import "./pages/pages.css";
+// Last on purpose: layers elevation and micro-interactions over the section files above.
+import "./home/depth.css";
 
 const EditorialContent = lazy(() =>
   loadWithChunkRetry(() => import("./editorial/EditorialContent"), {

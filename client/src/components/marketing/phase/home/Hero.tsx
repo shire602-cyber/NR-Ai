@@ -7,6 +7,7 @@ import type { SectionProps } from "./types";
 import { useMarketingText } from "./text";
 import { metaText } from "../meta-text";
 import "./hero.css";
+import "./hero-depth.css";
 
 const HeroStage = lazy(() => import("./HeroStage"));
 
@@ -34,8 +35,14 @@ export function Hero({ base, locale }: SectionProps) {
     metaText(locale, key, { price: starterPrice });
   return (
     <section id="hero" data-testid="section-hero" className="mz-band mz-band--dark mz-hero">
+      <div className="mz-hero-aurora" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </div>
       <div className="phase-wrap">
         <div className="mz-hero-copy">
+          <p className="mz-hero-eyebrow">{copy("hxHeroEyebrow")}</p>
           <h1 className="mz-display">{copy("hxHeroTitle")}</h1>
           <p className="mz-lead">{copy("hxHeroSub")}</p>
           <div className="mz-hero-cta">
