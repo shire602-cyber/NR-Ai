@@ -6,7 +6,7 @@
  *   gross     = qty × unit price               (integer fils, rounded half-up)
  *   line disc = gross × pct / 100              (half-up, never more than gross)
  *   net       = gross − line disc
- *   VAT       = Σ net × charged rate, rounded ONCE at document level (A-B13)
+ *   VAT       = Σ round(net × charged rate) per line (FTA VATP006)
  *   total     = Σ net + VAT
  *
  * Only standard-rated lines charge VAT (at the UAE standard rate, 5%);
@@ -85,7 +85,7 @@ export function lineVatRate(
   return (supplyType ?? "standard_rated") === "standard_rated" ? standardRate : 0;
 }
 
-/** Compute one line (row display) without document-level rounding. */
+/** Compute one line, including its rounded VAT. */
 export function computeInvoiceFormLine(
   line: InvoiceFormLine,
   standardRate = UAE_STANDARD_RATE
@@ -124,19 +124,14 @@ export function computeInvoiceFormLine(
   };
 }
 
-/** Compute the whole form (document-level VAT rounding, like the server). */
+/** Compute the whole form by summing the rounded line amounts. */
 export function computeInvoiceFormTotals(
   lines: InvoiceFormLine[] | null | undefined,
   standardRate = UAE_STANDARD_RATE
 ): InvoiceFormTotals {
   const out = (lines ?? []).map((l) => computeInvoiceFormLine(l, standardRate));
   const subtotalFils = out.reduce((s, l) => s + l.netFils, 0);
-  // Margin lines carry their per-line rounded VAT; other lines are rounded once below.
-  const vatExact = out.reduce(
-    (s, l) => s + (l.marginFils !== null ? l.vatFils : l.netFils * l.vatRate),
-    0
-  );
-  const vatFils = halfUp(vatExact);
+  const vatFils = out.reduce((s, l) => s + l.vatFils, 0);
   const totalFils = subtotalFils + vatFils;
   const ratesCharged = [...new Set(out.filter((l) => l.netFils > 0).map((l) => l.vatRate))].sort(
     (a, b) => b - a

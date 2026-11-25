@@ -29,15 +29,7 @@ export function normaliseVatRate(raw: number | string | null | undefined): numbe
   return n === 5 ? UAE_STANDARD_RATE : n;
 }
 
-/**
- * A-B13 — VAT rounding convention (deliberate, documented):
- * VAT is computed per line in full precision (Decimal), accumulated, and
- * rounded ONCE at the document level (FTA Executive Regulation Art. 30 permits
- * rounding at the line OR the invoice level). We use invoice-level rounding so
- * the document total always equals subtotal + VAT to the fil, and the VAT
- * autopilot rounds the same way (per bucket once) so its reconciliation agrees.
- * Do not switch to per-line rounding without aligning the autopilot tolerance.
- */
+/** Legacy document-level calculator. Sales documents use computeSalesDocument. */
 export function calculateDocumentTotals(lines: DocumentLineInput[] | undefined | null): {
   subtotal: number;
   vatAmount: number;
@@ -70,7 +62,7 @@ export function calculateDocumentTotals(lines: DocumentLineInput[] | undefined |
 //   doc disc   = amount, or Σ(gross−line disc) × pct / 100, allocated pro-rata
 //                over lines with shared/money.allocate (parts sum exactly)
 //   net        = gross − line disc − allocated doc disc
-//   VAT        = Σ net × charged rate, rounded ONCE at document level (A-B13)
+//   VAT        = Σ round(net × charged rate) per line (FTA VATP006)
 //   total      = Σ net + VAT
 
 export type DiscountType = "amount" | "percent";
@@ -97,7 +89,7 @@ export interface SalesLineTotals {
   lineDiscountFils: number;
   documentDiscountFils: number;
   netFils: number;
-  /** Per-line VAT for display; the document VAT is rounded once (vatFils). */
+  /** Rounded tax on this line, included in the document VAT total. */
   vatFils: number;
   vatRate: number;
   classification: SupplyClassification;
@@ -232,7 +224,6 @@ export function computeSalesDocument(
         )
       : prepared.map(() => 0);
 
-  let vatExact = new Decimal(0);
   const out: SalesLineTotals[] = prepared.map((p, i) => {
     const rate = p.classification.chargedVatRate;
     if (lines[i].marginScheme) {
@@ -241,7 +232,6 @@ export function computeSalesDocument(
       const price = p.afterLine - shares[i];
       const margin = Math.max(0, price - Number(lines[i].marginCostFils ?? 0));
       const vat = halfUp(new Decimal(margin).times(rate).dividedBy(new Decimal(1).plus(rate)));
-      vatExact = vatExact.plus(vat);
       return {
         grossFils: p.grossFils,
         lineDiscountFils: p.lineDiscountFils,
@@ -255,7 +245,6 @@ export function computeSalesDocument(
     }
     const netFils = p.afterLine - shares[i];
     const lineVat = new Decimal(netFils).times(rate);
-    vatExact = vatExact.plus(lineVat);
     return {
       grossFils: p.grossFils,
       lineDiscountFils: p.lineDiscountFils,
@@ -269,7 +258,7 @@ export function computeSalesDocument(
   });
 
   const subtotalFils = sumFils(out.map((l) => l.netFils));
-  const vatFils = halfUp(vatExact);
+  const vatFils = sumFils(out.map((l) => l.vatFils));
   const lineDiscountTotal = sumFils(out.map((l) => l.lineDiscountFils));
   return {
     lines: out,

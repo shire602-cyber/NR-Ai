@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/form-layout";
 import { useFormGate } from "@/hooks/use-form-gate";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import {
   Calculator,
   CheckCircle,
@@ -91,7 +92,14 @@ export function RunsTab({ companyId }: { companyId: string }) {
   const { tx, locale } = useHr();
   const { toast } = useToast();
   const runsKey = [`/api/companies/${companyId}/payroll-runs`];
-  const { data: runs = [] } = useQuery<PayrollRun[]>({ queryKey: runsKey });
+  const {
+    data: runs = [],
+    isPending: runsPending,
+    isLoadingError: runsLoadFailed,
+    isRefetchError: runsRefreshFailed,
+    error: runsError,
+    refetch: refetchRuns,
+  } = useQuery<PayrollRun[]>({ queryKey: runsKey });
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: [`/api/companies/${companyId}/accounts`],
   });
@@ -364,7 +372,22 @@ export function RunsTab({ companyId }: { companyId: string }) {
         </Button>
       </CardHeader>
       <CardContent>
-        {runs.length === 0 ? (
+        {runsRefreshFailed && (
+          <p role="alert" className="mb-3 text-sm text-muted-foreground">
+            {tx("hr.refreshFailed")}
+          </p>
+        )}
+        {runsPending ? (
+          <p role="status" className="text-muted-foreground">
+            {tx("hr.loading")}
+          </p>
+        ) : runsLoadFailed ? (
+          <LoadErrorState
+            error={runsError}
+            onRetry={() => void refetchRuns()}
+            testId="payroll-load-error"
+          />
+        ) : runs.length === 0 ? (
           <EmptyState size="sm" title={tx("hr.noRuns")} />
         ) : (
           <>
