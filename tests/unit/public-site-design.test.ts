@@ -359,7 +359,7 @@ describe("D1 public site", () => {
         const main = container.querySelector("main#main-content");
         expect(container.querySelectorAll("main").length).toBe(1);
         expect(container.querySelector("a.phase-skip")?.getAttribute("href")).toBe("#main-content");
-        for (const id of ["input-email", "input-password", "button-login"]) {
+        for (const id of ["input-email", "button-login", "input-password"]) {
           expect(main?.querySelector(`[data-testid="${id}"]`), id).not.toBeNull();
         }
         expect(main?.textContent).not.toContain(t[locale]["marketing.authFooter"]);
