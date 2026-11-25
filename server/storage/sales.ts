@@ -627,12 +627,7 @@ export class SalesStorage extends LedgerStorage {
       const amountD = new Decimal(input.amount);
       const remainingD = totalD.minus(previouslyPaidD).minus(creditedD);
 
-      // A-B12: split the payment into the part that clears the receivable and
-      // any excess that becomes a customer credit (a liability), rather than
-      // rejecting overpayments outright. The excess is parked in Deferred
-      // Revenue / Customer Advances (account 2050). If that account is not in
-      // the chart we fall back to the previous hard rejection so we never post
-      // an unbalanced or mis-classified entry.
+      // A-B12: split the payment between receivables and any customer credit (2055).
       const allocation = allocatePayment({
         amount: amountD.toNumber(),
         remaining: remainingD.toNumber(),
@@ -814,6 +809,13 @@ export class SalesStorage extends LedgerStorage {
                     exchangeRate: String(invRate),
                   }
                 : {}),
+              ...(foreignCur && l.accountId === customerCreditAccountId && l.credit > 0
+                ? {
+                    foreignCurrency: foreignCur,
+                    foreignCredit: new Decimal(allocation.customerCredit).toFixed(2),
+                    exchangeRate: String(payRate),
+                  }
+                : {}),
               ...(isCash ? cashTag(l.debit) : {}),
               ...(isAr ? { controlLeg: "receivables" as const } : {}),
             };
@@ -842,7 +844,7 @@ export class SalesStorage extends LedgerStorage {
         .returning();
 
       // W3-A: an overpayment is a customer credit that can be applied to a
-      // later invoice or refunded (customer_credits, liability 2050).
+      // later invoice or refunded (customer_credits, liability 2055).
       if (allocation.customerCredit > 0 && customerCreditAccountId) {
         const [inv] = await tx.select().from(invoices).where(eq(invoices.id, input.invoiceId));
         await tx.insert(customerCredits).values({

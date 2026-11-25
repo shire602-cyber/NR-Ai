@@ -39,8 +39,8 @@ const editorialHeadings = {
 };
 const localizedHeadings = {
   "": [
-    "Accounting and VAT for UAE businesses",
-    "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات",
+    "Your books. Your VAT. Your e-invoices. Done.",
+    "دفاترك. ضريبتك. فواتيرك الإلكترونية. كلها منجزة.",
   ],
   "/product": [
     "Your books, invoices and VAT in one place",
@@ -53,7 +53,10 @@ const localizedHeadings = {
   ],
   "/about": ["About Muhasib.ai", "عن Muhasib.ai"],
   "/contact": ["Contact Muhasib.ai", "تواصل مع Muhasib.ai"],
-  "/uae-e-invoicing": ["UAE e-invoicing", "الفوترة الإلكترونية في الإمارات"],
+  "/uae-e-invoicing": [
+    "UAE e-invoicing, built into your accounting",
+    "الفوترة الإلكترونية في الإمارات، مدمجة في محاسبتك",
+  ],
   "/book-demo": ["Request a demo", "اطلب عرضًا توضيحيًا"],
   "/pricing": ["Pricing", "الأسعار"],
   "/product/invoicing": ["Invoicing", "الفوترة"],
@@ -208,8 +211,8 @@ async function crawl(locale) {
       await page
         .getByText(
           locale === "ar"
-            ? "جرّب باقة المؤسسات مجانًا لمدة ١٤ يومًا دون الحاجة إلى بطاقة."
-            : "Try Enterprise free for 14 days. No card required.",
+            ? "كل حساب جديد يبدأ بباقة المؤسسات مجانًا لمدة 14 يومًا، دون بطاقة."
+            : "Every new account starts on Enterprise free for 14 days. No card.",
           { exact: true }
         )
         .waitFor();

@@ -2,6 +2,7 @@
   "hr.title": "Payroll & WPS",
   "hr.subtitle": "Employees, payroll runs, leave, payslips, end-of-service and WPS",
   "hr.loading": "Loading…",
+  "hr.refreshFailed": "Could not refresh. Showing the last loaded data.",
   "hr.error": "Something went wrong",
   "hr.tab.runs": "Payroll runs",
   "hr.tab.employees": "Employees",
