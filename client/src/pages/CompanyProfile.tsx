@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Building2, FileText, Upload, Save } from "lucide-react";
+import { Building2, FileText, Save } from "lucide-react";
 import type { Company } from "@shared/schema";
 import { EInvoicingPartnerCard } from "@/components/einvoice/EInvoicingPartnerCard";
 
@@ -96,7 +96,7 @@ export default function CompanyProfile() {
   const [, navigate] = useLocation();
   const { companyId, isLoading: companiesLoading } = useDefaultCompany();
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [_logoFile, setLogoFile] = useState<File | null>(null);
 
   const { data: company, isLoading } = useQuery<Company>({
     queryKey: ["/api/companies", companyId],
@@ -136,7 +136,7 @@ export default function CompanyProfile() {
         legalStructure: company.legalStructure || "",
         industry: company.industry || "",
         registrationNumber: company.registrationNumber || "",
-        tradeLicenseAuthority: company.tradeLicenseAuthority || "",
+        tradeLicenseAuthority: company.tradeLicenceAuthority || "",
         businessAddress: company.businessAddress || "",
         contactPhone: company.contactPhone || "",
         contactEmail: company.contactEmail || "",
@@ -152,6 +152,7 @@ export default function CompanyProfile() {
       });
 
       if (company.logoUrl) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates local form state from fetched data
         setLogoPreview(company.logoUrl);
       }
     }

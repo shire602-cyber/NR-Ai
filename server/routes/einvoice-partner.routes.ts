@@ -43,7 +43,7 @@ async function checkAccess(
   companyId: string,
   manage: boolean
 ): Promise<boolean> {
-  const { id: userId, firmRole } = (req as any).user;
+  const { id: userId, firmRole } = req.user!;
   if (!(await storage.hasCompanyAccess(userId, companyId, firmRole))) {
     res.status(403).json({ message: "Access denied" });
     return false;
@@ -112,7 +112,7 @@ export function registerEInvoicePartnerRoutes(app: Express) {
           code: "EINVOICE_TERMS_VERSION_MISMATCH",
         });
       }
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const appointment = await acceptPartnerTerms({ companyId, partner, userId });
       await recordAudit({
         userId,
@@ -156,7 +156,7 @@ export function registerEInvoicePartnerRoutes(app: Express) {
           state,
         });
       }
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const appointment = await confirmEmaraTaxAppointment({
         companyId,
         provider: partner.provider,
@@ -186,7 +186,7 @@ export function registerEInvoicePartnerRoutes(app: Express) {
       const { companyId } = req.params;
       if (!(await checkAccess(req, res, companyId, true))) return;
       const partner = activeEInvoicePartner();
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const appointment = await revokeAppointment({
         companyId,
         provider: partner.provider,
