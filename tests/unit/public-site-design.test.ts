@@ -315,8 +315,8 @@ describe("D1 public site", () => {
   });
 
   it.each([
-    ["en", "read-only", "accredited service provider"],
-    ["ar", "للقراءة فقط", "مزوّد خدمة معتمد"],
+    ["en", "read-only", "UAE e-invoicing is built in and included on every plan, delivered through an accredited service provider."],
+    ["ar", "للقراءة فقط", "الفوترة الإلكترونية في الإمارات مدمجة ومشمولة في كل باقة، وتتم عبر مزوّد خدمة معتمد."],
   ] as const)(
     "explains trial expiry and provider choice in %s pricing",
     async (locale, lock, providerCopy) => {
