@@ -275,6 +275,12 @@ interface VendorBill {
   attachment_name?: string | null;
 }
 
+/** A row of the bills list, which also carries the settlement open balance. */
+interface VendorBillRow extends VendorBill {
+  /** Document-currency balance from the server's settlement rule. */
+  open_balance: number;
+}
+
 interface BillLineItem {
   id: string;
   bill_id: string;
@@ -426,7 +432,7 @@ export default function BillPay() {
   const [billEditorOpen, setBillEditorOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [editingBill, setEditingBill] = useState<BillDetail | null>(null);
-  const [payingBill, setPayingBill] = useState<VendorBill | null>(null);
+  const [payingBillId, setPayingBillId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>(() =>
     billStatusFilterFromSearch(search)
   );
@@ -452,16 +458,17 @@ export default function BillPay() {
 
   const {
     data: bills = [],
-    isLoading: billsFetching,
     isPending: billsPending,
-    fetchStatus: billsFetchStatus,
     isLoadingError: billsFailed,
     refetch: refetchBills,
-  } = useQuery<VendorBill[]>({
+  } = useQuery<VendorBillRow[]>({
     queryKey: ["/api/companies", companyId, "bills"],
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills`),
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/bills`, undefined, undefined, { signal }),
     enabled: !!companyId,
   });
+  // Looked up in the unfiltered list on every render, so the payment dialog follows refetches.
+  const payingBill = bills.find((bill) => bill.id === payingBillId) ?? null;
 
   const { data: accounts = [] } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "accounts"],
@@ -537,9 +544,10 @@ export default function BillPay() {
   // Filtered bills
   // ===========================
 
-  // A paused first fetch (offline, nothing cached) has no rows to judge: keep the loading state
-  // rather than claiming there are no bills. Cached rows still show while a refetch is paused.
-  const billsLoading = billsFetching || (billsPending && billsFetchStatus === "paused");
+  // Until a first fetch succeeds or fails there are no rows to judge, whether it is running, paused
+  // (offline or waiting for focus) or not started: keep the loading state rather than claiming there
+  // are no bills. Cached rows still show while a refetch is paused or after it fails.
+  const billsLoading = billsPending;
   // Rows of the selected status before the search, so a search no-match is only reported when the
   // search itself emptied a non-empty status list.
   const statusBills = useMemo(() => filterBills(bills, statusFilter, ""), [bills, statusFilter]);
@@ -779,7 +787,7 @@ export default function BillPay() {
   });
 
   const recordPaymentMutation = useMutation({
-    mutationFn: ({ billId, data }: { billId: string; data: PaymentFormData }) => {
+    mutationFn: ({ billId, data }: { billId: string; data: PaymentFormData; currency: string }) => {
       const payload = {
         payment_date: ymd(data.payment_date),
         amount: data.amount,
@@ -791,17 +799,17 @@ export default function BillPay() {
       };
       return apiRequest("POST", `/api/bills/${billId}/payments`, payload);
     },
-    onSuccess: (result: any) => {
+    onSuccess: (result: any, { currency }) => {
       invalidateBills();
       toast({
         title: translateNow("toasts.paymentRecorded"),
         description: formatMessage(translateNow("toasts.paymentRecordedBillStatus"), {
           status: statusLabel(t, result.bill_status),
-          remaining: formatCurrency(result.remaining, payingBill?.currency || "AED", locale),
+          remaining: formatCurrency(result.remaining, currency, locale),
         }),
       });
       setPaymentDialogOpen(false);
-      setPayingBill(null);
+      setPayingBillId(null);
       paymentForm.reset({
         payment_date: new Date(),
         amount: 0,
@@ -927,12 +935,11 @@ export default function BillPay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
-  const handlePayBill = (bill: VendorBill) => {
-    const remaining = Number(bill.total_amount) - Number(bill.amount_paid);
-    setPayingBill(bill);
+  const handlePayBill = (bill: VendorBillRow) => {
+    setPayingBillId(bill.id);
     paymentForm.reset({
       payment_date: new Date(),
-      amount: Number(remaining.toFixed(2)),
+      amount: Number(bill.open_balance.toFixed(2)),
       payment_method: "bank_transfer",
       payment_account_id: defaultPaymentAccountId(accounts, bankAccounts, {
         currency: bill.currency,
@@ -960,15 +967,18 @@ export default function BillPay() {
 
   const onPaymentSubmit = (data: PaymentFormData) => {
     if (!payingBill) return;
-    const remaining = Number(payingBill.total_amount) - Number(payingBill.amount_paid);
-    if (Math.round(data.amount * 100) > Math.round(remaining * 100)) {
+    if (Math.round(data.amount * 100) > Math.round(payingBill.open_balance * 100)) {
       paymentForm.setError("amount", {
         type: "validate",
         message: "forms.errors.paymentExceedsBalance",
       });
       return;
     }
-    recordPaymentMutation.mutate({ billId: payingBill.id, data });
+    recordPaymentMutation.mutate({
+      billId: payingBill.id,
+      data,
+      currency: payingBill.currency || "AED",
+    });
   };
 
   // Watch line items for live total calculation
@@ -2351,7 +2361,7 @@ export default function BillPay() {
         onOpenChange={(open) => {
           setPaymentDialogOpen(open);
           if (!open) {
-            setPayingBill(null);
+            setPayingBillId(null);
             paymentForm.reset();
           }
         }}
@@ -2374,7 +2384,7 @@ export default function BillPay() {
                       locale
                     ),
                     remaining: formatCurrency(
-                      Number(payingBill.total_amount) - Number(payingBill.amount_paid),
+                      payingBill.open_balance,
                       payingBill.currency || "AED",
                       locale
                     ),
@@ -2549,12 +2559,12 @@ export default function BillPay() {
                   variant="outline"
                   onClick={() => {
                     setPaymentDialogOpen(false);
-                    setPayingBill(null);
+                    setPayingBillId(null);
                   }}
                 >
                   <T k="pages.cancel" />
                 </Button>
-                <Button type="submit" disabled={recordPaymentMutation.isPending}>
+                <Button type="submit" disabled={recordPaymentMutation.isPending || !payingBill}>
                   {recordPaymentMutation.isPending ? "Recording..." : t["pages.recordPayment"]}
                 </Button>
               </DialogFooter>
