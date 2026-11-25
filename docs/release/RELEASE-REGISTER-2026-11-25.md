@@ -64,7 +64,7 @@ S4 = ops/evidence.
 | S01 | **fixed awaiting verification** | Model traced: invoices, bills, journals, receipts guarded by `assertRetentionExpired`; fixed assets blocked when posted JEs exist; accounts blocked when transactions exist; credit note delete disabled; expense claims only pre-submission drafts deletable; company delete is a soft delete (sets `deletedAt`). Gap: `retentionExpiresAt` column exists in vendor_bills / bill_payments DB tables but is never populated — all callers fall back to `createdAt + 5y`, which is conservative and compliant. No retention test existed before this campaign. Test: `tests/unit/retention-model-review.test.ts` (10 source-invariant assertions). **Still open:** no DB-backed assertion that the guard blocks a live DELETE request; `retentionExpiresAt` is not populated from document date at creation; admin company-delete has no retention pre-check (intentional — soft delete preserves records) |
 | S05 | **fixed awaiting verification** | Model traced: `parseBankCsv` in `bank-statements.routes.ts`. BOM stripping in `normalizeHeader` ✓; 10 MB body limit on the import route ✓; Zod `z.string().min(1)` on csvContent ✓; invalid date → row skipped (not error); zero/empty amount → row skipped (intentional for balance rows). Gap: skipped rows were invisible to the caller — added `skippedRows: number` to the return type and surfaced it in both the 400 (empty-import) and 201 (success) responses. Test: `tests/unit/bank-statement-import.test.ts` extended with BOM, skipped-row count, and fully-valid-file cases. **Still open:** no server-side CSV injection sanitization on description/reference fields in exports; file-type validation relies on body parser limit only (no MIME check); `parseAmount` returns 0 for non-numeric input (silent; no row-level error) |
 | S02+S03 | **fixed awaiting verification** | Audit trail traced: invoices (10 calls), bills (2), journal entries (6), receipts (4). The service (`audit.service.ts`) swallows failures so auditing never blocks a business operation; it records `before` / `after` state, IP, and user agent. The credit-note DELETE is disabled via `sendLegacyWriteDisabled` — no audit needed until the route is re-enabled. **Known gap (not fixed in this campaign):** delete and audit INSERT are sequential without a wrapping DB transaction. A server crash between them leaves the deletion unrecorded. True atomicity requires a future refactor to pass a transaction handle to `recordAudit` and commit both together. The outbox pattern is not implemented; event delivery after a crash is not guaranteed. Test: `tests/unit/audit-trail-coverage.test.ts` (8 source-invariant assertions). Still open: DB-backed integration test that audit rows are actually written; transaction-based atomicity; re-enable credit-note audit when DELETE route is activated |
-| S04 | blocked (partly) | Provider contract terms need the operator; code trace not started |
+| S04 | **code trace done; operator config blocked** | Appointment gate traced: `appointmentGate()` pure function in `einvoice-appointment.service.ts` checks state (not_started → terms_outdated → awaiting_emaratax → active) and returns 409 or null. Route gate in `einvoice-partner.routes.ts`: `checkAccess(req, res, companyId, true)` enforces `APPOINTMENT_ROLES = {owner, cfo}` before any consent action — firm staff and platform admins cannot bind a client to a third-party contract. Contract terms URL/version come from env (`EINVOICE_ASP_TERMS_URL`, `EINVOICE_ASP_TERMS_VERSION`) — never hard-coded. `acceptPartnerTerms` stores `termsVersion` at acceptance; a new version triggers `terms_outdated` → re-acceptance required. EmaraTax confirmation is a separate step. No code change needed. **Blocked (operator):** the actual partner terms URL and version must be set in env by the operator when going live with a production ASP. |
 | S06 | blocked | Needs deployed headers from staging |
 | S07 | blocked | Needs operator backup/encryption evidence and an isolated restore |
 | S08 | **fixed awaiting verification** | Role matrix traced from `shared/access.ts` → `server/middleware/rbac.ts` → firm routes. The model: `isAdmin=true` or `firm_owner` → full scope (all clients); `firm_admin` → assigned-clients-only; `customer`/`client_portal` → rejected at `requireNraAccess`. `requireFirmOwner` gates destructive endpoints (alerts/refresh, alerts/mark-read, alerts/resolve in firm-command-center; assign-staff in firm.routes uses an inline `firmRole !== "firm_owner"` check). `getAccessibleCompanyIds` unions both `firmStaffAssignments` and `companyUsers` for `firm_admin` to avoid silently hiding clients auto-assigned at creation. Test: `tests/unit/role-matrix.test.ts` (20 assertions: pure-function matrix + source guards). **Still open:** a DB-backed integration test that issues 403 to a live `firm_admin` request to assign-staff; audit of company-users → hasCompanyAccess escalation path at scale. |
@@ -83,7 +83,7 @@ S4 = ops/evidence.
 | ID | Disposition | Note |
 |---|---|---|
 | O05 | open (partial) | Local identifiers recorded above; staging receipt blocked |
-| O03 | open | bills-aging p95 (108 ms vs 101 ms budget) not reproduced; needs Postgres and the defined dataset |
+| O03 | **test written; CI-only** | Benchmark probe written: `tests/db/bills-aging-perf.test.ts` seeds 50 bills across four aging buckets and measures `GET /bills/aging` over 20 consecutive requests (2 warm-up). Budget: 101 ms p95 (Postgres), 800 ms p95 (PGlite). Dataset defined: 10 current × AED 500, 15 days_1_30 × AED 1,000, 15 days_31_60 × AED 1,500, 10 days_90_plus × AED 2,000. PGlite startup exceeds the 300 s harness timeout on this machine (Node 18.16, Windows); test runs against Postgres in CI. Postgres baseline from `scripts/qa/perf-baseline.json`: 67 ms p95. |
 | O04 | **fixed awaiting verification** | Import preview default: `POST /api/companies/:companyId/bank-statements/import-preview` registers a parse-only endpoint (no DB write). `BankReconciliation.tsx` auto-calls it when a CSV is selected and shows a `data-testid="import-preview-panel"` with row count, skipped-row warning and a 5-row mini-table before the user clicks Import. importPreview resets on dialog close and successful import in both PDF and CSV paths. Test: `tests/unit/bank-import-ux.test.ts` extended with preview-panel assertion. |
 | O01 | blocked (partly) | Provider sandbox credentials/references needed; F01 changes the tax-subtotal derivation, so revalidate |
 | O02 | blocked (partly) | OCR provider sandbox needed |
@@ -94,7 +94,8 @@ S4 = ops/evidence.
 
 - Original items: 32. Verified dispositions: **0**.
 - Fixed awaiting verification: **14** (F01–F07, S01, S02+S03, S05, W01–W06+W08, O04, O07, S08) plus ENV-01.
-- Open: 6 · Blocked or partly blocked: 10 (W07, W09, W10 newly blocked; + F05 scheduled-items, S04, S06, S07, O01, O02, O06).
+- Test written, CI-only: **1** (O03 — bills-aging benchmark; PGlite startup timeout locally).
+- Open: 5 · Blocked or partly blocked: 10 (W07, W09, W10 newly blocked; + F05 scheduled-items, S04, S06, S07, O01, O02, O06).
 - Handoff to Astra 6.2: **not eligible**.
 
 ## 4. Commands run (local, Node 18.16, Windows)
@@ -153,4 +154,14 @@ npx tsc --noEmit -p .                                                           
 npx vitest run tests/unit/wps-sif-fixture.test.ts                                             # 15 passed (O07)
 npx vitest run tests/unit/role-matrix.test.ts                                                 # 20 passed (S08)
 npx vitest run                                                                                 # 1092 passed, 1 skipped, 0 failed (96 files)
+```
+
+Post-merge (merge `6325f2cf`) + O03 benchmark:
+
+```
+# O03 benchmark probe: seeds 50 bills, measures bills/aging p95 over 20 runs
+# PGlite: times out (>300 s harness startup) on this machine; runs in CI against Postgres
+npm run test:db -- tests/db/bills-aging-perf.test.ts
+# bank-statement-import skippedRows semantics fix (post-merge)
+npx vitest run tests/unit/bank-statement-import.test.ts                                       # 7 passed
 ```

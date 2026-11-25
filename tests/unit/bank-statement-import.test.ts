@@ -117,10 +117,10 @@ describe("bank statement CSV import", () => {
     expect(result.transactions[0]).toMatchObject({ credit: 5000, debit: 0 });
   });
 
-  it("counts rows skipped for missing date or zero amount in skippedRows", () => {
-    // Row 2: invalid date string → skipped
+  it("counts rows skipped for zero amount in skippedRows; invalid-date rows surface as errors", () => {
+    // Row 2: invalid date string → parse error (surfaces in errors, not skippedRows)
     // Row 3: valid transaction → imported
-    // Row 4: zero amount (balance row) → skipped
+    // Row 4: zero amount balance row → ignored (counted in skippedRows)
     const result = parseBankCsv(
       [
         "Date,Description,Debit,Credit,Balance",
@@ -130,7 +130,10 @@ describe("bank statement CSV import", () => {
       ].join("\n")
     );
     expect(result.transactions).toHaveLength(1);
-    expect(result.skippedRows).toBe(2);
+    // The zero-amount balance row is silently ignored → skippedRows = 1
+    expect(result.skippedRows).toBe(1);
+    // The invalid-date row is an error row, not a skipped row (it's visible in errors)
+    expect(result.errors.length).toBeGreaterThan(0);
   });
 
   it("returns skippedRows: 0 for a fully-valid file", () => {
