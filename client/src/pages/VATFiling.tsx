@@ -47,7 +47,7 @@ import { formatDate as formatDisplayDate, parseCalendarDate } from "@/lib/format
 import { companyAddressLine, vatStaggerLabel } from "@/lib/company-address";
 import VatReturnControls from "@/components/vat/VatReturnControls";
 import VatFilingActions from "@/components/vat/VatFilingActions";
-import { vatChecklist, vatFilingStage } from "@/lib/vat-filing-stage";
+import { summariseVatReturns, vatChecklist, vatFilingStage } from "@/lib/vat-filing-stage";
 import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import VatWorkpaperPanel from "@/components/vat/VatWorkpaperPanel";
 import { VatPeriodPreview } from "@/components/vat/VatPeriodPreview";
@@ -325,18 +325,7 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
     },
   });
 
-  const stats = useMemo(() => {
-    if (!vatReturns) return { total: 0, pending: 0, submitted: 0, filed: 0, totalPayable: 0 };
-
-    return {
-      total: vatReturns.length,
-      pending: vatReturns.filter((r) => r.status === "draft" || r.status === "pending_review")
-        .length,
-      submitted: vatReturns.filter((r) => r.status === "submitted").length,
-      filed: vatReturns.filter((r) => r.status !== "amended" && vatChecklist(r).filed).length,
-      totalPayable: vatReturns.reduce((sum, r) => sum + (r.box14PayableTax || 0), 0),
-    };
-  }, [vatReturns]);
+  const stats = useMemo(() => summariseVatReturns(vatReturns), [vatReturns]);
 
   const currentQuarter = useMemo(() => {
     const now = new Date();
@@ -1005,7 +994,7 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
     return (
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Compliance"
+          eyebrow={t["pages.eyebrowCompliance"]}
           title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 return"}
           description={t["pageLabels.vat201Workflow"]}
         />
@@ -1025,7 +1014,7 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
     return (
       <div className="space-y-6">
         <PageHeader
-          eyebrow={locale === "ar" ? "الامتثال الضريبي" : "Compliance"}
+          eyebrow={t["pages.eyebrowCompliance"]}
           title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 return"}
           backHref="/reports"
           backLabel={t["compliance.vatFilingBackToReports"]}
@@ -1048,7 +1037,7 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow={locale === "ar" ? "الامتثال الضريبي" : "Compliance"}
+        eyebrow={t["pages.eyebrowCompliance"]}
         title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 return"}
         description={t["pageLabels.vat201Workflow"]}
         backHref="/reports"
@@ -1388,7 +1377,9 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
                   <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                   <p className="text-muted-foreground">
                     {locale === "ar"
-                      ? "لا توجد إقرارات ضريبية بعد."
+                      ? canGenerateVatReturn
+                        ? "لا توجد إقرارات ضريبية بعد. أنشئ أول مسودة رسمية لإقرار ضريبة القيمة المضافة عندما تكون جاهزًا."
+                        : "لا توجد إقرارات ضريبية بعد. أضف رقم التسجيل الضريبي للشركة قبل إنشاء المسودات الرسمية."
                       : canGenerateVatReturn
                         ? "No VAT returns yet. Create your first official VAT draft when you are ready."
                         : "No VAT returns yet. Add the company TRN before creating official VAT drafts."}
