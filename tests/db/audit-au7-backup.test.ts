@@ -402,10 +402,14 @@ describe("AU7 accounting backup integrity", () => {
           [invoiceId]
         );
         restored = replace(t, backup);
+        // pg_stat_activity.query is truncated to track_activity_query_size (1024 bytes by
+        // default). The restore's row-locking statement unions one subquery per table, so
+        // it is far longer and its tail (" locked") is cut off. Match only the head, which
+        // always contains the first FOR UPDATE; the blocking-pid check pins it to the gate.
         const waitingRestore = () =>
           h.sql<{ pid: number }>(
             `SELECT pid FROM pg_stat_activity
-             WHERE query LIKE 'SELECT count(*) FROM (%FOR UPDATE% locked'
+             WHERE query LIKE 'SELECT count(*) FROM (SELECT 1 FROM (SELECT 1 FROM %FOR UPDATE%'
                AND $1 = ANY(pg_blocking_pids(pid))`,
             [pid]
           );

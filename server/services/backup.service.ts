@@ -1295,7 +1295,7 @@ async function replaceRemovesCheckoutBankRate(
       AND ((r.base_currency, r.target_currency) = (btrim(p.bank_currency), p.base_currency)
         OR (r.target_currency, r.base_currency) = (btrim(p.bank_currency), p.base_currency)))`;
   const firstReceiptDate = `GREATEST(live.rate_date, (now() AT TIME ZONE 'UTC')::date)`;
-  const { rows } = await client.query<{ bank_currency: string; base_currency: string }>(
+  const { rows } = await pq<{ bank_currency: string; base_currency: string }>(
     `WITH ${SETTLING_LINKS}, ${accountScopes},
     system_rates AS (SELECT * FROM exchange_rates WHERE company_id IS NULL),
     live_rates AS (SELECT * FROM exchange_rates WHERE company_id = $1 UNION ALL SELECT * FROM system_rates),
@@ -1318,7 +1318,8 @@ async function replaceRemovesCheckoutBankRate(
       AND live.rate_date IS NOT NULL
       AND (p.last_receipt_date IS NULL OR p.last_receipt_date >= ${firstReceiptDate})
       AND (${earliestRate("restored_rates")} <= ${firstReceiptDate}) IS NOT TRUE`,
-    values
+    values,
+    client
   );
   return rows.some(
     ({ bank_currency, base_currency }) => !isPeggedPair(bank_currency.trim(), base_currency)
