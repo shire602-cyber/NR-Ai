@@ -239,6 +239,19 @@ function CloseRetryNotice({
   );
 }
 
+/** A fetch paused offline: nothing has failed, but nothing on screen is verified either. */
+function WaitingNotice({ testId, message }: { testId: string; message: string }) {
+  return (
+    <p
+      className="text-muted-foreground text-sm text-center py-6"
+      role="status"
+      data-testid={testId}
+    >
+      {message}
+    </p>
+  );
+}
+
 export default function MonthEndClose() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -300,10 +313,16 @@ export default function MonthEndClose() {
   });
   // Cached items stay on screen after a failed refresh, but no longer count as verified.
   const checklistStale = isChecklistError && checklistData !== undefined;
-  // Stale items can't justify an override: the lock dialog treats them as unknown.
-  const checklistKnownIncomplete = checklistStatus.state === "incomplete" && !checklistStale;
-  const checklistUnknown = ["error", "empty", "waiting"].includes(checklistStatus.state);
-  const checklistAllClear = checklistStatus.state === "complete" && !checklistStale;
+  // Stale or paused items can't justify an override: the lock dialog treats them as unknown.
+  const checklistKnownIncomplete =
+    checklistStatus.state === "incomplete" && !checklistStale && !isChecklistPaused;
+  const checklistUnknown = isChecklistPaused || ["error", "empty"].includes(checklistStatus.state);
+  const checklistAllClear =
+    checklistStatus.state === "complete" && !checklistStale && !isChecklistPaused;
+  // A failed refresh reports its own paused retry, so only one notice shows.
+  const checklistWaiting = isChecklistPaused && !isChecklistError && (
+    <WaitingNotice testId="checklist-waiting" message={t["monthEnd.checklistWaitingToLoad"]} />
+  );
 
   const {
     data: historyData,
@@ -329,9 +348,10 @@ export default function MonthEndClose() {
   const historyUncachedProblem =
     !historyHasRows &&
     (isHistoryError || (isHistoryPending && isHistoryFetched && historyRetryBusy));
-  // A paused first fetch has neither data nor an error, and isLoading stays false.
-  const historyWaitingToLoad =
-    historyData === undefined && !historyUncachedProblem && !isLoadingHistory && isHistoryPaused;
+  // A paused fetch has not failed and isLoading stays false, with or without cached rows.
+  const historyWaiting = isHistoryPaused && !isHistoryError && (
+    <WaitingNotice testId="history-waiting" message={t["monthEnd.historyWaitingToLoad"]} />
+  );
 
   const { data: closeSettings } = useQuery<CloseSettingsResponse>({
     queryKey: [`/api/companies/${companyId}/month-end/settings`],
@@ -712,26 +732,21 @@ export default function MonthEndClose() {
               ))}
             </div>
           ) : checklistStatus.state === "waiting" ? (
-            <p
-              className="text-muted-foreground text-sm text-center py-6"
-              role="status"
-              data-testid="checklist-waiting"
-            >
-              {t["monthEnd.checklistWaitingToLoad"]}
-            </p>
+            checklistWaiting
           ) : checklistStatus.state === "error" ? (
             <CloseRetryNotice testId="checklist-error" scope="checklist" query={checklistQuery} />
           ) : checklistData ? (
             <div className="space-y-2">
+              {checklistWaiting}
               {checklistStale && (
                 <CloseRetryNotice
                   testId="checklist-refresh-error"
                   scope="checklist"
-                  stale
+                  stale={checklistData.checklist.length > 0}
                   query={checklistQuery}
                 />
               )}
-              {checklistStatus.state === "empty" && (
+              {checklistStatus.state === "empty" && !checklistStale && !isChecklistPaused && (
                 <p
                   className="text-muted-foreground text-sm text-center py-6"
                   data-testid="checklist-empty"
@@ -1122,6 +1137,7 @@ export default function MonthEndClose() {
             </div>
           ) : historyData && historyData.length > 0 ? (
             <div className="space-y-3">
+              {historyWaiting}
               {isHistoryError && (
                 <CloseRetryNotice
                   testId="history-refresh-error"
@@ -1209,14 +1225,8 @@ export default function MonthEndClose() {
                 </TableBody>
               </Table>
             </div>
-          ) : historyWaitingToLoad ? (
-            <p
-              className="text-muted-foreground text-sm text-center py-8"
-              role="status"
-              data-testid="history-waiting"
-            >
-              {t["monthEnd.historyWaitingToLoad"]}
-            </p>
+          ) : historyWaiting ? (
+            historyWaiting
           ) : (
             <p
               className="text-muted-foreground text-sm text-center py-8"

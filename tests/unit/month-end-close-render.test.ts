@@ -394,6 +394,11 @@ it.each(["complete", "incomplete", "empty"] as const)(
         ? document.querySelector('[data-testid="checklist-empty"]') !== null
         : document.body.textContent!.includes("Bank reconciliation");
     await vi.waitFor(() => expect(cached()).toBe(true));
+    // Rows survive a failed refresh; an empty state does not, and the copy must not promise rows.
+    const retained = state !== "empty";
+    const failedCopy = retained
+      ? copy["monthEnd.checklistRefreshFailed"]
+      : copy["monthEnd.checklistLoadFailed"];
 
     await act(async () => {
       await client.invalidateQueries({
@@ -401,10 +406,8 @@ it.each(["complete", "incomplete", "empty"] as const)(
       });
     });
     const refreshError = () => document.querySelector('[data-testid="checklist-refresh-error"]');
-    await vi.waitFor(() =>
-      expect(refreshError()?.textContent).toContain(copy["monthEnd.checklistRefreshFailed"])
-    );
-    expect(cached()).toBe(true);
+    await vi.waitFor(() => expect(refreshError()?.textContent).toContain(failedCopy));
+    expect(cached()).toBe(retained);
     expect(document.querySelector('[data-testid="checklist-error"]')).toBeNull();
     expect(document.body.textContent).not.toContain(copy["pages.allClear"]);
 
@@ -432,11 +435,97 @@ it.each(["complete", "incomplete", "empty"] as const)(
     expect(refreshError()?.querySelector("button")).toBe(retry);
     expect(document.activeElement).toBe(retry);
     expect(retry.getAttribute("aria-disabled")).toBe("true");
-    expect(cached()).toBe(true);
+    expect(cached()).toBe(retained);
 
     await act(async () => resolve(data));
     await vi.waitFor(() => expect(refreshError()).toBeNull());
     expect(cached()).toBe(true);
+  }
+);
+
+it.each(["complete", "incomplete", "empty"] as const)(
+  "marks a cached %s checklist unverified while its refresh is paused",
+  async (state) => {
+    const copy = t.en;
+    const data = {
+      checklist:
+        state === "empty"
+          ? []
+          : [{ id: 1, title: "Bank reconciliation", description: "Review", status: state }],
+    };
+    const checklistQuery = vi.fn(async () => data);
+    const client = await mountPage("en", state, async () => [], { checklistQuery });
+    const empty = () => document.querySelector('[data-testid="checklist-empty"]');
+    const waiting = () => document.querySelector('[data-testid="checklist-waiting"]');
+    const hasRow = () => document.body.textContent!.includes("Bank reconciliation");
+    await vi.waitFor(() => expect(state === "empty" ? empty() !== null : hasRow()).toBe(true));
+
+    await act(async () => onlineManager.setOnline(false));
+    await act(async () => {
+      await client.invalidateQueries({
+        predicate: (query) => String(query.queryKey[0]).includes("/month-end/checklist?"),
+      });
+    });
+    await vi.waitFor(() =>
+      expect(waiting()?.textContent).toBe(copy["monthEnd.checklistWaitingToLoad"])
+    );
+    expect(waiting()?.getAttribute("role")).toBe("status");
+    expect(hasRow()).toBe(state !== "empty");
+    expect(empty()).toBeNull();
+    expect(document.body.textContent).toContain(copy["monthEnd.checklistUnavailable"]);
+    expect(document.body.textContent).not.toContain(copy["pages.allClear"]);
+    expect(document.body.textContent).not.toContain(
+      copy["monthEnd.remainingCount"].replace("{count}", "1")
+    );
+    expect(checklistQuery).toHaveBeenCalledTimes(1);
+
+    await act(async () => buttonNamed(document, copy["pages.lockPeriod"])!.click());
+    const dialog = document.querySelector('[role="alertdialog"]')!;
+    expect(dialog.textContent).toContain(copy["monthEnd.lockChecklistUnavailable"]);
+    expect(dialog.querySelector('[data-testid="checkbox-override-checklist"]')).toBeNull();
+
+    await act(async () => onlineManager.setOnline(true));
+    await vi.waitFor(() => expect(waiting()).toBeNull());
+    expect(checklistQuery).toHaveBeenCalledTimes(2);
+    expect(empty() !== null).toBe(state === "empty");
+    expect(hasRow()).toBe(state !== "empty");
+  }
+);
+
+it.each(["rows", "empty"] as const)(
+  "shows a waiting state while a cached %s close history refresh is paused",
+  async (state) => {
+    const copy = t.en;
+    const records =
+      state === "rows"
+        ? [{ id: "close-1", periodEnd: "2025-01-31", status: "locked", closedBy: "Reviewer" }]
+        : [];
+    const historyQuery = vi.fn(async () => records);
+    const client = await mountPage("en", "complete", historyQuery);
+    const empty = () => document.querySelector('[data-testid="history-empty"]');
+    const waiting = () => document.querySelector('[data-testid="history-waiting"]');
+    const hasRow = () =>
+      document.querySelector("table")?.textContent?.includes("Reviewer") ?? false;
+    await vi.waitFor(() => expect(state === "empty" ? empty() !== null : hasRow()).toBe(true));
+
+    await act(async () => onlineManager.setOnline(false));
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["/api/companies/company-1/month-end/history"] });
+    });
+    await vi.waitFor(() =>
+      expect(waiting()?.textContent).toBe(copy["monthEnd.historyWaitingToLoad"])
+    );
+    expect(waiting()?.getAttribute("role")).toBe("status");
+    expect(hasRow()).toBe(state === "rows");
+    expect(empty()).toBeNull();
+    expect(document.querySelector('[data-testid="history-error"]')).toBeNull();
+    expect(historyQuery).toHaveBeenCalledTimes(1);
+
+    await act(async () => onlineManager.setOnline(true));
+    await vi.waitFor(() => expect(waiting()).toBeNull());
+    expect(historyQuery).toHaveBeenCalledTimes(2);
+    expect(empty() !== null).toBe(state === "empty");
+    expect(hasRow()).toBe(state === "rows");
   }
 );
 
