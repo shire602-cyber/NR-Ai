@@ -407,6 +407,24 @@ export function registerInvoiceShareRoutes(app: Express) {
         return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       }
 
+      // Nothing to chase when the invoice is settled (status can lag a payment) or opted out.
+      const openFils = await invoiceOpenFils(db, invoice);
+      if (openFils <= 0) {
+        return res.status(400).json({
+          code: "INVOICE_NOT_CHASEABLE",
+          message: "Invoice has no open balance; no reminder is needed",
+        });
+      }
+      const customer = invoice.contactId
+        ? await storage.getCustomerContact(invoice.contactId)
+        : null;
+      if (invoice.doNotChase || customer?.doNotChase) {
+        return res.status(400).json({
+          code: "INVOICE_NOT_CHASEABLE",
+          message: "Reminders are switched off for this invoice or customer",
+        });
+      }
+
       const newReminderCount = (invoice.reminderCount || 0) + 1;
       const lines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
       const shareUrl = await ensureShareUrl(invoice);
@@ -417,10 +435,6 @@ export function registerInvoiceShareRoutes(app: Express) {
         await invoicePdfOptions(invoice)
       );
 
-      const openFils = await invoiceOpenFils(db, invoice);
-      const customer = invoice.contactId
-        ? await storage.getCustomerContact(invoice.contactId)
-        : null;
       const result = await sendPaymentReminderEmail(
         to,
         invoice,

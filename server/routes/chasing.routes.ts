@@ -89,6 +89,7 @@ async function loadAgingRows(companyId: string): Promise<ChaseAgingRow[]> {
         chaseLevel: inv.chaseLevel ?? 0,
         lastChasedAt: inv.lastChasedAt,
         doNotChase: inv.doNotChase ?? false,
+        invoiceType: inv.invoiceType,
       },
       flatPayments
     )
@@ -258,6 +259,7 @@ export function registerChasingRoutes(app: Express) {
           chaseLevel: invoice.chaseLevel ?? 0,
           lastChasedAt: invoice.lastChasedAt,
           doNotChase: invoice.doNotChase ?? false,
+          invoiceType: invoice.invoiceType,
         },
         payments.map((p) => ({ invoiceId: p.invoiceId, amount: Number(p.amount) || 0 }))
       );
@@ -267,6 +269,17 @@ export function registerChasingRoutes(app: Express) {
       }
       if (!isOverdueAndChaseable(row)) {
         return res.status(409).json({ message: "Invoice is not eligible for chasing", row });
+      }
+
+      const contact = invoice.contactId
+        ? await storage.getCustomerContact(invoice.contactId)
+        : null;
+      if (
+        contact?.doNotChase ||
+        (invoice.contactId &&
+          parseDoNotChaseList(config?.doNotChaseContactIds).includes(invoice.contactId))
+      ) {
+        return res.status(409).json({ message: "Customer is marked do-not-chase" });
       }
 
       const level = body.level ?? nextLevelFor(row, { maxLevel: config?.maxLevel ?? 4 });
@@ -281,9 +294,6 @@ export function registerChasingRoutes(app: Express) {
           .json({ message: `No template found for level ${level} (${language})` });
       }
 
-      const contact = invoice.contactId
-        ? await storage.getCustomerContact(invoice.contactId)
-        : null;
       const ctx = contextForInvoice(
         row,
         contact
@@ -422,6 +432,10 @@ export function registerChasingRoutes(app: Express) {
           continue;
         }
         const contact = await getContact(row.invoice.contactId);
+        if (contact?.doNotChase) {
+          results.push({ invoiceId: row.invoice.id, level, status: "skipped_do_not_chase" });
+          continue;
+        }
         const ctx = contextForInvoice(
           row,
           contact
