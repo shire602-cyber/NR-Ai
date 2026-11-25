@@ -22,6 +22,7 @@
 // (invoice-state-machine.ts) with conditional transitionRow updates.
 
 import { type JournalLineKey, journalLine, journalMemo } from "@shared/journal-memo";
+import Decimal from "decimal.js";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -51,7 +52,7 @@ import {
   type LedgerTx,
   type PostJournalLineInput,
 } from "../ledger";
-import { allocate, fromFils, mulRate, sumFils, toFils } from "../../shared/money";
+import { allocate, fromFils, mulRate, RATE_DECIMALS, sumFils, toFils } from "../../shared/money";
 import {
   REVENUE_ACCOUNT_CODES,
   type RevenueAccountRole,
@@ -886,6 +887,39 @@ interface OriginalLeg {
   remainingForeign: number;
 }
 
+/** Convert once per role and distribute its rounding fils within the available centre balances. */
+function creditBucketBaseAmounts(buckets: RevenueBucket[], legs: OriginalLeg[], rate: string) {
+  const rounded = new Map<RevenueBucket, number>();
+  const FxDecimal = Decimal.clone({ precision: 40 });
+  const fxRate = new FxDecimal(rate).toDecimalPlaces(RATE_DECIMALS, Decimal.ROUND_HALF_UP);
+  for (const role of new Set(buckets.map((b) => b.role))) {
+    const group = buckets.filter((b) => b.role === role);
+    const roleBase = toBase(sumFils(group.map((b) => b.netFils)), rate);
+    const parts = group.map((bucket) => {
+      const exact = fxRate.times(bucket.netFils);
+      const base = exact.floor().toNumber();
+      const canRoundUp =
+        bucket.costCenterId === null ||
+        sumFils(
+          legs
+            .filter((l) => l.role === role && l.costCenterId === bucket.costCenterId)
+            .map((l) => Math.max(0, l.remainingBase))
+        ) > base;
+      return { bucket, base, fraction: exact.minus(base), canRoundUp };
+    });
+    const remainder = roleBase - sumFils(parts.map((p) => p.base));
+    const byRemainder = parts
+      .filter((p) => p.fraction.gt(0))
+      .sort(
+        (a, b) => Number(b.canRoundUp) - Number(a.canRoundUp) || b.fraction.comparedTo(a.fraction)
+      );
+    // If the role total cannot fit, the bucket balance check below rejects the credit.
+    for (const part of byRemainder.slice(0, remainder)) part.base++;
+    for (const { bucket, base } of parts) rounded.set(bucket, base);
+  }
+  return rounded;
+}
+
 async function originalLegs(
   tx: LedgerTx,
   original: Invoice,
@@ -1008,12 +1042,17 @@ async function postCreditNoteInTx(args: {
   const buckets = revenueBuckets(totals, args.lines).sort(
     (a, b) => Number(b.costCenterId !== null) - Number(a.costCenterId !== null)
   );
-  for (const { role, netFils: docFils, costCenterId } of buckets) {
+  const baseAmounts = mode === "lines" ? creditBucketBaseAmounts(buckets, revenueLegs, rate) : null;
+  for (const bucket of buckets) {
+    const { role, netFils: docFils, costCenterId } = bucket;
     if (mode === "remaining" && costCenterId === null) continue;
+    const base = baseAmounts?.get(bucket) ?? docFils;
+    // A final reversal mirrors the posted base amounts, including FX rounding residuals.
+    const useForeignBalance = foreign && (mode === "remaining" || base === 0);
     const roleLegs = revenueLegs.filter(
       (leg) =>
         leg.role === role &&
-        leg.remainingBase > 0 &&
+        (leg.remainingBase > 0 || (useForeignBalance && leg.remainingForeign > 0)) &&
         (costCenterId === null || leg.costCenterId === costCenterId)
     );
     if (!roleLegs.length) {
@@ -1024,9 +1063,6 @@ async function postCreditNoteInTx(args: {
         `The invoice has no ${role.replace(/_/g, " ")} revenue left to credit at the requested cost centre.`
       );
     }
-    const base = toBase(docFils, rate);
-    // A final reversal mirrors the posted base amounts, including any FX rounding residual.
-    const useForeignBalance = mode === "remaining" && foreign;
     const requested = useForeignBalance ? docFils : base;
     const remaining = sumFils(
       roleLegs.map((leg) => (useForeignBalance ? leg.remainingForeign : leg.remainingBase))
@@ -1041,24 +1077,22 @@ async function postCreditNoteInTx(args: {
     }
     if (mode === "remaining") continue;
 
-    const baseParts = allocate(
-      base,
-      roleLegs.map((l) => l.remainingBase)
+    const weights = roleLegs.map((l) =>
+      Math.max(0, base === 0 ? l.remainingForeign : l.remainingBase)
     );
-    const docParts = allocate(
-      docFils,
-      roleLegs.map((l) => l.remainingBase)
-    );
+    const baseParts = allocate(base, weights);
+    const docParts = allocate(docFils, weights);
     roleLegs.forEach((leg, i) => {
-      if (baseParts[i] > 0) {
+      if (baseParts[i] > 0 || (foreign && docParts[i] > 0)) {
         debits.push({ leg, base: baseParts[i], foreign: docParts[i] });
         leg.remainingBase -= baseParts[i];
+        if (foreign) leg.remainingForeign -= docParts[i];
       }
     });
   }
   if (mode === "remaining") {
     for (const leg of [...revenueLegs, ...(vatLeg ? [vatLeg] : [])]) {
-      if (leg.remainingBase > 0)
+      if (leg.remainingBase > 0 || (foreign && leg.remainingBase === 0 && leg.remainingForeign > 0))
         debits.push({ leg, base: leg.remainingBase, foreign: leg.remainingForeign });
     }
   } else if (totals.vatFils > 0) {
@@ -1106,7 +1140,7 @@ async function postCreditNoteInTx(args: {
     }),
     ...(foreign && d.foreign > 0 ? fx(d.foreign, "debit") : {}),
   }));
-  if (arBase > 0) {
+  if (arBase > 0 || (foreign && arDocFils > 0)) {
     jl.push({
       accountId: arId,
       creditFils: arBase,
@@ -1117,7 +1151,7 @@ async function postCreditNoteInTx(args: {
   }
   let customerCreditId: string | null = null;
   let liabilityId: string | null = null;
-  if (excessBase > 0) {
+  if (excessBase > 0 || (foreign && excessDocFils > 0)) {
     liabilityId = await getCustomerCreditAccount(tx, companyId);
     jl.push({
       accountId: liabilityId,
@@ -1140,6 +1174,7 @@ async function postCreditNoteInTx(args: {
       sourceId: creditNote.id,
       idempotencyKey: `credit_note:${creditNote.id}:post`,
       allowFutureDate: true,
+      allowForeignOnlyLines: foreign,
       lines: jl,
     },
     { actorId: userId, tx }

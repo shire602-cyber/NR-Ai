@@ -3,7 +3,8 @@
  * rules here are unit-testable on their own (tests/unit/ledger-*.test.ts).
  *
  * Every amount becomes integer fils (shared/money.ts). Rules (frozen):
- *   - each line has exactly one strictly positive side (debit XOR credit);
+ *   - each line has exactly one strictly positive side (debit XOR credit),
+ *     with an explicit opt-in for document-currency-only invoice residuals;
  *   - more than 2 decimal places is an error (no silent rounding), unless the
  *     legacy adapter opts in with amountRounding: "halfUp" (per-line ROUND_HALF_UP,
  *     the same thing numeric(15,2) did on insert);
@@ -149,7 +150,8 @@ function legacyRate(value: LedgerAmount | null | undefined): string | null {
 export function normalizeLine(
   line: PostJournalLineInput,
   index: number,
-  rounding: Rounding
+  rounding: Rounding,
+  allowForeignOnly = false
 ): NormalizedLine {
   const p = `lines[${index}]`;
   if (!line || typeof line !== "object") fail("INVALID_LINE", `${p} must be an object`);
@@ -179,16 +181,21 @@ export function normalizeLine(
       line: index,
     });
   }
-  if (debit === 0 && credit === 0) {
+  const foreignDebit = amountToFils(line.foreignDebit, `${p}.foreignDebit`, rounding);
+  const foreignCredit = amountToFils(line.foreignCredit, `${p}.foreignCredit`, rounding);
+  const foreignOnly =
+    allowForeignOnly &&
+    debit === 0 &&
+    credit === 0 &&
+    ((foreignDebit > 0 && foreignCredit === 0) || (foreignCredit > 0 && foreignDebit === 0));
+  if (debit === 0 && credit === 0 && !foreignOnly) {
     fail("ZERO_AMOUNT_LINE", `${p} has no amount. Remove empty lines.`, { line: index });
   }
 
-  const foreignDebit = amountToFils(line.foreignDebit, `${p}.foreignDebit`, rounding);
-  const foreignCredit = amountToFils(line.foreignCredit, `${p}.foreignCredit`, rounding);
   if (foreignDebit < 0 || foreignCredit < 0) {
     fail("NEGATIVE_JOURNAL_AMOUNT", `${p} foreign amounts cannot be negative`, { line: index });
   }
-  if ((foreignDebit > 0 && debit === 0) || (foreignCredit > 0 && credit === 0)) {
+  if (!foreignOnly && ((foreignDebit > 0 && debit === 0) || (foreignCredit > 0 && credit === 0))) {
     fail(
       "FOREIGN_SIDE_MISMATCH",
       `${p} foreign amount must be on the same side as the base amount`,
@@ -213,6 +220,11 @@ export function normalizeLine(
     rounding === "halfUp"
       ? legacyRate(line.exchangeRate)
       : normalizeRate(line.exchangeRate, `${p}.exchangeRate`);
+  if (foreignOnly && (!foreignCurrency || !exchangeRate)) {
+    fail("FOREIGN_SIDE_MISMATCH", `${p} requires a foreign currency and exchange rate`, {
+      line: index,
+    });
+  }
 
   let costCenterId: string | null = null;
   if (line.costCenterId !== undefined && line.costCenterId !== null && line.costCenterId !== "") {
@@ -298,7 +310,7 @@ function normalizeAttributes(
 /** Totals + the exact-balance and same-account rules over normalised lines. */
 export function assertLinesBalanced(
   lines: NormalizedLine[],
-  opts: { allowSameAccount?: boolean } = {}
+  opts: { allowSameAccount?: boolean; allowForeignOnly?: boolean } = {}
 ): { debitFils: number; creditFils: number } {
   if (lines.length < 2) {
     fail("TOO_FEW_LINES", "A journal entry needs at least one debit and one credit line");
@@ -329,10 +341,25 @@ export function assertLinesBalanced(
       { debitFils, creditFils, differenceFils: debitFils - creditFils }
     );
   }
+  const foreignOnly = opts.allowForeignOnly && debitFils === 0;
+  if (foreignOnly) {
+    const byCurrency = new Map<string | null, number>();
+    for (const l of lines) {
+      const movement = l.foreignDebitFils - l.foreignCreditFils;
+      byCurrency.set(l.foreignCurrency, (byCurrency.get(l.foreignCurrency) ?? 0) + movement);
+    }
+    if ([...byCurrency.values()].some((amount) => amount !== 0)) {
+      fail("ENTRY_UNBALANCED", "A foreign-only entry must balance in each currency");
+    }
+  }
   if (!opts.allowSameAccount) {
     const net = new Map<string, number>();
-    for (const l of lines)
-      net.set(l.accountId, (net.get(l.accountId) ?? 0) + l.debitFils - l.creditFils);
+    for (const l of lines) {
+      const movement = foreignOnly
+        ? l.foreignDebitFils - l.foreignCreditFils
+        : l.debitFils - l.creditFils;
+      net.set(l.accountId, (net.get(l.accountId) ?? 0) + movement);
+    }
     if ([...net.values()].every((n) => n === 0)) {
       fail(
         "SAME_ACCOUNT_ENTRY",
@@ -365,8 +392,13 @@ export function normalizeEntry(
   }
   if (input.lines.length > MAX_LINES) fail("TOO_MANY_LINES", `At most ${MAX_LINES} lines`);
   const rounding: Rounding = input.amountRounding === "halfUp" ? "halfUp" : "reject";
-  const lines = input.lines.map((l, i) => normalizeLine(l, i, rounding));
-  const totals = assertLinesBalanced(lines, { allowSameAccount: input.allowSameAccount });
+  const allowForeignOnly =
+    input.allowForeignOnlyLines && input.source === "invoice" && status === "posted";
+  const lines = input.lines.map((l, i) => normalizeLine(l, i, rounding, allowForeignOnly));
+  const totals = assertLinesBalanced(lines, {
+    allowSameAccount: input.allowSameAccount,
+    allowForeignOnly,
+  });
 
   let autoReverseOn: string | null = null;
   if (input.autoReverseOn) {

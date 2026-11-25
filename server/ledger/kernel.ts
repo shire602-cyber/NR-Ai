@@ -692,7 +692,9 @@ async function reverseInTx(
   assertReversible(original);
   const date = await resolveReversalDate(tx, original, opts, mode);
   const lines = await loadLinesFils(tx, entryId);
-  if (!lines.some((l) => l.debitFils !== 0 || l.creditFils !== 0)) {
+  if (
+    !lines.some((l) => l.debitFils || l.creditFils || l.foreignDebitFils || l.foreignCreditFils)
+  ) {
     throw new DomainError(
       "ENTRY_HAS_NO_LINES",
       422,

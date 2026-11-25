@@ -45,6 +45,12 @@ async function issue(
   return id;
 }
 
+async function center(t: Tenant, code: string): Promise<string> {
+  const response = await t.as.post(`${base(t)}/cost-centers`, { code, name: code });
+  expect(response.status, response.text).toBe(201);
+  return response.body.id;
+}
+
 async function pay(t: Tenant, invoice: string, amount: number, allowCredit = false) {
   const bank = await accountByCode(t, "1020");
   const response = await t.as.post(`${base(t)}/invoices/${invoice}/payments`, {
@@ -428,13 +434,8 @@ it("shows a USD overpayment liability in the USD trial balance", async () => {
 
 it("[PR #104] credits only the named cost centre even when the credit clears the invoice", async () => {
   const t = await h.createTenant({ planId: "enterprise" });
-  async function center(code: string): Promise<string> {
-    const response = await t.as.post(`${base(t)}/cost-centers`, { code, name: code });
-    expect(response.status, response.text).toBe(201);
-    return response.body.id;
-  }
-  const a = await center("Job-A");
-  const b = await center("Job-B");
+  const a = await center(t, "Job-A");
+  const b = await center(t, "Job-B");
   const jobA = { ...standard(100), description: "Job A", costCenterId: a };
   const jobB = { ...standard(100), description: "Job B", costCenterId: b };
   const revenueAccountId = (await accountByCode(t, "4010")).id;
@@ -465,6 +466,94 @@ it("[PR #104] credits only the named cost centre even when the credit clears the
   const final = await t.as.post(url, { date, lines: [jobB] });
   expect(final.status, final.text).toBe(201);
   expect(await revenueDebits(final.body.journalEntryId)).toEqual([{ code: "Job-B", debit: 100 }]);
+});
+
+function creditJournal(entryId: string) {
+  return h.sql<{ code: string; centre: string | null; base: number; foreign: number }>(
+    `SELECT a.code, cc.code AS centre, (jl.debit - jl.credit)::float8 AS base,
+            (COALESCE(jl.foreign_debit, 0) - COALESCE(jl.foreign_credit, 0))::float8 AS "foreign"
+       FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+       LEFT JOIN cost_centers cc ON cc.id = jl.cost_center_id
+      WHERE jl.entry_id = $1 ORDER BY a.code, cc.code`,
+    [entryId]
+  );
+}
+
+it("[PR #104] clears a named centre's document-currency residual in the final credit journal", async () => {
+  const t = await h.createTenant({ planId: "enterprise" });
+  const a = await center(t, "Job-A");
+  const b = await center(t, "Job-B");
+  const jobA = (price: number) => ({ ...exported(price), costCenterId: a });
+  const jobB = { ...exported(0.05), costCenterId: b };
+  const id = await issue(t, [jobA(0.02), jobB], { currency: "USD", exchangeRate: 0.6 });
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const partial = await t.as.post(url, { date, lines: [jobA(0.01)] });
+  expect(partial.status, partial.text).toBe(201);
+  expect(await creditJournal(partial.body.journalEntryId)).toEqual([
+    { code: "1040", centre: null, base: -0.01, foreign: -0.01 },
+    { code: "4060", centre: "Job-A", base: 0.01, foreign: 0.01 },
+  ]);
+
+  const final = await t.as.post(url, { date, lines: [jobA(0.01), jobB] });
+  expect(final.status, final.text).toBe(201);
+  expect(await creditJournal(final.body.journalEntryId)).toEqual([
+    { code: "1040", centre: null, base: -0.03, foreign: -0.06 },
+    { code: "4060", centre: "Job-A", base: 0, foreign: 0.01 },
+    { code: "4060", centre: "Job-B", base: 0.03, foreign: 0.05 },
+  ]);
+});
+
+it("[PR #104] rounds a partial foreign credit once per revenue role across named centres", async () => {
+  const t = await h.createTenant({ planId: "enterprise" });
+  const a = await center(t, "Job-A");
+  const b = await center(t, "Job-B");
+  const jobs = (price: number) =>
+    [a, b].map((costCenterId) => ({ ...exported(price), costCenterId }));
+  const id = await issue(t, jobs(0.03), { currency: "USD", exchangeRate: 3.67 });
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const partial = await t.as.post(url, { date, lines: jobs(0.01) });
+  expect(partial.status, partial.text).toBe(201);
+  const [ar, ...revenue] = await creditJournal(partial.body.journalEntryId);
+  expect(ar).toEqual({ code: "1040", centre: null, base: -0.07, foreign: -0.02 });
+  expect(revenue.map(({ code, centre, foreign }) => ({ code, centre, foreign }))).toEqual([
+    { code: "4060", centre: "Job-A", foreign: 0.01 },
+    { code: "4060", centre: "Job-B", foreign: 0.01 },
+  ]);
+  expect(revenue.map((leg) => leg.base).sort((a, b) => a - b)).toEqual([0.03, 0.04]);
+  const final = await t.as.post(url, { date, lines: jobs(0.02) });
+  expect(final.status, final.text).toBe(201);
+  expect(await creditJournal(final.body.journalEntryId)).toEqual([
+    { code: "1040", centre: null, base: -0.15, foreign: -0.04 },
+    ...revenue.map((leg) => ({ ...leg, base: leg.base === 0.04 ? 0.07 : 0.08, foreign: 0.02 })),
+  ]);
+});
+
+it("[PR #104] can post and void a final credit with only document currency remaining", async () => {
+  const t = await h.createTenant({ planId: "enterprise" });
+  const a = await center(t, "Job-A");
+  const line = (price: number) => ({ ...exported(price), costCenterId: a });
+  const id = await issue(t, [line(0.02)], { currency: "USD", exchangeRate: 0.6 });
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const partial = await t.as.post(url, { date, lines: [line(0.01)] });
+  expect(partial.status, partial.text).toBe(201);
+
+  const final = await t.as.post(url, { date, lines: [line(0.01)] });
+  expect(final.status, final.text).toBe(201);
+  const journal = await creditJournal(final.body.journalEntryId);
+  expect(journal).toEqual([
+    { code: "1040", centre: null, base: 0, foreign: -0.01 },
+    { code: "4060", centre: "Job-A", base: 0, foreign: 0.01 },
+  ]);
+
+  const voided = await t.as.post(`/api/credit-notes/${final.body.id}/void`, {});
+  expect(voided.status, voided.text).toBe(200);
+  const [reversal] = await h.sql<{ id: string }>(
+    "SELECT reversed_by_entry_id AS id FROM journal_entries WHERE id = $1",
+    [final.body.journalEntryId]
+  );
+  expect(await creditJournal(reversal.id)).toEqual(
+    journal.map((row) => ({ ...row, foreign: -row.foreign }))
+  );
 });
 
 it("uses the refund date's exchange rate for a foreign customer credit paid from an AED bank", async () => {
