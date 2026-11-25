@@ -122,6 +122,16 @@ const STRINGS = {
       "Company rates apply only to this company. System rates are platform reference rates (for example FTA-published) used when the company has none.",
     noRates: "No exchange rates configured yet.",
     noRatesHint: "Add your first rate to get started.",
+    searchPlaceholder: "Search by currency, type or source",
+    searchLabel: "Search saved rates",
+    noMatch: "No saved rates match your search.",
+    clearSearch: "Clear search",
+    loadFailedTitle: "Could not load exchange rates",
+    loadFailedBody: "Your saved rates are unchanged. Check your connection and try again.",
+    fxLoadFailedTitle: "Could not load FX exposure",
+    fxLoadFailedBody: "The exposure figures could not be loaded, so none are shown. Try again.",
+    retry: "Try again",
+    deleteFailed: "Failed to delete rate",
     rateType: "Rate type",
     scope: "Scope",
     scopeCompany: "Company",
@@ -227,6 +237,16 @@ const STRINGS = {
       "أسعار الشركة تخص هذه الشركة فقط. أسعار النظام أسعار مرجعية للمنصة (مثل أسعار الهيئة الاتحادية للضرائب) تُستخدم عند عدم وجود سعر للشركة.",
     noRates: "لم تتم إضافة أي أسعار صرف بعد.",
     noRatesHint: "أضف أول سعر للبدء.",
+    searchPlaceholder: "ابحث بالعملة أو النوع أو المصدر",
+    searchLabel: "البحث في الأسعار المحفوظة",
+    noMatch: "لا توجد أسعار محفوظة مطابقة لبحثك.",
+    clearSearch: "مسح البحث",
+    loadFailedTitle: "تعذر تحميل أسعار الصرف",
+    loadFailedBody: "أسعارك المحفوظة لم تتغير. تحقق من اتصالك وحاول مرة أخرى.",
+    fxLoadFailedTitle: "تعذر تحميل التعرض لفروقات الصرف",
+    fxLoadFailedBody: "تعذر تحميل أرقام التعرض، لذا لا تُعرض أي أرقام. حاول مرة أخرى.",
+    retry: "إعادة المحاولة",
+    deleteFailed: "تعذر حذف السعر",
     rateType: "نوع السعر",
     scope: "النطاق",
     scopeCompany: "الشركة",
@@ -469,12 +489,22 @@ export default function ExchangeRates() {
   const [bandReason, setBandReason] = useState("");
   const [staleAck, setStaleAck] = useState(false);
 
-  const { data: rates, isLoading: isLoadingRates } = useQuery<ExchangeRate[]>({
+  const {
+    data: rates,
+    isLoading: isLoadingRates,
+    isError: isRatesError,
+    refetch: refetchRates,
+  } = useQuery<ExchangeRate[]>({
     queryKey: [ratesKey],
     enabled: !!companyId,
   });
 
-  const { data: fxReport, isLoading: isLoadingFxReport } = useQuery<FxGainsLossesReport>({
+  const {
+    data: fxReport,
+    isLoading: isLoadingFxReport,
+    isError: isFxError,
+    refetch: refetchFx,
+  } = useQuery<FxGainsLossesReport>({
     queryKey: [fxKey],
     enabled: !!companyId,
   });
@@ -489,6 +519,26 @@ export default function ExchangeRates() {
     queryKey: [`/api/companies/${companyId}/exchange-rates/feed-status`],
     enabled: !!companyId,
   });
+
+  const [rateSearch, setRateSearch] = useState("");
+  const filteredRates = useMemo(() => {
+    const q = rateSearch.trim().toLowerCase();
+    if (!q || !rates) return rates ?? [];
+    return rates.filter((r) =>
+      [
+        r.fromCurrency,
+        r.toCurrency,
+        `${r.fromCurrency}/${r.toCurrency}`,
+        r.rateType,
+        s.rateTypes[r.rateType],
+        r.source,
+        sourceLabel(r.source, locale),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [rates, rateSearch, s, locale]);
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: [ratesKey] });
@@ -543,7 +593,7 @@ export default function ExchangeRates() {
       toast({ title: s.deleted });
     },
     onError: (error: Error) => {
-      toast({ title: s.addFailed, description: error?.message, variant: "destructive" });
+      toast({ title: s.deleteFailed, description: error?.message, variant: "destructive" });
     },
   });
 
@@ -785,6 +835,19 @@ export default function ExchangeRates() {
               <Skeleton className="h-20 w-full" />
               <Skeleton className="h-48 w-full" />
             </div>
+          ) : isFxError && !fxReport ? (
+            <Alert
+              tone="danger"
+              title={s.fxLoadFailedTitle}
+              data-testid="fx-load-error"
+              action={
+                <Button size="sm" variant="outline" onClick={() => void refetchFx()}>
+                  {s.retry}
+                </Button>
+              }
+            >
+              {s.fxLoadFailedBody}
+            </Alert>
           ) : (
             <div className="space-y-4">
               {(fxReport?.warnings ?? []).length > 0 && (
@@ -1128,6 +1191,19 @@ export default function ExchangeRates() {
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
+          ) : isRatesError && !rates ? (
+            <Alert
+              tone="danger"
+              title={s.loadFailedTitle}
+              data-testid="rates-load-error"
+              action={
+                <Button size="sm" variant="outline" onClick={() => void refetchRates()}>
+                  {s.retry}
+                </Button>
+              }
+            >
+              {s.loadFailedBody}
+            </Alert>
           ) : !rates || rates.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <ArrowRightLeft className="h-12 w-12 mx-auto mb-2 opacity-30" />
@@ -1135,69 +1211,92 @@ export default function ExchangeRates() {
               <p className="text-sm">{s.noRatesHint}</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{s.from}</TableHead>
-                    <TableHead>{s.to}</TableHead>
-                    <TableHead className="text-end">{s.rateLabel}</TableHead>
-                    <TableHead>{s.rateType}</TableHead>
-                    <TableHead>
-                      <T k="pages.effectiveDate" />
-                    </TableHead>
-                    <TableHead>{s.scope}</TableHead>
-                    <TableHead>
-                      <T k="pages.source" />
-                    </TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rates.map((rate) => (
-                    <TableRow key={rate.id}>
-                      <TableCell className="font-medium">{rate.fromCurrency}</TableCell>
-                      <TableCell className="font-medium">{rate.toCurrency}</TableCell>
-                      <TableCell className="text-end font-mono">
-                        {Number(rate.rate).toFixed(6)}
-                      </TableCell>
-                      <TableCell>{s.rateTypes[rate.rateType] ?? rate.rateType}</TableCell>
-                      <TableCell>
-                        {formatDate(rate.effectiveDate, locale)}
-                        {staleIds.has(rate.id) && (
-                          <Badge variant="outline" className="ms-2" title={s.staleHint}>
-                            {s.stale}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={rate.scope === "company" ? "secondary" : "outline"}>
-                          {rate.scope === "company" ? s.scopeCompany : s.scopeSystem}
-                        </Badge>
-                        {rate.legacyInverted && (
-                          <Badge variant="outline" className="ms-2" title={s.rewrittenHint}>
-                            {s.rewritten}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>{sourceLabel(rate.source, locale)}</TableCell>
-                      <TableCell className="text-end">
-                        {rate.scope === "company" && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={s.delete}
-                            onClick={() => deleteMutation.mutate(rate.id)}
-                            disabled={deleteMutation.isPending}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+            <div className="space-y-3">
+              <Input
+                type="search"
+                value={rateSearch}
+                onChange={(e) => setRateSearch(e.target.value)}
+                placeholder={s.searchPlaceholder}
+                aria-label={s.searchLabel}
+                data-testid="input-rate-search"
+                className="max-w-sm"
+              />
+              {filteredRates.length === 0 ? (
+                <div
+                  className="py-8 text-center text-muted-foreground"
+                  data-testid="rates-no-match"
+                >
+                  <p>{s.noMatch}</p>
+                  <Button variant="link" size="sm" onClick={() => setRateSearch("")}>
+                    {s.clearSearch}
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{s.from}</TableHead>
+                        <TableHead>{s.to}</TableHead>
+                        <TableHead className="text-end">{s.rateLabel}</TableHead>
+                        <TableHead>{s.rateType}</TableHead>
+                        <TableHead>
+                          <T k="pages.effectiveDate" />
+                        </TableHead>
+                        <TableHead>{s.scope}</TableHead>
+                        <TableHead>
+                          <T k="pages.source" />
+                        </TableHead>
+                        <TableHead />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredRates.map((rate) => (
+                        <TableRow key={rate.id}>
+                          <TableCell className="font-medium">{rate.fromCurrency}</TableCell>
+                          <TableCell className="font-medium">{rate.toCurrency}</TableCell>
+                          <TableCell className="text-end font-mono">
+                            {Number(rate.rate).toFixed(6)}
+                          </TableCell>
+                          <TableCell>{s.rateTypes[rate.rateType] ?? rate.rateType}</TableCell>
+                          <TableCell>
+                            {formatDate(rate.effectiveDate, locale)}
+                            {staleIds.has(rate.id) && (
+                              <Badge variant="outline" className="ms-2" title={s.staleHint}>
+                                {s.stale}
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={rate.scope === "company" ? "secondary" : "outline"}>
+                              {rate.scope === "company" ? s.scopeCompany : s.scopeSystem}
+                            </Badge>
+                            {rate.legacyInverted && (
+                              <Badge variant="outline" className="ms-2" title={s.rewrittenHint}>
+                                {s.rewritten}
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>{sourceLabel(rate.source, locale)}</TableCell>
+                          <TableCell className="text-end">
+                            {rate.scope === "company" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label={s.delete}
+                                onClick={() => deleteMutation.mutate(rate.id)}
+                                disabled={deleteMutation.isPending}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
