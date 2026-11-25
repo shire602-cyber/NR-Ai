@@ -1,0 +1,389 @@
+/*
+ * One public site. The pages outside /en and /ar (sign-in, sign-up, password recovery, legal,
+ * help, sample workspace, 404) were built on the "mk-" system; this layer maps that system onto
+ * the homepage design system ("phase-" / "mz-", see phase/phase.css and phase/home/home.css) so
+ * type, spacing, colour, buttons, cards, bands and motion read as the same product.
+ *
+ * Loaded after marketing.css. It only re-points the mk- aliases and re-skins shared primitives
+ * inside .mk-root; it never redefines the shared app tokens (--primary, --background ...).
+ * These pages are light only (hooks.ts useLightPublicTheme). Logical properties only (RTL).
+ */
+
+/* The shared header and footer keep their own .phase-site scope without adding a box. */
+.mk-root .phase-site.mk-chrome {
+  display: contents;
+}
+
+:root .mk-root {
+  --mz-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --mz-shadow-1: 0 1px 2px rgb(10 23 19 / 0.05), 0 3px 8px -2px rgb(10 23 19 / 0.06);
+  --mz-shadow-2:
+    0 1px 2px rgb(10 23 19 / 0.05), 0 8px 20px -8px rgb(10 23 19 / 0.12),
+    0 22px 48px -22px rgb(10 23 19 / 0.16);
+  --mz-shadow-3:
+    0 2px 4px rgb(10 23 19 / 0.06), 0 18px 38px -14px rgb(10 23 19 / 0.18),
+    0 46px 92px -34px rgb(10 23 19 / 0.28);
+
+  /* Colour: the homepage palette. */
+  --brand: #0b6a4a;
+  --brand-strong: #074b35;
+  --brand-subtle: #e3f1e9;
+  --brand-subtle-ink: #074b35;
+  --canvas: #f7f8f4;
+  --canvas-sunken: #f3ecdf;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --ink: #14241e;
+  --ink-2: #43584d;
+  --ink-3: #475e53;
+  --hairline: #d3ddd6;
+  --hairline-strong: #b4c6bc;
+  --band: #0a1713;
+  --band-surface: rgb(255 255 255 / 0.06);
+  --band-ink: #f3f8f5;
+  --band-ink-2: #b9cec3;
+  --band-ink-3: #b9cec3;
+  --band-brand: #5df2b4;
+  --band-hairline: rgb(255 255 255 / 0.16);
+
+  /* Type: the homepage scale. Page titles sit between the hero display and a section heading. */
+  --font-ui: "Geist Sans", "Noto Sans Arabic", system-ui, sans-serif;
+  --font-head: var(--font-ui);
+  --font-num: var(--font-ui);
+  --text-display: clamp(42px, 6.8vw, 82px);
+  --text-h1: clamp(38px, 5.2vw, 68px);
+  --text-h2: clamp(30px, 3.9vw, 50px);
+  --text-h3: 1.25rem;
+  --text-lead: clamp(17px, 1.5vw, 21px);
+
+  /* Space and shape: the 1320 wrap, the homepage radii and elevation. */
+  --gutter: 32px;
+  --container: 1320px;
+  --section: clamp(48px, 7vw, 94px);
+  --section-tight: clamp(36px, 5vw, 64px);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --shadow-1: var(--mz-shadow-1), 0 0 0 1px var(--hairline);
+  --shadow-2: var(--mz-shadow-2), 0 0 0 1px var(--hairline);
+  --shadow-3: var(--mz-shadow-3), 0 0 0 1px var(--hairline);
+  --ease: var(--mz-ease);
+}
+@media (max-width: 760px) {
+  :root .mk-root {
+    --gutter: 17px;
+  }
+}
+
+.mk-root *:focus-visible {
+  outline: 3px solid #087450;
+  outline-offset: 3px;
+}
+.mk-root .mk-band *:focus-visible,
+.mk-root .mk-auth__panel *:focus-visible {
+  outline-color: #ffffff;
+}
+
+/* ---------- Type ---------- */
+.mk-root :is(.mk-display, .mk-h1, .mk-h2) {
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+[dir="rtl"] .mk-root :is(.mk-display, .mk-h1, .mk-h2) {
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+.mk-root .mk-h3 {
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+[dir="rtl"] .mk-root .mk-h3 {
+  letter-spacing: 0;
+  line-height: 1.45;
+}
+.mk-root .mk-lead {
+  line-height: 1.6;
+}
+[dir="rtl"] .mk-root .mk-lead {
+  line-height: 1.75;
+}
+/* The homepage eyebrow: no leading rule, wider tracking. */
+.mk-root .mk-eyebrow {
+  font-size: 13px;
+  letter-spacing: 0.12em;
+}
+.mk-root .mk-eyebrow::before {
+  content: none;
+}
+[dir="rtl"] .mk-root .mk-eyebrow {
+  font-size: 15px;
+  letter-spacing: 0;
+}
+.mk-root .mk-link {
+  color: #08583d;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.mk-root .mk-band .mk-link {
+  color: #b8f5da;
+}
+
+/* ---------- Page head: the light homepage band ---------- */
+.mk-root .mk-pagehead {
+  padding-block: clamp(48px, 7vw, 94px) clamp(28px, 4vw, 48px);
+  border-block-end: 0;
+  background:
+    radial-gradient(70% 90% at 85% 0%, rgb(11 106 74 / 0.08), transparent 70%), var(--canvas);
+}
+[dir="rtl"] .mk-root .mk-pagehead {
+  background:
+    radial-gradient(70% 90% at 15% 0%, rgb(11 106 74 / 0.08), transparent 70%), var(--canvas);
+}
+.mk-root .mk-pagehead .mk-h1 {
+  margin-block-start: 12px;
+  max-inline-size: 22ch;
+}
+.mk-root .mk-pagehead .mk-lead {
+  margin-block-start: 22px;
+  max-inline-size: 54ch;
+}
+.mk-root .mk-section--sunken {
+  border-block: 0;
+  background:
+    radial-gradient(60% 70% at 90% 0%, rgb(255 255 255 / 0.7), transparent 65%),
+    var(--canvas-sunken);
+}
+
+/* ---------- Dark band and auth panel: the homepage dark band ---------- */
+.mk-root .mk-band,
+.mk-root .mk-auth__panel {
+  background:
+    radial-gradient(60% 80% at 85% 0%, rgb(11 106 74 / 0.55), transparent 62%),
+    radial-gradient(50% 70% at 0% 100%, rgb(93 242 180 / 0.08), transparent 60%),
+    linear-gradient(180deg, #0a1713, #0d1f19);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+.mk-root .mk-auth__panel .phase-brand {
+  color: #fff;
+}
+.mk-root .mk-auth__headline {
+  font-size: clamp(34px, 3.4vw, 50px);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+[dir="rtl"] .mk-root .mk-auth__headline {
+  font-size: clamp(30px, 3vw, 44px);
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+.mk-root .mk-auth__top {
+  block-size: 74px;
+}
+.mk-root .mk-auth__lang {
+  display: flex;
+  align-items: center;
+}
+.mk-root .mk-auth__inner label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+@media (max-width: 760px) {
+  .mk-root .mk-auth__top {
+    block-size: 64px;
+  }
+}
+
+/* ---------- Buttons: the homepage button on the shared Button primitive ---------- */
+.mk-root [data-button]:not([data-size^="icon"], [data-button="link"]) {
+  min-block-size: 46px;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.45;
+  transition:
+    transform 0.25s var(--mz-ease),
+    box-shadow 0.25s var(--mz-ease),
+    background-color 0.2s,
+    border-color 0.2s,
+    color 0.2s;
+}
+.mk-root [data-button][data-size="sm"]:not([data-button="link"]) {
+  min-block-size: 44px;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+.mk-root [data-button]:not([data-size^="icon"], [data-button="link"], [data-button="ghost"]):hover {
+  transform: translateY(-2px);
+}
+.mk-root [data-button]:not([data-size^="icon"], [data-button="link"]):active {
+  transform: translateY(0) scale(0.975);
+  transition-duration: 0.08s;
+}
+.mk-root [data-button] svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+.mk-root [data-button="default"]:not(:disabled, [aria-disabled="true"]) {
+  border-color: transparent;
+  background: linear-gradient(180deg, #0f7a57, #0a6044);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    0 1px 2px rgb(7 75 53 / 0.35),
+    0 8px 18px -8px rgb(11 106 74 / 0.55);
+}
+.mk-root [data-button="default"]:not(:disabled, [aria-disabled="true"]):hover {
+  background: linear-gradient(180deg, #0d7150, #08573d);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    0 2px 4px rgb(7 75 53 / 0.3),
+    0 16px 30px -10px rgb(11 106 74 / 0.6);
+}
+.mk-root [data-button="outline"]:not(:disabled) {
+  border-color: #b4c6bc;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: var(--mz-shadow-1);
+}
+.mk-root [data-button="outline"]:not(:disabled):hover {
+  background: #edf5ef;
+  border-color: #b4c6bc;
+}
+.mk-root [data-button="ghost"]:hover {
+  background: #e9f3ed;
+}
+/* On the dark band the primary is white and the outline is glass, as on the homepage. */
+.mk-root .mk-band [data-button="default"]:not(:disabled, [aria-disabled="true"]) {
+  background: linear-gradient(180deg, #ffffff, #e9f5ee);
+  color: #074b35;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 1px 2px rgb(0 0 0 / 0.3),
+    0 10px 28px -10px rgb(93 242 180 / 0.45);
+}
+.mk-root .mk-band [data-button="outline"]:not(:disabled),
+.mk-root .mk-band .mk-on-band {
+  background: rgb(255 255 255 / 0.05);
+  color: #fff;
+  border-color: rgb(255 255 255 / 0.36);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12);
+}
+.mk-root .mk-band [data-button="outline"]:not(:disabled):hover,
+.mk-root .mk-band .mk-on-band:hover {
+  background: rgb(255 255 255 / 0.12);
+  border-color: rgb(255 255 255 / 0.6);
+}
+
+/* Plain-text language switch (auth top bar), as in the site header. */
+.mk-root .phase-lang {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.mk-root .phase-lang:hover {
+  color: var(--brand);
+}
+.mk-root .phase-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  font-weight: 700;
+  flex: none;
+  color: var(--ink);
+}
+
+/* ---------- Form fields: the homepage form field ---------- */
+.mk-root
+  :is(
+    input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
+    select,
+    textarea
+  ) {
+  min-block-size: 46px;
+  border-radius: 10px;
+  border-color: #859e91;
+  background: #fff;
+  color: var(--ink);
+  font-size: 1rem;
+}
+.mk-root :is(input, textarea)::placeholder {
+  color: var(--ink-3);
+}
+
+/* ---------- Cards and tiles: 18px radius, layered shadow, the homepage lift ---------- */
+.mk-root :is(.mk-tile, .mk-card, .mk-surface-card, .mk-kpi, .mk-panel, .mk-legal__contact) {
+  border-radius: var(--radius-lg);
+}
+.mk-root :is(.mk-tile, .mk-surface-card) {
+  transition:
+    transform 0.3s var(--mz-ease),
+    box-shadow 0.3s var(--mz-ease);
+}
+.mk-root :is(a.mk-tile, .mk-tile:has(a)):hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-2);
+}
+.mk-root .mk-cta {
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-2);
+}
+.mk-root .mk-chips > * {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  background: linear-gradient(180deg, #ffffff, #f5f9f6);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    var(--mz-shadow-1);
+}
+.mk-root .mk-faq summary {
+  font-weight: 650;
+}
+
+/* ---------- Legal reading column ---------- */
+.mk-root .mk-prose {
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.mk-root .mk-prose :is(h2, h3) {
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+[dir="rtl"] .mk-root .mk-prose :is(h2, h3) {
+  letter-spacing: 0;
+}
+.mk-root .mk-prose a,
+.mk-root .mk-legal__contact a {
+  color: #08583d;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.mk-root .mk-legal__aside a[aria-current="page"] {
+  color: var(--brand-strong);
+  border-inline-start-color: var(--brand);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-root [data-button]:is(:hover, :active),
+  .mk-root :is(.mk-tile, .mk-surface-card):hover {
+    transform: none;
+  }
+}
+
+/* The brand in the auth top bar is for narrow screens; the dark panel carries it on wide ones. */
+@media (min-width: 1024px) {
+  .mk-root .mk-auth__top .mk-auth__brand {
+    display: none;
+  }
+}

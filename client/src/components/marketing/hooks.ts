@@ -1,5 +1,7 @@
-import { useEffect } from "react";
-import { useTranslation } from "@/lib/i18n";
+import { useEffect, useLayoutEffect } from "react";
+import { useLocation } from "wouter";
+import { useI18n, useTranslation } from "@/lib/i18n";
+import { applyStoredTheme } from "@/lib/theme";
 
 function setMeta(selector: string, attr: "name" | "property", key: string, content: string) {
   let el = document.head.querySelector<HTMLMetaElement>(selector);
@@ -62,10 +64,39 @@ export function usePageMeta(
 }
 
 /**
- * Route-level SEO meta for every public page. Theme and fonts are the app's own
- * (client/src/lib/theme.ts, index.css): the public site has no second system.
+ * The public site has one look: the light homepage system. A visitor whose app preference is dark
+ * still gets light public pages; the saved preference is untouched and is applied again as soon as
+ * the public page unmounts (signing in, opening the app).
+ */
+export function useLightPublicTheme() {
+  useLayoutEffect(() => {
+    const html = document.documentElement;
+    if (!html.classList.contains("dark")) return;
+    html.classList.remove("dark");
+    return applyStoredTheme;
+  }, []);
+}
+
+/**
+ * Route-level SEO meta for every public page.
  */
 export function useMarketingPage(titleKey: string, descriptionKey: string) {
   const { t } = useTranslation();
   usePageMeta(t[titleKey], t[descriptionKey]);
+}
+
+/** What the shared site header and footer need on a page that has one URL for both languages. */
+export function usePublicChrome() {
+  const locale = useI18n((state) => state.locale);
+  const setLocale = useI18n((state) => state.setLocale);
+  const [location] = useLocation();
+  const tr = (content: readonly [string, string]) => content[locale === "ar" ? 1 : 0];
+  return {
+    locale,
+    setLocale,
+    tr,
+    base: `/${locale}`,
+    path: location.split(/[?#]/, 1)[0] || "/",
+    dir: locale === "ar" ? ("rtl" as const) : ("ltr" as const),
+  };
 }

@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import { Link } from "wouter";
 import { ArrowLeft, Languages, Landmark, ShieldCheck } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
-import { LocaleToggle, MarketingBrand, ThemeToggle } from "@/components/marketing/MarketingLayout";
-import { useMarketingPage } from "@/components/marketing/hooks";
+import { LocaleToggle, MarketingBrand } from "@/components/marketing/MarketingLayout";
+import { useLightPublicTheme, useMarketingPage } from "@/components/marketing/hooks";
 import { SkipLink } from "@/components/SkipLink";
 
 const TRUST_POINTS = [
@@ -50,13 +50,14 @@ interface AuthLayoutProps {
 /**
  * Split-screen shell for sign-in, registration, password recovery, the OAuth callback and
  * email verification: the inverse brand panel with the ledger-ruling motif (desktop only) and
- * the form straight on the page canvas, 400 px wide, no card (spec 3.2). Shares tokens,
- * header controls and SEO handling with the marketing pages.
+ * the form straight on the page canvas, 400 px wide, no card (spec 3.2). Shares the homepage
+ * tokens, brand lockup, buttons and SEO handling with the rest of the public site.
  */
 export function AuthLayout({ children, variant }: AuthLayoutProps) {
   const { t } = useTranslation();
   const copy = COPY[variant];
   useMarketingPage(`marketing.seo${copy.seo}Title`, `marketing.seo${copy.seo}Description`);
+  useLightPublicTheme();
 
   return (
     <div className="mk-root">
@@ -97,9 +98,8 @@ export function AuthLayout({ children, variant }: AuthLayoutProps) {
               </Link>
             </Button>
             <MarketingBrand className="mk-auth__brand" testId="link-auth-logo" />
-            <div className="mk-header__actions" style={{ marginInlineStart: 0 }}>
-              <LocaleToggle />
-              <ThemeToggle />
+            <div className="mk-auth__lang">
+              <LocaleToggle testId="button-language-toggle" />
             </div>
           </header>
           <main id="main-content" className="mk-auth__body" tabIndex={-1}>

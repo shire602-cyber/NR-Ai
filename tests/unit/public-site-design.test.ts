@@ -3,7 +3,8 @@
  * D1: public site (landing, pricing, auth, legal) on the shared marketing shell.
  * Behaviour tests: render the real pages in jsdom and check what a visitor gets:
  * per-route SEO meta, a complete Arabic rendering, honest VAT copy, consistent
- * sample figures, and a light/dark theme that does not leak into the app.
+ * sample figures, one header and footer on every public page, and a light-only public site that
+ * leaves the saved app theme alone.
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -265,40 +266,82 @@ describe("D1 public site", () => {
     expect(arabicModeEnglishLines()).toEqual([]);
   });
 
-  it("[D1b] public pages use the app's one theme system (light / dark / system)", async () => {
-    await render("MuhasibLanding");
+  it("public pages are light only and hand the saved theme back to the app", async () => {
     const html = document.documentElement;
-    expect(html.classList.contains("dark")).toBe(false);
-    const choose = async (option: "light" | "dark" | "system") => {
-      const trigger = container.querySelector<HTMLButtonElement>(
-        '[data-testid="button-theme-toggle"]'
-      );
-      expect(trigger, "the shared ThemeToggle is in the marketing header").not.toBeNull();
-      await act(async () => {
-        trigger!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-      });
-      const item = document.querySelector<HTMLElement>(`[data-testid="theme-option-${option}"]`);
-      expect(item, `menu offers ${option}`).not.toBeNull();
-      await act(async () => item!.click());
-    };
-    await choose("dark");
+    const { setThemePreference } = await import("../../client/src/lib/theme");
+    act(() => setThemePreference("dark"));
     expect(html.classList.contains("dark")).toBe(true);
-    expect(window.localStorage.getItem("muhasib-theme")).toBe("dark");
-    await choose("system");
-    expect(window.localStorage.getItem("muhasib-theme")).toBe("system");
-    await choose("dark");
+
+    for (const page of ["PrivacyPolicy", "ForgotPassword", "HelpCenter"] as const) {
+      await render(page);
+      // One look for the public site: the homepage system has no dark variant and no switch.
+      expect(html.classList.contains("dark"), page).toBe(false);
+      expect(container.querySelector('[data-testid="button-theme-toggle"]'), page).toBeNull();
+      // The preference itself is untouched, and the app gets it back when the page goes away.
+      expect(window.localStorage.getItem("muhasib-theme")).toBe("dark");
+      act(() => root.unmount());
+      root = createRoot(container);
+      expect(html.classList.contains("dark"), page).toBe(true);
+    }
+
+    const { default: PhaseSite } =
+      await import("../../client/src/components/marketing/phase/PhaseSite");
+    await act(async () => root.render(createElement(PhaseSite)));
+    expect(html.classList.contains("dark")).toBe(false);
     act(() => root.unmount());
     root = createRoot(container);
-    // One system: leaving the public site keeps the visitor's choice for the app too.
     expect(html.classList.contains("dark")).toBe(true);
-    const { useTheme } = await import("../../client/src/lib/theme");
-    expect(typeof useTheme).toBe("function");
-    await act(async () => {
-      const { setThemePreference } = await import("../../client/src/lib/theme");
-      setThemePreference("light");
-    });
+    act(() => setThemePreference("light"));
     expect(html.classList.contains("dark")).toBe(false);
   });
+
+  it.each([
+    ["en", "/en", "العربية"],
+    ["ar", "/ar", "EN"],
+  ] as const)(
+    "legal, help and 404 pages carry the homepage header and footer in %s",
+    async (locale, base, otherLanguage) => {
+      await setLocale(locale);
+      const { default: PublicNotFound } = await import("../../client/src/pages/PublicNotFound");
+      const pages = [
+        (await PAGES.PrivacyPolicy()).default,
+        (await PAGES.HelpCenter()).default,
+        PublicNotFound,
+      ];
+      for (const page of pages) {
+        act(() => root.unmount());
+        root = createRoot(container);
+        await act(async () => root.render(createElement(page)));
+        const header = container.querySelector("header.phase-header");
+        expect(header).not.toBeNull();
+        expect(container.querySelector(".mk-header, .mk-footer")).toBeNull();
+        expect(header!.closest(".phase-site")?.getAttribute("dir")).toBe(
+          locale === "ar" ? "rtl" : "ltr"
+        );
+        // Same destinations as the homepage header.
+        expect(header!.querySelector(".phase-brand")?.getAttribute("href")).toBe(base);
+        expect(header!.querySelector(`a[href="${base}/pricing"]`)).not.toBeNull();
+        expect(
+          header!.querySelector('a.phase-primary[href="/register?step=account"]')
+        ).not.toBeNull();
+        // One URL for both languages: the switch changes the language in place.
+        const toggle = header!.querySelector<HTMLButtonElement>(
+          '[data-testid="button-language-toggle"]'
+        );
+        expect(toggle?.textContent).toBe(otherLanguage);
+        const footer = container.querySelector("footer.mz-foot");
+        expect(footer?.querySelector(`a[href="${base}/about"]`)).not.toBeNull();
+        expect(footer?.querySelector('a[href="/privacy"]')).not.toBeNull();
+        expect(container.textContent).not.toMatch(/A-?Cube|Complyance|أكيوب|كومبلاينس|ZATCA/i);
+      }
+      const toggle = container.querySelector<HTMLButtonElement>(
+        '[data-testid="button-language-toggle"]'
+      )!;
+      await act(async () => toggle.click());
+      const { useI18n } = await import("../../client/src/lib/i18n");
+      expect(useI18n.getState().locale).toBe(locale === "ar" ? "en" : "ar");
+    }
+  );
 
   it("[D1b] help, trust, migration, demo and services render without English body copy in Arabic", async () => {
     await setLocale("ar");
