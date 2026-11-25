@@ -731,6 +731,37 @@ describe("WQ1 receive payment (7.6)", () => {
     expect(submitDisabled()).toBe(true);
   });
 
+  it("PR129: a rate typed for one currency is not shown or sent for another", async () => {
+    setFixtures(
+      fixtures({
+        [OPEN_URL]: [
+          invoiceRow({ id: "inv-usd", currency: "USD", exchangeRate: 3.67 }),
+          invoiceRow({ id: "inv-eur", number: "INV-EUR", currency: "EUR", exchangeRate: 4 }),
+        ],
+      })
+    );
+    await openReceivePage();
+    await pickOption(byTestId("select-receive-customer"), CONTACT.name);
+    await flushUntil(() => !!byTestId("receive-row-inv-eur"));
+    const rateValue = () => (document.getElementById("receive-rate") as HTMLInputElement).value;
+    await type(byTestId("input-receive-amount"), "50");
+    await type(byTestId("input-apply-inv-usd"), "50");
+    await type(document.getElementById("receive-rate"), "10");
+    await type(byTestId("input-apply-inv-usd"), "");
+    await type(byTestId("input-apply-inv-eur"), "50");
+    expect(rateValue()).toBe("");
+    // EUR 50 at its invoice rate 4 is AED 200, not AED 500 at the USD rate.
+    await type(byTestId("input-receive-fee"), "200");
+    expect(byTestId("receive-fee-error")).not.toBeNull();
+    expect(submitDisabled()).toBe(true);
+    await type(byTestId("input-receive-fee"), "199.99");
+    expect(byTestId("receive-fee-error")).toBeNull();
+    await submit(byTestId("button-record-receipt"));
+    const sent = bodyOf("POST", `${C}/receive-payments`) as Record<string, unknown>;
+    expect(sent.allocations).toEqual([{ invoiceId: "inv-eur", amount: "50.00" }]);
+    expect(sent).not.toHaveProperty("exchangeRate");
+  });
+
   it("checks the bank fee at the first applied invoice's rate", async () => {
     const usd = { currency: "USD" };
     setFixtures(

@@ -20,7 +20,12 @@ import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
 import { db } from "../db";
-import { accounts, invoices as invoicesTable, invoiceLines } from "../../shared/schema";
+import {
+  accounts,
+  invoices as invoicesTable,
+  invoiceLines,
+  journalLines,
+} from "../../shared/schema";
 import {
   cashSaleSchema,
   receivePaymentSchema,
@@ -36,7 +41,7 @@ import { issueInvoiceInTx, isIssuedStatus } from "../services/invoice-posting.se
 import { allocateInvoiceNumber } from "../services/invoice-numbering.service";
 import { assertNotFutureDate, assertPeriodNotLocked } from "../services/period-lock.service";
 import { bankCurrencyOf } from "../services/fx/bank-currency";
-import { loadBaseCurrency, postJournal, withLedgerTx } from "../ledger";
+import { loadBaseCurrency, postJournal, withLedgerTx, type LedgerTx } from "../ledger";
 import { emitDomainEvent } from "../platform/domain-events";
 import { recordAudit } from "../services/audit.service";
 import { isB2cCashSale } from "../services/einvoice/applicability";
@@ -55,9 +60,9 @@ async function assertCompanyAccess(req: Request, companyId: string): Promise<voi
   }
 }
 
-async function bankChargesAccountId(companyId: string): Promise<string> {
+async function bankChargesAccountId(companyId: string, tx: LedgerTx): Promise<string> {
   const find = async () => {
-    const [row] = await db
+    const [row] = await tx
       .select({ id: accounts.id })
       .from(accounts)
       .where(and(eq(accounts.companyId, companyId), eq(accounts.code, BANK_CHARGES_CODE)));
@@ -66,7 +71,7 @@ async function bankChargesAccountId(companyId: string): Promise<string> {
   const existing = await find();
   if (existing) return existing;
   const tpl = defaultChartOfAccounts.find((a) => a.code === BANK_CHARGES_CODE);
-  await db
+  await tx
     .insert(accounts)
     .values({
       companyId,
@@ -209,8 +214,8 @@ export function registerSalesReceiptRoutes(app: Express) {
       const appliedFils = body.allocations.reduce((s, a) => s + a.amount, 0);
       const creditFils = body.amount - appliedFils;
       const feeFils = body.bankFee ?? 0;
-      const baseCurrency = await loadBaseCurrency(companyId);
       if (feeFils > 0) {
+        const baseCurrency = await loadBaseCurrency(companyId);
         const bankCur = (await bankCurrencyOf(companyId, body.paymentAccountId)) ?? baseCurrency;
         if (bankCur !== baseCurrency) {
           throw new DomainError(
@@ -220,20 +225,7 @@ export function registerSalesReceiptRoutes(app: Express) {
             `A bank fee can be recorded on a ${baseCurrency} bank account`
           );
         }
-        // The first allocation's invoice, not rows[0]: the query returns them in no set order.
-        const rate = body.exchangeRate || Number(byId.get(ids[0])!.exchangeRate) || 1;
-        const receivedBase =
-          [...currencies][0] === baseCurrency ? body.amount : mulRate(body.amount, rate);
-        if (feeFils >= receivedBase) {
-          throw new DomainError(
-            "BANK_FEE_TOO_LARGE",
-            422,
-            { fields: { bankFee: ["The fee must be less than the amount received"] } },
-            "The bank fee must be less than the amount received"
-          );
-        }
       }
-      const feeAccountId = feeFils > 0 ? await bankChargesAccountId(companyId) : null;
 
       const result = await withLedgerTx(async (tx) => {
         const payments: Array<{
@@ -268,7 +260,37 @@ export function registerSalesReceiptRoutes(app: Express) {
           });
         }
         let feeEntryId: string | null = null;
-        if (feeFils > 0 && feeAccountId) {
+        if (feeFils > 0) {
+          // The fee limit is what the payment journals actually debited to the (base-currency)
+          // bank account: payment-date rate or its fallback, per-allocation rounding, any excess.
+          // Throwing here rolls every payment back and drops their after-commit work.
+          const cashLines: Array<{ debit: number }> = await tx
+            .select({ debit: journalLines.debit })
+            .from(journalLines)
+            .where(
+              and(
+                inArray(
+                  journalLines.entryId,
+                  payments.map((p) => p.journalEntryId)
+                ),
+                eq(journalLines.accountId, body.paymentAccountId)
+              )
+            );
+          const receivedBaseFils = cashLines.reduce(
+            (s, l) => s + toFils(l.debit, { rounding: "halfUp" }),
+            0
+          );
+          if (feeFils >= receivedBaseFils) {
+            throw new DomainError(
+              "BANK_FEE_TOO_LARGE",
+              422,
+              { fields: { bankFee: ["The fee must be less than the amount received"] } },
+              "The bank fee must be less than the amount received"
+            );
+          }
+          // Only once the fee is accepted, and in this transaction: a rejected or failed receipt
+          // leaves no newly created bank charges account behind.
+          const feeAccountId = await bankChargesAccountId(companyId, tx);
           const { entry } = await postJournal(
             {
               companyId,

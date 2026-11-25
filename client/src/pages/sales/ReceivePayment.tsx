@@ -94,7 +94,8 @@ export default function ReceivePayment() {
   const [date, setDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [amount, setAmount] = useState("");
   const [fee, setFee] = useState("");
-  const [rate, setRate] = useState("");
+  // A typed rate belongs to the currency it was typed for.
+  const [typedRate, setTypedRate] = useState({ currency: "", value: "" });
   const [reference, setReference] = useState("");
   const [applied, setApplied] = useState<Record<string, string>>({});
 
@@ -109,7 +110,7 @@ export default function ReceivePayment() {
   });
   const open = openQuery.data ?? NO_OPEN_INVOICES;
 
-  // The invoice whose currency and rate the API uses: the first applied one (the API validates
+  // The invoice whose currency applies to the receipt: the first applied one (the API validates
   // only allocated invoices), the first open one as a preview before any is applied.
   const rateInvoice = open.find((i) => toFils(applied[i.id] ?? 0) > 0) ?? open[0];
   const currency = rateInvoice?.currency ?? baseCurrency;
@@ -119,10 +120,12 @@ export default function ReceivePayment() {
   const feeFils = toFils(fee);
   const creditFils = Math.max(0, amountFils - appliedFils);
   const overApplied = appliedFils > amountFils;
-  // The rate sent with the receipt; the field only exists for a foreign currency.
+  // The rate sent with the receipt; the field only exists for a foreign currency. Derived during
+  // render, so another currency never sees (or submits) this one's rate.
+  const rate = typedRate.currency === currency ? typedRate.value : "";
   const enteredRate = foreign && Number(rate) > 0 ? Number(rate) : undefined;
-  // The API's rule: the fee (base currency) must be less than the amount received in base, at
-  // the typed rate, else the first allocation's invoice rate (the first open one until applied).
+  // The fee (base currency) must be less than the amount received in base. Preview at the typed
+  // rate, else that invoice's rate; the API checks the cash it actually books.
   const receivedBaseFils = () => {
     if (!rateInvoice || rateInvoice.currency === baseCurrency) return amountFils;
     try {
@@ -359,7 +362,7 @@ export default function ReceivePayment() {
                 ltr
                 inputMode="decimal"
                 value={rate}
-                onChange={(e) => setRate(e.target.value)}
+                onChange={(e) => setTypedRate({ currency, value: e.target.value })}
                 placeholder={t["invoices.receive.ratePlaceholder"]}
               />
             </div>

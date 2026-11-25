@@ -6,6 +6,7 @@
  * (7.5).
  */
 import { describe, expect, it, vi } from "vitest";
+import { drainDomainEvents, onDomainEvent } from "../../server/platform/domain-events";
 import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -228,10 +229,12 @@ describe("WQ1 receive payment over several invoices (7.6)", () => {
     expect(await linesBySource(other, ["payment"])).toEqual([]);
   });
 
-  it("PR129: the bank fee limit uses the first allocation's invoice rate", async () => {
+  it("PR129: the bank fee limit is the cash the payment journals debit to the bank", async () => {
     const t = await h.createTenant();
     const bank = await bankAccount(t);
     const c = await contact(t, "Export Partner FZE");
+    const events: string[] = [];
+    const off = onDomainEvent("payment.received", (e) => void events.push(e.payload.invoiceId));
     const usd = (exchangeRate: number) =>
       issued(t, {
         contactId: c.id,
@@ -247,27 +250,52 @@ describe("WQ1 receive payment over several invoices (7.6)", () => {
           },
         ],
       });
-    const low = await usd(3);
     const high = await usd(4);
-    // USD 50 with a fee of AED 175: too large at 3 (AED 150), allowed at 4 (AED 200).
-    const receive = (...invoices: Array<{ id: string }>) =>
+    const low = await usd(3);
+    // No typed rate: the service settles at the payment-date rate (3.6725), whatever the invoices
+    // were booked at. Each USD 25 leg books AED 91.81, so the bank gets AED 183.62 (not 183.63).
+    const receive = (bankFee: number, ...invoices: Array<{ id: string }>) =>
       t.as.post(`${base(t)}/receive-payments`, {
         contactId: c.id,
         paymentAccountId: bank.glAccountId,
         date: "2026-11-12",
         amount: 50,
-        bankFee: 175,
+        bankFee,
         allocations: invoices.map((i) => ({ invoiceId: i.id, amount: 25 })),
       });
 
-    const refused = await receive(low, high);
-    expect(refused.status, refused.text).toBe(422);
-    expect(refused.body.code).toBe("BANK_FEE_TOO_LARGE");
-    expect(await linesBySource(t, ["payment", "customer_receipt_fee"])).toEqual([]);
+    try {
+      for (const fee of [190, 183.62]) {
+        for (const order of [
+          [high, low],
+          [low, high],
+        ]) {
+          const refused = await receive(fee, ...order);
+          expect(refused.status, refused.text).toBe(422);
+          expect(refused.body.code).toBe("BANK_FEE_TOO_LARGE");
+        }
+      }
+      // Rolled back: no payments, journals or credits, and no after-commit events.
+      await drainDomainEvents();
+      expect(events).toEqual([]);
+      expect(await linesBySource(t, ["payment", "customer_receipt_fee"])).toEqual([]);
+      expect(
+        await h.sql(`SELECT id FROM invoice_payments WHERE company_id = $1`, [t.company.id])
+      ).toEqual([]);
+      expect(
+        await h.sql(`SELECT status FROM invoices WHERE company_id = $1`, [t.company.id])
+      ).toEqual([{ status: "sent" }, { status: "sent" }]);
 
-    const accepted = await receive(high, low);
-    expect(accepted.status, accepted.text).toBe(201);
-    expect(accepted.body.bankFee).toBe("175.00");
+      const accepted = await receive(183.61, low, high);
+      expect(accepted.status, accepted.text).toBe(201);
+      expect(accepted.body.bankFee).toBe("183.61");
+      await drainDomainEvents();
+      expect(events.sort()).toEqual([high.id, low.id].sort());
+      // AED 183.62 debited by the two payments, less the fee.
+      expect(await balanceOf(t, bank.glAccount.code)).toBe(0.01);
+    } finally {
+      off();
+    }
   });
 
   it("a USD invoice received at a later rate books realised FX", async () => {
