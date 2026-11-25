@@ -3,7 +3,13 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
-import { STATUS_MAP, STATUS_NAMESPACES, statusDotClass, type StatusKind } from "./status-meta";
+import {
+  STATUS_MAP,
+  STATUS_NAMESPACES,
+  statusBadgeText,
+  statusDotClass,
+  type StatusKind,
+} from "./status-meta";
 
 const badgeVariants = cva(
   "whitespace-nowrap inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium leading-4 transition-colors" +
@@ -87,7 +93,7 @@ function StatusBadge({ status, label, overdueDays, className, ...props }: Status
   const variant = overdueLabel ? "danger" : (meta?.variant ?? "neutral");
   return (
     <Badge variant={variant} dot className={cn("py-0.5", className)} {...props}>
-      {label ?? overdueLabel ?? (meta ? (t[meta.label] ?? status) : status)}
+      {label ?? overdueLabel ?? statusBadgeText(status, t)}
     </Badge>
   );
 }
