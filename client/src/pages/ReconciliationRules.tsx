@@ -4,7 +4,7 @@ import { T } from "@/components/layout/T";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -51,7 +51,9 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, Trash2, Edit, Zap, Loader2 } from "lucide-react";
+import { Plus, Trash2, Edit, Zap, Loader2, Search } from "lucide-react";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { matchesRuleSearch } from "@/lib/reconciliation-rule-search";
 
 interface ReconciliationRule {
   id: string;
@@ -131,7 +133,16 @@ export function ReconciliationRulesPanel() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<ReconciliationRule | null>(null);
 
-  const { data: rules, isLoading } = useQuery<ReconciliationRule[]>({
+  const [searchTerm, setSearchTerm] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const {
+    data: rules,
+    isLoading,
+    isError: rulesFailed,
+    error: rulesError,
+    refetch: refetchRules,
+  } = useQuery<ReconciliationRule[]>({
     queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
     enabled: !!selectedCompanyId,
   });
@@ -360,6 +371,16 @@ export function ReconciliationRulesPanel() {
     }
   }
 
+  const allRules = rules ?? [];
+  const visibleRules = allRules.filter((rule) =>
+    matchesRuleSearch(rule, searchTerm, {
+      field: t[`banking.rulesField.${rule.matchField}`] ?? rule.matchField,
+      type: t[`banking.rulesType.${rule.matchType}`] ?? rule.matchType,
+    })
+  );
+  const hasSearch = searchTerm.trim().length > 0;
+  const hasNoMatches = !isLoading && hasSearch && allRules.length > 0 && visibleRules.length === 0;
+
   if (!canAccess("bankImport")) {
     return <UpgradePrompt feature="bankImport" requiredTier={getRequiredTier("bankImport")} />;
   }
@@ -431,15 +452,58 @@ export function ReconciliationRulesPanel() {
         </Card>
       )}
 
+      <div role="status" aria-atomic="true" className="sr-only">
+        {hasNoMatches ? t["banking.rules.noMatchTitle"] : ""}
+      </div>
+
+      {(allRules.length > 0 || hasSearch) && (
+        <div className="flex w-full max-w-md items-center gap-2 rounded-md border border-input bg-background px-3 focus-within:ring-2 focus-within:ring-ring">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          <Input
+            ref={searchInputRef}
+            type="search"
+            dir="auto"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder={t["banking.rules.searchPlaceholder"]}
+            aria-label={t["banking.rules.searchLabel"]}
+            className="min-w-0 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+            data-testid="input-search-rules"
+          />
+        </div>
+      )}
+
       <Card className="overflow-hidden">
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="space-y-3">
+            <div className="space-y-3 p-4" aria-busy="true">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : !rules || rules.length === 0 ? (
+          ) : rulesFailed ? (
+            <LoadErrorState
+              error={rulesError}
+              onRetry={() => refetchRules()}
+              title={t["banking.rules.loadErrorTitle"]}
+              description={t["banking.rules.loadErrorBody"]}
+              testId="rules-load-error"
+            />
+          ) : hasNoMatches ? (
+            <EmptyState
+              size="md"
+              icon={Search}
+              title={t["banking.rules.noMatchTitle"]}
+              description={t["banking.rules.noMatchBody"]}
+              action={{
+                label: t["banking.rules.clearSearch"],
+                onClick: () => {
+                  setSearchTerm("");
+                  searchInputRef.current?.focus();
+                },
+              }}
+            />
+          ) : allRules.length === 0 ? (
             <EmptyState
               size="md"
               title={t["banking.rulesEmptyTitle"]}
@@ -471,7 +535,7 @@ export function ReconciliationRulesPanel() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rules.map((rule) => (
+                {visibleRules.map((rule) => (
                   <TableRow key={rule.id}>
                     <TableCell className="text-end tabular-nums">{rule.priority ?? 0}</TableCell>
                     <TableCell>
@@ -650,7 +714,11 @@ export function ReconciliationRulesPanel() {
                       <T k="pages.matchValue" />
                     </FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. RENT or ^SALARY.*" {...field} />
+                      <Input
+                        dir="ltr"
+                        placeholder={t["banking.rules.matchValuePlaceholder"]}
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
