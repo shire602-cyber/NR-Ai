@@ -114,7 +114,7 @@ export const SignupPlanStep = forwardRef<HTMLHeadingElement, SignupPlanStepProps
 
         <p className="mt-4 text-small">
           <Link
-            href="/pricing#compare"
+            href={`/${locale === "ar" ? "ar" : "en"}/pricing#compare`}
             className="inline-flex min-h-11 items-center font-medium text-accent hover:underline md:min-h-0"
             data-testid="link-compare-plans"
           >

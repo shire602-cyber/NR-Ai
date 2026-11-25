@@ -1,0 +1,60 @@
+/* FAQ ("mz-faq-"). Scope: .phase-site. Logical properties only. */
+.phase-site .mz-faq-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr);
+  gap: clamp(28px, 5vw, 72px);
+  align-items: start;
+}
+.phase-site .mz-faq-list {
+  min-inline-size: 0;
+}
+.phase-site .mz-faq-item {
+  border-block-start: 1px solid var(--mz-line, var(--mz-line-light));
+}
+.phase-site .mz-faq-item:last-child {
+  border-block-end: 1px solid var(--mz-line, var(--mz-line-light));
+}
+.phase-site .mz-faq-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-block-size: 60px;
+  padding-block: 16px;
+  font-size: clamp(17px, 1.5vw, 19px);
+  font-weight: 650;
+  line-height: 1.4;
+  color: var(--mz-fg, var(--mz-ink-soft));
+  list-style: none;
+}
+.phase-site .mz-faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.phase-site .mz-faq-item summary svg {
+  inline-size: 20px;
+  block-size: 20px;
+  color: var(--mz-emerald);
+}
+.phase-site .mz-faq-item[open] > summary svg {
+  rotate: 180deg;
+}
+.phase-site .mz-faq-item p {
+  max-inline-size: 66ch;
+  padding-block-end: 20px;
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--mz-fg-muted, var(--mz-muted-light));
+}
+.phase-site[lang="ar"] .mz-faq-item p {
+  line-height: 1.85;
+}
+.phase-site .mz-faq-item summary:focus-visible {
+  outline: 3px solid var(--mz-focus, #087450);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+@media (max-width: 860px) {
+  .phase-site .mz-faq-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

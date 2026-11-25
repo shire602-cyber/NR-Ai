@@ -265,99 +265,14 @@
   text-decoration: underline;
 }
 
-/* ── Header ─────────────────────────────────────────────────────────────── */
-.mk-header {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 40;
-  background: color-mix(in srgb, var(--canvas) 86%, transparent);
-  backdrop-filter: saturate(1.4) blur(14px);
-  -webkit-backdrop-filter: saturate(1.4) blur(14px);
-  border-block-end: 1px solid transparent;
-  transition: border-color var(--dur) var(--ease);
-}
-.mk-header[data-scrolled="true"] {
-  border-block-end-color: var(--hairline);
-}
-.mk-header__bar {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  block-size: 4rem;
-}
-.mk-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  font-weight: 600;
-  font-size: 1rem;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-  flex: none;
-}
-/* 44px hit area for the logo and inline text links on touch screens. */
-@media (pointer: coarse) {
-  .mk-brand,
-  .mk-link {
-    min-block-size: 2.75rem;
-  }
-}
+/* The public header and footer are the homepage ones (phase/SiteHeader, phase/home/SiteFooter). */
 .mk-brand__dot {
   color: var(--brand);
 }
-.mk-nav {
-  display: none;
-  align-items: center;
-  gap: 0.25rem;
-}
-.mk-nav a {
-  padding: 0.5rem 0.75rem;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-small);
-  font-weight: 500;
-  color: var(--ink-2);
-  transition: color var(--dur) var(--ease);
-}
-.mk-nav a:hover,
-.mk-nav a[aria-current="page"] {
-  color: var(--ink);
-}
-.mk-header__actions {
-  margin-inline-start: auto;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-.mk-header__desktop-only {
-  display: none;
-}
-.mk-mobile-menu {
-  border-block-start: 1px solid var(--hairline);
-  background: var(--canvas);
-  padding-block: 0.75rem 1.25rem;
-}
-.mk-mobile-menu a.mk-mobile-menu__link {
-  display: block;
-  padding-block: 0.8rem;
-  font-size: 1.0625rem;
-  font-weight: 500;
-  color: var(--ink);
-  border-block-end: 1px solid var(--hairline);
-}
-.mk-mobile-menu__ctas {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-  margin-block-start: 1.25rem;
-}
-@media (min-width: 960px) {
-  .mk-nav,
-  .mk-header__desktop-only {
-    display: flex;
-  }
-  .mk-header__mobile-only,
-  .mk-mobile-menu {
-    display: none;
+/* 44px hit area for inline text links on touch screens. */
+@media (pointer: coarse) {
+  .mk-link {
+    min-block-size: 2.75rem;
   }
 }
 
@@ -442,300 +357,6 @@
   to {
     opacity: 1;
     transform: none;
-  }
-}
-
-/* ── Product preview (a faithful miniature of the app shell) ─────────── */
-.mk-app {
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-3);
-  overflow: hidden;
-  font-size: 12px;
-  line-height: 1.45;
-  text-align: start;
-}
-.mk-app__chrome {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  block-size: 36px;
-  padding-inline: 14px;
-  border-block-end: 1px solid var(--hairline);
-  background: var(--canvas-sunken);
-}
-.mk-app__chrome i {
-  inline-size: 9px;
-  block-size: 9px;
-  border-radius: 50%;
-  background: var(--hairline-strong);
-}
-.mk-app__caption {
-  margin-inline-start: auto;
-  font-size: 12px;
-  color: var(--ink-3);
-}
-.mk-app__body {
-  display: grid;
-  grid-template-columns: 196px 1fr;
-  min-block-size: 440px;
-}
-.mk-app__side {
-  background: hsl(var(--sidebar));
-  color: hsl(var(--sidebar-foreground));
-  border-inline-end: 1px solid hsl(var(--sidebar-border));
-  padding: 16px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.mk-app__brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 6px 14px;
-  font-weight: 600;
-  font-size: 13px;
-  color: hsl(var(--foreground));
-}
-.mk-app__group {
-  padding: 12px 8px 4px;
-  font-size: 12px;
-  font-weight: 500;
-  color: hsl(var(--sidebar-muted-foreground));
-}
-.mk-app__company > svg {
-  margin-inline-start: auto;
-  inline-size: 12px;
-  block-size: 12px;
-  color: hsl(var(--muted-foreground));
-}
-.mk-app__company > span:nth-child(2) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mk-app__company {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  background: hsl(var(--card));
-  box-shadow: 0 0 0 1px hsl(var(--border));
-  color: hsl(var(--foreground));
-  font-weight: 500;
-  font-size: 12px;
-}
-.mk-app__company > span:first-child {
-  display: grid;
-  place-items: center;
-  flex: none;
-  inline-size: 20px;
-  block-size: 20px;
-  border-radius: 4px;
-  background: hsl(var(--muted));
-  color: hsl(var(--foreground));
-  font-size: 12px;
-}
-.mk-app__nav {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 8px;
-  border-radius: var(--radius-sm);
-  color: hsl(var(--sidebar-foreground));
-}
-.mk-app__nav svg {
-  inline-size: 14px;
-  block-size: 14px;
-  opacity: 0.85;
-}
-.mk-app__nav[data-active="true"] {
-  background: hsl(var(--sidebar-accent));
-  color: hsl(var(--sidebar-accent-foreground));
-  font-weight: 500;
-}
-.mk-app__main {
-  padding: 20px 22px 24px;
-  background: var(--canvas);
-  min-inline-size: 0;
-}
-.mk-app__head {
-  margin-block-end: 16px;
-}
-.mk-app__title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ink);
-  letter-spacing: -0.02em;
-}
-.mk-app__period {
-  margin-block-start: 2px;
-  font-size: 12px;
-  color: var(--ink-3);
-}
-.mk-app__pill {
-  font-size: 12px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--hairline-strong);
-  color: var(--ink-2);
-  background: var(--surface);
-}
-.mk-kpis {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-.mk-kpi {
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-1);
-  padding: 12px 14px;
-  min-inline-size: 0;
-}
-.mk-kpi__label {
-  color: var(--ink-3);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.mk-kpi__value {
-  margin-block: 4px 2px;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--ink);
-  white-space: nowrap;
-}
-.mk-kpi__delta {
-  font-size: 12px;
-  color: var(--ink-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.mk-app__grid {
-  display: grid;
-  grid-template-columns: 1.05fr 1fr;
-  gap: 10px;
-  margin-block-start: 10px;
-}
-.mk-panel {
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-1);
-  padding: 14px;
-  min-inline-size: 0;
-}
-.mk-panel__title {
-  font-weight: 600;
-  color: var(--ink);
-  font-size: 12.5px;
-}
-.mk-panel__sub {
-  color: var(--ink-3);
-  font-size: 12px;
-}
-.mk-chart {
-  display: block;
-  inline-size: 100%;
-  block-size: 132px;
-  margin-block-start: 8px;
-}
-.mk-chart__expenses {
-  stroke: hsl(var(--neutral-400));
-}
-.dark .mk-chart__expenses {
-  stroke: hsl(var(--neutral-500));
-}
-.mk-legend {
-  display: flex;
-  gap: 12px;
-  margin-block-start: 8px;
-  font-size: 12px;
-  color: var(--ink-3);
-}
-.mk-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.mk-legend span::before {
-  content: "";
-  inline-size: 10px;
-  block-size: 2px;
-  border-radius: 1px;
-  background: hsl(var(--chart-1));
-}
-.mk-legend span[data-series="expenses"]::before {
-  background: hsl(var(--neutral-400));
-}
-.mk-chart__months {
-  display: flex;
-  justify-content: space-between;
-  color: var(--ink-3);
-  font-size: 12px;
-  margin-block-start: 4px;
-}
-
-/* tables inside previews */
-.mk-table {
-  inline-size: 100%;
-  border-collapse: collapse;
-  font-size: 11.5px;
-}
-.mk-table th {
-  text-align: start;
-  font-weight: 500;
-  color: var(--ink-3);
-  padding: 6px 8px;
-  border-block-end: 1px solid var(--hairline);
-  white-space: nowrap;
-}
-.mk-table td {
-  padding: 8px 8px;
-  border-block-end: 1px solid var(--hairline);
-  color: var(--ink);
-  white-space: nowrap;
-}
-.mk-table tr:last-child td {
-  border-block-end: 0;
-}
-.mk-table .mk-end {
-  text-align: end;
-}
-.mk-table .mk-truncate {
-  max-inline-size: 9rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-@media (max-width: 959px) {
-  .mk-app__body {
-    grid-template-columns: 1fr;
-  }
-  .mk-app__side {
-    display: none;
-  }
-  .mk-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .mk-app__grid {
-    grid-template-columns: 1fr;
-  }
-}
-@media (max-width: 559px) {
-  .mk-app__main {
-    padding: 14px;
-  }
-  .mk-app__grid > :last-child {
-    display: none;
-  }
-  .mk-app__caption {
-    display: none;
   }
 }
 
@@ -1189,83 +810,6 @@
   margin: 1.25rem auto 0;
 }
 
-/* ── Footer ─────────────────────────────────────────────────────────────── */
-.mk-footer {
-  border-block-start: 1px solid var(--hairline);
-  background: var(--canvas-sunken);
-  padding-block: clamp(3rem, 2rem + 3vw, 4.5rem) 2rem;
-  font-size: var(--text-small);
-}
-.mk-footer__grid {
-  display: grid;
-  gap: 2.5rem;
-  grid-template-columns: 1fr 1fr;
-}
-.mk-footer__brand {
-  grid-column: 1 / -1;
-}
-@media (min-width: 960px) {
-  .mk-footer__grid {
-    grid-template-columns: 1.6fr repeat(4, 1fr);
-  }
-  .mk-footer__brand {
-    grid-column: auto;
-  }
-}
-.mk-footer__brand p {
-  margin-block-start: 1rem;
-  max-inline-size: 22rem;
-  color: var(--ink-2);
-}
-.mk-footer h2 {
-  font-size: var(--text-micro);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin-block-end: 1rem;
-}
-[dir="rtl"] .mk-footer h2 {
-  letter-spacing: 0;
-  font-size: var(--text-small);
-}
-.mk-footer ul {
-  display: grid;
-  gap: 0.65rem;
-}
-.mk-footer ul a {
-  display: inline-flex;
-  align-items: center;
-  color: var(--ink-2);
-  transition: color var(--dur) var(--ease);
-}
-/* X3: 44px hit area for footer links on touch screens. */
-@media (pointer: coarse) {
-  .mk-footer ul a,
-  .mk-nav a {
-    min-block-size: 2.75rem;
-  }
-}
-.mk-footer ul a:hover {
-  color: var(--ink);
-}
-.mk-footer__base {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  margin-block-start: 3rem;
-  padding-block-start: 1.5rem;
-  border-block-start: 1px solid var(--hairline);
-  color: var(--ink-3);
-}
-.mk-footer__controls {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
 /* ── Page hero for inner public pages ──────────────────────────────────── */
 .mk-pagehead {
   /* Same header band as /pricing: 96 desktop / 64 phone above, 48 below. */
@@ -1432,8 +976,9 @@
 /* ── Auth split layout ─────────────────────────────────────────────────── */
 .mk-auth {
   display: grid;
-  min-block-size: 100vh;
-  min-block-size: 100dvh;
+  /* The screen less the shared header (74px and its hairline). */
+  min-block-size: calc(100vh - 75px);
+  min-block-size: calc(100dvh - 75px);
 }
 @media (min-width: 1024px) {
   .mk-auth {
@@ -1455,13 +1000,6 @@
   .mk-auth__panel {
     display: flex;
   }
-}
-.mk-auth__panel .mk-brand {
-  color: var(--band-ink);
-}
-.mk-auth__panel .mk-brand__dot,
-.mk-auth__panel .mk-eyebrow {
-  color: var(--band-brand);
 }
 .mk-auth__headline {
   font-family: var(--font-head);
@@ -1525,24 +1063,14 @@
 .mk-auth__form {
   display: flex;
   flex-direction: column;
-  min-block-size: 100vh;
-  min-block-size: 100dvh;
   background: var(--canvas);
-}
-.mk-auth__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  block-size: 4rem;
-  padding-inline: var(--gutter);
 }
 .mk-auth__body {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem var(--gutter) 3rem;
+  padding: 3rem var(--gutter);
 }
 .mk-auth__inner {
   inline-size: 100%;
@@ -1557,20 +1085,6 @@
   font-size: var(--text-micro);
   color: var(--ink-3);
 }
-.mk-auth__back {
-  display: none;
-}
-@media (min-width: 640px) {
-  .mk-auth__back {
-    display: inline-flex;
-  }
-}
-@media (min-width: 1024px) {
-  .mk-auth__top .mk-auth__brand {
-    display: none;
-  }
-}
-
 /* Inner pages that still use the app's Card/Button primitives sit on the
    marketing canvas; give their cards the marketing elevation. */
 .mk-root .mk-surface-card {
