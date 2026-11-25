@@ -65,7 +65,8 @@ import {
 } from "../../client/src/lib/reportCatalog";
 
 function read(path: string): string {
-  return readFileSync(join(process.cwd(), path), "utf8");
+  // Normalise CRLF so source assertions hold on Windows checkouts (ENV-01).
+  return readFileSync(join(process.cwd(), path), "utf8").replace(/\r\n/g, "\n");
 }
 
 function createMemoryLocalStorage(seed: Record<string, string> = {}): Storage {

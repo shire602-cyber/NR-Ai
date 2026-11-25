@@ -68,6 +68,7 @@ export default function CashFlowForecast() {
   const {
     data: forecast,
     isLoading: isLoadingForecast,
+    isError: isForecastError,
     refetch: refetchForecast,
     isFetching: isFetchingForecast,
   } = useQuery<ForecastData>({
@@ -75,7 +76,13 @@ export default function CashFlowForecast() {
     enabled: !!companyId,
   });
 
-  const { data: history, isLoading: isLoadingHistory } = useQuery<MonthlyCashHistory[]>({
+  const {
+    data: history,
+    isLoading: isLoadingHistory,
+    isError: isHistoryError,
+    isFetching: isFetchingHistory,
+    refetch: refetchHistory,
+  } = useQuery<MonthlyCashHistory[]>({
     queryKey: [`/api/companies/${companyId}/cashflow/history?months=6`],
     enabled: !!companyId,
   });
@@ -234,6 +241,18 @@ export default function CashFlowForecast() {
             </CardContent>
           </Card>
         </div>
+      ) : isForecastError ? (
+        <PanelError
+          testId="cashflow-forecast-error"
+          locale={locale}
+          message={
+            locale === "ar"
+              ? "تعذّر تحميل توقعات التدفق النقدي. لم يتم عرض أي أرقام."
+              : "The cash flow forecast could not be loaded. No figures are shown."
+          }
+          onRetry={() => refetchForecast()}
+          retrying={isFetchingForecast}
+        />
       ) : null}
 
       {/* AI Insights */}
@@ -283,6 +302,18 @@ export default function CashFlowForecast() {
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
+          ) : isForecastError ? (
+            <PanelError
+              testId="cashflow-projections-error"
+              locale={locale}
+              message={
+                locale === "ar"
+                  ? "تعذّر تحميل التوقعات الأسبوعية."
+                  : "Weekly projections could not be loaded."
+              }
+              onRetry={() => refetchForecast()}
+              retrying={isFetchingForecast}
+            />
           ) : forecast && forecast.projections.length > 0 ? (
             <div className="overflow-x-auto">
               <Table>
@@ -354,6 +385,18 @@ export default function CashFlowForecast() {
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
+          ) : isHistoryError ? (
+            <PanelError
+              testId="cashflow-history-error"
+              locale={locale}
+              message={
+                locale === "ar"
+                  ? "تعذّر تحميل سجل التدفق النقدي. هذا ليس سجلاً فارغاً."
+                  : "Cash flow history could not be loaded. This is not an empty history."
+              }
+              onRetry={() => refetchHistory()}
+              retrying={isFetchingHistory}
+            />
           ) : history && history.length > 0 ? (
             <div className="overflow-x-auto">
               <Table>
@@ -392,12 +435,41 @@ export default function CashFlowForecast() {
               </Table>
             </div>
           ) : (
-            <p className="text-muted-foreground text-center py-8">
-              No historical data available yet. Post journal entries to build cash flow history.
+            <p className="text-muted-foreground text-center py-8" data-testid="cashflow-history-empty">
+              {locale === "ar"
+                ? "لا توجد بيانات تاريخية بعد. رحّل قيود اليومية لبناء سجل التدفق النقدي."
+                : "No historical data available yet. Post journal entries to build cash flow history."}
             </p>
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// F05: each panel reports its own read failure with a retry, so a failed
+// forecast never hides valid history (and vice versa), and a failed read is
+// never shown as "no data".
+function PanelError({
+  message,
+  onRetry,
+  retrying,
+  locale,
+  testId,
+}: {
+  message: string;
+  onRetry: () => void;
+  retrying: boolean;
+  locale: string;
+  testId: string;
+}) {
+  return (
+    <div role="alert" data-testid={testId} className="text-center py-6 space-y-3">
+      <p className="text-sm text-destructive">{message}</p>
+      <Button variant="outline" size="sm" onClick={onRetry} disabled={retrying}>
+        <RefreshCw className={`h-4 w-4 mr-2 ${retrying ? "animate-spin" : ""}`} />
+        {locale === "ar" ? "إعادة المحاولة" : "Retry"}
+      </Button>
     </div>
   );
 }

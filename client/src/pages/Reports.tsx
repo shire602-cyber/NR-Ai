@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  reportReadState,
+  unreadableReportIds,
+  type ReportReadState,
+} from "@/lib/reportReadState";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Link, useLocation, useSearch } from "wouter";
@@ -3685,7 +3690,12 @@ export default function Reports() {
     Boolean(selectedCompanyId) &&
     ["home", "automation", "delivery", "suites"].includes(activeReportWorkspaceTab);
 
-  const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
+  const {
+    data: profitLoss,
+    isLoading: plLoading,
+    isError: plError,
+    refetch: refetchProfitLoss,
+  } = useQuery<ProfitLossReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "pl", dateParams],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("profit-loss"),
@@ -3703,17 +3713,51 @@ export default function Reports() {
       enabled: shouldLoadReportData("cost-center-profitability"),
     });
 
-  const { data: balanceSheet, isLoading: bsLoading } = useQuery<BalanceSheetReport>({
+  const {
+    data: balanceSheet,
+    isLoading: bsLoading,
+    isError: bsError,
+    refetch: refetchBalanceSheet,
+  } = useQuery<BalanceSheetReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "balance-sheet", dateParams],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("balance-sheet"),
   });
 
-  const { data: vatSummary, isLoading: vatLoading } = useQuery<VATSummaryReport>({
+  const {
+    data: vatSummary,
+    isLoading: vatLoading,
+    isError: vatError,
+    refetch: refetchVatSummary,
+  } = useQuery<VATSummaryReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "vat-summary", dateParams],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("vat-summary"),
   });
+
+  // F03: per-report read state tied to the company/period query key. A failed
+  // initial read is "error" (retry, never AED 0.00); a failed refetch with
+  // last-known data is "stale".
+  const plReadState = reportReadState({
+    isLoading: plLoading,
+    isError: plError,
+    hasData: Boolean(profitLoss),
+  });
+  const bsReadState = reportReadState({
+    isLoading: bsLoading,
+    isError: bsError,
+    hasData: Boolean(balanceSheet),
+  });
+  const vatReadState = reportReadState({
+    isLoading: vatLoading,
+    isError: vatError,
+    hasData: Boolean(vatSummary),
+  });
+  const coreReportReadStates: Record<string, ReportReadState> = {
+    "profit-loss": plReadState,
+    "balance-sheet": bsReadState,
+    "vat-summary": vatReadState,
+  };
 
   const { data: cashFlowStatement = [], isLoading: cashFlowStatementLoading } = useQuery<
     CashFlowStatementRow[]
@@ -11582,6 +11626,20 @@ export default function Reports() {
   };
 
   const handleExportWorkspacePack = async (workspace: (typeof workspaceSummaries)[number]) => {
+    // F03: refuse to build a pack containing a report whose read failed —
+    // its sheet would show zeros instead of the company's balances.
+    const unreadable = unreadableReportIds(
+      workspace.reports.map((report) => report.id),
+      coreReportReadStates
+    );
+    if (unreadable.length) {
+      toast({
+        variant: "destructive",
+        title: "Report pack not exported",
+        description: `Could not load: ${unreadable.join(", ")}. Retry those reports first.`,
+      });
+      return;
+    }
     setIsExporting(true);
     try {
       await exportToExcel(
@@ -11607,6 +11665,20 @@ export default function Reports() {
     workspace: (typeof workspaceSummaries)[number]
   ) => {
     if (!selectedCompanyId) return;
+    // F03: refuse to build a pack containing a report whose read failed —
+    // its sheet would show zeros instead of the company's balances.
+    const unreadable = unreadableReportIds(
+      workspace.reports.map((report) => report.id),
+      coreReportReadStates
+    );
+    if (unreadable.length) {
+      toast({
+        variant: "destructive",
+        title: "Report pack not exported",
+        description: `Could not load: ${unreadable.join(", ")}. Retry those reports first.`,
+      });
+      return;
+    }
 
     setIsExporting(true);
     const dateRangeTitle =
@@ -11640,6 +11712,23 @@ export default function Reports() {
   };
 
   const handleExportExcel = () => {
+    // F03: never export a report whose read failed (it would export zeros).
+    const activeCoreReportId =
+      activeTab === "pl"
+        ? "profit-loss"
+        : activeTab === "bs"
+          ? "balance-sheet"
+          : activeTab === "vat"
+            ? "vat-summary"
+            : null;
+    if (activeCoreReportId && coreReportReadStates[activeCoreReportId] === "error") {
+      toast({
+        variant: "destructive",
+        title: "Export unavailable",
+        description: "This report could not be loaded. Retry the report before exporting.",
+      });
+      return;
+    }
     const dateRangeStr =
       dateRange.from && dateRange.to
         ? `_${format(dateRange.from, "yyyy-MM-dd")}_to_${format(dateRange.to, "yyyy-MM-dd")}`
@@ -17988,6 +18077,9 @@ export default function Reports() {
             </TabsList>
 
             <TabsContent value="pl" className="space-y-6">
+              {plReadState === "stale" && (
+                <ReportStaleNotice locale={locale} label="Profit & Loss" onRetry={() => refetchProfitLoss()} />
+              )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
@@ -17999,6 +18091,8 @@ export default function Reports() {
                   <CardContent>
                     {plLoading ? (
                       <Skeleton className="h-8 w-32" />
+                    ) : plReadState === "error" ? (
+                      <ReportReadError compact={true} locale={locale} label="Profit & Loss" onRetry={() => refetchProfitLoss()} />
                     ) : (
                       <div
                         className="text-2xl font-bold font-mono"
@@ -18020,6 +18114,8 @@ export default function Reports() {
                   <CardContent>
                     {plLoading ? (
                       <Skeleton className="h-8 w-32" />
+                    ) : plReadState === "error" ? (
+                      <ReportReadError compact={true} locale={locale} label="Profit & Loss" onRetry={() => refetchProfitLoss()} />
                     ) : (
                       <div
                         className="text-2xl font-bold font-mono"
@@ -18041,6 +18137,8 @@ export default function Reports() {
                   <CardContent>
                     {plLoading ? (
                       <Skeleton className="h-8 w-32" />
+                    ) : plReadState === "error" ? (
+                      <ReportReadError compact={true} locale={locale} label="Profit & Loss" onRetry={() => refetchProfitLoss()} />
                     ) : (
                       <div className="text-2xl font-bold font-mono" data-testid="text-net-profit">
                         {formatCurrency(profitLoss?.netProfit || 0, "AED", locale)}
@@ -18062,6 +18160,8 @@ export default function Reports() {
                 <CardContent>
                   {plLoading ? (
                     <Skeleton className="h-64" />
+                  ) : plReadState === "error" ? (
+                    <ReportReadError compact={false} locale={locale} label="Profit & Loss" onRetry={() => refetchProfitLoss()} />
                   ) : (
                     <div className="space-y-6">
                       <div>
@@ -18135,6 +18235,9 @@ export default function Reports() {
             </TabsContent>
 
             <TabsContent value="bs">
+              {bsReadState === "stale" && (
+                <ReportStaleNotice locale={locale} label="Balance Sheet" onRetry={() => refetchBalanceSheet()} />
+              )}
               <Card>
                 <CardHeader>
                   <CardTitle>{t.balanceSheet}</CardTitle>
@@ -18147,6 +18250,8 @@ export default function Reports() {
                 <CardContent>
                   {bsLoading ? (
                     <Skeleton className="h-96" />
+                  ) : bsReadState === "error" ? (
+                    <ReportReadError compact={false} locale={locale} label="Balance Sheet" onRetry={() => refetchBalanceSheet()} />
                   ) : (
                     <div className="space-y-6">
                       <div>
@@ -18236,6 +18341,9 @@ export default function Reports() {
             </TabsContent>
 
             <TabsContent value="vat">
+              {vatReadState === "stale" && (
+                <ReportStaleNotice locale={locale} label="VAT Summary" onRetry={() => refetchVatSummary()} />
+              )}
               <Card>
                 <CardHeader>
                   <CardTitle>{t.vatSummary}</CardTitle>
@@ -18248,6 +18356,8 @@ export default function Reports() {
                 <CardContent>
                   {vatLoading ? (
                     <Skeleton className="h-64" />
+                  ) : vatReadState === "error" ? (
+                    <ReportReadError compact={false} locale={locale} label="VAT Summary" onRetry={() => refetchVatSummary()} />
                   ) : (
                     <div className="space-y-6">
                       <div className="grid grid-cols-2 gap-6">
@@ -21774,6 +21884,58 @@ export default function Reports() {
           </Tabs>
         )}
       </div>
+    </div>
+  );
+}
+
+// F03: visible read-failure and stale-data states for report figures (EN/AR).
+function ReportReadError({
+  label,
+  onRetry,
+  locale,
+  compact,
+}: {
+  label: string;
+  onRetry: () => void;
+  locale: string;
+  compact?: boolean;
+}) {
+  const message =
+    locale === "ar"
+      ? `تعذّر تحميل ${label}. لم يتم عرض أي أرقام.`
+      : `${label} could not be loaded. No figures are shown.`;
+  return (
+    <div role="alert" className={compact ? "space-y-1" : "text-center py-6 space-y-3"}>
+      <p className="text-sm text-destructive">{compact ? (locale === "ar" ? "غير متاح" : "Unavailable") : message}</p>
+      <Button variant="outline" size="sm" onClick={onRetry} aria-label={message}>
+        {locale === "ar" ? "إعادة المحاولة" : "Retry"}
+      </Button>
+    </div>
+  );
+}
+
+function ReportStaleNotice({
+  label,
+  onRetry,
+  locale,
+}: {
+  label: string;
+  onRetry: () => void;
+  locale: string;
+}) {
+  return (
+    <div
+      role="status"
+      className="flex items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning-subtle p-3 text-sm"
+    >
+      <span>
+        {locale === "ar"
+          ? `فشل تحديث ${label}. الأرقام المعروضة هي آخر بيانات محمّلة لهذه الشركة والفترة.`
+          : `Refreshing ${label} failed. Figures shown are the last loaded data for this company and period.`}
+      </span>
+      <Button variant="outline" size="sm" onClick={onRetry}>
+        {locale === "ar" ? "إعادة المحاولة" : "Retry"}
+      </Button>
     </div>
   );
 }
