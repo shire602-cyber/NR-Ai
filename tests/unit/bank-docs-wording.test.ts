@@ -7,6 +7,8 @@ import { findBankLaunchClaim } from "../e2e/lib/bank-launch-wording.mjs";
 // including old QA reports and audits, because their text is still read as launch guidance.
 const docs = readdirSync("docs", { recursive: true })
   .filter((file) => /\.(?:md|json)$/u.test(file))
+  // The marketing rebuild brief and audit quote the banned phrases in order to forbid them.
+  .filter((file) => !file.replaceAll("\\", "/").startsWith("site-rebuild/"))
   .map((file) => path.join("docs", file))
   .sort();
 const examples = [".env.example", "deploy/backup.env.example"];
