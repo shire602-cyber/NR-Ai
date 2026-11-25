@@ -13,7 +13,7 @@ export default function PortalInvoices() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const {
-    data: invoices = [],
+    data: invoices,
     isLoading,
     error,
     refetch,

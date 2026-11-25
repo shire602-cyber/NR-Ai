@@ -82,11 +82,14 @@ export default function PortalStatements() {
             <LoadErrorState
               error={error}
               onRetry={() => void refetch()}
+              scope="portal"
+              compact={data !== undefined}
               testId="portal-statements-load-error"
             />
           </CardContent>
         </Card>
-      ) : sections.length === 0 ? (
+      ) : null}
+      {error && data === undefined ? null : sections.length === 0 ? (
         <Card>
           <CardContent className="p-0">
             <EmptyState

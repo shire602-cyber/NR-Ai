@@ -64,7 +64,7 @@ export default function PortalDocuments() {
   const [uploading, setUploading] = useState(false);
 
   const {
-    data: documents = [],
+    data: documents,
     isLoading,
     error,
     refetch,
@@ -136,17 +136,20 @@ export default function PortalDocuments() {
 
       <Card>
         <CardContent className="p-0">
+          {!isLoading && error && (
+            <LoadErrorState
+              error={error}
+              onRetry={() => void refetch()}
+              scope="portal"
+              compact={documents !== undefined}
+              testId="portal-documents-load-error"
+            />
+          )}
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
             </div>
-          ) : error ? (
-            <LoadErrorState
-              error={error}
-              onRetry={() => void refetch()}
-              testId="portal-documents-load-error"
-            />
-          ) : documents.length === 0 ? (
+          ) : error && documents === undefined ? null : !documents?.length ? (
             <EmptyState
               headingLevel="h2"
               icon={FolderOpen}

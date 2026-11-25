@@ -70,21 +70,23 @@ const matches = (inv: PortalInvoice, f: Filter): boolean =>
           ? inv.paymentStatus === "paid"
           : inv.paymentStatus === "credit";
 
+const EMPTY_INVOICES: PortalInvoice[] = [];
+
 /**
  * The customer's invoices and credit notes: filter tabs with counts, search by number, a table on
  * wide screens and cards on phones, PDF and e-invoice XML downloads with a spinner on the row, and
  * Pay now only when the supplier has an online gateway and the document has an open balance.
  */
 export function PortalInvoiceList({
-  invoices,
+  invoices: data,
   loading,
   error,
   onRetry,
   onlinePayment,
 }: {
-  invoices: PortalInvoice[];
+  invoices: PortalInvoice[] | undefined;
   loading?: boolean;
-  /** A failed load: shown instead of the misleading "no invoices" empty state. */
+  /** A failed load or refresh. */
   error?: unknown;
   onRetry?: () => void;
   onlinePayment: boolean;
@@ -97,6 +99,7 @@ export function PortalInvoiceList({
   const [busy, setBusy] = useState<string | null>(null);
   const filters = useRef<HTMLDivElement>(null);
   const filterFade = useEdgeFade(filters);
+  const invoices = data ?? EMPTY_INVOICES;
 
   const counts = useMemo(
     () => Object.fromEntries(FILTERS.map((f) => [f, invoices.filter((i) => matches(i, f)).length])),
@@ -185,15 +188,22 @@ export function PortalInvoiceList({
 
       <Card>
         <CardContent className="p-0">
+          {!loading && !!error && (
+            <LoadErrorState
+              error={error}
+              onRetry={onRetry}
+              scope="portal"
+              compact={data !== undefined}
+              testId="portal-invoices-load-error"
+            />
+          )}
           {loading ? (
             <div className="space-y-2 p-4" aria-busy="true">
               <Skeleton className="h-12" />
               <Skeleton className="h-12" />
               <Skeleton className="h-12" />
             </div>
-          ) : error ? (
-            <LoadErrorState error={error} onRetry={onRetry} testId="portal-invoices-load-error" />
-          ) : invoices.length === 0 ? (
+          ) : error && data === undefined ? null : invoices.length === 0 ? (
             <EmptyState
               icon={FileText}
               title={t["portal.doc.noInvoicesTitle"]}

@@ -1,12 +1,8 @@
 // @vitest-environment jsdom
-/**
- * Client portal: a failed invoice load shows a retryable error (English and Arabic), never the
- * "no invoices yet" empty state.
- */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   class ApiError extends Error {
@@ -40,9 +36,16 @@ vi.mock("../../client/src/hooks/useCompanyPermission", () => ({
   useCompanyPermission: () => ({ can: () => true, gate: () => ({}) }),
 }));
 
-import { loadLocale, useI18n } from "../../client/src/lib/i18n";
-import { PortalInvoiceList } from "../../client/src/components/portal/PortalInvoiceList";
+import {
+  isLocaleLoaded,
+  loadLocaleForPath,
+  setPublicBootScope,
+  useI18n,
+} from "../../client/src/lib/i18n";
 import { PortalAccountScope } from "../../client/src/lib/portal-scope";
+import PortalDocuments from "../../client/src/pages/portal/PortalDocuments";
+import PortalInvoices from "../../client/src/pages/portal/PortalInvoices";
+import PortalStatements from "../../client/src/pages/portal/PortalStatements";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -72,7 +75,10 @@ async function mount(node: React.ReactElement, client?: QueryClient) {
 const byId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 
 beforeAll(async () => {
-  await Promise.all([loadLocale("en"), loadLocale("ar")]);
+  const path = "/client-portal/invoices";
+  window.history.replaceState(null, "", path);
+  setPublicBootScope(path);
+  await Promise.all([loadLocaleForPath("en", path), loadLocaleForPath("ar", path)]);
   window.matchMedia ??= ((q: string) => ({
     matches: false,
     media: q,
@@ -92,6 +98,11 @@ beforeAll(async () => {
   (Element.prototype as any).hasPointerCapture ??= () => false;
 });
 
+afterAll(() => {
+  window.history.replaceState(null, "", "/");
+  setPublicBootScope("/");
+});
+
 beforeEach(() => {
   mocks.apiRequest.mockReset();
   mocks.signOut.mockClear();
@@ -106,34 +117,113 @@ afterEach(async () => {
 });
 
 describe("portal invoice list load failure", () => {
-  for (const [locale, title] of [
-    ["en", "We couldn't load this page"],
-    ["ar", "تعذّر تحميل هذه الصفحة"],
+  for (const [locale, title, body, retryLabel, emptyTitle] of [
+    [
+      "en",
+      "We couldn't load this page",
+      "Something went wrong on our side. Try again in a moment.",
+      "Try again",
+      "No invoices yet",
+    ],
+    [
+      "ar",
+      "تعذّر تحميل هذه الصفحة",
+      "حدث خطأ من جانبنا. أعد المحاولة بعد قليل.",
+      "أعد المحاولة",
+      "لا توجد فواتير بعد",
+    ],
   ] as const) {
     it(`shows a retryable error instead of the empty state (${locale})`, async () => {
       useI18n.setState({ locale });
-      const retry = vi.fn();
+      expect(isLocaleLoaded(locale)).toBe(false);
+      const loadInvoices = vi.fn().mockRejectedValue(new mocks.ApiError("boom", 500));
+      mocks.apiRequest.mockImplementation((_method, path) =>
+        path === "/api/client-portal/invoices" ? loadInvoices() : Promise.resolve({})
+      );
       await mount(
-        createElement(
-          PortalAccountScope.Provider,
-          { value: "a1" },
-          createElement(PortalInvoiceList, {
-            invoices: [],
-            error: new mocks.ApiError("boom", 500),
-            onRetry: retry,
-            onlinePayment: false,
-          })
-        )
+        createElement(PortalAccountScope.Provider, { value: "a1" }, createElement(PortalInvoices))
       );
-      expect(byId("portal-invoices-load-error")).not.toBeNull();
-      expect(document.body.textContent).toContain(title);
-      expect(document.body.textContent).not.toContain("No invoices");
-      const retryBtn = Array.from(document.querySelectorAll("button")).find((b) =>
-        /try again|retry|أعد المحاولة/i.test(b.textContent ?? "")
-      );
-      expect(retryBtn).toBeTruthy();
+      const alert = byId("portal-invoices-load-error");
+      expect(isLocaleLoaded(locale)).toBe(false);
+      expect(alert?.querySelector("h3")?.textContent).toBe(title);
+      expect(alert?.querySelector("p")?.textContent).toBe(body);
+      expect(document.body.textContent).not.toContain(emptyTitle);
+      const retryBtn = alert?.querySelector("button");
+      expect(retryBtn?.textContent).toBe(retryLabel);
       await act(async () => retryBtn!.click());
-      expect(retry).toHaveBeenCalled();
+      await flush();
+      expect(loadInvoices).toHaveBeenCalledTimes(2);
     });
   }
+});
+
+describe("portal refresh failure", () => {
+  const date = "2026-01-01";
+  const invoice = {
+    id: "i1",
+    number: "INV-123",
+    invoiceType: "invoice",
+    date,
+    dueDate: null,
+    currency: "AED",
+    total: 100,
+    amountDue: 0,
+    paymentStatus: "paid",
+    einvoice: null,
+  };
+
+  it.each([
+    ["documents", PortalDocuments, [{ id: "d1", name: "Trade license" }], "Trade license"],
+    ["invoices", PortalInvoices, [invoice], invoice.number],
+    [
+      "statements",
+      PortalStatements,
+      {
+        asOf: date,
+        party: { name: "Customer" },
+        company: { name: "Supplier" },
+        sections: [
+          {
+            currency: "AED",
+            openingBalance: 0,
+            closingBalance: 100,
+            lines: [
+              { date, type: "invoice", reference: "ST-123", debit: 100, credit: 0, balance: 100 },
+            ],
+            aging: { current: 100, days30: 0, days60: 0, days90: 0, over90: 0 },
+          },
+        ],
+      },
+      "ST-123",
+    ],
+  ] as const)(
+    "keeps cached %s visible and retries a failed refresh",
+    async (resource, Page, data, record) => {
+      useI18n.setState({ locale: "en" });
+      const path = `/api/client-portal/${resource}`;
+      const refresh = vi.fn().mockResolvedValue(data);
+      mocks.apiRequest.mockImplementation((_method, requestPath) =>
+        requestPath === path ? refresh() : Promise.resolve({})
+      );
+      const client = await mount(
+        createElement(PortalAccountScope.Provider, { value: "a1" }, createElement(Page))
+      );
+      expect(container.textContent).toContain(record);
+
+      refresh.mockRejectedValueOnce(new mocks.ApiError("boom", 500));
+      await act(async () => {
+        await client.invalidateQueries({ queryKey: mocks.portalQuery(path, "a1").queryKey });
+      });
+      await flush();
+      expect(container.textContent).toContain(record);
+      const retry = byId(`portal-${resource}-load-error`)?.querySelector("button");
+      expect(retry?.textContent).toBe("Try again");
+
+      await act(async () => retry!.click());
+      await flush();
+      expect(refresh).toHaveBeenCalledTimes(3);
+      expect(byId(`portal-${resource}-load-error`)).toBeNull();
+      expect(container.textContent).toContain(record);
+    }
+  );
 });
