@@ -98,7 +98,11 @@ describe("payment chasing offline behaviour", () => {
       const u = String(url);
       if (u.includes("/api/csrf-token")) return json({ csrfToken: "t" });
       if (init?.method === "PATCH") return patchResponse();
-      if (u.includes("/api/chasing/overdue/")) return json(overdueBody);
+      if (u.includes("/api/chasing/overdue/")) {
+        // Like a real browser, a request made without a connection fails.
+        if (!window.navigator.onLine) throw new TypeError("Failed to fetch");
+        return json(overdueBody);
+      }
       if (u.includes("/api/chasing/queue/")) return json(queueBody);
       return json({});
     });
@@ -117,23 +121,30 @@ describe("payment chasing offline behaviour", () => {
     onlineManager.setOnline(true);
   });
 
-  it("shows offline feedback, not 'Nothing is overdue', for an uncached paused fetch, and recovers on reconnect", async () => {
-    setConnection(false);
+  it("shows offline feedback, not 'Nothing is overdue', when the page mounts offline, and recovers on reconnect", async () => {
+    // A cold start while offline: only the browser knows. No offline event reaches this mount and
+    // TanStack's online manager still says online.
+    const browserOnLine = vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(false);
     await render();
 
-    expect(byId("overdue-offline")?.textContent).toContain(en["invoices.reminders.offlineTitle"]);
-    expect(container.textContent).not.toContain(en["invoices.reminders.emptyOverdueTitle"]);
-    expect(calls("GET", "/api/chasing/overdue/")).toHaveLength(0);
+    const expectOffline = () => {
+      expect(byId("overdue-offline")?.textContent).toContain(en["invoices.reminders.offlineTitle"]);
+      expect(container.textContent).not.toContain(en["invoices.reminders.loadError"]);
+      expect(container.textContent).not.toContain(en["invoices.reminders.emptyOverdueTitle"]);
+      // The aging tiles render without rows only while loading.
+      expect(byId("bucket-1-7")).toBeNull();
+      expect(calls("GET", "/api/chasing/overdue/")).toHaveLength(0);
+    };
+    expectOffline();
 
-    // Offline Retry keeps the same honest state (still paused, still nothing fetched).
+    // Offline Retry keeps the same honest state and sends nothing.
     act(() => byId("button-retry-overdue")!.click());
     await settle();
-    expect(byId("overdue-offline")).not.toBeNull();
-    expect(container.textContent).not.toContain(en["invoices.reminders.emptyOverdueTitle"]);
-    expect(calls("GET", "/api/chasing/overdue/")).toHaveLength(0);
+    expectOffline();
 
-    // Reconnect: the paused fetch resumes by itself and the list replaces the notice.
-    setConnection(true);
+    // Reconnect: the browser event alone re-enables the query and the list replaces the notice.
+    browserOnLine.mockReturnValue(true);
+    await act(async () => void window.dispatchEvent(new Event("online")));
     await waitFor(() => byId("overdue-row-INV-001") !== null);
     expect(byId("overdue-offline")).toBeNull();
     expect(container.textContent).not.toContain(en["invoices.reminders.emptyOverdueTitle"]);

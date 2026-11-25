@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Send } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { ApiError, ApiRequestNotSentError, apiRequest, queryClient } from "@/lib/queryClient";
 import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
+import { isOnline, onConnectivityChange } from "@/lib/pwa";
 import { OverdueTab } from "./payment-reminders/OverdueTab";
 import { ScheduleTab } from "./payment-reminders/ScheduleTab";
 import { HistoryTab } from "./payment-reminders/HistoryTab";
@@ -59,10 +60,14 @@ export default function PaymentChasing() {
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkResults, setBulkResults] = useState<BulkSendResponse | null>(null);
 
+  // TanStack's online manager starts "online" and may never have seen an offline event, so a page
+  // opened without a connection asks the browser itself.
+  const browserOnline = useSyncExternalStore(onConnectivityChange, isOnline, () => true);
+
   const overdueQuery = useQuery<OverdueResponse>({
     queryKey: ["/api/chasing/overdue", companyId],
     queryFn: () => apiRequest("GET", `/api/chasing/overdue/${companyId}`),
-    enabled: !!companyId,
+    enabled: !!companyId && browserOnline,
   });
   const queueQuery = useQuery<QueueResponse>({
     queryKey: ["/api/chasing/queue", companyId],
@@ -152,7 +157,8 @@ export default function PaymentChasing() {
     },
   });
 
-  const overduePaused = overdueQuery.fetchStatus === "paused";
+  const overduePaused = overdueQuery.fetchStatus === "paused" || (!!companyId && !browserOnline);
+  const overdueLoading = overdueQuery.isLoading && !overduePaused;
   const rows = useMemo(() => overdueQuery.data?.rows ?? [], [overdueQuery.data?.rows]);
   const queue = useMemo(() => queueQuery.data?.queue ?? [], [queueQuery.data?.queue]);
 
@@ -199,14 +205,14 @@ export default function PaymentChasing() {
       />
 
       {/* An empty ledger shows no zero tiles (spec 2.6). */}
-      {(overdueQuery.isLoading || rows.length > 0) && (
+      {(overdueLoading || rows.length > 0) && (
         <div className="mobile-keep-cols grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           {bucketTiles.map((tile) => (
             <StatCard
               key={tile.bucket}
               testId={`bucket-${tile.bucket}`}
               label={tt[`invoices.reminders.bucket.${tile.bucket as AgingBucket}`]}
-              loading={overdueQuery.isLoading}
+              loading={overdueLoading}
               value={
                 tile.mixed ? (
                   <span className="money">{tile.count}</span>
@@ -250,7 +256,7 @@ export default function PaymentChasing() {
           <OverdueTab
             rows={rows}
             queue={queue}
-            loading={overdueQuery.isLoading}
+            loading={overdueLoading}
             // A paused fetch with no rows must not read as "nothing overdue"; with rows the
             // list stays and a notice says it may be out of date.
             offline={overduePaused && rows.length === 0}
@@ -258,7 +264,10 @@ export default function PaymentChasing() {
             stale={overduePaused && rows.length > 0}
             // An idle query has no result yet, so it must not show the empty state.
             successful={overdueQuery.isSuccess}
-            onRetry={() => overdueQuery.refetch()}
+            // refetch() ignores `enabled`, so Retry must not send a request without a connection.
+            onRetry={() => {
+              if (isOnline()) overdueQuery.refetch();
+            }}
             sending={sendOne.isPending}
             onSend={(id) => sendOne.mutate(id)}
             onToggleDoNotChase={(invoiceId, value) => toggleDoNotChase.mutate({ invoiceId, value })}
