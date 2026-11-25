@@ -91,7 +91,10 @@ async function chooseAndPreview(job: Record<string, unknown>) {
   Object.defineProperty(input, "files", { configurable: true, value: [file] });
   await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
   await act(async () => (q("button-import-preview") as HTMLButtonElement).click());
-  for (let i = 0; i < 8; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
+  await vi.waitFor(async () => {
+    await act(async () => {});
+    expect(q("button-import-validate")).not.toBeNull();
+  });
 }
 
 const baseJob = {
