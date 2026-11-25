@@ -56,6 +56,7 @@ export default function HeroStage({ locale }: { locale: SiteLocale }) {
   const hidden = usePageHidden();
   const animated = !reduced && typeof IntersectionObserver !== "undefined";
   const [paused, setPaused] = useState(false);
+  const pauseButton = useRef<HTMLButtonElement>(null);
   const running = animated && inView && !hidden && !paused;
   usePointerTilt(ref, animated, paused);
 
@@ -66,8 +67,9 @@ export default function HeroStage({ locale }: { locale: SiteLocale }) {
     if (!band || !paused) return;
     band.setAttribute("data-motion", "paused");
     // CSS keyframes are held by the attribute; in-flight transitions (cards, VAT panel) are
-    // paused in place through the Web Animations API so Pause never snaps the layout.
-    const resume = holdRunningTransitions(band);
+    // paused in place through the Web Animations API so Pause never snaps the layout. The Pause
+    // button lives inside the band, so its own transitions are left running: it must stay usable.
+    const resume = holdRunningTransitions(band, pauseButton.current);
     return () => {
       resume();
       band.removeAttribute("data-motion");
@@ -249,6 +251,7 @@ export default function HeroStage({ locale }: { locale: SiteLocale }) {
       </div>
       {animated && (
         <button
+          ref={pauseButton}
           type="button"
           className="mz-stage-pause"
           data-testid="hero-pause"
