@@ -1,0 +1,103 @@
+/* Comparison table (light band). Logical properties only. */
+/* A pale mint wash keeps it from reading as the white showcase header that follows. */
+.phase-site .mz-band.mz-cmp {
+  --mz-bg: #eaf3ee;
+  border-block: 1px solid #d3e3da;
+}
+.phase-site .mz-cmp .mz-cmp-scroll {
+  margin-block-start: clamp(24px, 3vw, 40px);
+  overflow-x: auto;
+  border: 1px solid var(--mz-line-light);
+  border-radius: var(--mz-radius);
+  background: var(--mz-paper);
+}
+.phase-site .mz-cmp .mz-cmp-scroll:focus-visible {
+  outline: 3px solid var(--mz-focus);
+  outline-offset: 2px;
+}
+.phase-site .mz-cmp .mz-cmp-table {
+  inline-size: 100%;
+  min-inline-size: 720px;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-cmp .mz-cmp-table[data-columns="2"] {
+  min-inline-size: 520px;
+}
+.phase-site .mz-cmp .mz-cmp-caption {
+  padding: 14px 18px;
+  text-align: start;
+  font-size: 14px;
+  color: var(--mz-muted-light);
+  caption-side: top;
+}
+.phase-site .mz-cmp .mz-cmp-table th,
+.phase-site .mz-cmp .mz-cmp-table td {
+  padding: 14px 18px;
+  text-align: start;
+  vertical-align: top;
+  font-size: 15px;
+  line-height: 1.45;
+  border-block-start: 1px solid var(--mz-line-light);
+  background: var(--mz-paper);
+}
+.phase-site .mz-cmp .mz-cmp-table thead th {
+  font-size: 16px;
+  font-weight: 750;
+  border-block-start: 0;
+}
+.phase-site .mz-cmp .mz-cmp-table tbody th {
+  font-weight: 650;
+}
+/* Sticky first column so the feature name stays visible while the table scrolls. */
+.phase-site .mz-cmp .mz-cmp-feature {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  min-inline-size: 170px;
+  box-shadow: 1px 0 0 var(--mz-line-light);
+}
+.phase-site .mz-cmp .mz-cmp-table .mz-cmp-us {
+  background: #e9f5ee;
+  font-weight: 650;
+}
+.phase-site .mz-cmp .mz-cmp-table thead .mz-cmp-us {
+  background: var(--mz-emerald-deep);
+  color: #fff;
+}
+.phase-site .mz-cmp .mz-cmp-table td[data-dash="true"] {
+  color: var(--mz-muted-light);
+}
+
+.phase-site .mz-cmp .mz-cmp-foot {
+  display: grid;
+  gap: 6px;
+  margin-block-start: 18px;
+  font-size: 13px;
+}
+.phase-site .mz-cmp .mz-cmp-foot p {
+  margin: 0;
+}
+.phase-site .mz-cmp .mz-cmp-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.phase-site .mz-cmp .mz-cmp-foot a {
+  color: var(--mz-emerald-deep);
+  text-decoration: underline;
+}
+.phase-site .mz-cmp .mz-cmp-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  margin-block: 22px 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-site .mz-cmp * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
