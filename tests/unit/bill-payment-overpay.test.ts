@@ -16,16 +16,12 @@ import {
   apiCalls,
   byTestId,
   click,
-  editorPage,
-  flush,
   flushUntil,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
   renderPage,
   resetHarness,
   setFixtures,
-  setResponse,
-  submit,
   type,
   unmountPage,
 } from "./helpers/form-harness";
@@ -59,13 +55,6 @@ vi.mock("../../client/src/hooks/useCompanyPermission", () => ({
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const C = `/api/companies/${COMPANY_ID}`;
-const VENDOR = {
-  id: "v0000000-0000-4000-8000-000000000001",
-  name: "Gulf Office Supplies LLC",
-  trn: "100222333400003",
-  paymentTermsDays: 30,
-  isActive: true,
-};
 
 beforeAll(async () => {
   await loadLocale("en");
