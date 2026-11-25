@@ -6,10 +6,7 @@ import * as oidc from "openid-client";
 import { db, rowsFromResult } from "../db";
 import { getEnv, isProduction } from "../config/env";
 import { authIdentities, oauthLoginStates, users } from "../../shared/schema";
-import {
-  BANK_STATEMENT_ENTRY,
-  isRetiredBankReturnPath,
-} from "../../shared/bank-statement-routes";
+import { BANK_STATEMENT_ENTRY, isRetiredBankReturnPath } from "../../shared/bank-statement-routes";
 
 export type OAuthProviderId = "google" | "microsoft";
 
@@ -214,6 +211,28 @@ export function sanitizeOAuthNextPath(input: unknown): string {
   } catch {
     return "/dashboard";
   }
+}
+
+const SIGNUP_LOCALE_PARAM = "signup_locale";
+
+/** Carry the owner's UI language through the stored OAuth state (it lives in next_path). */
+export function withOAuthSignupLocale(nextPathInput: unknown, locale: unknown): string {
+  const next = sanitizeOAuthNextPath(nextPathInput);
+  if (locale !== "ar") return next;
+  const url = new URL(next, "https://muhasib.local");
+  url.searchParams.set(SIGNUP_LOCALE_PARAM, "ar");
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/** Split the carried signup language off next_path; the returned path is what the user sees. */
+export function extractOAuthSignupLocale(nextPath: string): {
+  locale: "en" | "ar";
+  nextPath: string;
+} {
+  const url = new URL(sanitizeOAuthNextPath(nextPath), "https://muhasib.local");
+  const locale = url.searchParams.get(SIGNUP_LOCALE_PARAM) === "ar" ? "ar" : "en";
+  url.searchParams.delete(SIGNUP_LOCALE_PARAM);
+  return { locale, nextPath: `${url.pathname}${url.search}${url.hash}` };
 }
 
 function requestBaseUrl(req: Request): string {

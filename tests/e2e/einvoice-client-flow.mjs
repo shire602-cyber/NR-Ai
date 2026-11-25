@@ -1018,7 +1018,16 @@ async function emailRender(browser, mailCo) {
       [mailCo.companyId, mailCo.email]
     )
   ).rows;
+  // STEP5 N-1: sign-in codes and other sensitive mail that was never sent keep no body at rest, so
+  // there is nothing to render; those templates are covered by unit tests.
   const cats = new Set(rows.map((r) => r.category));
+  const bodyless = rows.filter((r) => r.html == null);
+  rows.splice(0, rows.length, ...rows.filter((r) => r.html != null));
+  check(
+    bodyless.every((r) => ["auth", "portal_login", "security"].includes(r.category)),
+    "only sensitive credential mail is stored without a body",
+    bodyless.map((r) => r.category)
+  );
   for (const c of ["invoice", "reminder", "quote", "statement", "einvoice_approver_link"])
     check(cats.has(c), `e-mail outbox has the ${c} message`, [...cats]);
   for (const row of rows) {

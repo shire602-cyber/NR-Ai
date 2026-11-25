@@ -253,6 +253,24 @@ for (const locale of ["en", "ar"] as const) {
       expect(container.querySelectorAll("nav")).toHaveLength(0);
     });
 
+    it("[STEP5 N-3] the desktop removed page shows 'Client portal' once (brand only, no top-bar repeat)", async () => {
+      window.history.replaceState(null, "", "/client-portal/dashboard");
+      mocks.apiRequest.mockImplementation(async (_m: string, url: string) => {
+        if (url.endsWith("/accounts")) return [];
+        throw new mocks.ApiError("removed", 403, { code: "PORTAL_ACCESS_REVOKED" });
+      });
+      await mount(createElement(PortalLayout, null, createElement("div", null, "body")));
+      const label = locale === "ar" ? "بوابة العميل" : "Client portal";
+      // Desktop-visible occurrences: not under an element hidden at md and up.
+      const desktop = [...container.querySelectorAll("p, span")].filter(
+        (el) =>
+          el.children.length === 0 &&
+          el.textContent?.trim() === label &&
+          !el.className.includes("md:hidden")
+      );
+      expect(desktop).toHaveLength(1);
+    });
+
     it("[R5-10] a phone invoice card carries the due date next to the issue date", async () => {
       await mount(
         createElement(
