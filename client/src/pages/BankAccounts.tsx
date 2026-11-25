@@ -48,7 +48,16 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Building2, FileDown, FileSpreadsheet, Link2, Plus, RotateCcw, Scale } from "lucide-react";
+import {
+  Building2,
+  FileDown,
+  FileSpreadsheet,
+  Link2,
+  Plus,
+  RotateCcw,
+  Scale,
+  Search,
+} from "lucide-react";
 
 interface BankAccount {
   id: string;
@@ -134,8 +143,14 @@ export default function BankAccounts() {
   ]);
   const [relinkGl, setRelinkGl] = useState("");
   const [statementFor, setStatementFor] = useState<BankAccount | null>(null);
+  const [search, setSearch] = useState("");
 
-  const { data: accounts, isLoading } = useQuery<BankAccount[]>({
+  const {
+    data: accounts,
+    isLoading,
+    isError: accountsError,
+    refetch: refetchAccounts,
+  } = useQuery<BankAccount[]>({
     queryKey: ["/api/companies", companyId, "bank-accounts"],
     enabled: !!companyId,
   });
@@ -147,10 +162,26 @@ export default function BankAccounts() {
     queryKey: ["/api/companies", companyId, "bank-accounts", "bank-name-suggestions"],
     enabled: !!companyId,
   });
-  const { data: imports } = useQuery<ImportBatch[]>({
+  const {
+    data: imports,
+    isLoading: importsLoading,
+    isError: importsError,
+    refetch: refetchImports,
+  } = useQuery<ImportBatch[]>({
     queryKey: ["/api/companies", companyId, "bank-statements", "imports"],
     enabled: !!companyId,
   });
+
+  const filteredAccounts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return accounts ?? [];
+    return (accounts ?? []).filter((a) =>
+      [a.nameEn, a.bankName, a.iban, a.accountNumber, a.currency].some((v) =>
+        (v ?? "").toLowerCase().includes(q)
+      )
+    );
+  }, [accounts, search]);
+  const searching = search.trim() !== "";
 
   const bankGlAccounts = useMemo(
     () =>
@@ -228,14 +259,54 @@ export default function BankAccounts() {
         }
       />
 
+      {(accounts?.length ?? 0) > 0 && (
+        <div className="relative w-full sm:w-80">
+          <Search
+            className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            type="search"
+            dir="auto"
+            className="h-9 ps-9"
+            placeholder={tr("banking.accounts.searchPlaceholder")}
+            aria-label={tr("banking.accounts.search")}
+            data-testid="input-search-bank-accounts"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      )}
 
       <DataTableCard
-        status={isLoading ? "loading" : !accounts || accounts.length === 0 ? "empty" : "ready"}
-        empty={{
-          icon: Building2,
-          title: tr("banking.accounts.none"),
-          action: { label: tr("banking.accounts.add"), onClick: () => setCreateOpen(true) },
+        status={
+          isLoading
+            ? "loading"
+            : accountsError
+              ? "error"
+              : filteredAccounts.length === 0
+                ? "empty"
+                : "ready"
+        }
+        error={{
+          title: tr("banking.accounts.loadError"),
+          description: tr("banking.accounts.loadErrorBody"),
+          onRetry: () => void refetchAccounts(),
+          testId: "bank-accounts-error",
         }}
+        empty={
+          searching
+            ? {
+                icon: Search,
+                title: tr("banking.accounts.noMatch"),
+                description: tr("banking.accounts.noMatchBody"),
+              }
+            : {
+                icon: Building2,
+                title: tr("banking.accounts.none"),
+                action: { label: tr("banking.accounts.add"), onClick: () => setCreateOpen(true) },
+              }
+        }
       >
         <Table className="row-cards">
           <TableHeader>
@@ -251,7 +322,7 @@ export default function BankAccounts() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(accounts ?? []).map((a) => {
+            {filteredAccounts.map((a) => {
               const gl = a.glAccountId ? glById.get(a.glAccountId) : undefined;
               return (
                 <TableRow key={a.id}>
@@ -317,7 +388,21 @@ export default function BankAccounts() {
       <section className="space-y-3">
         <h2 className="text-h2 text-foreground">{tr("banking.imports.title")}</h2>
         <DataTableCard
-          status={!imports || imports.length === 0 ? "empty" : "ready"}
+          status={
+            importsLoading
+              ? "loading"
+              : importsError
+                ? "error"
+                : !imports || imports.length === 0
+                  ? "empty"
+                  : "ready"
+          }
+          error={{
+            title: tr("banking.imports.loadError"),
+            description: tr("banking.accounts.loadErrorBody"),
+            onRetry: () => void refetchImports(),
+            testId: "bank-imports-error",
+          }}
           empty={{ icon: FileSpreadsheet, title: tr("banking.imports.none") }}
         >
           <Table className="row-cards">
@@ -590,7 +675,11 @@ function StatementDialog({
   const [closing, setClosing] = useState("");
   const [statement, setStatement] = useState<Statement | null>(null);
   const historyKey = ["/api/companies", companyId, "bank-accounts", account.id, "reconciliations"];
-  const { data: history } = useQuery<SavedReconciliation[]>({ queryKey: historyKey });
+  const {
+    data: history,
+    isError: historyError,
+    refetch: refetchHistory,
+  } = useQuery<SavedReconciliation[]>({ queryKey: historyKey });
   const onError = (err: Error) =>
     toast({ variant: "destructive", title: tr("banking.common.error"), description: err?.message });
 
@@ -740,49 +829,62 @@ function StatementDialog({
         )}
         <div>
           <p className="text-sm font-semibold mb-2">{tr("banking.statement.history")}</p>
-          <Table>
-            <TableBody>
-              {(history ?? []).map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell>{r.periodEnd}</TableCell>
-                  <TableCell>{r.statementClosingBalance}</TableCell>
-                  <TableCell>{r.difference}</TableCell>
-                  <TableCell>
-                    <Badge variant={r.status === "signed_off" ? "default" : "outline"}>
-                      {r.status === "signed_off"
-                        ? tr("banking.statement.signedOff")
-                        : tr("banking.statement.draft")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-end space-x-1 rtl:space-x-reverse">
-                    {r.status !== "signed_off" && (
-                      <Button
-                        size="sm"
-                        onClick={() => signMutation.mutate(r.id)}
-                        disabled={signMutation.isPending}
-                      >
-                        {tr("banking.statement.signOff")}
-                      </Button>
-                    )}
-                    {(["pdf", "xlsx"] as const).map((f) => (
-                      <Button key={f} size="sm" variant="outline" asChild>
-                        <a
-                          href={`/api/companies/${companyId}/bank-reconciliations/${r.id}/export?format=${f}`}
-                          target="_blank"
-                          rel="noreferrer"
+          {historyError ? (
+            <p role="alert" className="text-small text-muted-foreground">
+              {tr("banking.statement.historyError")}{" "}
+              <Button variant="link" size="sm" onClick={() => void refetchHistory()}>
+                {t["components.errorRetry"]}
+              </Button>
+            </p>
+          ) : (history ?? []).length === 0 ? (
+            <p className="text-small text-muted-foreground">
+              {tr("banking.statement.historyNone")}
+            </p>
+          ) : (
+            <Table>
+              <TableBody>
+                {(history ?? []).map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell>{r.periodEnd}</TableCell>
+                    <TableCell>{r.statementClosingBalance}</TableCell>
+                    <TableCell>{r.difference}</TableCell>
+                    <TableCell>
+                      <Badge variant={r.status === "signed_off" ? "default" : "outline"}>
+                        {r.status === "signed_off"
+                          ? tr("banking.statement.signedOff")
+                          : tr("banking.statement.draft")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-end space-x-1 rtl:space-x-reverse">
+                      {r.status !== "signed_off" && (
+                        <Button
+                          size="sm"
+                          onClick={() => signMutation.mutate(r.id)}
+                          disabled={signMutation.isPending}
                         >
-                          <FileDown className="w-3 h-3" />
-                          {f === "pdf"
-                            ? tr("banking.statement.exportPdf")
-                            : tr("banking.statement.exportXlsx")}
-                        </a>
-                      </Button>
-                    ))}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                          {tr("banking.statement.signOff")}
+                        </Button>
+                      )}
+                      {(["pdf", "xlsx"] as const).map((f) => (
+                        <Button key={f} size="sm" variant="outline" asChild>
+                          <a
+                            href={`/api/companies/${companyId}/bank-reconciliations/${r.id}/export?format=${f}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <FileDown className="w-3 h-3" />
+                            {f === "pdf"
+                              ? tr("banking.statement.exportPdf")
+                              : tr("banking.statement.exportXlsx")}
+                          </a>
+                        </Button>
+                      ))}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
