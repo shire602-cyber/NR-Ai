@@ -22,8 +22,7 @@ it("applies the 2026 Q1 UAE standard input-tax recovery percentage to residual V
   expect(boxes.box9ExpensesVat + (result.delta.box9ExpensesVat ?? 0)).toBe(4_300);
 });
 
-it.skip("sums the rounded VAT on each taxable invoice line into the document total", () => {
-  // Remaining accounting-audit item (invoice-line VAT rounding). Left for a follow-up; do not block this PR's CI.
+it("sums the rounded VAT on each taxable invoice line into the document total", () => {
   // FTA clarification VATP006 requires tax-invoice rounding at the level of each line.
   const line = { quantity: 1, unitPriceFils: 10, vatRate: 5 };
   const invoice = computeSalesDocument([line, line], { resolve: true });

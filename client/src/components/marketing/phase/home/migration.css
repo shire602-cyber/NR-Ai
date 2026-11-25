@@ -1,0 +1,134 @@
+/* Migration (id="migration", sand). Prefix mz-mig-. Logical properties only. */
+.phase-site .mz-mig-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 0 28px;
+  padding: 0;
+  list-style: none;
+}
+.phase-site .mz-mig-card {
+  display: grid;
+  gap: 8px;
+  min-block-size: 44px;
+  padding: 18px 20px;
+  border: 1px solid var(--mz-sand-deep);
+  border-radius: var(--mz-radius);
+  background: #fffdf8;
+  color: var(--mz-ink-soft);
+  text-decoration: none;
+  transition:
+    border-color 0.2s,
+    transform 0.2s var(--mz-ease);
+}
+.phase-site .mz-mig-card:hover {
+  border-color: var(--mz-emerald);
+  transform: translateY(-2px);
+}
+.phase-site .mz-mig-card bdi {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--mz-ink);
+}
+.phase-site .mz-mig-card span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-mig-card svg,
+.phase-site .mz-mig svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+.phase-site[dir="rtl"] .mz-mig-card svg,
+.phase-site[dir="rtl"] .mz-mig-flip,
+.phase-site[dir="rtl"] .mz-mig-help .phase-textlink svg {
+  transform: scaleX(-1);
+}
+.phase-site .mz-mig-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.phase-site .mz-mig-step {
+  padding: 20px;
+  border-radius: var(--mz-radius);
+  background: #fffdf8;
+  border: 1px solid var(--mz-sand-deep);
+}
+.phase-site .mz-mig-n {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--mz-emerald-deep) !important;
+}
+.phase-site[lang="ar"] .mz-mig-n {
+  letter-spacing: 0;
+}
+.phase-site .mz-mig-step h3 {
+  margin-block-start: 6px;
+  font-size: 19px;
+}
+.phase-site .mz-mig-step > p:not(.mz-mig-n) {
+  margin-block-start: 6px;
+  line-height: 1.55;
+}
+.phase-site .mz-mig-mock {
+  display: grid;
+  gap: 6px;
+  margin-block-start: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--mz-line-light);
+  font-size: 13px;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-mig-file,
+.phase-site .mz-mig-map,
+.phase-site .mz-mig-ok {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.phase-site .mz-mig-ok {
+  font-weight: 700;
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-mig-sample {
+  margin-block-start: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: end;
+}
+.phase-site .mz-mig-help {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin-block-start: 22px;
+  font-weight: 650;
+}
+@media (max-width: 900px) {
+  .phase-site .mz-mig-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .phase-site .mz-mig-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .phase-site .mz-mig-card {
+    transition: none;
+  }
+  .phase-site .mz-mig-card:hover {
+    transform: none;
+  }
+}
