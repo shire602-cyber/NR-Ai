@@ -76,16 +76,27 @@ const base = `/api/companies/${COMPANY_ID}`;
 const ar = { ...arCommon, ...arFirm, ...arReportCenter } as Record<string, string>;
 const SUPPLIER = "مورد";
 
-const statementOf = (id: string, name: string) => ({
+const lineOf = (reference: string, description: string, debit: number) => ({
+  date: "2026-11-20",
+  type: "invoice",
+  reference,
+  description,
+  debit,
+  credit: 0,
+  balance: debit,
+});
+const statementOf = (id: string, name: string, lines: ReturnType<typeof lineOf>[] = []) => ({
   party: { id, name, email: null },
   from: null,
   asOf: "2026-11-25",
-  sections: [{ currency: "AED", openingBalance: 0, closingBalance: 0, lines: [] }],
+  sections: [{ currency: "AED", openingBalance: 0, closingBalance: 0, lines }],
 });
-const customerFixtures = () => ({
+const customerFixtures = (lines: ReturnType<typeof lineOf>[] = []) => ({
   [`${base}/customer-contacts`]: [{ id: "c1", name: "Al Noor" }],
-  [`${base}/customer-statements/c1`]: statementOf("c1", "Al Noor"),
+  [`${base}/customer-statements/c1`]: statementOf("c1", "Al Noor", lines),
 });
+const CACHED_LINE = lineOf("INV-CACHED-001", "cached sale", 10500);
+const REFRESHED_LINE = lineOf("INV-REFRESHED-002", "refreshed sale", 20500);
 
 const setOnline = (online: boolean) => act(async () => onlineManager.setOnline(online));
 async function refetch(match: (key: readonly unknown[]) => boolean) {
@@ -94,6 +105,16 @@ async function refetch(match: (key: readonly unknown[]) => boolean) {
   };
   await act(async () => {
     await queryClient.refetchQueries({ predicate: (q) => match(q.queryKey) });
+  });
+  await flush();
+}
+/** Start a refetch without awaiting it: while offline it pauses and would never resolve. */
+async function startRefetch(match: (key: readonly unknown[]) => boolean) {
+  const { queryClient } = (await import("../../client/src/lib/queryClient")) as unknown as {
+    queryClient: QueryClient;
+  };
+  await act(async () => {
+    void queryClient.refetchQueries({ predicate: (q) => match(q.queryKey) });
   });
   await flush();
 }
@@ -126,8 +147,8 @@ const retryButton = (testId: string) => byTestId(testId)?.querySelector("button"
 const hasCard = () => !!byTestId("card-party-statement");
 const pageText = () => document.body.textContent ?? "";
 
-async function showCustomerStatement() {
-  setFixtures(customerFixtures());
+async function showCustomerStatement(lines: ReturnType<typeof lineOf>[] = []) {
+  setFixtures(customerFixtures(lines));
   await renderPage(PartyStatements);
   await pickOption(byTestId("select-statement-party"), "Al Noor");
   await flushUntil(hasCard);
@@ -264,8 +285,95 @@ describe("party statements screen (Arabic)", () => {
     expect(pageText()).not.toContain("2026-11-25");
   });
 
+  it("keeps cached rows and says so while a statement refresh is paused offline, then renders the refreshed rows", async () => {
+    await showCustomerStatement([CACHED_LINE]);
+    expect(pageText()).toContain(CACHED_LINE.reference);
+
+    await setOnline(false);
+    setFixtures(customerFixtures([REFRESHED_LINE]));
+    await startRefetch((k) => String(k[0]).includes("-statements/"));
+    expect(byTestId("party-statement-offline")?.textContent).toContain(
+      ar["common.errorHeading.offline"]
+    );
+    expect(byTestId("party-statement-error")).toBeNull();
+    expect(hasCard()).toBe(true);
+    expect(pageText()).toContain(CACHED_LINE.reference);
+    expect(pageText()).not.toContain(ar["reportCenter.partyStatementEmpty"]);
+
+    await setOnline(true);
+    await flushUntil(() => pageText().includes(REFRESHED_LINE.reference));
+    expect(pageText()).toContain(REFRESHED_LINE.reference);
+    expect(pageText()).not.toContain(CACHED_LINE.reference);
+    expect(byTestId("party-statement-offline")).toBeNull();
+    expect(byTestId("party-statement-error")).toBeNull();
+  });
+
+  it("keeps the cached party list selectable while its refresh is paused offline", async () => {
+    await showCustomerStatement([CACHED_LINE]);
+    await setOnline(false);
+    await startRefetch((k) => k[k.length - 1] === "customer-contacts");
+    expect(byTestId("party-list-offline")?.textContent).toContain(
+      ar["common.errorHeading.offline"]
+    );
+    expect(byTestId("party-list-error")).toBeNull();
+    expect(hasCard()).toBe(true);
+    const text = await openParty();
+    expect(text).toContain("Al Noor");
+    expect(text).not.toContain(ar["reportCenter.partyNoCustomers"]);
+    await closeParty();
+
+    await setOnline(true);
+    await flushUntil(() => !byTestId("party-list-offline"));
+    expect(byTestId("party-list-offline")).toBeNull();
+  });
+
+  it("shows the paused state, not the stale error, when Retry is pressed offline after a failed refresh, and resumes on reconnect", async () => {
+    await showCustomerStatement([CACHED_LINE]);
+    ctrl.statement = "server";
+    ctrl.lists.add("customer-contacts");
+    await refetchList("customer-contacts");
+    await refetchStatements();
+    await flushUntil(() => !!byTestId("party-list-error") && !!byTestId("party-statement-error"));
+    expect(pageText()).toContain(CACHED_LINE.reference);
+
+    await setOnline(false);
+    await click(retryButton("party-statement-error"));
+    await click(retryButton("party-list-error"));
+    await flushUntil(
+      () => !!byTestId("party-statement-offline") && !!byTestId("party-list-offline")
+    );
+    expect(byTestId("party-statement-error")).toBeNull();
+    expect(byTestId("party-list-error")).toBeNull();
+    expect(byTestId("party-statement-offline")?.textContent).toContain(
+      arReportCenter["reportCenter.partyLoadPausedOffline"]
+    );
+    expect(byTestId("party-list-offline")?.textContent).toContain(
+      arReportCenter["reportCenter.partyLoadPausedOffline"]
+    );
+    expect(hasCard()).toBe(true);
+    expect(pageText()).toContain(CACHED_LINE.reference);
+    expect(pageText()).not.toContain(ar["reportCenter.partyStatementEmpty"]);
+    const text = await openParty();
+    expect(text).toContain("Al Noor");
+    expect(text).not.toContain(ar["reportCenter.partyNoCustomers"]);
+    await closeParty();
+
+    // The network returns and the paused Retry resumes against a healthy server.
+    ctrl.statement = null;
+    ctrl.lists.clear();
+    setFixtures(customerFixtures([REFRESHED_LINE]));
+    await setOnline(true);
+    await flushUntil(() => pageText().includes(REFRESHED_LINE.reference));
+    expect(pageText()).toContain(REFRESHED_LINE.reference);
+    expect(pageText()).not.toContain(CACHED_LINE.reference);
+    expect(byTestId("party-statement-offline")).toBeNull();
+    expect(byTestId("party-statement-error")).toBeNull();
+    expect(byTestId("party-list-offline")).toBeNull();
+    expect(byTestId("party-list-error")).toBeNull();
+  });
+
   it("keeps a loaded statement visible when list and statement refreshes both fail, each retried on its own", async () => {
-    await showCustomerStatement();
+    await showCustomerStatement([CACHED_LINE]);
     ctrl.statement = "server";
     ctrl.lists.add("customer-contacts");
     await refetchList("customer-contacts");
@@ -277,6 +385,10 @@ describe("party statements screen (Arabic)", () => {
     );
     expect(hasCard()).toBe(true);
     expect(pageText()).toContain("Al Noor");
+    const cachedRow = byTestId("card-party-statement")?.querySelector("tbody tr");
+    expect(cachedRow?.textContent).toContain(CACHED_LINE.reference);
+    expect(cachedRow?.textContent).toContain(CACHED_LINE.description);
+    expect(pageText()).not.toContain(ar["reportCenter.partyStatementEmpty"]);
 
     // The cached list stays selectable; the failure does not turn it into "no customers".
     const text = await openParty();

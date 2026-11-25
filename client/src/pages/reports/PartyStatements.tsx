@@ -90,18 +90,22 @@ export default function PartyStatements() {
   // still reports the error.
   const parties = listQuery.data;
   const listError = listQuery.isError ? listQuery.error : null;
-  const listOffline = listQuery.isPending && listQuery.fetchStatus === "paused";
+  // Paused is a fetch state, independent of the query status: it covers a first load and also a
+  // refresh or Retry of an already loaded (or already failed) list while offline. The current
+  // paused state wins over a stale error from the previous attempt.
+  const listOffline = listQuery.fetchStatus === "paused";
+  const listShownError = listOffline ? null : listError;
   const listEmpty = listQuery.isSuccess && parties?.length === 0;
-  const emptyLabel = listOffline
-    ? t["common.errorHeading.offline"]
-    : listError
-      ? t["firm.loadFailedTitle"]
-      : listQuery.isLoading
-        ? t["reportCenter.partyListLoading"]
-        : listEmpty
-          ? kind === "customer"
-            ? t["reportCenter.partyNoCustomers"]
-            : t["reportCenter.partyNoSuppliers"]
+  const emptyLabel = listEmpty
+    ? kind === "customer"
+      ? t["reportCenter.partyNoCustomers"]
+      : t["reportCenter.partyNoSuppliers"]
+    : listOffline
+      ? t["common.errorHeading.offline"]
+      : listShownError
+        ? t["firm.loadFailedTitle"]
+        : listQuery.isLoading
+          ? t["reportCenter.partyListLoading"]
           : null;
   const range = useMemo(() => ({ from: from || undefined, asOf: asOf || undefined }), [from, asOf]);
   const url = companyId && partyId ? statementUrl(companyId, kind, partyId, range) : null;
@@ -112,7 +116,9 @@ export default function PartyStatements() {
   });
   const statement = statementQuery.data;
   const statementError = statementQuery.isError ? statementQuery.error : null;
-  const statementOffline = statementQuery.isPending && statementQuery.fetchStatus === "paused";
+  // Same rule as the list: paused is independent of status, and wins over a stale error.
+  const statementOffline = statementQuery.fetchStatus === "paused";
+  const statementShownError = statementOffline ? null : statementError;
   const email = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/customer-statements/${partyId}/email`, {
@@ -213,21 +219,21 @@ export default function PartyStatements() {
       {listOffline ? (
         <ErrorState
           title={t["common.errorHeading.offline"]}
-          description={t["firm.loadOfflineBody"]}
+          description={t["reportCenter.partyLoadPausedOffline"]}
           testId="party-list-offline"
         />
       ) : null}
-      {listError ? (
+      {listShownError ? (
         <LoadErrorState
-          error={listError}
+          error={listShownError}
           onRetry={() => void listQuery.refetch()}
           compact={parties !== undefined}
           testId="party-list-error"
         />
       ) : null}
-      {partyId && statementError ? (
+      {partyId && statementShownError ? (
         <LoadErrorState
-          error={statementError}
+          error={statementShownError}
           onRetry={() => void statementQuery.refetch()}
           title={t["reportCenter.partyStatementLoadFailed"]}
           compact={statement !== undefined}
@@ -237,12 +243,12 @@ export default function PartyStatements() {
       {partyId && statementOffline ? (
         <ErrorState
           title={t["common.errorHeading.offline"]}
-          description={t["firm.loadOfflineBody"]}
+          description={t["reportCenter.partyLoadPausedOffline"]}
           testId="party-statement-offline"
         />
       ) : null}
       {!partyId ? (
-        listOffline || listError ? null : (
+        parties === undefined && (listOffline || listError) ? null : (
           <p className="text-sm text-muted-foreground">
             {listEmpty ? emptyLabel : <T k="reportCenter.partyStatementPick" />}
           </p>

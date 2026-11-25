@@ -990,6 +990,7 @@
   "reportCenter.partyNoCustomers": "No customers yet. Add a customer to see their statement.",
   "reportCenter.partyNoSuppliers": "No suppliers yet. Add a supplier to see their statement.",
   "reportCenter.partyStatementLoadFailed": "The statement could not be loaded",
+  "reportCenter.partyLoadPausedOffline": "You're offline. The request will resume automatically when your connection returns.",
   "reportCenter.partyStatementLoading": "Loading statement",
   "reportCenter.partyStatementOpening": "Opening balance",
   "reportCenter.partyStatementClosing": "Closing balance"

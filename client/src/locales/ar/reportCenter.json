@@ -990,6 +990,7 @@
   "reportCenter.partyNoCustomers": "لا يوجد عملاء بعد. أضف عميلًا لعرض كشف حسابه.",
   "reportCenter.partyNoSuppliers": "لا يوجد موردون بعد. أضف موردًا لعرض كشف حسابه.",
   "reportCenter.partyStatementLoadFailed": "تعذّر تحميل كشف الحساب",
+  "reportCenter.partyLoadPausedOffline": "أنت غير متصل بالإنترنت. سيُستأنف الطلب تلقائيًا عند عودة الاتصال.",
   "reportCenter.partyStatementLoading": "جارٍ تحميل كشف الحساب",
   "reportCenter.partyStatementOpening": "الرصيد الافتتاحي",
   "reportCenter.partyStatementClosing": "الرصيد الختامي"
