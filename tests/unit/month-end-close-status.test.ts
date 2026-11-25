@@ -31,8 +31,10 @@ describe("month-end close checklist status", () => {
         "checklistLoadFailed",
         "checklistUnavailable",
         "checklistEmpty",
+        "lockChecklistUnavailable",
         "historyLoadFailed",
         "retry",
+        "retryingHistory",
       ]) {
         expect(j[`monthEnd.${k}`], `${l}:${k}`).toBeTruthy();
       }

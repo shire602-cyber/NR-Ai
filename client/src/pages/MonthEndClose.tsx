@@ -216,10 +216,20 @@ export default function MonthEndClose() {
     enabled: !!companyId,
   });
 
+  const checklistStatus = closeChecklistStatus({
+    isLoading: isLoadingChecklist,
+    isError: isChecklistError,
+    items: checklistData?.checklist.map((i) => ({ done: stepDone(i) })),
+  });
+  const checklistKnownIncomplete = checklistStatus.state === "incomplete";
+  const checklistUnknown = checklistStatus.state === "error" || checklistStatus.state === "empty";
+
   const {
     data: historyData,
     isLoading: isLoadingHistory,
     isError: isHistoryError,
+    isFetched: isHistoryFetched,
+    isFetching: isFetchingHistory,
     refetch: refetchHistory,
   } = useQuery<CloseRecord[]>({
     queryKey: [`/api/companies/${companyId}/month-end/history`],
@@ -294,6 +304,7 @@ export default function MonthEndClose() {
   // Lock form state (R08-05 / R02-19): lock type, checklist override + reason.
   const [lockType, setLockType] = useState<"soft" | "hard">("soft");
   const [overrideChecklist, setOverrideChecklist] = useState(false);
+  const lockChecklistOverride = checklistKnownIncomplete && overrideChecklist;
   const [lockReason, setLockReason] = useState("");
   const [unlockTarget, setUnlockTarget] = useState<string | null>(null);
   const [unlockReason, setUnlockReason] = useState("");
@@ -365,7 +376,7 @@ export default function MonthEndClose() {
       return apiRequest("POST", `/api/companies/${companyId}/month-end/lock-period`, {
         periodEnd: periodDates.periodEnd,
         lockType,
-        ...(overrideChecklist ? { overrideChecklist: true } : {}),
+        ...(lockChecklistOverride ? { overrideChecklist: true } : {}),
         ...(lockReason.trim() ? { reason: lockReason.trim() } : {}),
       });
     },
@@ -439,7 +450,7 @@ export default function MonthEndClose() {
     },
   });
 
-  const lockReasonValid = !overrideChecklist || lockReason.trim().length >= 3;
+  const lockReasonValid = !lockChecklistOverride || lockReason.trim().length >= 3;
 
   // ---- Helpers ----
 
@@ -505,15 +516,8 @@ export default function MonthEndClose() {
     ) ||
     false;
 
-  const checklistStatus = closeChecklistStatus({
-    isLoading: isLoadingChecklist,
-    isError: isChecklistError,
-    items: checklistData?.checklist.map((i) => ({ done: stepDone(i) })),
-  });
   const completedCount = checklistStatus.done;
   const totalCount = checklistStatus.total;
-  const checklistKnownIncomplete = checklistStatus.state === "incomplete";
-  const checklistUnknown = checklistStatus.state === "error" || checklistStatus.state === "empty";
 
   // ---- Loading state ----
 
@@ -886,19 +890,23 @@ export default function MonthEndClose() {
               </div>
               {(checklistKnownIncomplete || checklistUnknown) && (
                 <p className="text-sm text-warning flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  <T k="monthEnd.checklistIncomplete" />
+                  <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {checklistKnownIncomplete
+                    ? t["monthEnd.checklistIncomplete"]
+                    : t["monthEnd.lockChecklistUnavailable"]}
                 </p>
               )}
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={overrideChecklist}
-                  onChange={(e) => setOverrideChecklist(e.target.checked)}
-                  data-testid="checkbox-override-checklist"
-                />
-                <T k="monthEnd.overrideChecklist" />
-              </label>
+              {checklistKnownIncomplete && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={overrideChecklist}
+                    onChange={(e) => setOverrideChecklist(e.target.checked)}
+                    data-testid="checkbox-override-checklist"
+                  />
+                  <T k="monthEnd.overrideChecklist" />
+                </label>
+              )}
               <div className="space-y-1">
                 <Label htmlFor="lock-reason">
                   <T k="monthEnd.reason" />
@@ -1021,18 +1029,31 @@ export default function MonthEndClose() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoadingHistory ? (
+          {/* Retrying without cached history returns the query to loading. */}
+          {isHistoryError || (isLoadingHistory && isHistoryFetched) ? (
+            <div className="space-y-3 py-6 text-center" data-testid="history-error">
+              <p className="text-sm text-destructive" role="alert">
+                {t["monthEnd.historyLoadFailed"]}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-disabled={isFetchingHistory}
+                onClick={() => {
+                  if (!isFetchingHistory) refetchHistory();
+                }}
+              >
+                {t["monthEnd.retry"]}
+              </Button>
+              <p className="sr-only" role="status">
+                {isFetchingHistory ? t["monthEnd.retryingHistory"] : ""}
+              </p>
+            </div>
+          ) : isLoadingHistory ? (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-12" />
               ))}
-            </div>
-          ) : isHistoryError ? (
-            <div className="space-y-3 py-6 text-center" role="alert" data-testid="history-error">
-              <p className="text-sm text-destructive">{t["monthEnd.historyLoadFailed"]}</p>
-              <Button variant="outline" size="sm" onClick={() => refetchHistory()}>
-                {t["monthEnd.retry"]}
-              </Button>
             </div>
           ) : historyData && historyData.length > 0 ? (
             <Table>
