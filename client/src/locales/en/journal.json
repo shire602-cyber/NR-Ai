@@ -196,6 +196,8 @@
   "journal.memo.aiDraft": "AI draft (review required): {party}",
   "journal.memo.aiReviewed": "AI entry (reviewed): {party}",
   "journal.draftsFilter": "Showing draft entries only.",
+  "journal.draftsEmptyTitle": "No draft entries",
+  "journal.draftsEmptyDescription": "Every entry has been posted. Clear the filter to see all entries.",
   "journal.draftsFilterClear": "Show all entries",
   "journal.memo.creditNoteReversal": "Credit Note {ref} - reversal of Invoice {invoice}",
   "journal.memo.inventoryPurchase": "Inventory purchase - {ref}",

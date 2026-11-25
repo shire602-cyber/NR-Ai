@@ -39,6 +39,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Money, MoneyCell } from "@/components/ui/money";
 import {
   Table,
@@ -180,7 +181,12 @@ export default function Journal() {
     retry: false,
   });
 
-  const { data: allEntries, isLoading } = useQuery<any[]>({
+  const {
+    data: allEntries,
+    isLoading,
+    error: entriesError,
+    refetch: refetchEntries,
+  } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "journal"],
     enabled: !!selectedCompanyId,
   });
@@ -896,6 +902,12 @@ export default function Journal() {
 
       {isLoading ? (
         <CardListSkeleton count={4} />
+      ) : entriesError && !allEntries ? (
+        <LoadErrorState
+          error={entriesError}
+          onRetry={() => void refetchEntries()}
+          testId="journal-load-error"
+        />
       ) : entries && entries.length > 0 ? (
         <VirtualList
           items={entries as any[]}
@@ -1226,8 +1238,10 @@ export default function Journal() {
           <CardContent className="p-0">
             <EmptyState
               icon={BookMarked}
-              title={t["journal.emptyTitle"]}
-              description={t["journal.emptyDescription"]}
+              title={draftsOnly ? t["journal.draftsEmptyTitle"] : t["journal.emptyTitle"]}
+              description={
+                draftsOnly ? t["journal.draftsEmptyDescription"] : t["journal.emptyDescription"]
+              }
               action={{
                 label: t.newEntry,
                 icon: Plus,

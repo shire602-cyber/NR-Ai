@@ -196,6 +196,8 @@
   "journal.memo.aiDraft": "مسودة الذكاء الاصطناعي (تحتاج مراجعة): {party}",
   "journal.memo.aiReviewed": "قيد الذكاء الاصطناعي (تمت مراجعته): {party}",
   "journal.draftsFilter": "عرض القيود المسودة فقط.",
+  "journal.draftsEmptyTitle": "لا توجد قيود مسودة",
+  "journal.draftsEmptyDescription": "جميع القيود مرحّلة. أزل التصفية لعرض كل القيود.",
   "journal.draftsFilterClear": "عرض كل القيود",
   "journal.memo.creditNoteReversal": "إشعار دائن {ref} - عكس الفاتورة {invoice}",
   "journal.memo.inventoryPurchase": "شراء مخزون - {ref}",
