@@ -128,5 +128,8 @@
   "settingsPages.numberingLoadFailed": "تعذّر تحميل إعدادات الترقيم. تحقق من اتصالك ثم حاول مرة أخرى.",
   "settingsPages.numberingRetry": "حاول مرة أخرى",
   "settingsPages.numberingEmpty": "لم يتم إعداد أي مستندات مرقّمة لهذه الشركة بعد.",
-  "settingsPages.numberingSaveFailed": "تعذّر حفظ الترقيم. حاول مرة أخرى بعد قليل."
+  "settingsPages.numberingSaveFailed": "تعذّر حفظ الترقيم. حاول مرة أخرى بعد قليل.",
+  "settingsPages.numberingWaiting": "في انتظار تحميل إعدادات الترقيم.",
+  "settingsPages.numberingRefreshFailed": "تعذّر تحديث إعدادات الترقيم.",
+  "settingsPages.numberingQueued": "تم وضع تغيير الترقيم في قائمة انتظار المزامنة."
 }

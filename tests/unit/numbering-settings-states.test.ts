@@ -24,7 +24,21 @@ const keys = [
   "numberingRetry",
   "numberingEmpty",
   "numberingSaveFailed",
+  "numberingWaiting",
+  "numberingRefreshFailed",
+  "numberingQueued",
 ] as const;
+
+const KEY = ["/api/companies", "c1", "numbering"];
+const ROW = {
+  docType: "invoice",
+  prefix: "INV",
+  padding: 4,
+  yearlyReset: false,
+  nextNumber: 5,
+  nextFormatted: "INV-0005",
+  lastIssued: 4,
+};
 
 describe("numbering catalogs", () => {
   it.each(keys)("has English and Arabic copy for %s", (k) => {
@@ -37,7 +51,13 @@ describe("numbering catalogs", () => {
 describe("Numbering page states", () => {
   let container: HTMLDivElement;
   let root: Root;
-  let mode: "error" | "empty";
+  let mode: "error" | "empty" | "rows";
+  let fetchMock: ReturnType<typeof vi.fn>;
+  const jsonResponse = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
   beforeAll(async () => {
     const { loadLocale } = await import("../../client/src/lib/i18n");
     await loadLocale("en");
@@ -46,41 +66,59 @@ describe("Numbering page states", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
+    fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+      if (String(input).includes("/api/csrf-token")) return jsonResponse({ csrfToken: "tok" });
+      if (init?.method === "PUT") return jsonResponse({ ok: true });
+      if (mode === "error") return jsonResponse({ message: "boom" }, 500);
+      return jsonResponse({ numbering: mode === "rows" ? [ROW] : [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        mode === "error"
-          ? new Response(JSON.stringify({ message: "boom" }), {
-              status: 500,
-              headers: { "content-type": "application/json" },
-            })
-          : new Response(JSON.stringify({ numbering: [] }), {
-              status: 200,
-              headers: { "content-type": "application/json" },
-            })
-      )
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
     );
   });
-  afterEach(() => {
+  afterEach(async () => {
+    const { onlineManager } = await import("@tanstack/react-query");
+    onlineManager.setOnline(true);
     act(() => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    Reflect.deleteProperty(navigator, "serviceWorker");
   });
 
-  async function mount() {
+  async function settle() {
+    for (let i = 0; i < 8; i++)
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+  }
+
+  async function mount(seed?: unknown) {
     const { queryClient, getQueryFn } = await import("../../client/src/lib/queryClient");
     const { default: Page } = await import("../../client/src/pages/settings/Numbering");
     queryClient.clear();
     queryClient.setDefaultOptions({
       queries: { retry: false, queryFn: getQueryFn({ on401: "throw" }) },
     });
+    if (seed !== undefined) queryClient.setQueryData(KEY, seed);
     await act(async () => {
       root.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Page)));
     });
-    for (let i = 0; i < 8; i++)
-      await act(async () => {
-        await new Promise((r) => setTimeout(r, 0));
-      });
+    await settle();
+  }
+
+  const byTestId = (id: string) => container.querySelector(`[data-testid="${id}"]`);
+  async function clickSave() {
+    await act(async () => {
+      (byTestId("numbering-save-invoice") as HTMLButtonElement).click();
+    });
+    await settle();
   }
 
   it("shows a retryable error when loading fails", async () => {
@@ -88,12 +126,145 @@ describe("Numbering page states", () => {
     await mount();
     const err = container.querySelector('[data-testid="numbering-load-error"]');
     expect(err?.textContent).toContain(en["settingsPages.numberingLoadFailed"]);
-    expect(err?.querySelector("button")).not.toBeNull();
+    const retry = err?.querySelector("button") as HTMLButtonElement | null;
+    expect(retry).not.toBeNull();
+
+    mode = "rows";
+    await act(async () => {
+      retry!.click();
+    });
+    await settle();
+    expect(byTestId("numbering-invoice")).not.toBeNull();
+    expect(byTestId("numbering-load-error")).toBeNull();
+  });
+
+  it("shows waiting, not empty, for a paused refresh with a cached empty response", async () => {
+    const { onlineManager } = await import("@tanstack/react-query");
+    onlineManager.setOnline(false);
+    mode = "empty";
+    await mount({ numbering: [] });
+    expect(byTestId("numbering-waiting")?.getAttribute("role")).toBe("status");
+    expect(byTestId("numbering-empty")).toBeNull();
+
+    onlineManager.setOnline(true);
+    await settle();
+    expect(byTestId("numbering-empty")).not.toBeNull();
+    expect(byTestId("numbering-waiting")).toBeNull();
   });
 
   it("shows an empty state when no series come back", async () => {
     mode = "empty";
     await mount();
     expect(container.querySelector('[data-testid="numbering-empty"]')).not.toBeNull();
+  });
+
+  it("shows a neutral waiting status for a paused first load, then loads on reconnect", async () => {
+    const { onlineManager } = await import("@tanstack/react-query");
+    mode = "rows";
+    onlineManager.setOnline(false);
+    await mount();
+    const waiting = byTestId("numbering-waiting");
+    expect(waiting?.getAttribute("role")).toBe("status");
+    expect(waiting?.textContent).toBe(en["settingsPages.numberingWaiting"]);
+    expect(byTestId("numbering-empty")).toBeNull();
+    expect(byTestId("numbering-load-error")).toBeNull();
+
+    onlineManager.setOnline(true);
+    await settle();
+    expect(byTestId("numbering-invoice")).not.toBeNull();
+    expect(byTestId("numbering-waiting")).toBeNull();
+  });
+
+  it("keeps cached cards and shows a distinct error when a refresh fails", async () => {
+    mode = "error";
+    await mount({ numbering: [ROW] });
+    const alert = byTestId("numbering-refresh-error");
+    expect(alert?.textContent).toContain(en["settingsPages.numberingRefreshFailed"]);
+    expect(alert?.textContent).toContain(en["settingsPages.numberingRetry"]);
+    expect(byTestId("numbering-load-error")).toBeNull();
+    expect(byTestId("numbering-invoice")).not.toBeNull();
+  });
+
+  it("hides the refresh error while a paused refresh is waiting", async () => {
+    const { onlineManager } = await import("@tanstack/react-query");
+    mode = "error";
+    await mount({ numbering: [ROW] });
+    expect(byTestId("numbering-refresh-error")).not.toBeNull();
+
+    onlineManager.setOnline(false);
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    await act(async () => {
+      void queryClient.refetchQueries({ queryKey: KEY });
+    });
+    await settle();
+    expect(byTestId("numbering-waiting")).not.toBeNull();
+    expect(byTestId("numbering-refresh-error")).toBeNull();
+    expect(byTestId("numbering-invoice")).not.toBeNull();
+  });
+
+  describe("offline save", () => {
+    it("shows queued status only after a real service worker handoff", async () => {
+      mode = "rows";
+      await mount();
+      const postMessage = vi.fn();
+      vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+      Object.defineProperty(navigator, "serviceWorker", {
+        configurable: true,
+        value: { controller: { postMessage } },
+      });
+      await clickSave();
+
+      const queued = byTestId("numbering-queued-invoice");
+      expect(queued?.getAttribute("role")).toBe("status");
+      expect(queued?.textContent).toBe(en["settingsPages.numberingQueued"]);
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      const queueMessages = postMessage.mock.calls
+        .map(([message]) => message)
+        .filter((message) => message?.type === "QUEUE_REQUEST");
+      expect(queueMessages).toHaveLength(1);
+    });
+
+    it("shows the generic save error, not queued, when no controller can take it, and clears queued on a new save", async () => {
+      mode = "rows";
+      await mount();
+      const postMessage = vi.fn();
+      vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+      Object.defineProperty(navigator, "serviceWorker", {
+        configurable: true,
+        value: { controller: { postMessage } },
+      });
+      await clickSave();
+      expect(byTestId("numbering-queued-invoice")).not.toBeNull();
+
+      Object.defineProperty(navigator, "serviceWorker", {
+        configurable: true,
+        value: { controller: null },
+      });
+      await clickSave();
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+        en["settingsPages.numberingSaveFailed"]
+      );
+      expect(byTestId("numbering-queued-invoice")).toBeNull();
+    });
+
+    it("pauses the save while the query client is offline and sends it on reconnect", async () => {
+      const { onlineManager } = await import("@tanstack/react-query");
+      mode = "rows";
+      await mount();
+      onlineManager.setOnline(false);
+      await clickSave();
+
+      const queued = byTestId("numbering-queued-invoice");
+      expect(queued?.textContent).toBe(en["settingsPages.numberingQueued"]);
+      expect((byTestId("numbering-save-invoice") as HTMLButtonElement).disabled).toBe(true);
+      const puts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT");
+      expect(puts()).toHaveLength(0);
+
+      onlineManager.setOnline(true);
+      await settle();
+      expect(puts()).toHaveLength(1);
+      expect(String(puts()[0][0])).toContain("/api/companies/c1/numbering/invoice");
+      expect(byTestId("numbering-queued-invoice")).toBeNull();
+    });
   });
 });

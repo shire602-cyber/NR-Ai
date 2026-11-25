@@ -46,6 +46,14 @@ export class ApiRequestNotSentError extends ApiError {
   }
 }
 
+/** The offline mutation was handed to the service worker for queueing. */
+export class ApiRequestQueuedError extends ApiError {
+  constructor(message: string) {
+    super(message, 0);
+    this.name = "ApiRequestQueuedError";
+  }
+}
+
 async function throwIfResNotOk(res: Response, portalSelection?: string | null) {
   if (!res.ok) {
     let errorMessage = res.statusText;
@@ -201,6 +209,7 @@ async function requestWithHeaders(
 
   const fullUrl = apiUrl(url);
   const body = data !== undefined ? JSON.stringify(data) : undefined;
+
   const send = (requestHeaders: Record<string, string>) =>
     fetch(fullUrl, {
       method,
@@ -210,13 +219,19 @@ async function requestWithHeaders(
       keepalive: options?.keepalive,
     });
 
-  // If we're offline and this is a mutation, queue it for the service worker
-  // to replay once connectivity returns. Reads are not queued — they should
-  // surface a clear error so the UI can render its offline state.
+  // If we're offline and this is a mutation, hand it to the service worker queue. Reads are not
+  // queued; they surface a clear error so the UI can render its offline state.
   if (isMutation && !isOnline()) {
     if (immediateOnly) throw new ApiRequestNotSentError("You are offline.");
-    await queueForSync({ url: fullUrl, method: upperMethod, headers, body });
-    throw new ApiError("You are offline. This change will sync when you reconnect.", 0);
+    const queued = await queueForSync({
+      url: fullUrl,
+      method: upperMethod,
+      headers,
+      body,
+    });
+    const offlineMessage = "You are offline. This change will sync when you reconnect.";
+    // Only a real handoff to the service worker is "queued"; otherwise nothing was handed off.
+    throw queued ? new ApiRequestQueuedError(offlineMessage) : new ApiError(offlineMessage, 0);
   }
 
   let res = await send(headers);
@@ -275,7 +290,7 @@ const ANONYMOUS_SKIP_KEYS = new Set(["/api/companies", "/api/auth/me"]);
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
+  async ({ queryKey, signal }) => {
     const url = apiUrl(queryKey.join("/") as string);
     // R18-04: anonymous visitors have no session, so skip the bootstrap probes
     // that would only produce 401 console noise. This resolves exactly as the
@@ -290,14 +305,17 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
       (await fetch(url, {
         credentials: "include",
         headers: getAuthHeaders(),
+        signal,
       }));
 
     if (res.status === 401) {
+      // The refresh is shared across callers, so it is deliberately not tied to this query's signal.
       const refreshed = await refreshSession();
       if (refreshed) {
         res = await fetch(url, {
           credentials: "include",
           headers: getAuthHeaders(),
+          signal,
         });
       }
     }

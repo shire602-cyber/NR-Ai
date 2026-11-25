@@ -20,7 +20,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
 import { isolateLtrText } from "@/lib/format-bidi";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, ApiRequestQueuedError, apiRequest, queryClient } from "@/lib/queryClient";
 
 /*
  * Settings › Numbering (WQ7, 12.8): prefix, zero padding, yearly reset and the next number for
@@ -62,6 +62,8 @@ function NumberingCard({
   const [yearlyReset, setYearlyReset] = useState(row.yearlyReset);
   const [next, setNext] = useState(String(row.nextNumber));
   const [error, setError] = useState<string | null>(null);
+  // Queued (handed to the offline queue) and a save error are mutually exclusive.
+  const [queued, setQueued] = useState(false);
 
   const nextNum = Number(next);
   const nextFormatted = preview(prefix.trim().toUpperCase(), padding, yearlyReset, nextNum || 1);
@@ -75,17 +77,31 @@ function NumberingCard({
         yearlyReset,
         ...(nextNum !== row.nextNumber ? { nextNumber: nextNum } : {}),
       }),
+    onMutate: () => {
+      setError(null);
+      setQueued(false);
+    },
     onSuccess: () => {
       setError(null);
+      setQueued(false);
       toast({ title: translateNow("settingsPages.numberingSaved") });
       void queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "numbering"] });
     },
-    onError: (e: Error & { status?: number }) =>
+    onError: (e: unknown) => {
+      if (e instanceof ApiRequestQueuedError) {
+        setError(null);
+        setQueued(true);
+        return;
+      }
+      setQueued(false);
+      // Only a server-sent 4xx (validation / conflict) message is shown; raw network, CSRF,
+      // queue and 5xx failures get the generic localized text.
       setError(
-        !e.message || (e.status ?? 0) >= 500 || e.status === 0
-          ? t["settingsPages.numberingSaveFailed"]
-          : e.message
-      ),
+        e instanceof ApiError && e.status >= 400 && e.status < 500 && e.message
+          ? e.message
+          : t["settingsPages.numberingSaveFailed"]
+      );
+    },
   });
 
   const id = (f: string) => `numbering-${row.docType}-${f}`;
@@ -105,6 +121,7 @@ function NumberingCard({
           onSubmit={(e) => {
             e.preventDefault();
             if (nextTooLow) {
+              setQueued(false);
               setError(
                 formatMessage(t["settingsPages.numberingBelowIssued"], { last: row.lastIssued })
               );
@@ -179,6 +196,15 @@ function NumberingCard({
               {error}
             </p>
           ) : null}
+          {queued || save.isPaused ? (
+            <p
+              role="status"
+              className="text-small text-muted-foreground sm:col-span-2 lg:col-span-4"
+              data-testid={`numbering-queued-${row.docType}`}
+            >
+              {t["settingsPages.numberingQueued"]}
+            </p>
+          ) : null}
           <div className="sm:col-span-2 lg:col-span-4">
             <Button
               type="submit"
@@ -226,15 +252,32 @@ export default function NumberingSettings() {
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
           </div>
         ) : null}
-        {data.isError ? (
-          <div role="alert" className="space-y-2" data-testid="numbering-load-error">
-            <p className="text-small text-danger">{t["settingsPages.numberingLoadFailed"]}</p>
+        {data.fetchStatus === "paused" ? (
+          <p
+            role="status"
+            className="text-small text-muted-foreground"
+            data-testid="numbering-waiting"
+          >
+            {t["settingsPages.numberingWaiting"]}
+          </p>
+        ) : null}
+        {(data.isLoadingError || data.isRefetchError) && data.fetchStatus === "idle" ? (
+          <div
+            role="alert"
+            className="space-y-2"
+            data-testid={data.isLoadingError ? "numbering-load-error" : "numbering-refresh-error"}
+          >
+            <p className="text-small text-danger">
+              {data.isLoadingError
+                ? t["settingsPages.numberingLoadFailed"]
+                : t["settingsPages.numberingRefreshFailed"]}
+            </p>
             <Button variant="outline" size="sm" onClick={() => void data.refetch()}>
               {t["settingsPages.numberingRetry"]}
             </Button>
           </div>
         ) : null}
-        {!data.isLoading && !data.isError && data.data && data.data.numbering.length === 0 ? (
+        {data.isSuccess && data.fetchStatus === "idle" && data.data.numbering.length === 0 ? (
           <p className="text-small text-muted-foreground" data-testid="numbering-empty">
             {t["settingsPages.numberingEmpty"]}
           </p>

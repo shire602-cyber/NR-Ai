@@ -128,5 +128,8 @@
   "settingsPages.numberingLoadFailed": "Could not load your numbering settings. Check your connection and try again.",
   "settingsPages.numberingRetry": "Try again",
   "settingsPages.numberingEmpty": "No numbered documents are set up for this company yet.",
-  "settingsPages.numberingSaveFailed": "Could not save numbering. Try again in a moment."
+  "settingsPages.numberingSaveFailed": "Could not save numbering. Try again in a moment.",
+  "settingsPages.numberingWaiting": "Waiting to load numbering settings.",
+  "settingsPages.numberingRefreshFailed": "Could not refresh your numbering settings.",
+  "settingsPages.numberingQueued": "Numbering change queued for sync."
 }

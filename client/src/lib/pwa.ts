@@ -198,16 +198,17 @@ export function onInstallPromptAvailable(callback: InstallPromptCallback): () =>
 // ─── Background Sync ────────────────────────────────────────────────────────
 
 /**
- * Queues a failed request for background sync retry.
+ * Queues a failed request for background sync retry. Resolves true only when the request was
+ * handed to an active service worker; false when there is no controller (nothing was queued).
  */
 export async function queueForSync(request: {
   url: string;
   method: string;
   headers: Record<string, string>;
   body?: string;
-}): Promise<void> {
+}): Promise<boolean> {
   if (typeof navigator === "undefined" || !navigator.serviceWorker?.controller) {
-    return;
+    return false;
   }
 
   navigator.serviceWorker.controller.postMessage({
@@ -221,6 +222,7 @@ export async function queueForSync(request: {
       sessionMarker: getSessionMarker(),
     },
   });
+  return true;
 }
 
 // ─── Cache Management ───────────────────────────────────────────────────────
