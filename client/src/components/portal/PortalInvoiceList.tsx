@@ -4,6 +4,7 @@ import { CreditCard, FileCode2, FileDown, FileText, Loader2, Search } from "luci
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
@@ -77,10 +78,15 @@ const matches = (inv: PortalInvoice, f: Filter): boolean =>
 export function PortalInvoiceList({
   invoices,
   loading,
+  error,
+  onRetry,
   onlinePayment,
 }: {
   invoices: PortalInvoice[];
   loading?: boolean;
+  /** A failed load: shown instead of the misleading "no invoices" empty state. */
+  error?: unknown;
+  onRetry?: () => void;
   onlinePayment: boolean;
 }) {
   const supplier = usePortalAccountScope();
@@ -185,6 +191,8 @@ export function PortalInvoiceList({
               <Skeleton className="h-12" />
               <Skeleton className="h-12" />
             </div>
+          ) : error ? (
+            <LoadErrorState error={error} onRetry={onRetry} testId="portal-invoices-load-error" />
           ) : invoices.length === 0 ? (
             <EmptyState
               icon={FileText}

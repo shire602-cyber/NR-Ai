@@ -12,7 +12,12 @@ export default function PortalInvoices() {
   const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { data: invoices = [], isLoading } = useQuery<PortalInvoice[]>({
+  const {
+    data: invoices = [],
+    isLoading,
+    error,
+    refetch,
+  } = useQuery<PortalInvoice[]>({
     ...portalQuery("/api/client-portal/invoices", supplier),
     staleTime: 60_000,
   });
@@ -41,6 +46,8 @@ export default function PortalInvoices() {
       <PortalInvoiceList
         invoices={invoices}
         loading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
         onlinePayment={dashboard?.onlinePayment?.available === true}
       />
     </div>

@@ -7,6 +7,7 @@ import { Upload, FileText, FileImage, File, FolderOpen, Loader2, CheckCircle2 } 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DateText } from "@/components/documents/DateText";
@@ -62,7 +63,12 @@ export default function PortalDocuments() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  const { data: documents = [], isLoading } = useQuery<any[]>({
+  const {
+    data: documents = [],
+    isLoading,
+    error,
+    refetch,
+  } = useQuery<any[]>({
     ...portalQuery("/api/client-portal/documents", supplier),
   });
 
@@ -134,6 +140,12 @@ export default function PortalDocuments() {
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
             </div>
+          ) : error ? (
+            <LoadErrorState
+              error={error}
+              onRetry={() => void refetch()}
+              testId="portal-documents-load-error"
+            />
           ) : documents.length === 0 ? (
             <EmptyState
               headingLevel="h2"

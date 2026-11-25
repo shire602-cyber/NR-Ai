@@ -4,6 +4,7 @@ import { FileDown, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { T } from "@/components/layout/T";
 import {
@@ -33,7 +34,7 @@ export default function PortalStatements() {
   const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { data, isLoading } = useQuery<Statement>({
+  const { data, isLoading, error, refetch } = useQuery<Statement>({
     ...portalQuery("/api/client-portal/statements", supplier),
   });
 
@@ -75,7 +76,17 @@ export default function PortalStatements() {
           ) : undefined
         }
       />
-      {sections.length === 0 ? (
+      {error ? (
+        <Card>
+          <CardContent className="p-0">
+            <LoadErrorState
+              error={error}
+              onRetry={() => void refetch()}
+              testId="portal-statements-load-error"
+            />
+          </CardContent>
+        </Card>
+      ) : sections.length === 0 ? (
         <Card>
           <CardContent className="p-0">
             <EmptyState
