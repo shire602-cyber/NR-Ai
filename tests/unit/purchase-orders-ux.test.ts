@@ -4,6 +4,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { loadLocale, useI18n } from "../../client/src/lib/i18n";
 import { filterPurchaseOrders } from "../../client/src/lib/purchase-order-filters";
 import enStatuses from "../../client/src/locales/en/components.json";
+import arStatuses from "../../client/src/locales/ar/components.json";
+import { stripArabicMarks } from "../../shared/arabic-text";
 import {
   COMPANY_ID,
   buttonByText,
@@ -49,6 +51,30 @@ describe("purchase order list search", () => {
   });
   it("returns nothing for an unknown term", () => {
     expect(filterPurchaseOrders(orders, "zzz", enStatuses)).toEqual([]);
+  });
+
+  it("matches a vocalized Arabic status from an unvocalized query, and the reverse", () => {
+    const vocalizedSent = arStatuses["components.statusSent"];
+    expect(vocalizedSent).toMatch(/[ً-ٰٟ]/);
+    const unvocalizedSent = stripArabicMarks(vocalizedSent);
+    expect(unvocalizedSent).not.toBe(vocalizedSent);
+    expect(filterPurchaseOrders(orders, unvocalizedSent, arStatuses).map((o) => o.number)).toEqual([
+      "PO-003",
+    ]);
+    expect(filterPurchaseOrders(orders, vocalizedSent, arStatuses).map((o) => o.number)).toEqual([
+      "PO-003",
+    ]);
+
+    const approvedLabel = arStatuses["components.statusApproved"];
+    const vocalizedApproved = "مُعْتَمَد";
+    expect(stripArabicMarks(vocalizedApproved)).toBe(approvedLabel);
+    expect(
+      filterPurchaseOrders(
+        [{ number: "PO-004", vendorName: "Acme", status: "approved" }],
+        vocalizedApproved,
+        arStatuses
+      ).map((o) => o.number)
+    ).toEqual(["PO-004"]);
   });
 });
 

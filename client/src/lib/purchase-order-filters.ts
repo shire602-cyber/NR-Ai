@@ -1,4 +1,5 @@
 import { getStatusLabel } from "@/components/ui/status-meta";
+import { stripArabicMarks } from "@shared/arabic-text";
 
 /** Client-side search over the purchase order list (number, vendor, status). */
 export interface SearchablePurchaseOrder {
@@ -7,20 +8,22 @@ export interface SearchablePurchaseOrder {
   status?: string | null;
 }
 
+/** Underscores become spaces, and Arabic vowel marks are ignored on both sides. */
+function comparable(value: string): string {
+  return stripArabicMarks(value.replace(/_/g, " ")).toLowerCase();
+}
+
 export function filterPurchaseOrders<T extends SearchablePurchaseOrder>(
   orders: readonly T[] | undefined,
   query: string,
   t: Readonly<Record<string, string>>
 ): T[] {
   const list = orders ?? [];
-  const q = query.trim().toLowerCase();
+  const q = comparable(query.trim());
   if (!q) return [...list];
   return list.filter((po) =>
     [po.number, po.vendorName, po.status, getStatusLabel(po.status ?? "", t)].some((v) =>
-      String(v ?? "")
-        .replace(/_/g, " ")
-        .toLowerCase()
-        .includes(q)
+      comparable(String(v ?? "")).includes(q)
     )
   );
 }
