@@ -190,29 +190,35 @@ const fixRoutes: Record<number, string> = {
 /** Keeps Try again mounted while a retry runs or waits offline, so focus is not dropped. */
 function CloseRetryNotice({
   testId,
-  className,
-  message,
-  retryLabel,
-  busy,
-  paused,
-  fetching,
-  pausedMessage,
-  fetchingMessage,
-  onRetry,
+  scope,
+  stale,
+  query,
 }: {
   testId: string;
-  className: string;
-  message: string;
-  retryLabel: string;
-  busy: boolean;
-  paused: boolean;
-  fetching: boolean;
-  pausedMessage: string;
-  fetchingMessage: string;
-  onRetry: () => void;
+  scope: "checklist" | "history";
+  /** Cached rows are still shown above or below the notice. */
+  stale?: boolean;
+  query: { isFetching: boolean; isPaused: boolean; refetch: () => unknown };
 }) {
+  const { t } = useTranslation();
+  const checklist = scope === "checklist";
+  const busy = query.isFetching || query.isPaused;
+  const message = stale
+    ? checklist
+      ? t["monthEnd.checklistRefreshFailed"]
+      : t["monthEnd.historyRefreshFailed"]
+    : checklist
+      ? t["monthEnd.checklistLoadFailed"]
+      : t["monthEnd.historyLoadFailed"];
+  const waiting = checklist
+    ? t["monthEnd.checklistWaitingForConnection"]
+    : t["monthEnd.historyWaitingForConnection"];
+  const retrying = checklist ? t["monthEnd.retryingChecklist"] : t["monthEnd.retryingHistory"];
   return (
-    <div className={className} data-testid={testId}>
+    <div
+      className={`space-y-3 text-center ${stale ? "py-3" : checklist ? "py-4" : "py-6"}`}
+      data-testid={testId}
+    >
       <p className="text-sm text-destructive" role="alert">
         {message}
       </p>
@@ -221,13 +227,13 @@ function CloseRetryNotice({
         size="sm"
         aria-disabled={busy}
         onClick={() => {
-          if (!busy) onRetry();
+          if (!busy) query.refetch();
         }}
       >
-        {retryLabel}
+        {t["monthEnd.retry"]}
       </Button>
-      <p className={paused ? "text-sm text-muted-foreground" : "sr-only"} role="status">
-        {paused ? pausedMessage : fetching ? fetchingMessage : ""}
+      <p className={query.isPaused ? "text-sm text-muted-foreground" : "sr-only"} role="status">
+        {query.isPaused ? waiting : query.isFetching ? retrying : ""}
       </p>
     </div>
   );
@@ -275,6 +281,11 @@ export default function MonthEndClose() {
     queryKey: [`/api/companies/${companyId}/month-end/checklist?period=${period}`],
     enabled: !!companyId,
   });
+  const checklistQuery = {
+    isFetching: isFetchingChecklist,
+    isPaused: isChecklistPaused,
+    refetch: refetchChecklist,
+  };
   const checklistRetryBusy = isFetchingChecklist || isChecklistPaused;
   // An uncached retry clears the error and sets isLoading, which would swap Try again for skeletons.
   const showChecklistRetry =
@@ -307,6 +318,11 @@ export default function MonthEndClose() {
     queryKey: [`/api/companies/${companyId}/month-end/history`],
     enabled: !!companyId,
   });
+  const historyQuery = {
+    isFetching: isFetchingHistory,
+    isPaused: isHistoryPaused,
+    refetch: refetchHistory,
+  };
   const historyRetryBusy = isFetchingHistory || isHistoryPaused;
   const historyHasRows = (historyData?.length ?? 0) > 0;
   // No cached rows: keep the retry panel through a paused or in-flight retry.
@@ -688,18 +704,7 @@ export default function MonthEndClose() {
         </CardHeader>
         <CardContent>
           {showChecklistRetry ? (
-            <CloseRetryNotice
-              testId="checklist-error"
-              className="space-y-3 py-4 text-center"
-              message={t["monthEnd.checklistLoadFailed"]}
-              retryLabel={t["monthEnd.retry"]}
-              busy={checklistRetryBusy}
-              paused={isChecklistPaused}
-              fetching={isFetchingChecklist}
-              pausedMessage={t["monthEnd.checklistWaitingForConnection"]}
-              fetchingMessage={t["monthEnd.retryingChecklist"]}
-              onRetry={() => refetchChecklist()}
-            />
+            <CloseRetryNotice testId="checklist-error" scope="checklist" query={checklistQuery} />
           ) : isLoadingChecklist ? (
             <div className="space-y-3">
               {Array.from({ length: 7 }).map((_, i) => (
@@ -715,26 +720,15 @@ export default function MonthEndClose() {
               {t["monthEnd.checklistWaitingToLoad"]}
             </p>
           ) : checklistStatus.state === "error" ? (
-            <div className="space-y-3 py-4 text-center" role="alert" data-testid="checklist-error">
-              <p className="text-sm text-destructive">{t["monthEnd.checklistLoadFailed"]}</p>
-              <Button variant="outline" size="sm" onClick={() => refetchChecklist()}>
-                {t["monthEnd.retry"]}
-              </Button>
-            </div>
+            <CloseRetryNotice testId="checklist-error" scope="checklist" query={checklistQuery} />
           ) : checklistData ? (
             <div className="space-y-2">
               {checklistStale && (
                 <CloseRetryNotice
                   testId="checklist-refresh-error"
-                  className="space-y-3 py-3 text-center"
-                  message={t["monthEnd.checklistRefreshFailed"]}
-                  retryLabel={t["monthEnd.retry"]}
-                  busy={checklistRetryBusy}
-                  paused={isChecklistPaused}
-                  fetching={isFetchingChecklist}
-                  pausedMessage={t["monthEnd.checklistWaitingForConnection"]}
-                  fetchingMessage={t["monthEnd.retryingChecklist"]}
-                  onRetry={() => refetchChecklist()}
+                  scope="checklist"
+                  stale
+                  query={checklistQuery}
                 />
               )}
               {checklistStatus.state === "empty" && (
@@ -1118,18 +1112,7 @@ export default function MonthEndClose() {
         <CardContent>
           {/* A retry without cached history stays pending while it fetches or waits offline. */}
           {historyUncachedProblem ? (
-            <CloseRetryNotice
-              testId="history-error"
-              className="space-y-3 py-6 text-center"
-              message={t["monthEnd.historyLoadFailed"]}
-              retryLabel={t["monthEnd.retry"]}
-              busy={historyRetryBusy}
-              paused={isHistoryPaused}
-              fetching={isFetchingHistory}
-              pausedMessage={t["monthEnd.historyWaitingForConnection"]}
-              fetchingMessage={t["monthEnd.retryingHistory"]}
-              onRetry={() => refetchHistory()}
-            />
+            <CloseRetryNotice testId="history-error" scope="history" query={historyQuery} />
           ) : isLoadingHistory ||
             (historyData === undefined && !isHistoryFetched && !isHistoryPaused) ? (
             <div className="space-y-3">
@@ -1142,15 +1125,9 @@ export default function MonthEndClose() {
               {isHistoryError && (
                 <CloseRetryNotice
                   testId="history-refresh-error"
-                  className="space-y-3 py-3 text-center"
-                  message={t["monthEnd.historyRefreshFailed"]}
-                  retryLabel={t["monthEnd.retry"]}
-                  busy={historyRetryBusy}
-                  paused={isHistoryPaused}
-                  fetching={isFetchingHistory}
-                  pausedMessage={t["monthEnd.historyWaitingForConnection"]}
-                  fetchingMessage={t["monthEnd.retryingHistory"]}
-                  onRetry={() => refetchHistory()}
+                  scope="history"
+                  stale
+                  query={historyQuery}
                 />
               )}
               <Table>
