@@ -145,7 +145,12 @@ export default function ChartOfAccounts() {
   const [drawerKey, setDrawerKey] = useState(0);
   const [level, setLevel] = useState<Level>("all");
 
-  const { data: accountsWithBalances, isLoading } = useQuery<AccountWithBalance[]>({
+  const {
+    data: accountsWithBalances,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery<AccountWithBalance[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
     enabled: !!selectedCompanyId,
   });
@@ -261,7 +266,7 @@ export default function ChartOfAccounts() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={t["shell.nav.accounting"]}
         title={t.chartOfAccounts}
         description={t.chartOfAccountsDescription}
         actions={
@@ -349,8 +354,20 @@ export default function ChartOfAccounts() {
 
       <DataTableCard
         status={
-          isLoading ? "loading" : Object.keys(groupedAccounts).length === 0 ? "empty" : "ready"
+          isLoading
+            ? "loading"
+            : isError && !accountsWithBalances
+              ? "error"
+              : Object.keys(groupedAccounts).length === 0
+                ? "empty"
+                : "ready"
         }
+        error={{
+          title: t["common.loadFailedTitle"],
+          description: t["common.loadFailedBody"],
+          onRetry: () => void refetch(),
+          testId: "coa-load-error",
+        }}
         columnLabels={[t["screens.code"], t["screens.account"], t["screens.balance"]]}
         empty={{
           icon: BookOpen,
@@ -529,7 +546,7 @@ export default function ChartOfAccounts() {
               <T k="journal.coaSetParent" />
             </DialogTitle>
             <DialogDescription>
-              {parentFor ? `${parentFor.code} · ${parentFor.nameEn}` : null}
+              {parentFor ? `${parentFor.code} · ${accountDisplayName(parentFor, locale)}` : null}
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
