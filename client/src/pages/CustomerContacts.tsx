@@ -27,7 +27,8 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { DataTableCard } from "@/components/ui/data-table";
+import { QueryStaleNotice, QueryTableCard } from "@/components/contacts/query-state";
+import { queryView } from "@/lib/query-view";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
   DropdownMenu,
@@ -148,7 +149,12 @@ interface PortalLinkRow {
 export default function CustomerContacts() {
   const { toast } = useToast();
   const { t, locale } = useTranslation();
-  const { company, companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
+  const {
+    company,
+    companyId,
+    isLoading: companyLoading,
+    error: companyError,
+  } = useDefaultCompany();
 
   // R3 (CTO 17): command-palette customer results link to /contacts?q=<name>.
   const [searchTerm, setSearchTerm] = useState(() =>
@@ -234,9 +240,15 @@ export default function CustomerContacts() {
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
   const [clearAllConfirmation, setClearAllConfirmation] = useState("");
 
-  const { data: contacts = [], isLoading } = useQuery<CustomerContact[]>({
+  const contactsQuery = useQuery<CustomerContact[]>({
     queryKey: ["/api/companies", companyId, "customer-contacts"],
     enabled: !!companyId,
+  });
+  const contacts = contactsQuery.data ?? [];
+  const listView = queryView(contactsQuery, {
+    companyId,
+    isLoading: companyLoading,
+    error: companyError,
   });
   useOpenInvoiceParam(
     (id) => {
@@ -244,7 +256,8 @@ export default function CustomerContacts() {
       if (contact && canDo("documents.write")) setEditContact(contact);
     },
     "/contacts",
-    !!companyId && !isLoading && permissionsKnown
+    // Wait for the list itself: a paused or failed load must not consume the ?open= link.
+    !!companyId && contactsQuery.data !== undefined && permissionsKnown
   );
 
   const importMutation = useMutation({
@@ -615,7 +628,9 @@ export default function CustomerContacts() {
         <TabsList>
           <TabsTrigger value="list" data-testid="tab-contacts-list">
             <Building2 className="w-4 h-4" />
-            {formatMessage(t["pages.contactsTabCount"], { count: contacts.length })}
+            {contactsQuery.data === undefined
+              ? t["pages.contactsTab"]
+              : formatMessage(t["pages.contactsTabCount"], { count: contacts.length })}
           </TabsTrigger>
           <TabsTrigger
             value="import"
@@ -676,35 +691,54 @@ export default function CustomerContacts() {
             </div>
           )}
 
-          <DataTableCard
-            status={isLoading ? "loading" : filteredContacts.length === 0 ? "empty" : "ready"}
+          <QueryStaleNotice view={listView} onRetry={() => void contactsQuery.refetch()} />
+
+          <QueryTableCard
+            view={listView}
+            rowCount={filteredContacts.length}
+            onRetry={() => void contactsQuery.refetch()}
             columnLabels={[
               t["pages.contactsColName"],
               t["pages.contactsColEmail"],
               t["pages.contactsColPhone"],
             ]}
-            empty={{
-              icon: Building2,
-              title: searchTerm ? t["pages.contactsNoMatchTitle"] : t["pages.contactsEmptyTitle"],
-              description: searchTerm
-                ? t["pages.contactsNoMatchBody"]
-                : t["pages.contactsEmptyBody"],
-              action: searchTerm
-                ? undefined
+            empty={
+              listView.kind === "data" && listView.stale
+                ? {
+                    icon: Building2,
+                    title: searchTerm
+                      ? t["pages.listStaleNoMatchTitle"]
+                      : t["pages.listStaleEmptyTitle"],
+                    description: t["pages.listStaleEmptyBody"],
+                    secondaryAction: searchTerm
+                      ? { label: t["pages.contactsClearSearch"], onClick: () => setSearchTerm("") }
+                      : undefined,
+                  }
                 : {
-                    label: t["pages.contactsAddContact"],
-                    onClick: () => setShowAddDialog(true),
-                    testId: "button-add-first-contact",
-                    permission: "documents.write",
-                  },
-              secondaryAction: searchTerm
-                ? { label: t["pages.contactsClearSearch"], onClick: () => setSearchTerm("") }
-                : {
-                    label: t["pageLabels.importFromExcel"],
-                    onClick: () => setActiveTab("import"),
-                    permission: "documents.write",
-                  },
-            }}
+                    icon: Building2,
+                    title: searchTerm
+                      ? t["pages.contactsNoMatchTitle"]
+                      : t["pages.contactsEmptyTitle"],
+                    description: searchTerm
+                      ? t["pages.contactsNoMatchBody"]
+                      : t["pages.contactsEmptyBody"],
+                    action: searchTerm
+                      ? undefined
+                      : {
+                          label: t["pages.contactsAddContact"],
+                          onClick: () => setShowAddDialog(true),
+                          testId: "button-add-first-contact",
+                          permission: "documents.write",
+                        },
+                    secondaryAction: searchTerm
+                      ? { label: t["pages.contactsClearSearch"], onClick: () => setSearchTerm("") }
+                      : {
+                          label: t["pageLabels.importFromExcel"],
+                          onClick: () => setActiveTab("import"),
+                          permission: "documents.write",
+                        },
+                  }
+            }
           >
             {/* Phones: one two-line row per contact (name + TRN, email · city), actions in ⋯. */}
             <div className="divide-hairline md:hidden" data-testid="mobile-contact-list">
@@ -972,7 +1006,7 @@ export default function CustomerContacts() {
                 ]}
               />
             </div>
-          </DataTableCard>
+          </QueryTableCard>
         </TabsContent>
 
         <TabsContent value="import" className="space-y-4">

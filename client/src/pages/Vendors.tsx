@@ -36,7 +36,15 @@ import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDate } from "@/lib/format";
 import { filterVendors } from "@/lib/vendor-filter";
-import { DataTableCard } from "@/components/ui/data-table";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import {
+  QueryNoCompany,
+  QueryStaleNotice,
+  QueryTableCard,
+  QueryWaiting,
+} from "@/components/contacts/query-state";
+import { queryView } from "@/lib/query-view";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { FileText, Link2, Plus, Search, Truck } from "lucide-react";
@@ -175,33 +183,48 @@ export default function Vendors() {
   const { t, locale } = useTranslation();
   const c = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
-  const { companyId } = useDefaultCompany();
+  const { companyId, isLoading: companyLoading, error: companyError } = useDefaultCompany();
   const { gate: permissionGate } = useCompanyPermission();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({ ...EMPTY });
   const [searchTerm, setSearchTerm] = useState("");
   const [statementFor, setStatementFor] = useState<Vendor | null>(null);
 
-  const { data: vendors = [] } = useQuery<Vendor[]>({
+  const vendorsQuery = useQuery<Vendor[]>({
     queryKey: ["/api/companies", companyId, "vendors"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/vendors`),
     enabled: !!companyId,
   });
-  const { data: aging } = useQuery<VendorAging>({
+  const agingQuery = useQuery<VendorAging>({
     queryKey: ["/api/companies", companyId, "vendors", "aging"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/vendors/aging`),
     enabled: !!companyId,
   });
-  const { data: statement } = useQuery<{ lines: StatementLine[]; closingBalance: number }>({
+  const statementQuery = useQuery<{ lines: StatementLine[]; closingBalance: number }>({
     queryKey: ["/api/companies", companyId, "vendors", statementFor?.id, "statement"],
     queryFn: () =>
       apiRequest("GET", `/api/companies/${companyId}/vendors/${statementFor!.id}/statement`),
     enabled: !!companyId && !!statementFor,
   });
 
-  const filteredVendors = useMemo(() => filterVendors(vendors, searchTerm), [vendors, searchTerm]);
-  const statementTypeLabel = (type: string) =>
-    t[`pages.vendorsStatementType.${type}`] ?? type.replace(/_/g, " ");
+  const vendors = vendorsQuery.data ?? [];
+  const aging = agingQuery.data;
+  const statement = statementQuery.data;
+  const filteredVendors = useMemo(
+    () => filterVendors(vendorsQuery.data ?? [], searchTerm),
+    [vendorsQuery.data, searchTerm]
+  );
+  const company = { companyId, isLoading: companyLoading, error: companyError };
+  const listView = queryView(vendorsQuery, company);
+  const agingView = queryView(agingQuery, company);
+  const statementView = queryView(statementQuery, company);
+  const noMatch = !!searchTerm.trim() && vendors.length > 0;
+  const statementTypeLabel = (type: string) => {
+    const key = `pages.vendorsStatementType.${type}`;
+    const label = t[key];
+    // While catalogs preload, a missing key reads as the key itself: never show that.
+    return label && label !== key ? label : type.replace(/_/g, " ");
+  };
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vendors"] });
@@ -302,29 +325,44 @@ export default function Vendors() {
               />
             </div>
           )}
-          <DataTableCard
-            status={filteredVendors.length === 0 ? "empty" : "ready"}
+          <QueryStaleNotice view={listView} onRetry={() => void vendorsQuery.refetch()} />
+          <QueryTableCard
+            view={listView}
+            rowCount={filteredVendors.length}
+            onRetry={() => void vendorsQuery.refetch()}
+            columnLabels={[c.name, c.trnShort, c.email, c.termsShort, c.currency]}
             empty={
-              searchTerm.trim() && vendors.length > 0
+              listView.kind === "data" && listView.stale
                 ? {
-                    icon: Search,
-                    title: t["pages.vendorsNoMatchTitle"],
-                    description: t["pages.vendorsNoMatchBody"],
-                    secondaryAction: {
-                      label: t["pages.vendorsClearSearch"],
-                      onClick: () => setSearchTerm(""),
-                    },
+                    icon: noMatch ? Search : Truck,
+                    title: noMatch
+                      ? t["pages.listStaleNoMatchTitle"]
+                      : t["pages.listStaleEmptyTitle"],
+                    description: t["pages.listStaleEmptyBody"],
+                    secondaryAction: noMatch
+                      ? { label: t["pages.vendorsClearSearch"], onClick: () => setSearchTerm("") }
+                      : undefined,
                   }
-                : {
-                    icon: Truck,
-                    title: c.noVendors,
-                    description: c.emptyBody,
-                    action: {
-                      label: c.newVendor,
-                      onClick: () => setOpen(true),
-                      permission: "documents.write",
-                    },
-                  }
+                : noMatch
+                  ? {
+                      icon: Search,
+                      title: t["pages.vendorsNoMatchTitle"],
+                      description: t["pages.vendorsNoMatchBody"],
+                      secondaryAction: {
+                        label: t["pages.vendorsClearSearch"],
+                        onClick: () => setSearchTerm(""),
+                      },
+                    }
+                  : {
+                      icon: Truck,
+                      title: c.noVendors,
+                      description: c.emptyBody,
+                      action: {
+                        label: c.newVendor,
+                        onClick: () => setOpen(true),
+                        permission: "documents.write",
+                      },
+                    }
             }
           >
             <Table className="row-cards">
@@ -388,12 +426,24 @@ export default function Vendors() {
                 ))}
               </TableBody>
             </Table>
-          </DataTableCard>
+          </QueryTableCard>
         </TabsContent>
         <TabsContent value="aging" className="space-y-3">
-          <DataTableCard
-            status={(aging?.vendors ?? []).length === 0 ? "empty" : "ready"}
-            empty={{ icon: Truck, title: c.noPayables, description: c.noPayablesBody }}
+          <QueryStaleNotice view={agingView} onRetry={() => void agingQuery.refetch()} />
+          <QueryTableCard
+            view={agingView}
+            rowCount={aging?.vendors.length ?? 0}
+            onRetry={() => void agingQuery.refetch()}
+            columnLabels={[c.name, c.total]}
+            empty={
+              agingView.kind === "data" && agingView.stale
+                ? {
+                    icon: Truck,
+                    title: t["pages.listStaleEmptyTitle"],
+                    description: t["pages.listStaleEmptyBody"],
+                  }
+                : { icon: Truck, title: c.noPayables, description: c.noPayablesBody }
+            }
             footer={
               aging ? (
                 <>
@@ -433,7 +483,7 @@ export default function Vendors() {
                 ))}
               </TableBody>
             </Table>
-          </DataTableCard>
+          </QueryTableCard>
         </TabsContent>
       </Tabs>
 
@@ -513,41 +563,65 @@ export default function Vendors() {
               {c.statement}: <span dir="auto">{statementFor?.name}</span>
             </DialogTitle>
           </DialogHeader>
+          {statementFor && (
+            <QueryStaleNotice view={statementView} onRetry={() => void statementQuery.refetch()} />
+          )}
           <div className="overflow-hidden rounded-lg border border-border">
-            <Table density="compact" className="mobile-fit">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{c.date}</TableHead>
-                  <TableHead>{c.type}</TableHead>
-                  <TableHead>{c.reference}</TableHead>
-                  <TableHead data-numeric="">{c.charge}</TableHead>
-                  <TableHead data-numeric="">{c.credit}</TableHead>
-                  <TableHead data-numeric="">{c.balance}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(statement?.lines ?? []).map((l) => (
-                  <TableRow key={`${l.type}-${l.documentId}`}>
-                    <TableCell data-nowrap="">{formatDate(l.date, locale)}</TableCell>
-                    <TableCell data-nowrap="" className="text-muted-foreground">
-                      {statementTypeLabel(l.type)}
-                    </TableCell>
-                    <TableCell data-nowrap="">
-                      <span dir="ltr" className="[unicode-bidi:isolate]">
-                        {l.reference ?? "—"}
-                      </span>
-                    </TableCell>
-                    <MoneyCell amount={l.charge} showCurrency={false} />
-                    <MoneyCell amount={l.credit} showCurrency={false} />
-                    <MoneyCell amount={l.balance} showCurrency={false} className="font-medium" />
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            {statement && statement.lines.length === 0 && (
-              <p className="p-4 text-center text-sm text-muted-foreground">
-                {t["pages.vendorsStatementEmpty"]}
+            {!statementFor ? null : statementView.kind === "loading" ? (
+              <TableSkeleton
+                rows={3}
+                columnLabels={[c.date, c.type, c.reference, c.charge, c.credit, c.balance]}
+              />
+            ) : statementView.kind === "noCompany" ? (
+              <QueryNoCompany />
+            ) : statementView.kind === "waiting" ? (
+              <QueryWaiting />
+            ) : statementView.kind === "error" ? (
+              <LoadErrorState
+                compact
+                error={statementView.error}
+                onRetry={statementView.canRetry ? () => void statementQuery.refetch() : undefined}
+              />
+            ) : (statement?.lines ?? []).length === 0 ? (
+              <p
+                className="p-4 text-center text-sm text-muted-foreground"
+                data-testid="statement-empty"
+              >
+                {statementView.stale
+                  ? t["pages.vendorsStatementStaleEmpty"]
+                  : t["pages.vendorsStatementEmpty"]}
               </p>
+            ) : (
+              <Table density="compact" className="mobile-fit">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{c.date}</TableHead>
+                    <TableHead>{c.type}</TableHead>
+                    <TableHead>{c.reference}</TableHead>
+                    <TableHead data-numeric="">{c.charge}</TableHead>
+                    <TableHead data-numeric="">{c.credit}</TableHead>
+                    <TableHead data-numeric="">{c.balance}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(statement?.lines ?? []).map((l) => (
+                    <TableRow key={`${l.type}-${l.documentId}`}>
+                      <TableCell data-nowrap="">{formatDate(l.date, locale)}</TableCell>
+                      <TableCell data-nowrap="" className="text-muted-foreground">
+                        {statementTypeLabel(l.type)}
+                      </TableCell>
+                      <TableCell data-nowrap="">
+                        <span dir="ltr" className="[unicode-bidi:isolate]">
+                          {l.reference ?? "—"}
+                        </span>
+                      </TableCell>
+                      <MoneyCell amount={l.charge} showCurrency={false} />
+                      <MoneyCell amount={l.credit} showCurrency={false} />
+                      <MoneyCell amount={l.balance} showCurrency={false} className="font-medium" />
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </div>
           <DialogFooter>

@@ -1043,5 +1043,16 @@
   "pages.vendorsStatementType.bill": "فاتورة مورد",
   "pages.vendorsStatementType.payment": "دفعة",
   "pages.vendorsStatementType.debit_note": "إشعار مدين",
-  "pages.vendorsStatementType.credit_applied": "رصيد مطبق"
+  "pages.vendorsStatementType.credit_applied": "رصيد مطبق",
+  "pages.vendorsStatementType.payment_reversal": "عكس دفعة",
+  "pages.vendorsStatementType.prepayment_applied": "دفعة مقدمة مطبقة",
+  "pages.vendorsStatementStaleEmpty": "لا توجد حركات في آخر نسخة محفوظة",
+  "pages.contactsTab": "جهات الاتصال",
+  "pages.listWaitingTitle": "بانتظار الاتصال",
+  "pages.listWaitingBody": "سيتم التحميل عند عودة الاتصال بالإنترنت.",
+  "pages.listStalePaused": "التحديث متوقف مؤقتًا حتى عودة الاتصال. تُعرض آخر نسخة محفوظة.",
+  "pages.listStaleError": "تعذّر التحديث. تُعرض آخر نسخة محفوظة.",
+  "pages.listStaleEmptyTitle": "لا يوجد شيء في آخر نسخة محفوظة",
+  "pages.listStaleNoMatchTitle": "لا توجد نتائج مطابقة في آخر نسخة محفوظة",
+  "pages.listStaleEmptyBody": "قد لا تكون محدّثة."
 }

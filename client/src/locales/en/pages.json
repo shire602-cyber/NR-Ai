@@ -1043,5 +1043,16 @@
   "pages.vendorsStatementType.bill": "Bill",
   "pages.vendorsStatementType.payment": "Payment",
   "pages.vendorsStatementType.debit_note": "Debit note",
-  "pages.vendorsStatementType.credit_applied": "Credit applied"
+  "pages.vendorsStatementType.credit_applied": "Credit applied",
+  "pages.vendorsStatementType.payment_reversal": "Payment reversal",
+  "pages.vendorsStatementType.prepayment_applied": "Prepayment applied",
+  "pages.vendorsStatementStaleEmpty": "No transactions in the last saved copy",
+  "pages.contactsTab": "Contacts",
+  "pages.listWaitingTitle": "Waiting for a connection",
+  "pages.listWaitingBody": "This will load once you are back online.",
+  "pages.listStalePaused": "Refresh paused until you are back online. Showing the last saved copy.",
+  "pages.listStaleError": "Couldn't refresh. Showing the last saved copy.",
+  "pages.listStaleEmptyTitle": "Nothing in the last saved copy",
+  "pages.listStaleNoMatchTitle": "No matches in the last saved copy",
+  "pages.listStaleEmptyBody": "It may be out of date."
 }
