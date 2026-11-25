@@ -39,6 +39,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { formatDate, formatDateRange, formatEmbeddedDates } from "@/lib/format-date";
 import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import {
   TrendingUp,
   DollarSign,
@@ -159,6 +160,7 @@ export default function CashFlowForecast() {
   const {
     data: forecast,
     isLoading: isLoadingForecast,
+    error: forecastError,
     refetch: refetchForecast,
     isFetching: isFetchingForecast,
   } = useQuery<ForecastData>({
@@ -217,9 +219,20 @@ export default function CashFlowForecast() {
     mutationFn: (id: string) =>
       apiRequest("DELETE", `/api/companies/${companyId}/cashflow/items/${id}`),
     onSuccess: invalidateForecast,
+    onError: () =>
+      toast({
+        title: tr(locale, "Could not remove item", "تعذر حذف البند"),
+        description: tr(locale, "Please try again.", "يرجى المحاولة مرة أخرى."),
+        variant: "destructive",
+      }),
   });
 
-  const { data: history, isLoading: isLoadingHistory } = useQuery<MonthlyCashHistory[]>({
+  const {
+    data: history,
+    isLoading: isLoadingHistory,
+    error: historyError,
+    refetch: refetchHistory,
+  } = useQuery<MonthlyCashHistory[]>({
     queryKey: [`/api/companies/${companyId}/cashflow/history?months=6`],
     enabled: !!companyId,
   });
@@ -362,6 +375,12 @@ export default function CashFlowForecast() {
           <Skeleton className="h-32" />
           <Skeleton className="h-32" />
         </div>
+      ) : forecastError && !forecast ? (
+        <LoadErrorState
+          error={forecastError}
+          onRetry={() => refetchForecast()}
+          testId="forecast-load-error"
+        />
       ) : forecastEmpty ? (
         <EmptyState
           icon={Wallet}
@@ -422,7 +441,7 @@ export default function CashFlowForecast() {
       )}
 
       {/* Projection Table */}
-      {!forecastEmpty && (
+      {!forecastEmpty && !(forecastError && !forecast) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -671,8 +690,12 @@ export default function CashFlowForecast() {
               className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm"
             >
               <span>
-                {tr(locale, KIND_LABELS[it.kind].en, KIND_LABELS[it.kind].ar)} · {it.description} ·{" "}
-                {formatDate(it.dueDate, locale)}
+                {tr(
+                  locale,
+                  KIND_LABELS[it.kind]?.en ?? it.kind,
+                  KIND_LABELS[it.kind]?.ar ?? it.kind
+                )}{" "}
+                · {it.description} · {formatDate(it.dueDate, locale)}
                 {it.repeatMonths > 0 ? ` ×${it.occurrences}` : ""}
               </span>
               <span className="flex items-center gap-3">
@@ -791,6 +814,13 @@ export default function CashFlowForecast() {
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
+          ) : historyError && !history ? (
+            <LoadErrorState
+              error={historyError}
+              onRetry={() => refetchHistory()}
+              compact
+              testId="history-load-error"
+            />
           ) : history && history.length > 0 ? (
             <div className="overflow-x-auto">
               <Table>
