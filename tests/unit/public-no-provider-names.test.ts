@@ -29,37 +29,59 @@ export function namesProvider(text: string): RegExp | undefined {
 
 // The invoice renderer draws Arabic as shaped glyphs and stores the real text in
 // /ActualText <FEFF...> marked-content spans (UTF-16BE, visual order). Decode every span from
-// every Flate stream so Arabic names in a PDF are checked, in both reading directions, per span and
-// joined across adjacent spans (a name split over two spans is still caught).
-export function pdfActualText(pdf: Buffer): string {
+// every Flate stream in both reading directions, joining spans only within a stream.
+export function pdfActualText(pdf: Buffer): string[] {
   const s = pdf.toString("latin1");
-  const parts: string[] = [];
+  const candidates: string[] = [];
+  const rev = (x: string) => [...x].reverse().join("");
   const re = /stream\r?\n/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(s))) {
     const start = m.index + m[0].length;
     const end = s.indexOf("endstream", start);
     if (end < 0) break;
+    re.lastIndex = end + "endstream".length;
     let body: string;
     try {
       body = inflateSync(pdf.subarray(start, end)).toString("latin1");
     } catch {
       body = s.slice(start, end);
     }
+    const parts: string[] = [];
     for (const a of body.matchAll(/\/ActualText\s*<([0-9A-Fa-f\s]+)>/g)) {
       const hex = a[1].replace(/\s/g, "").replace(/^FEFF/i, "");
       let text = "";
       for (let i = 0; i + 4 <= hex.length; i += 4) text += String.fromCharCode(parseInt(hex.slice(i, i + 4), 16));
       parts.push(text);
     }
+    const reversed = parts.map(rev);
+    candidates.push(...parts, ...reversed);
+    if (parts.length > 1) {
+      const joined = parts.join("");
+      candidates.push(joined, rev(joined), reversed.join(""), parts.join(" "), reversed.join(" "));
+    }
   }
-  const rev = (x: string) => [...x].reverse().join("");
-  const joined = parts.join("");
-  return [...parts, ...parts.map(rev), joined, rev(joined), parts.map(rev).join("")].join(" ");
+  return candidates;
 }
 
 function utf16Hex(text: string): string {
   return "FEFF" + [...text].map((c) => c.charCodeAt(0).toString(16).padStart(4, "0")).join("").toUpperCase();
+}
+
+function pdfWithActualText(streams: string[][]): Buffer {
+  return Buffer.concat([
+    Buffer.from("%PDF-1.4\n", "latin1"),
+    ...streams.flatMap((spans, index) => {
+      const content = spans.map((span) => `/Span <</ActualText <${utf16Hex(span)}>>> BDC\nBT ET\nEMC`).join("\n");
+      const compressed = deflateSync(Buffer.from(content, "latin1"));
+      return [
+        Buffer.from(`${index + 1} 0 obj <</Filter /FlateDecode /Length ${compressed.length}>>\nstream\n`, "latin1"),
+        compressed,
+        Buffer.from("\nendstream\nendobj\n", "latin1"),
+      ];
+    }),
+    Buffer.from("%%EOF", "latin1"),
+  ]);
 }
 
 function walk(dir: string): string[] {
@@ -112,9 +134,16 @@ describe("public site names no e-invoicing provider", () => {
       expect(r).toContain(f);
     }
     expect(r.some((f) => f.startsWith("client/src/locales/ar/marketing"))).toBe(true);
-    expect(r).toContain("client/src/locales/en/components.json");
-    expect(r).toContain("client/src/locales/ar/components.json");
     expect(files.length).toBeGreaterThan(20);
+  });
+
+  it("scans all six shared public catalogs", () => {
+    const scanned = files.map(rel);
+    for (const locale of ["en", "ar"]) {
+      for (const catalog of ["components", "pageLabels", "pages"]) {
+        expect(scanned).toContain(`client/src/locales/${locale}/${catalog}.json`);
+      }
+    }
   });
 
   it.each([
@@ -123,6 +152,7 @@ describe("public site names no e-invoicing provider", () => {
     "\u0623\u0643\u064a\u0648\u0628", // akyub
     "\u0625\u064a \u0643\u064a\u0648\u0628", // ii kyub
     "\u0622\u064a \u0643\u064a\u064f\u0648\u0628", // aay kyub with damma
+    "\u0643\u064a\u0640\u0648\u0628", // kyub with tatweel
     "\u0643\u0648\u0645\u0628\u0644\u0627\u064a\u0646\u0633", // komblayns
     "\u0643\u0648\u0645\u0628\u0644\u064a\u0627\u0646\u0633", // kombliyans
     "\u0628\u064a \u0623\u0648\u0631\u0627", // bi awra
@@ -146,14 +176,20 @@ describe("public site names no e-invoicing provider", () => {
   it("reads Arabic provider names hidden in PDF ActualText spans (both directions)", () => {
     const name = "\u0643\u0648\u0645\u0628\u0644\u0627\u064a\u0646\u0633";
     for (const shown of [name, [...name].reverse().join("")]) {
-      const content = Buffer.from(`/Span <</ActualText <${utf16Hex(shown)}>>> BDC\nBT ET\nEMC`, "latin1");
-      const pdf = Buffer.concat([
-        Buffer.from("%PDF-1.4\n1 0 obj <</Filter /FlateDecode>>\nstream\n", "latin1"),
-        deflateSync(content),
-        Buffer.from("\nendstream\nendobj\n%%EOF", "latin1"),
-      ]);
-      expect(namesProvider(pdfActualText(pdf))).toBeDefined();
+      const singleSpan = pdfWithActualText([[shown]]);
+      const splitSpans = pdfWithActualText([[shown.slice(0, 3), shown.slice(3)]]);
+      expect(pdfActualText(singleSpan).some(namesProvider)).toBe(true);
+      expect(pdfActualText(splitSpans).some(namesProvider)).toBe(true);
     }
+  });
+
+  it.each([
+    ["\u0643\u064a", "\u0648\u0628"],
+    ["A", "Cube"],
+  ])("keeps PDF ActualText fragments %s and %s in separate streams", (first, second) => {
+    const texts = pdfActualText(pdfWithActualText([[first], [second]]));
+    expect(texts).toEqual(expect.arrayContaining([first, second]));
+    expect(texts.some(namesProvider)).toBe(false);
   });
 
   it.each(pdfs.map((f) => [rel(f), f]))("pdf text %s", async (_n, f) => {
@@ -166,9 +202,8 @@ describe("public site names no e-invoicing provider", () => {
     }
     expect(text.length).toBeGreaterThan(100);
     const arabic = pdfActualText(readFileSync(f));
-    expect(arabic).toMatch(/[\u0600-\u06ff]/);
-    text += " " + arabic;
-    const hit = namesProvider(text);
+    expect(arabic.some((candidate) => /[\u0600-\u06ff]/.test(candidate))).toBe(true);
+    const hit = [text, ...arabic].map(namesProvider).find(Boolean);
     expect(hit, `provider name matched ${hit}`).toBeUndefined();
   }, 60_000);
 });
