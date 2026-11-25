@@ -9,7 +9,7 @@ import { loadLocale, useI18n } from "../../client/src/lib/i18n";
 import { queryClient } from "../../client/src/lib/queryClient";
 import Vendors from "../../client/src/pages/Vendors";
 import CustomerContacts from "../../client/src/pages/CustomerContacts";
-import { click, type } from "./helpers/form-harness";
+import { click, flushUntil, type } from "./helpers/form-harness";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -423,6 +423,36 @@ describe("supplier statement dialog query states", () => {
       (tr) => tr.querySelectorAll("td")[1].textContent
     );
     expect(types).toEqual(expected);
+  });
+});
+
+describe("new supplier dialog (loaded on demand)", () => {
+  it("keeps typed values through a manual close and resets after a save", async () => {
+    const button = (label: string) =>
+      [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === label)!;
+    const name = () => document.getElementById("vendor-name") as HTMLInputElement | null;
+    const openForm = async () => {
+      await click(button("New supplier"));
+      await flushUntil(() => name() !== null);
+    };
+    await mount(Vendors);
+    expect($('[data-testid="dialog-vendor-form"]')).toBeNull();
+
+    await openForm();
+    await type(name(), "Atlas Office Supplies");
+    await click(button("Cancel"));
+    await settle();
+    expect(name()).toBeNull();
+
+    await openForm();
+    expect(name()!.value).toBe("Atlas Office Supplies");
+
+    await click(button("Save"));
+    await settle();
+    expect(name()).toBeNull();
+
+    await openForm();
+    expect(name()!.value).toBe("");
   });
 });
 

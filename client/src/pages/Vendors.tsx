@@ -1,19 +1,10 @@
-import { useMemo, useState } from "react";
-import {
-  ErrorSummary,
-  Field,
-  FormActions,
-  FormGrid,
-  FormSection,
-} from "@/components/ui/form-layout";
-import { useFormGate } from "@/hooks/use-form-gate";
+import { Suspense, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -47,9 +38,12 @@ import {
 import { queryView } from "@/lib/query-view";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { lazyWithReload } from "@/lib/lazyWithReload";
 import { FileText, Link2, Plus, Search, Truck } from "lucide-react";
 
 // Vendor master (W3-B, R04-16): TRN-validated, deduplicated suppliers with statements and aging.
+
+const NewVendorDialog = lazyWithReload(() => import("@/components/vendors/NewVendorDialog"));
 
 const COPY = {
   en: {
@@ -57,17 +51,8 @@ const COPY = {
     subtitle: "Supplier master: TRN, payment terms, bank details, statements and aging",
     newVendor: "New supplier",
     name: "Name",
-    nameAr: "Arabic name",
-    trn: "TRN (15 digits)",
     email: "Email",
-    phone: "Phone",
-    terms: "Payment terms (days)",
     currency: "Currency",
-    iban: "IBAN",
-    bank: "Bank",
-    save: "Save",
-    cancel: "Cancel",
-    saved: "Supplier saved",
     list: "Suppliers",
     aging: "Payables aging",
     statement: "Statement",
@@ -97,17 +82,8 @@ const COPY = {
     subtitle: "سجل الموردين: الرقم الضريبي وشروط الدفع والبيانات البنكية والكشوف والأعمار",
     newVendor: "مورد جديد",
     name: "الاسم",
-    nameAr: "الاسم بالعربية",
-    trn: "الرقم الضريبي (15 رقمًا)",
     email: "البريد الإلكتروني",
-    phone: "الهاتف",
-    terms: "شروط الدفع (أيام)",
     currency: "العملة",
-    iban: "رقم الآيبان",
-    bank: "البنك",
-    save: "حفظ",
-    cancel: "إلغاء",
-    saved: "تم حفظ المورد",
     list: "الموردون",
     aging: "أعمار الذمم الدائنة",
     statement: "كشف حساب",
@@ -167,18 +143,6 @@ interface VendorAging {
   };
 }
 
-const EMPTY = {
-  name: "",
-  name_ar: "",
-  trn: "",
-  email: "",
-  phone: "",
-  payment_terms_days: "30",
-  currency: "AED",
-  iban: "",
-  bank_name: "",
-};
-
 export default function Vendors() {
   const { t, locale } = useTranslation();
   const c = COPY[locale === "ar" ? "ar" : "en"];
@@ -186,7 +150,8 @@ export default function Vendors() {
   const { companyId, isLoading: companyLoading, error: companyError } = useDefaultCompany();
   const { gate: permissionGate } = useCompanyPermission();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<Record<string, string>>({ ...EMPTY });
+  // The create form's chunk loads on first request; it then stays mounted and keeps typed values.
+  const [formRequested, setFormRequested] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statementFor, setStatementFor] = useState<Vendor | null>(null);
 
@@ -229,28 +194,6 @@ export default function Vendors() {
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vendors"] });
 
-  const create = useMutation({
-    mutationFn: () =>
-      apiRequest("POST", `/api/companies/${companyId}/vendors`, {
-        name: form.name,
-        name_ar: form.name_ar || null,
-        trn: form.trn || null,
-        email: form.email || null,
-        phone: form.phone || null,
-        payment_terms_days: Number(form.payment_terms_days) || 0,
-        currency: form.currency || "AED",
-        iban: form.iban || null,
-        bank_name: form.bank_name || null,
-      }),
-    onSuccess: () => {
-      invalidate();
-      toast({ title: c.saved });
-      setOpen(false);
-      setForm({ ...EMPTY });
-    },
-    onError: (e: Error) => toast({ variant: "destructive", title: e.message }),
-  });
-
   const backfill = useMutation({
     mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/vendors/backfill`, {}),
     onSuccess: (r: { billsLinked: number }) => {
@@ -260,28 +203,10 @@ export default function Vendors() {
     onError: (e: Error) => toast({ variant: "destructive", title: e.message }),
   });
 
-  const gate = useFormGate([{ id: "vendor-name", label: c.name, invalid: !form.name }]);
-  const field = (
-    key: keyof typeof EMPTY,
-    label: string,
-    props: Record<string, string> = {},
-    opts: { required?: boolean; help?: string; ltr?: boolean } = {}
-  ) => (
-    <Field
-      id={`vendor-${key}`}
-      label={label}
-      required={opts.required}
-      help={opts.help}
-      error={gate.errorFor(`vendor-${key}`)}
-    >
-      <Input
-        ltr={opts.ltr}
-        value={form[key] ?? ""}
-        onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-        {...props}
-      />
-    </Field>
-  );
+  const openForm = () => {
+    setFormRequested(true);
+    setOpen(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -290,7 +215,7 @@ export default function Vendors() {
         title={c.title}
         description={c.subtitle}
         primaryAction={
-          <Button onClick={() => setOpen(true)} {...permissionGate("documents.write")}>
+          <Button onClick={openForm} {...permissionGate("documents.write")}>
             <Plus aria-hidden />
             {c.newVendor}
           </Button>
@@ -359,7 +284,7 @@ export default function Vendors() {
                       description: c.emptyBody,
                       action: {
                         label: c.newVendor,
-                        onClick: () => setOpen(true),
+                        onClick: openForm,
                         permission: "documents.write",
                       },
                     }
@@ -487,74 +412,17 @@ export default function Vendors() {
         </TabsContent>
       </Tabs>
 
-      <Dialog
-        open={open}
-        onOpenChange={(o) => {
-          setOpen(o);
-          if (!o) gate.reset();
-        }}
-      >
-        <DialogContent size="md" data-testid="dialog-vendor-form">
-          <DialogHeader>
-            <DialogTitle>{c.newVendor}</DialogTitle>
-            <DialogDescription>{t["forms.vendor.desc"]}</DialogDescription>
-          </DialogHeader>
-          <form
-            noValidate
-            className="space-y-6"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (create.isPending || !gate.attempt()) return;
-              create.mutate();
-            }}
-          >
-            <ErrorSummary items={gate.summary} />
-            <FormSection title={t["forms.section.vendor"]}>
-              <FormGrid>
-                {field("name", c.name, { dir: "auto" }, { required: true })}
-                {field("name_ar", c.nameAr, { dir: "rtl", lang: "ar" })}
-              </FormGrid>
-            </FormSection>
-            <FormSection title={t["forms.section.tax"]} description={t["forms.section.taxDesc"]}>
-              <FormGrid>
-                {field(
-                  "trn",
-                  c.trn,
-                  { inputMode: "numeric", maxLength: "15" },
-                  { ltr: true, help: t["forms.contact.trnHelp"] }
-                )}
-                {field(
-                  "payment_terms_days",
-                  c.terms,
-                  { inputMode: "numeric" },
-                  { ltr: true, help: t["forms.vendor.termsHelp"] }
-                )}
-                {field("currency", c.currency, { maxLength: "3" }, { ltr: true })}
-              </FormGrid>
-            </FormSection>
-            <FormSection title={t["forms.section.contact"]}>
-              <FormGrid>
-                {field("email", c.email, { type: "email", dir: "ltr", autoComplete: "email" })}
-                {field("phone", c.phone, { type: "tel", dir: "ltr", autoComplete: "tel" })}
-              </FormGrid>
-            </FormSection>
-            <FormSection title={t["forms.section.bank"]}>
-              <FormGrid>
-                {field("iban", c.iban, { autoComplete: "off" }, { ltr: true })}
-                {field("bank_name", c.bank, { dir: "auto" })}
-              </FormGrid>
-            </FormSection>
-            <FormActions sticky>
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                {c.cancel}
-              </Button>
-              <Button type="submit" className="sm:min-w-32" disabled={create.isPending}>
-                {create.isPending ? t["forms.saving"] : c.save}
-              </Button>
-            </FormActions>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {formRequested && (
+        <Suspense fallback={null}>
+          <NewVendorDialog
+            open={open}
+            onOpenChange={setOpen}
+            companyId={companyId}
+            onSaved={invalidate}
+            labels={{ title: c.newVendor, name: c.name, email: c.email, currency: c.currency }}
+          />
+        </Suspense>
+      )}
 
       <Dialog open={!!statementFor} onOpenChange={(o) => !o && setStatementFor(null)}>
         <DialogContent size="lg">
