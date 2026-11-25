@@ -29,7 +29,8 @@ afterEach(() => {
 async function mountPage(
   locale: "en" | "ar",
   checklist: "failed" | "empty" | "incomplete" | "complete",
-  historyQuery = async (): Promise<unknown> => []
+  historyQuery = async (): Promise<unknown> => [],
+  options?: { canUnlock?: boolean; checklistQuery?: () => Promise<unknown> }
 ) {
   const client = new QueryClient({
     defaultOptions: {
@@ -38,6 +39,7 @@ async function mountPage(
         queryFn: async ({ queryKey: [path] }) => {
           const endpoint = String(path);
           if (endpoint.includes("/checklist?")) {
+            if (options?.checklistQuery) return options.checklistQuery();
             if (checklist === "failed") throw new Error("Checklist unavailable");
             return {
               checklist:
@@ -59,7 +61,11 @@ async function mountPage(
               postYearEndClosingEntry: false,
               requireChecklistToLock: false,
               lockThroughDate: null,
-              permissions: { canLock: true, canUnlock: false, canReopenHardClose: false },
+              permissions: {
+                canLock: true,
+                canUnlock: options?.canUnlock ?? false,
+                canReopenHardClose: false,
+              },
             };
           }
           return [];
@@ -81,7 +87,13 @@ async function mountPage(
   await vi.waitFor(async () => {
     await act(async () => {});
     expect(client.isFetching()).toBe(0);
+    expect(
+      document.querySelector(
+        '[data-testid="history-error"], [data-testid="history-waiting"], [data-testid="history-refresh-error"], [data-testid="history-empty"], table'
+      )
+    ).not.toBeNull();
   });
+  return client;
 }
 
 describe.each(["en", "ar"] as const)("lock dialog (%s)", (locale) => {
@@ -129,9 +141,14 @@ it("sends a checklist override only when selected for the current lock submissio
   };
   const lockOverride = (dialog: Element) =>
     dialog.querySelector<HTMLInputElement>('[data-testid="checkbox-override-checklist"]')!;
-  const yearEndOverride = Array.from(document.querySelectorAll("label"))
-    .find((label) => label.textContent?.trim() === copy["monthEnd.overrideChecklist"])!
-    .querySelector("input")!;
+  const yearEndOverride = await vi.waitFor(() => {
+    const label = Array.from(document.querySelectorAll("label")).find(
+      (item) => item.textContent?.trim() === copy["monthEnd.overrideChecklist"]
+    );
+    const input = label?.querySelector("input");
+    expect(input).toBeTruthy();
+    return input!;
+  });
   await act(async () => yearEndOverride.click());
 
   let dialog = await openLock();
@@ -224,5 +241,152 @@ it.each(["online", "offline"])(
     );
     expect(error()).toBeNull();
     expect(historyQuery).toHaveBeenCalledTimes(2);
+  }
+);
+
+it("keeps cached close history and its actions when a refresh fails", async () => {
+  const copy = t.en;
+  const record = {
+    id: "close-1",
+    periodEnd: "2025-01-31",
+    status: "locked",
+    closedBy: "Reviewer",
+  };
+  const { promise, resolve } = Promise.withResolvers<unknown>();
+  const steps = ["success", "fail", "hang"] as const;
+  const historyQuery = vi.fn(async () => {
+    const step = steps.shift() ?? "hang";
+    if (step === "success") return [record];
+    if (step === "fail") throw new Error("refresh failed");
+    return promise;
+  });
+  const client = await mountPage("en", "complete", historyQuery, { canUnlock: true });
+  const tableText = () => document.querySelector("table")?.textContent ?? "";
+  await vi.waitFor(() => expect(tableText()).toContain("Reviewer"));
+  expect(document.querySelector('[data-testid="button-reopen-2025-01-31"]')).not.toBeNull();
+  expect(document.querySelector('[data-testid="button-unlock-2025-01-31"]')).not.toBeNull();
+  expect(document.querySelector('[data-testid="history-refresh-error"]')).toBeNull();
+
+  await act(async () => {
+    await client
+      .invalidateQueries({ queryKey: ["/api/companies/company-1/month-end/history"] })
+      .catch(() => undefined);
+  });
+  const refreshError = () => document.querySelector('[data-testid="history-refresh-error"]');
+  await vi.waitFor(() =>
+    expect(refreshError()?.textContent).toContain(copy["monthEnd.historyRefreshFailed"])
+  );
+  expect(tableText()).toContain("Reviewer");
+  expect(document.querySelector('[data-testid="button-reopen-2025-01-31"]')).not.toBeNull();
+  expect(document.querySelector('[data-testid="button-unlock-2025-01-31"]')).not.toBeNull();
+  expect(document.body.textContent).not.toContain(copy["pageLabels.noPeriodClosingsRecordedYet"]);
+  expect(document.querySelector('[data-testid="history-error"]')).toBeNull();
+
+  const retry = refreshError()!.querySelector("button")!;
+  expect(retry.textContent).toBe(copy["monthEnd.retry"]);
+  retry.focus();
+  await act(async () => retry.click());
+  await vi.waitFor(() =>
+    expect(refreshError()?.querySelector('[role="status"]')?.textContent).toBe(
+      copy["monthEnd.retryingHistory"]
+    )
+  );
+  expect(refreshError()?.querySelector("button")).toBe(retry);
+  expect(document.activeElement).toBe(retry);
+  expect(retry.getAttribute("aria-disabled")).toBe("true");
+  expect(tableText()).toContain("Reviewer");
+
+  await act(async () => {
+    resolve([{ ...record, closedBy: "Refreshed reviewer" }]);
+  });
+  await vi.waitFor(() => expect(tableText()).toContain("Refreshed reviewer"));
+  expect(refreshError()).toBeNull();
+  expect(document.querySelector('[data-testid="button-reopen-2025-01-31"]')).not.toBeNull();
+  expect(document.querySelector('[data-testid="button-unlock-2025-01-31"]')).not.toBeNull();
+});
+
+it("shows a waiting state for an initial offline history load", async () => {
+  const copy = t.en;
+  await act(async () => onlineManager.setOnline(false));
+  const historyQuery = vi.fn(async () => []);
+  await mountPage("en", "complete", historyQuery);
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="history-waiting"]')?.textContent).toBe(
+      copy["monthEnd.historyWaitingToLoad"]
+    )
+  );
+  const waiting = document.querySelector('[data-testid="history-waiting"]');
+  expect(waiting?.getAttribute("role")).toBe("status");
+  expect(document.body.textContent).not.toContain(copy["pageLabels.noPeriodClosingsRecordedYet"]);
+  expect(document.querySelector('[data-testid="history-error"]')).toBeNull();
+  expect(historyQuery).not.toHaveBeenCalled();
+
+  await act(async () => onlineManager.setOnline(true));
+  await vi.waitFor(() =>
+    expect(document.body.textContent).toContain(copy["pageLabels.noPeriodClosingsRecordedYet"])
+  );
+  expect(document.querySelector('[data-testid="history-waiting"]')).toBeNull();
+  expect(historyQuery).toHaveBeenCalledTimes(1);
+});
+
+it.each(["online", "offline"] as const)(
+  "keeps the checklist retry focused when started %s",
+  async (connection) => {
+    const copy = t.en;
+    const { promise, resolve } = Promise.withResolvers<unknown>();
+    const checklistQuery = vi
+      .fn(async () => promise)
+      .mockRejectedValueOnce(new Error("Checklist unavailable"));
+    await mountPage("en", "failed", async () => [], { checklistQuery });
+    const error = () => document.querySelector('[data-testid="checklist-error"]');
+    await vi.waitFor(() =>
+      expect(error()?.textContent).toContain(copy["monthEnd.checklistLoadFailed"])
+    );
+    expect(document.querySelector(".h-14")).toBeNull();
+
+    const retry = error()!.querySelector("button")!;
+    expect(retry.textContent).toBe(copy["monthEnd.retry"]);
+    if (connection === "offline") {
+      await act(async () => onlineManager.setOnline(false));
+    }
+    retry.focus();
+    await act(async () => retry.click());
+    if (connection === "offline") {
+      await vi.waitFor(() =>
+        expect(error()?.querySelector('[role="status"]')?.textContent).toBe(
+          copy["monthEnd.checklistWaitingForConnection"]
+        )
+      );
+      expect(error()?.querySelector("button")).toBe(retry);
+      expect(document.activeElement).toBe(retry);
+      expect(retry.getAttribute("aria-disabled")).toBe("true");
+      expect(checklistQuery).toHaveBeenCalledTimes(1);
+      await act(async () => onlineManager.setOnline(true));
+    }
+    await vi.waitFor(() =>
+      expect(error()?.querySelector('[role="status"]')?.textContent).toBe(
+        copy["monthEnd.retryingChecklist"]
+      )
+    );
+    expect(error()?.querySelector("button")).toBe(retry);
+    expect(document.activeElement).toBe(retry);
+    expect(retry.getAttribute("aria-disabled")).toBe("true");
+    expect(document.querySelector(".h-14")).toBeNull();
+
+    await act(async () => {
+      resolve({
+        checklist: [
+          {
+            id: 1,
+            title: "Bank reconciliation",
+            description: "Review",
+            status: "complete",
+          },
+        ],
+      });
+    });
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Bank reconciliation"));
+    expect(error()).toBeNull();
+    expect(checklistQuery).toHaveBeenCalledTimes(2);
   }
 );

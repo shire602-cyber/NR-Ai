@@ -185,6 +185,52 @@ const fixRoutes: Record<number, string> = {
 
 // ---- Component ----
 
+/** Keeps Try again mounted while a retry runs or waits offline, so focus is not dropped. */
+function CloseRetryNotice({
+  testId,
+  className,
+  message,
+  retryLabel,
+  busy,
+  paused,
+  fetching,
+  pausedMessage,
+  fetchingMessage,
+  onRetry,
+}: {
+  testId: string;
+  className: string;
+  message: string;
+  retryLabel: string;
+  busy: boolean;
+  paused: boolean;
+  fetching: boolean;
+  pausedMessage: string;
+  fetchingMessage: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className={className} data-testid={testId}>
+      <p className="text-sm text-destructive" role="alert">
+        {message}
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        aria-disabled={busy}
+        onClick={() => {
+          if (!busy) onRetry();
+        }}
+      >
+        {retryLabel}
+      </Button>
+      <p className={paused ? "text-sm text-muted-foreground" : "sr-only"} role="status">
+        {paused ? pausedMessage : fetching ? fetchingMessage : ""}
+      </p>
+    </div>
+  );
+}
+
 export default function MonthEndClose() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -218,14 +264,23 @@ export default function MonthEndClose() {
     data: checklistData,
     isLoading: isLoadingChecklist,
     isError: isChecklistError,
+    isFetching: isFetchingChecklist,
+    isPaused: isChecklistPaused,
+    isPending: isChecklistPending,
+    isFetched: isChecklistFetched,
     refetch: refetchChecklist,
   } = useQuery<ChecklistResponse>({
     queryKey: [`/api/companies/${companyId}/month-end/checklist?period=${period}`],
     enabled: !!companyId,
   });
+  const checklistRetryBusy = isFetchingChecklist || isChecklistPaused;
+  // An uncached retry clears the error and sets isLoading, which would swap Try again for skeletons.
+  const showChecklistRetry =
+    checklistData === undefined &&
+    (isChecklistError || (isChecklistPending && isChecklistFetched && checklistRetryBusy));
 
   const checklistStatus = closeChecklistStatus({
-    isLoading: isLoadingChecklist,
+    isLoading: isLoadingChecklist && !showChecklistRetry,
     isError: isChecklistError,
     items: checklistData?.checklist.map((i) => ({ done: stepDone(i) })),
   });
@@ -246,6 +301,14 @@ export default function MonthEndClose() {
     enabled: !!companyId,
   });
   const historyRetryBusy = isFetchingHistory || isHistoryPaused;
+  const historyHasRows = (historyData?.length ?? 0) > 0;
+  // No cached rows: keep the retry panel through a paused or in-flight retry.
+  const historyUncachedProblem =
+    !historyHasRows &&
+    (isHistoryError || (isHistoryPending && isHistoryFetched && historyRetryBusy));
+  // A paused first fetch has neither data nor an error, and isLoading stays false.
+  const historyWaitingToLoad =
+    historyData === undefined && !historyUncachedProblem && !isLoadingHistory && isHistoryPaused;
 
   const { data: closeSettings } = useQuery<CloseSettingsResponse>({
     queryKey: [`/api/companies/${companyId}/month-end/settings`],
@@ -661,7 +724,20 @@ export default function MonthEndClose() {
           </div>
         </CardHeader>
         <CardContent>
-          {isLoadingChecklist ? (
+          {showChecklistRetry ? (
+            <CloseRetryNotice
+              testId="checklist-error"
+              className="space-y-3 py-4 text-center"
+              message={t["monthEnd.checklistLoadFailed"]}
+              retryLabel={t["monthEnd.retry"]}
+              busy={checklistRetryBusy}
+              paused={isChecklistPaused}
+              fetching={isFetchingChecklist}
+              pausedMessage={t["monthEnd.checklistWaitingForConnection"]}
+              fetchingMessage={t["monthEnd.retryingChecklist"]}
+              onRetry={() => refetchChecklist()}
+            />
+          ) : isLoadingChecklist ? (
             <div className="space-y-3">
               {Array.from({ length: 7 }).map((_, i) => (
                 <Skeleton key={i} className="h-14" />
@@ -1055,119 +1131,134 @@ export default function MonthEndClose() {
         </CardHeader>
         <CardContent>
           {/* A retry without cached history stays pending while it fetches or waits offline. */}
-          {isHistoryError || (isHistoryPending && isHistoryFetched && historyRetryBusy) ? (
-            <div className="space-y-3 py-6 text-center" data-testid="history-error">
-              <p className="text-sm text-destructive" role="alert">
-                {t["monthEnd.historyLoadFailed"]}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                aria-disabled={historyRetryBusy}
-                onClick={() => {
-                  if (!historyRetryBusy) refetchHistory();
-                }}
-              >
-                {t["monthEnd.retry"]}
-              </Button>
-              <p
-                className={isHistoryPaused ? "text-sm text-muted-foreground" : "sr-only"}
-                role="status"
-              >
-                {isHistoryPaused
-                  ? t["monthEnd.historyWaitingForConnection"]
-                  : isFetchingHistory
-                    ? t["monthEnd.retryingHistory"]
-                    : ""}
-              </p>
-            </div>
-          ) : isLoadingHistory ? (
+          {historyUncachedProblem ? (
+            <CloseRetryNotice
+              testId="history-error"
+              className="space-y-3 py-6 text-center"
+              message={t["monthEnd.historyLoadFailed"]}
+              retryLabel={t["monthEnd.retry"]}
+              busy={historyRetryBusy}
+              paused={isHistoryPaused}
+              fetching={isFetchingHistory}
+              pausedMessage={t["monthEnd.historyWaitingForConnection"]}
+              fetchingMessage={t["monthEnd.retryingHistory"]}
+              onRetry={() => refetchHistory()}
+            />
+          ) : isLoadingHistory ||
+            (historyData === undefined && !isHistoryFetched && !isHistoryPaused) ? (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-12" />
               ))}
             </div>
           ) : historyData && historyData.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>
-                    <T k="pages.period" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pages.status" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pageLabels.closedBy" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pageLabels.closedAt" />
-                  </TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {historyData.map((record) => (
-                  <TableRow key={record.id}>
-                    <TableCell className="font-medium">
-                      {(() => {
-                        try {
-                          const d = parseCalendarDate(record.periodEnd);
-                          return formatMonthYear(d, locale);
-                        } catch {
-                          return record.periodEnd;
-                        }
-                      })()}
-                    </TableCell>
-                    <TableCell>
-                      {record.status === "locked" ? (
-                        <Badge variant="destructive" className="flex items-center gap-1 w-fit">
-                          <Lock className="h-3 w-3" />
-                          <T k="pageLabels.locked" />
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="flex items-center gap-1 w-fit">
-                          <Unlock className="h-3 w-3" />
-                          <T k="monthEnd.statusOpen" />
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {record.closedByEmail || record.closedBy || "-"}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatDate(record.closedAt)}
-                    </TableCell>
-                    <TableCell>
-                      {record.status === "locked" && closeSettings?.permissions.canLock && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="me-2"
-                          onClick={() => setReopenTarget(String(record.periodEnd).slice(0, 10))}
-                          data-testid={`button-reopen-${String(record.periodEnd).slice(0, 10)}`}
-                        >
-                          <T k="compliance.closeRequestReopen" />
-                        </Button>
-                      )}
-                      {record.status === "locked" && closeSettings?.permissions.canUnlock && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setUnlockTarget(String(record.periodEnd).slice(0, 10))}
-                          data-testid={`button-unlock-${String(record.periodEnd).slice(0, 10)}`}
-                        >
-                          <Unlock className="h-3 w-3 me-1" />
-                          <T k="monthEnd.unlock" />
-                        </Button>
-                      )}
-                    </TableCell>
+            <div className="space-y-3">
+              {isHistoryError && (
+                <CloseRetryNotice
+                  testId="history-refresh-error"
+                  className="space-y-3 py-3 text-center"
+                  message={t["monthEnd.historyRefreshFailed"]}
+                  retryLabel={t["monthEnd.retry"]}
+                  busy={historyRetryBusy}
+                  paused={isHistoryPaused}
+                  fetching={isFetchingHistory}
+                  pausedMessage={t["monthEnd.historyWaitingForConnection"]}
+                  fetchingMessage={t["monthEnd.retryingHistory"]}
+                  onRetry={() => refetchHistory()}
+                />
+              )}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>
+                      <T k="pages.period" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pageLabels.closedBy" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pageLabels.closedAt" />
+                    </TableHead>
+                    <TableHead />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {historyData.map((record) => (
+                    <TableRow key={record.id}>
+                      <TableCell className="font-medium">
+                        {(() => {
+                          try {
+                            const d = parseCalendarDate(record.periodEnd);
+                            return formatMonthYear(d, locale);
+                          } catch {
+                            return record.periodEnd;
+                          }
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        {record.status === "locked" ? (
+                          <Badge variant="destructive" className="flex items-center gap-1 w-fit">
+                            <Lock className="h-3 w-3" />
+                            <T k="pageLabels.locked" />
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="flex items-center gap-1 w-fit">
+                            <Unlock className="h-3 w-3" />
+                            <T k="monthEnd.statusOpen" />
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {record.closedByEmail || record.closedBy || "-"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {formatDate(record.closedAt)}
+                      </TableCell>
+                      <TableCell>
+                        {record.status === "locked" && closeSettings?.permissions.canLock && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="me-2"
+                            onClick={() => setReopenTarget(String(record.periodEnd).slice(0, 10))}
+                            data-testid={`button-reopen-${String(record.periodEnd).slice(0, 10)}`}
+                          >
+                            <T k="compliance.closeRequestReopen" />
+                          </Button>
+                        )}
+                        {record.status === "locked" && closeSettings?.permissions.canUnlock && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setUnlockTarget(String(record.periodEnd).slice(0, 10))}
+                            data-testid={`button-unlock-${String(record.periodEnd).slice(0, 10)}`}
+                          >
+                            <Unlock className="h-3 w-3 me-1" />
+                            <T k="monthEnd.unlock" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : historyWaitingToLoad ? (
+            <p
+              className="text-muted-foreground text-sm text-center py-8"
+              role="status"
+              data-testid="history-waiting"
+            >
+              {t["monthEnd.historyWaitingToLoad"]}
+            </p>
           ) : (
-            <p className="text-muted-foreground text-sm text-center py-8">
+            <p
+              className="text-muted-foreground text-sm text-center py-8"
+              data-testid="history-empty"
+            >
               <T k="pageLabels.noPeriodClosingsRecordedYet" />
             </p>
           )}
