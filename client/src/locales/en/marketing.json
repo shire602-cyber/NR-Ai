@@ -447,7 +447,8 @@
   "marketing.trustOperatorBody": "Najma Al Raeda Accounting and Bookkeeping, Dubai, United Arab Emirates. The same team offers bookkeeping, VAT and corporate tax services.",
   "marketing.trustOperatorLink": "See accounting services",
   "marketing.trustResidencyLabel": "Data residency",
-  "marketing.trustResidencyBody": "Customer data is hosted in the United Arab Emirates. Our Privacy Policy explains how any transfer outside the UAE is safeguarded under PDPL.",
+  "marketing.trustResidencyBody": "Production runs on Vercel, with the database hosted in the UAE. Our Privacy Policy explains how any transfer outside the UAE is safeguarded under PDPL.",
+  "marketing.privacyHostingResidency": "Production runs on Vercel, with the database hosted in the UAE.",
   "marketing.trustResidencyLink": "Read the privacy policy",
   "marketing.trustSupportLabel": "Support",
   "marketing.trustSupportContact": "Sara, customer support. Email",
@@ -740,5 +741,6 @@
   "marketing.prPlanPhrase_starter": "Starter",
   "marketing.prPlanPhrase_professional": "Professional",
   "marketing.prPlanPhrase_enterprise": "Enterprise",
-  "marketing.demoBankTitle": "CSV statement import"
+  "marketing.demoBankTitle": "CSV statement import",
+  "marketing.hxPriceBadge": "E-invoicing included"
 }
