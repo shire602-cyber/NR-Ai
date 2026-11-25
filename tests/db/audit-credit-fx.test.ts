@@ -426,7 +426,7 @@ it("shows a USD overpayment liability in the USD trial balance", async () => {
   expect(credit).toMatchObject({ credit: 50, baseCredit: 183.5 });
 });
 
-it("debits the cost centre named on a partial credit for a specific invoice line", async () => {
+it("[PR #104] credits only the named cost centre even when the credit clears the invoice", async () => {
   const t = await h.createTenant({ planId: "enterprise" });
   async function center(code: string): Promise<string> {
     const response = await t.as.post(`${base(t)}/cost-centers`, { code, name: code });
@@ -442,16 +442,29 @@ it("debits the cost centre named on a partial credit for a specific invoice line
     t,
     [jobA, jobB].map((line) => ({ ...line, revenueAccountId }))
   );
-  const cn = await t.as.post(`${base(t)}/invoices/${id}/credit-note`, { date, lines: [jobA] });
+  const revenueDebits = (entryId: string) =>
+    h.sql<{ code: string; debit: number }>(
+      `SELECT cc.code, jl.debit::float8 AS debit
+         FROM journal_lines jl JOIN cost_centers cc ON cc.id = jl.cost_center_id
+         JOIN accounts a ON a.id = jl.account_id
+        WHERE jl.entry_id = $1 AND a.code = '4010' ORDER BY cc.code`,
+      [entryId]
+    );
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const cn = await t.as.post(url, { date, lines: [jobA] });
   expect(cn.status, cn.text).toBe(201);
-  const ledger = await h.sql<{ code: string; debit: number }>(
-    `SELECT cc.code, jl.debit::float8 AS debit
-       FROM journal_lines jl JOIN cost_centers cc ON cc.id = jl.cost_center_id
-       JOIN accounts a ON a.id = jl.account_id
-      WHERE jl.entry_id = $1 AND a.code = '4010' ORDER BY cc.code`,
-    [cn.body.journalEntryId]
-  );
-  expect(ledger).toEqual([{ code: "Job-A", debit: 100 }]);
+  expect(await revenueDebits(cn.body.journalEntryId)).toEqual([{ code: "Job-A", debit: 100 }]);
+
+  const duplicate = await t.as.post(url, { date, lines: [jobA] });
+  expect(duplicate.status, duplicate.text).toBe(422);
+  expect(duplicate.body).toMatchObject({
+    code: "CREDIT_LINE_NOT_ON_INVOICE",
+    details: { costCenterId: a },
+  });
+
+  const final = await t.as.post(url, { date, lines: [jobB] });
+  expect(final.status, final.text).toBe(201);
+  expect(await revenueDebits(final.body.journalEntryId)).toEqual([{ code: "Job-B", debit: 100 }]);
 });
 
 it("uses the refund date's exchange rate for a foreign customer credit paid from an AED bank", async () => {

@@ -1004,63 +1004,69 @@ async function postCreditNoteInTx(args: {
 
   type Debit = { leg: OriginalLeg; base: number; foreign: number };
   const debits: Debit[] = [];
+  // Reserve named centres first and validate them even when mirroring the final balance.
+  const buckets = revenueBuckets(totals, args.lines).sort(
+    (a, b) => Number(b.costCenterId !== null) - Number(a.costCenterId !== null)
+  );
+  for (const { role, netFils: docFils, costCenterId } of buckets) {
+    if (mode === "remaining" && costCenterId === null) continue;
+    const roleLegs = revenueLegs.filter(
+      (leg) =>
+        leg.role === role &&
+        leg.remainingBase > 0 &&
+        (costCenterId === null || leg.costCenterId === costCenterId)
+    );
+    if (!roleLegs.length) {
+      throw new DomainError(
+        "CREDIT_LINE_NOT_ON_INVOICE",
+        422,
+        { role, costCenterId },
+        `The invoice has no ${role.replace(/_/g, " ")} revenue left to credit at the requested cost centre.`
+      );
+    }
+    const base = toBase(docFils, rate);
+    // A final reversal mirrors the posted base amounts, including any FX rounding residual.
+    const useForeignBalance = mode === "remaining" && foreign;
+    const requested = useForeignBalance ? docFils : base;
+    const remaining = sumFils(
+      roleLegs.map((leg) => (useForeignBalance ? leg.remainingForeign : leg.remainingBase))
+    );
+    if (requested > remaining) {
+      throw new DomainError(
+        "CREDIT_EXCEEDS_REMAINING",
+        409,
+        { role, requested: fromFils(requested), remaining: fromFils(remaining) },
+        "Credit amount exceeds the remaining creditable revenue on the invoice."
+      );
+    }
+    if (mode === "remaining") continue;
+
+    const baseParts = allocate(
+      base,
+      roleLegs.map((l) => l.remainingBase)
+    );
+    const docParts = allocate(
+      docFils,
+      roleLegs.map((l) => l.remainingBase)
+    );
+    roleLegs.forEach((leg, i) => {
+      if (baseParts[i] > 0) {
+        debits.push({ leg, base: baseParts[i], foreign: docParts[i] });
+        leg.remainingBase -= baseParts[i];
+      }
+    });
+  }
   if (mode === "remaining") {
     for (const leg of [...revenueLegs, ...(vatLeg ? [vatLeg] : [])]) {
       if (leg.remainingBase > 0)
         debits.push({ leg, base: leg.remainingBase, foreign: leg.remainingForeign });
     }
-  } else {
-    // Reserve all explicitly named centres before distributing unassigned credits.
-    const buckets = revenueBuckets(totals, args.lines).sort(
-      (a, b) => Number(b.costCenterId !== null) - Number(a.costCenterId !== null)
-    );
-    for (const { role, netFils: docFils, costCenterId } of buckets) {
-      const roleLegs = revenueLegs.filter(
-        (leg) =>
-          leg.role === role &&
-          leg.remainingBase > 0 &&
-          (costCenterId === null || leg.costCenterId === costCenterId)
-      );
-      if (!roleLegs.length) {
-        throw new DomainError(
-          "CREDIT_LINE_NOT_ON_INVOICE",
-          422,
-          { role, costCenterId },
-          `The invoice has no ${role.replace(/_/g, " ")} revenue left to credit at the requested cost centre.`
-        );
-      }
-      const base = toBase(docFils, rate);
-      const remaining = sumFils(roleLegs.map((l) => l.remainingBase));
-      if (base > remaining) {
-        throw new DomainError(
-          "CREDIT_EXCEEDS_REMAINING",
-          409,
-          { role, requested: fromFils(base), remaining: fromFils(remaining) },
-          "Credit amount exceeds the remaining creditable revenue on the invoice."
-        );
-      }
-      const baseParts = allocate(
-        base,
-        roleLegs.map((l) => l.remainingBase)
-      );
-      const docParts = allocate(
-        docFils,
-        roleLegs.map((l) => l.remainingBase)
-      );
-      roleLegs.forEach((leg, i) => {
-        if (baseParts[i] > 0) {
-          debits.push({ leg, base: baseParts[i], foreign: docParts[i] });
-          leg.remainingBase -= baseParts[i];
-        }
-      });
+  } else if (totals.vatFils > 0) {
+    const base = toBase(totals.vatFils, rate);
+    if (!vatLeg || base <= 0 || base > vatLeg.remainingBase) {
+      throw new DomainError("CREDIT_EXCEEDS_REMAINING", 409, { leg: "vat" });
     }
-    if (totals.vatFils > 0) {
-      const base = toBase(totals.vatFils, rate);
-      if (!vatLeg || base <= 0 || base > vatLeg.remainingBase) {
-        throw new DomainError("CREDIT_EXCEEDS_REMAINING", 409, { leg: "vat" });
-      }
-      debits.push({ leg: vatLeg, base, foreign: totals.vatFils });
-    }
+    debits.push({ leg: vatLeg, base, foreign: totals.vatFils });
   }
   if (!debits.length) throw new DomainError("FULLY_CREDITED", 409);
 
