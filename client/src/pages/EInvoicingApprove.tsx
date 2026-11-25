@@ -12,7 +12,7 @@ import { useState } from "react";
 import "@/styles/rtl.css";
 import "@/styles/mobile.css";
 import { useParams } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock, FileCheck2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -42,13 +42,24 @@ type LoadResult =
   | { kind: "busy" }
   | { kind: "invalid" };
 
+type DoneOutcome =
+  | { kind: "completed"; data: ApproverPageData }
+  | Extract<LoadResult, { kind: "gone" }>;
+
+/** A 410 body is the terminal state. Anything other than revoked is treated as expired. */
+function goneState(body: unknown): "expired" | "revoked" {
+  return body && typeof body === "object" && "state" in body && body.state === "revoked"
+    ? "revoked"
+    : "expired";
+}
+
 async function load(token: string): Promise<LoadResult> {
   const res = await fetch(apiUrl(`/api/portal/einvoicing-approve/${encodeURIComponent(token)}`), {
     credentials: "omit",
   });
   if (res.status === 410) {
     const body = await res.json().catch(() => ({}));
-    return { kind: "gone", state: body.state === "revoked" ? "revoked" : "expired" };
+    return { kind: "gone", state: goneState(body) };
   }
   // Read the body even when it is not used: an unread response keeps the request open.
   if (res.status === 429) {
@@ -66,14 +77,18 @@ async function load(token: string): Promise<LoadResult> {
 export default function EInvoicingApprove() {
   const { token = "" } = useParams<{ token: string }>();
   const { t, locale } = useTranslation(APPROVE_NAMESPACES);
+  const queryClient = useQueryClient();
   const [doneData, setDoneData] = useState<ApproverPageData | null>(null);
+  // The Done response is the terminal state. A later read can fail or stay pending; it must
+  // not put the active page, or a retry alert, back on screen.
+  const [closedLink, setClosedLink] = useState<Extract<LoadResult, { kind: "gone" }> | null>(null);
   const query = useQuery<LoadResult>({
     queryKey: ["einvoicing-approve", token],
     queryFn: () => load(token),
     retry: false,
   });
   const done = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<DoneOutcome> => {
       const res = await fetch(
         apiUrl(`/api/portal/einvoicing-approve/${encodeURIComponent(token)}/done`),
         {
@@ -83,19 +98,29 @@ export default function EInvoicingApprove() {
           body: "{}",
         }
       );
-      if (!res.ok) throw new Error(String(res.status));
-      return (await res.json()) as ApproverPageData;
+      if (res.status === 410) {
+        const body = await res.json().catch(() => ({}));
+        return { kind: "gone", state: goneState(body) };
+      }
+      // Read the body even when it is not used: an unread response keeps the request open.
+      if (!res.ok) {
+        await res.text().catch(() => "");
+        throw new Error(String(res.status));
+      }
+      return { kind: "completed", data: (await res.json()) as ApproverPageData };
     },
-    onSuccess: setDoneData,
-    // The link expired or was revoked while the page was open: show that state instead of a
-    // generic "try again" that can never succeed.
-    onError: (err) => {
-      if (err instanceof Error && err.message === "410") void query.refetch();
+    onSuccess: (outcome) => {
+      if (outcome.kind === "gone") {
+        setClosedLink(outcome);
+        queryClient.setQueryData<LoadResult>(["einvoicing-approve", token], outcome);
+        return;
+      }
+      setDoneData(outcome.data);
     },
   });
 
-  const result = query.data;
-  const data = doneData ?? (result?.kind === "ok" ? result.data : null);
+  const result = closedLink ?? query.data;
+  const data = closedLink ? null : (doneData ?? (result?.kind === "ok" ? result.data : null));
   useLinkLocale(!query.isLoading, null, data?.locale);
   const company = data ? bidiIsolate(data.companyName) : "";
   useDocumentTitle(
@@ -148,7 +173,7 @@ export default function EInvoicingApprove() {
               </p>
             </div>
           )}
-          {(result?.kind === "busy" || query.isError) && (
+          {!closedLink && (result?.kind === "busy" || query.isError) && (
             <div className="space-y-3" data-testid="approve-retry">
               <h1 className="text-h2 font-semibold">
                 {
