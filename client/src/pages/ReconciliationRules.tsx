@@ -5,8 +5,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Alert } from "@/components/ui/alert";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { useRef, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useRef, useState, useSyncExternalStore } from "react";
+import { onlineManager, useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
@@ -52,7 +52,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, Trash2, Edit, Zap, Loader2, Search, WifiOff } from "lucide-react";
+import { Plus, Trash2, Edit, Zap, Loader2, Search, WifiOff, Clock } from "lucide-react";
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import { matchesRuleSearch } from "@/lib/reconciliation-rule-search";
 
@@ -121,6 +121,10 @@ const ruleFormSchema = z.object({
 });
 
 type RuleFormData = z.infer<typeof ruleFormSchema>;
+
+// Module-level so useSyncExternalStore sees stable functions; the wrappers keep `this` bound.
+const subscribeOnline = (onChange: () => void) => onlineManager.subscribe(onChange);
+const isOnlineNow = () => onlineManager.isOnline();
 
 /**
  * Bank reconciliation → Rules (spec 3.9; the former /reconciliation-rules page).
@@ -383,8 +387,12 @@ export function ReconciliationRulesPanel() {
   );
   const hasSearch = searchTerm.trim().length > 0;
   const hasNoMatches = hasSearch && allRules.length > 0 && visibleRules.length === 0;
-  // Offline before any response: nothing is known about the rules, so no empty state or Add.
-  const waitingForConnection = rules === undefined && isPaused;
+  // Paused before any response: nothing is known about the rules, so no empty state or Add.
+  const pausedFirstLoad = rules === undefined && isPaused;
+  // A query also pauses while online (a retry waits until the tab is focused again).
+  const online = useSyncExternalStore(subscribeOnline, isOnlineNow);
+  const pausedTitle = online ? t["banking.rules.waitingTitle"] : t["common.errorHeading.offline"];
+  const pausedBody = online ? t["banking.rules.waitingBody"] : t["banking.rules.offlineBody"];
 
   if (!canAccess("bankImport")) {
     return <UpgradePrompt feature="bankImport" requiredTier={getRequiredTier("bankImport")} />;
@@ -425,7 +433,7 @@ export function ReconciliationRulesPanel() {
             )}
             {t["banking.rulesRunAutoMatch"]}
           </Button>
-          {!waitingForConnection && (
+          {!pausedFirstLoad && (
             <Button size="sm" onClick={openCreateDialog} data-testid="button-add-rule">
               <Plus aria-hidden />
               <T k="pageLabels.addRule" />
@@ -480,14 +488,14 @@ export function ReconciliationRulesPanel() {
         </div>
       )}
 
-      {/* A stale cache reopened offline pauses before any error, so pause alone warns too. */}
+      {/* A stale cache can pause before any error, so pause alone warns too. */}
       {rules !== undefined && (isPaused || isRefetchError) && (
         <Alert
           tone="warning"
-          title={isPaused ? t["common.errorHeading.offline"] : t["hr.refreshFailed"]}
+          title={isPaused ? pausedTitle : t["hr.refreshFailed"]}
           data-testid="rules-refresh-warning"
           action={
-            // A paused retry is already queued and resumes on reconnect.
+            // A paused retry is already queued and resumes by itself.
             isPaused ? undefined : (
               <Button
                 variant="outline"
@@ -500,27 +508,27 @@ export function ReconciliationRulesPanel() {
             )
           }
         >
-          {isPaused ? t["banking.rules.offlineBody"] : null}
+          {isPaused ? pausedBody : null}
         </Alert>
       )}
 
       <Card className="overflow-hidden">
         <CardContent className="p-0">
-          {isLoadingError ? (
+          {pausedFirstLoad ? (
+            <EmptyState
+              size="md"
+              icon={online ? Clock : WifiOff}
+              title={pausedTitle}
+              description={pausedBody}
+              testId={online ? "rules-waiting" : "rules-offline"}
+            />
+          ) : isLoadingError ? (
             <LoadErrorState
               error={rulesError}
               onRetry={() => refetchRules()}
               title={t["banking.rules.loadErrorTitle"]}
               description={t["banking.rules.loadErrorBody"]}
               testId="rules-load-error"
-            />
-          ) : waitingForConnection ? (
-            <EmptyState
-              size="md"
-              icon={WifiOff}
-              title={t["common.errorHeading.offline"]}
-              description={t["banking.rules.offlineBody"]}
-              testId="rules-offline"
             />
           ) : rules === undefined ? (
             <div className="space-y-3 p-4" aria-busy="true">

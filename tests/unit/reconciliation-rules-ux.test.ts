@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, createElement } from "react";
-import { onlineManager } from "@tanstack/react-query";
+import { focusManager, onlineManager } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { matchesRuleSearch } from "../../client/src/lib/reconciliation-rule-search";
 import ar from "../../client/src/locales/ar/reconciliationRules.json";
@@ -93,8 +93,22 @@ describe("reconciliation rules screen", () => {
     failing.on = false;
     await unmountPage();
     onlineManager.setOnline(true);
+    focusManager.setFocused(undefined);
+    await setRetries(false);
     vi.unstubAllGlobals();
   });
+
+  // The harness never retries; a retry is what pauses while the tab is in the background.
+  const setRetries = async (retry: number | false) => {
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    queryClient.setQueryDefaults(["/api/companies", COMPANY_ID, "reconciliation-rules"], {
+      retry,
+      retryDelay: 0,
+    });
+  };
+  const setFocused = async (focused: boolean) => {
+    await act(async () => focusManager.setFocused(focused));
+  };
 
   it("announces no matches, then restores rows and search focus on clear", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -240,6 +254,76 @@ describe("reconciliation rules screen", () => {
     expect(rows()).toContain("Office rent");
     expect(byTestId("rules-offline")).toBeNull();
     expect(byTestId("button-add-rule")).not.toBeNull();
+  });
+
+  it("shows neutral waiting copy while an online first-load retry waits for the tab", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    await setRetries(1);
+    failing.on = true;
+    setFixtures({ [rulesUrl]: [rule] });
+    await renderPage(ReconciliationRulesPanel);
+    await flushUntil(() => !!byTestId("rules-load-error"));
+
+    await setFocused(false);
+    await click(retryButton());
+    await flushUntil(() => !!byTestId("rules-waiting"));
+    const waiting = byTestId("rules-waiting");
+    expect(waiting?.textContent).toContain(ar["banking.rules.waitingTitle"]);
+    expect(waiting?.textContent).toContain(ar["banking.rules.waitingBody"]);
+    expect(document.body.textContent).not.toContain(arCommon["common.errorHeading.offline"]);
+    expect(document.body.textContent).not.toContain(ar["banking.rules.offlineBody"]);
+    expect(document.body.textContent).not.toContain(ar["banking.rulesEmptyTitle"]);
+    expect(byTestId("rules-load-error")).toBeNull();
+    expect(byTestId("rules-offline")).toBeNull();
+    expect(byTestId("button-add-rule")).toBeNull();
+    expect(retryButton()).toBeNull();
+
+    // Losing the connection while paused switches to the offline copy, and back again.
+    await setOnline(false);
+    expect(byTestId("rules-offline")?.textContent).toContain(ar["banking.rules.offlineBody"]);
+    expect(byTestId("rules-waiting")).toBeNull();
+    await setOnline(true);
+    expect(byTestId("rules-waiting")).not.toBeNull();
+
+    failing.on = false;
+    await setFocused(true);
+    await flushUntil(() => !!document.querySelector("tbody"));
+    expect(rows()).toContain("Office rent");
+    expect(byTestId("rules-waiting")).toBeNull();
+    expect(byTestId("button-add-rule")).not.toBeNull();
+  });
+
+  it("keeps cached rows while an online refresh retry waits for the tab", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    await setRetries(1);
+    setFixtures({ [rulesUrl]: [rule] });
+    await renderPage(ReconciliationRulesPanel);
+    await flushUntil(() => !!document.querySelector("tbody"));
+    failing.on = true;
+    await refetchRules();
+    await flushUntil(() => !!retryButton());
+
+    await setFocused(false);
+    await click(retryButton());
+    await flushUntil(
+      () =>
+        !!byTestId("rules-refresh-warning")?.textContent?.includes(ar["banking.rules.waitingTitle"])
+    );
+    const warning = byTestId("rules-refresh-warning");
+    expect(warning?.textContent).toContain(ar["banking.rules.waitingTitle"]);
+    expect(warning?.textContent).toContain(ar["banking.rules.waitingBody"]);
+    expect(warning?.textContent).not.toContain(arCommon["common.errorHeading.offline"]);
+    expect(warning?.textContent).not.toContain(ar["banking.rules.offlineBody"]);
+    expect(warning?.textContent).not.toContain(arHr["hr.refreshFailed"]);
+    expect(retryButton()).toBeNull();
+    expect(rows()).toContain("Office rent");
+
+    failing.on = false;
+    setFixtures({ [rulesUrl]: [{ ...rule, name: "Warehouse rent" }] });
+    await setFocused(true);
+    await flushUntil(() => rows().includes("Warehouse rent"));
+    expect(rows()).toContain("Warehouse rent");
+    expect(byTestId("rules-refresh-warning")).toBeNull();
   });
 
   it("shows the empty state only once an empty response has arrived", async () => {

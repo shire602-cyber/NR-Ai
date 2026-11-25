@@ -42,6 +42,8 @@
   "banking.rules.loadErrorTitle": "تعذّر تحميل القواعد",
   "banking.rules.loadErrorBody": "تعذّر تحميل قواعد التسوية البنكية. حاول مرة أخرى بعد قليل.",
   "banking.rules.offlineBody": "تحقق من اتصالك بالإنترنت. سيتم تحميل القواعد عند عودة الاتصال.",
+  "banking.rules.waitingTitle": "في انتظار إعادة المحاولة",
+  "banking.rules.waitingBody": "ستُعاد محاولة التحميل عند عودتك إلى علامة التبويب هذه.",
   "banking.rules.matchValuePlaceholder": "مثال: RENT أو ^SALARY.*",
   "banking.rules.category": "التصنيف (اختياري)",
   "banking.rules.categoryPlaceholder": "مثال: إيجار، رواتب، مرافق",
