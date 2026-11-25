@@ -222,5 +222,7 @@
   "banking.rules.memo": "ملاحظة (اختياري)",
   "banking.import.statementRecognized": "تم التعرّف على كشف الحساب",
   "banking.common.never": "أبدًا",
-  "banking.import.csvDetails": "متطلبات ملف CSV"
+  "banking.import.csvDetails": "متطلبات ملف CSV",
+  "banking.query.paused": "التحميل متوقف مؤقتًا. تحقق من اتصالك بالإنترنت.",
+  "banking.query.pausedCached": "التحديثات متوقفة مؤقتًا. تظهر لك آخر بيانات محمّلة، وقد لا تكون حديثة."
 }
