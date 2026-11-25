@@ -80,7 +80,12 @@ function NumberingCard({
       toast({ title: translateNow("settingsPages.numberingSaved") });
       void queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "numbering"] });
     },
-    onError: (e: Error & { body?: { code?: string } }) => setError(e.message),
+    onError: (e: Error & { status?: number }) =>
+      setError(
+        !e.message || (e.status ?? 0) >= 500 || e.status === 0
+          ? t["settingsPages.numberingSaveFailed"]
+          : e.message
+      ),
   });
 
   const id = (f: string) => `numbering-${row.docType}-${f}`;
@@ -212,9 +217,27 @@ export default function NumberingSettings() {
           <p className="text-small text-muted-foreground">{t["settingsPages.numberingReadOnly"]}</p>
         ) : null}
         {data.isLoading ? (
-          <div className="flex justify-center py-12">
+          <div
+            className="flex justify-center py-12"
+            role="status"
+            aria-label={t["common.loading"]}
+            data-testid="numbering-loading"
+          >
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
           </div>
+        ) : null}
+        {data.isError ? (
+          <div role="alert" className="space-y-2" data-testid="numbering-load-error">
+            <p className="text-small text-danger">{t["settingsPages.numberingLoadFailed"]}</p>
+            <Button variant="outline" size="sm" onClick={() => void data.refetch()}>
+              {t["settingsPages.numberingRetry"]}
+            </Button>
+          </div>
+        ) : null}
+        {!data.isLoading && !data.isError && data.data && data.data.numbering.length === 0 ? (
+          <p className="text-small text-muted-foreground" data-testid="numbering-empty">
+            {t["settingsPages.numberingEmpty"]}
+          </p>
         ) : null}
         {companyId
           ? (data.data?.numbering ?? []).map((row) => (

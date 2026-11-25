@@ -124,5 +124,9 @@
   "settingsPages.taxRates.selfAccounted": "يحتسبها المشتري",
   "settingsPages.taxRates.emirateNote": "تُدرج المبيعات الخاضعة للنسبة الأساسية في صف الخانة 1 الخاص بإمارتك، {emirate}.",
   "settingsPages.taxRates.emirateMissing": "حدّد إمارتك في إعدادات الشركة: تُدرج المبيعات الخاضعة للنسبة الأساسية حسب الإمارة. تظهر دبي حتى ذلك الحين.",
-  "settingsPages.taxRates.loadFailed": "تعذّر تحميل نسب الضريبة."
+  "settingsPages.taxRates.loadFailed": "تعذّر تحميل نسب الضريبة.",
+  "settingsPages.numberingLoadFailed": "تعذّر تحميل إعدادات الترقيم. تحقق من اتصالك ثم حاول مرة أخرى.",
+  "settingsPages.numberingRetry": "حاول مرة أخرى",
+  "settingsPages.numberingEmpty": "لم يتم إعداد أي مستندات مرقّمة لهذه الشركة بعد.",
+  "settingsPages.numberingSaveFailed": "تعذّر حفظ الترقيم. حاول مرة أخرى بعد قليل."
 }

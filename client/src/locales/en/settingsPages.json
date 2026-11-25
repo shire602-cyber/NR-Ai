@@ -124,5 +124,9 @@
   "settingsPages.taxRates.selfAccounted": "self-accounted",
   "settingsPages.taxRates.emirateNote": "Standard-rated sales go to the Box 1 row of your emirate, {emirate}.",
   "settingsPages.taxRates.emirateMissing": "Set your emirate in company settings: standard-rated sales are reported by emirate. Dubai is shown until then.",
-  "settingsPages.taxRates.loadFailed": "Could not load the tax rates."
+  "settingsPages.taxRates.loadFailed": "Could not load the tax rates.",
+  "settingsPages.numberingLoadFailed": "Could not load your numbering settings. Check your connection and try again.",
+  "settingsPages.numberingRetry": "Try again",
+  "settingsPages.numberingEmpty": "No numbered documents are set up for this company yet.",
+  "settingsPages.numberingSaveFailed": "Could not save numbering. Try again in a moment."
 }
