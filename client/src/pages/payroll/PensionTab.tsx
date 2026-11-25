@@ -2,6 +2,7 @@ import { errorHeading } from "@/lib/error-heading";
 import { useContext, useState } from "react";
 import { TrialReadOnlyContext } from "@/lib/trial-access";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Wallet } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -80,7 +81,14 @@ export function PensionTab({ companyId }: { companyId: string }) {
   const { toast } = useToast();
   const liabilityKey = [`/api/companies/${companyId}/payroll/pension-liability`];
   const paymentsKey = [`/api/companies/${companyId}/payroll/pension-payments`];
-  const { data: liability } = useQuery<{ funds: FundBalance[]; totalOutstanding: string }>({
+  const {
+    data: liability,
+    isPending: liabilityPending,
+    isLoadingError: liabilityLoadFailed,
+    isRefetchError: liabilityRefreshFailed,
+    error: liabilityError,
+    refetch: refetchLiability,
+  } = useQuery<{ funds: FundBalance[]; totalOutstanding: string }>({
     queryKey: liabilityKey,
   });
   const { data: payments = [] } = useQuery<PensionPayment[]>({ queryKey: paymentsKey });
@@ -137,7 +145,22 @@ export function PensionTab({ companyId }: { companyId: string }) {
         <CardDescription>{tx("hr.pension.hint")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {(liability?.funds ?? []).length === 0 ? (
+        {liabilityRefreshFailed && (
+          <p role="alert" className="mb-3 text-sm text-muted-foreground">
+            {tx("hr.refreshFailed")}
+          </p>
+        )}
+        {liabilityPending ? (
+          <p role="status" className="text-muted-foreground">
+            {tx("hr.loading")}
+          </p>
+        ) : liabilityLoadFailed ? (
+          <LoadErrorState
+            error={liabilityError}
+            onRetry={() => void refetchLiability()}
+            testId="payroll-load-error"
+          />
+        ) : liability.funds.length === 0 ? (
           <EmptyState size="sm" title={tx("hr.pension.empty")} />
         ) : (
           <div className="overflow-x-auto">
@@ -152,7 +175,7 @@ export function PensionTab({ companyId }: { companyId: string }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(liability?.funds ?? []).map((f) => (
+                {liability.funds.map((f) => (
                   <TableRow key={f.fund}>
                     <TableCell className="font-medium">{tx(`hr.pension.fund.${f.fund}`)}</TableCell>
                     <MoneyCell amount={Number(f.accrued)} currency="AED" />
