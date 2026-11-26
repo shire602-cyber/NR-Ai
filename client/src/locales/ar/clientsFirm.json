@@ -103,6 +103,7 @@
   "emailIntake.linkedSendersCount": "المرسلون المرتبطون ({count})",
   "emailIntake.completenessLoadFailed": "تعذّر تحميل فحص الاكتمال",
   "emailIntake.completenessLoadHelp": "أعد المحاولة. إذا استمرت المشكلة، فأعد تحميل الصفحة.",
+  "emailIntake.completenessReload": "إعادة تحميل الصفحة",
   "emailIntake.nraCenter": "مركز NRA",
   "leadPipeline.leadsLeadsRateConversion": "{leads} عميل محتمل · معدل التحويل {rate}%",
   "leadPipeline.daysDAvgToConvert": "متوسط {days} يوم للتحويل",

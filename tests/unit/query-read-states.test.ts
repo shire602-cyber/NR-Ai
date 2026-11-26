@@ -575,6 +575,42 @@ describe("firm list read states", () => {
       vi.doUnmock(modulePath);
     }
   });
+
+  it("EmailIntake: reloads on request when the completeness import keeps failing", async () => {
+    const Page = (await import("../../client/src/pages/firm/EmailIntake")).default;
+    const { t, useI18n } = await import("../../client/src/lib/i18n");
+    const modulePath = "../../client/src/pages/firm/EmailIntakeCompletenessTab";
+    const rejectImport = vi.fn(() => {
+      throw new TypeError("Failed to fetch dynamically imported module");
+    });
+    const reload = vi.fn();
+    // jsdom's Location methods are non-configurable, so substitute window's location for the test.
+    vi.stubGlobal("window", Object.create(window, { location: { value: { reload } } }));
+    vi.doMock(modulePath, rejectImport);
+    try {
+      useI18n.getState().setLocale("ar");
+      await mount(Page);
+      await openTab("completeness");
+      const error = () => byTestId("email-intake-completeness-error");
+      expect(error()?.textContent).toContain(t.ar["emailIntake.completenessLoadFailed"]);
+
+      await clickButton(t.ar["components.errorRetry"]);
+      expect(rejectImport).toHaveBeenCalledTimes(2);
+      expect(error()?.textContent).toContain(t.ar["emailIntake.completenessLoadFailed"]);
+
+      await openTab("tasks");
+      expect(byTestId("email-task-boundary")).not.toBeNull();
+      await openTab("senders");
+      expect(byTestId("button-add-sender")).not.toBeNull();
+      await openTab("completeness");
+      expect(error()?.textContent).toContain(t.ar["emailIntake.completenessReload"]);
+      expect(reload).not.toHaveBeenCalled();
+      await clickButton(t.ar["emailIntake.completenessReload"]);
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.doUnmock(modulePath);
+    }
+  });
 });
 
 describe("DocumentChasing handles its two lists independently", () => {

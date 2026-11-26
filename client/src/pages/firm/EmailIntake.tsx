@@ -104,6 +104,11 @@ function CompletenessPanel({ clients }: { clients: ClientCompany[] }) {
       title={t["emailIntake.completenessLoadFailed"]}
       description={t["emailIntake.completenessLoadHelp"]}
       onRetry={() => setAttempt(attempt + 1)}
+      secondaryAction={
+        <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+          {t["emailIntake.completenessReload"]}
+        </Button>
+      }
       testId="email-intake-completeness-error"
     />
   );
