@@ -61,7 +61,26 @@ interface OcrFileItem {
   preview?: string;
   status: "pending" | "processing" | "success" | "error";
   receiptId?: string;
-  error?: string;
+  errorKey?: string;
+}
+
+function bulkOcrErrorKey(error: unknown): string {
+  if (typeof error === "string") {
+    if (/(?:^|; )(?:OpenAI: )?Empty OpenAI response$/.test(error)) {
+      return "components.srv.firm.bulk.ocrEmptyResponse";
+    }
+    if (error === "Unable to save bulk OCR receipt") {
+      return "components.srv.firm.bulk.ocrSaveFailed";
+    }
+    if (
+      error.startsWith("Unsupported image MIME type: ") ||
+      error.startsWith("Image must be a data URL with MIME type ") ||
+      error === "Invalid image data URL"
+    ) {
+      return "components.srv.firm.bulk.ocrInvalidImage";
+    }
+  }
+  return "components.srv.firm.bulk.ocrFailed";
 }
 
 interface VatQueueEntry {
@@ -220,15 +239,16 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
             )
           );
         } else {
+          const errorKey = bulkOcrErrorKey(r?.error);
           setItems((prev) =>
-            prev.map((i) => (i.id === item.id ? { ...i, status: "error", error: r?.error } : i))
+            prev.map((i) => (i.id === item.id ? { ...i, status: "error", errorKey } : i))
           );
         }
-      } catch (err: any) {
+      } catch {
         setItems((prev) =>
           prev.map((i) =>
             i.id === item.id
-              ? { ...i, status: "error", error: err?.message ?? t["bulkOperations.requestFailed"] }
+              ? { ...i, status: "error", errorKey: "bulkOperations.requestFailed" }
               : i
           )
         );
@@ -374,10 +394,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                         {item.status === "error" && (
                           <Badge
                             variant="destructive"
-                            title={
-                              localizeFirmText(item.error, t) ||
-                              t["components.srv.firm.bulk.ocrFailed"]
-                            }
+                            title={t[item.errorKey ?? "components.srv.firm.bulk.ocrFailed"]}
                           >
                             <XCircle className="w-3 h-3 me-1" />
                             <T k="pages.failed" />

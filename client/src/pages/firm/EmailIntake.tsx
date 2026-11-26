@@ -28,7 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { Plus, Trash2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -100,11 +100,13 @@ export default function EmailIntake() {
 
   const sourcesQuery = useQuery<SourcesResponse>({
     queryKey: ["/api/firm/email-intake/sources"],
-    queryFn: () => apiRequest("GET", "/api/firm/email-intake/sources"),
+    queryFn: ({ signal }) =>
+      apiRequest("GET", "/api/firm/email-intake/sources", undefined, undefined, { signal }),
   });
   const clientsQuery = useQuery<ClientCompany[]>({
     queryKey: ["/api/firm/clients"],
-    queryFn: () => apiRequest("GET", "/api/firm/clients"),
+    queryFn: ({ signal }) =>
+      apiRequest("GET", "/api/firm/clients", undefined, undefined, { signal }),
   });
   const sourcesState = queryReadState(sourcesQuery);
   const clientsState = queryReadState(clientsQuery);
@@ -226,8 +228,7 @@ function SendersTab({
   const [label, setLabel] = useState("");
   const [requireDkim, setRequireDkim] = useState(true);
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ["/api/firm/email-intake/sources"] });
+  const invalidate = () => refreshAfterWrite(["/api/firm/email-intake/sources"]);
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -665,15 +666,16 @@ function EmailTasksTab({
   const messagesOptions = { queryKey: messagesKey, meta: { tenantScoped: true } };
   const messagesQuery = useQuery<{ messages: IntakeMessage[] }>({
     ...messagesOptions,
-    queryFn: () => apiRequest("GET", `/api/firm/email-intake/messages/${companyId}`),
+    queryFn: ({ signal }) => apiRequest("GET", messagesKey[0], undefined, undefined, { signal }),
     enabled: !!companyId,
   });
   const messagesState = queryReadState({ ...messagesQuery, ...messagesOptions });
+  const messagesPaused = messagesQuery.fetchStatus === "paused";
   const createTask = useMutation({
     mutationFn: (messageId: string) =>
       apiRequest("POST", `/api/firm/email-intake/messages/${messageId}/task`, {}),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: messagesKey });
+      refreshAfterWrite(messagesKey);
       toast({ title: t["firm.emailTaskCreated"] });
     },
     onError: (e: Error) =>
@@ -731,9 +733,19 @@ function EmailTasksTab({
               </SelectContent>
             </Select>
           </div>
-          {companyId && messagesState === "pending" && (
-            <Skeleton className="h-24 w-full" data-testid="email-intake-messages-loading" />
-          )}
+          {companyId &&
+            messagesState === "pending" &&
+            (messagesPaused ? (
+              <p
+                className="text-sm text-muted-foreground"
+                role="status"
+                data-testid="email-intake-messages-waiting"
+              >
+                {t["banking.query.paused"]}
+              </p>
+            ) : (
+              <Skeleton className="h-24 w-full" data-testid="email-intake-messages-loading" />
+            ))}
           {companyId && messagesState === "error" && (
             <LoadErrorState
               compact
@@ -742,7 +754,16 @@ function EmailTasksTab({
               testId="email-intake-messages-error"
             />
           )}
-          {companyId && messagesState === "stale" && (
+          {companyId && messagesPaused && hasReadData(messagesState) && (
+            <p
+              className="text-sm text-muted-foreground"
+              role="status"
+              data-testid="email-intake-messages-paused-cached"
+            >
+              {t["banking.query.pausedCached"]}
+            </p>
+          )}
+          {companyId && !messagesPaused && messagesState === "stale" && (
             <StaleDataNotice
               onRetry={() => void messagesQuery.refetch()}
               testId="email-intake-messages-stale"

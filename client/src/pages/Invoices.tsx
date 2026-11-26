@@ -84,7 +84,7 @@ import { invoiceDisplayStatus } from "@shared/invoice-balance";
 import { statusLabelKey } from "@/components/ui/status-meta";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { isolateLtrText } from "@/lib/format-bidi";
-import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient, refreshAfterWrite } from "@/lib/queryClient";
 import {
   einvoiceFieldHint,
   einvoiceIssueTextKey,
@@ -488,11 +488,15 @@ export default function Invoices() {
   // walk the same status and source filters through every page.
   const invoicePageFilters = `${invoiceStatusQuery(statusFilter)}${sourceFilter !== "all" ? `&source=${encodeURIComponent(sourceFilter)}` : ""}`;
   const fetchInvoicePage = (
-    cursor?: string | null
+    cursor?: string | null,
+    signal?: AbortSignal
   ): Promise<{ items: Invoice[]; nextCursor: string | null }> =>
     apiRequest(
       "GET",
-      `/api/companies/${selectedCompanyId}/invoices?limit=50${invoicePageFilters}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+      `/api/companies/${selectedCompanyId}/invoices?limit=50${invoicePageFilters}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      undefined,
+      undefined,
+      { signal }
     );
   const invoicePages = useInfiniteQuery<{ items: Invoice[]; nextCursor: string | null }>({
     queryKey: [
@@ -503,13 +507,15 @@ export default function Invoices() {
       statusFilter ?? "all",
       sourceFilter,
     ],
-    queryFn: ({ pageParam }) => fetchInvoicePage(typeof pageParam === "string" ? pageParam : null),
+    queryFn: ({ pageParam, signal }) =>
+      fetchInvoicePage(typeof pageParam === "string" ? pageParam : null, signal),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
     enabled: !!selectedCompanyId,
   });
   // "pending" also covers a paused or not-yet-enabled first read, which is not an empty list.
   const invoiceReadState = queryReadState(invoicePages);
+  const invoicePagesPaused = invoicePages.fetchStatus === "paused";
   const invoices = useMemo<Invoice[]>(
     () =>
       hasReadData(invoiceReadState) ? (invoicePages.data?.pages.flatMap((p) => p.items) ?? []) : [],
@@ -528,7 +534,7 @@ export default function Invoices() {
       if (
         entries[0]?.isIntersecting &&
         invoicePages.hasNextPage &&
-        !invoicePages.isFetchingNextPage &&
+        invoicePages.fetchStatus === "idle" &&
         // After a failure the reader retries; scrolling must not loop on it.
         !invoicePages.isError
       ) {
@@ -716,9 +722,7 @@ export default function Invoices() {
     mutationFn: (data: InvoiceFormData) =>
       apiRequest("POST", `/api/companies/${selectedCompanyId}/invoices`, data),
     onSuccess: (created: any) => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "invoices"],
-      });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "invoices"]);
       toast({
         title: t["invoices.toastCreated"],
         description: t["invoices.toastCreatedBody"],
@@ -749,9 +753,7 @@ export default function Invoices() {
     mutationFn: ({ id, data }: { id: string; data: InvoiceFormData }) =>
       apiRequest("PUT", `/api/invoices/${id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "invoices"],
-      });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "invoices"]);
       toast({
         title: t["invoices.toastUpdated"],
         description: t["invoices.toastUpdatedBody"],
@@ -794,9 +796,7 @@ export default function Invoices() {
       return { previous };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "invoices"],
-      });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "invoices"]);
       toast({
         title: t["invoices.toastStatusUpdated"],
         description: t["invoices.toastStatusUpdatedBody"],
@@ -869,9 +869,7 @@ export default function Invoices() {
       });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "invoices"],
-      });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "invoices"]);
     },
   });
 
@@ -888,9 +886,7 @@ export default function Invoices() {
         data
       ),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "invoices"],
-      });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "invoices"]);
       toast({
         title: t["invoices.toastPaymentRecorded"],
         description: formatMessage(t["invoices.toastPaymentRecordedBody"], {
@@ -979,12 +975,8 @@ export default function Invoices() {
         title: t["invoices.toastEinvoiceGenerated"],
         description: formatMessage(translateNow("toasts.uuid"), { uuid: result.uuid }),
       });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "invoices"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "einvoicing"],
-      });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "invoices"]);
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "einvoicing"]);
     } catch (error: any) {
       // W4-C: a 422 carries the full fix-it / validation list.
       const issues =
@@ -1208,8 +1200,8 @@ export default function Invoices() {
     if (editing) {
       await editMutation.mutateAsync({ id: editing.id, data: invoiceData });
       // E1 validate-on-save: the e-invoice status re-runs its checks on the saved data.
-      queryClient.invalidateQueries({ queryKey: ["einvoice-status", editing.id] });
-      queryClient.invalidateQueries({ queryKey: ["einvoice-validate", editing.id] });
+      refreshAfterWrite(["einvoice-status", editing.id]);
+      refreshAfterWrite(["einvoice-validate", editing.id]);
       if (finalise && editing.status === "draft") {
         await updateStatusMutation.mutateAsync({ id: editing.id, status: "sent" });
       }
@@ -1289,7 +1281,10 @@ export default function Invoices() {
   const validateId = editorOpen && einvoiceEnabled ? editingInvoice?.id : undefined;
   const einvoiceValidation = useQuery<EInvoiceValidation>({
     queryKey: ["einvoice-validate", validateId],
-    queryFn: () => apiRequest("GET", `/api/invoices/${validateId}/einvoice/validate`),
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/invoices/${validateId}/einvoice/validate`, undefined, undefined, {
+        signal,
+      }),
     enabled: !!validateId,
     retry: false,
   });
@@ -1338,8 +1333,14 @@ export default function Invoices() {
       try {
         const state = await queryClient.fetchQuery<TaxReadyState>({
           queryKey: taxReadyKey(selectedCompanyId),
-          queryFn: () =>
-            apiRequest("GET", `/api/companies/${selectedCompanyId}/einvoicing/tax-ready`),
+          queryFn: ({ signal }) =>
+            apiRequest(
+              "GET",
+              `/api/companies/${selectedCompanyId}/einvoicing/tax-ready`,
+              undefined,
+              undefined,
+              { signal }
+            ),
           staleTime: 60_000,
         });
         if (shouldOpenTaxReady(state)) {
@@ -2611,6 +2612,15 @@ export default function Invoices() {
               onRetry={retryCompanyList}
               testId="invoices-company-error"
             />
+          ) : (!selectedCompanyId && companyListState === "waiting") ||
+            (invoiceReadState === "pending" && invoicePagesPaused) ? (
+            <p
+              className="text-sm text-muted-foreground"
+              role="status"
+              data-testid="invoices-waiting"
+            >
+              {t["banking.query.paused"]}
+            </p>
           ) : invoiceReadState === "pending" ? (
             <div data-testid="invoices-loading">
               <TableSkeleton rows={8} columns={6} />
@@ -2625,7 +2635,16 @@ export default function Invoices() {
             />
           ) : (
             <>
-              {invoiceReadState === "stale" && (
+              {invoicePagesPaused && (
+                <p
+                  className="text-sm text-muted-foreground"
+                  role="status"
+                  data-testid="invoices-paused-cached"
+                >
+                  {t["banking.query.pausedCached"]}
+                </p>
+              )}
+              {!invoicePagesPaused && invoiceReadState === "stale" && (
                 <StaleDataNotice onRetry={retryInvoicePages} testId="invoices-stale" />
               )}
               {/* Mobile row-cards (CTO 3/8): line 1 name + amount, line 2 number · date + status. */}
@@ -3071,7 +3090,7 @@ export default function Invoices() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={invoicePages.isFetchingNextPage}
+                    disabled={invoicePages.fetchStatus !== "idle"}
                     onClick={() => invoicePages.fetchNextPage()}
                   >
                     {invoicePages.isFetchingNextPage
@@ -3596,10 +3615,14 @@ function InvoiceStatusTiles({
   const { t } = useTranslation();
   const totalsQuery = useQuery<InvoiceListItem[]>({
     queryKey: ["/api/companies", companyId, "invoices"],
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/invoices?all=true`),
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/invoices?all=true`, undefined, undefined, {
+        signal,
+      }),
     enabled: !!companyId,
   });
   const totalsState = queryReadState(totalsQuery);
+  const totalsPaused = totalsQuery.fetchStatus === "paused";
   const all = useMemo(
     () => (hasReadData(totalsState) ? (totalsQuery.data ?? []) : []),
     [totalsState, totalsQuery.data]
@@ -3621,7 +3644,9 @@ function InvoiceStatusTiles({
   if (!companyId) return null;
   // Neither a pending nor a failed load may read as "0 invoices".
   if (totalsState === "pending") {
-    return <Skeleton className="h-24 w-full rounded-xl" data-testid="invoice-tiles-loading" />;
+    return totalsPaused ? null : (
+      <Skeleton className="h-24 w-full rounded-xl" data-testid="invoice-tiles-loading" />
+    );
   }
   if (totalsState === "error") {
     return (
@@ -3687,7 +3712,16 @@ function InvoiceStatusTiles({
 
   return (
     <div className="space-y-3">
-      {totalsState === "stale" && (
+      {totalsPaused && (
+        <p
+          className="text-sm text-muted-foreground"
+          role="status"
+          data-testid="invoice-tiles-paused-cached"
+        >
+          {t["banking.query.pausedCached"]}
+        </p>
+      )}
+      {!totalsPaused && totalsState === "stale" && (
         <StaleDataNotice onRetry={() => void totalsQuery.refetch()} testId="invoice-tiles-stale" />
       )}
       {tiles}

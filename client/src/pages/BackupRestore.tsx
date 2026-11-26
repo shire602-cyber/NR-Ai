@@ -50,7 +50,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { hasReadData, queryReadState } from "@/lib/queryReadState";
 import { StaleDataNotice } from "@/components/ui/stale-data-notice";
 import { apiUrl } from "@/lib/api";
@@ -197,10 +197,11 @@ export default function BackupRestore() {
 
   const backupsQuery = useQuery<BackupWithoutData[]>({
     queryKey: ["/api/companies", selectedCompanyId, "backups"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!selectedCompanyId) return [];
       const res = await fetch(apiUrl(`/api/companies/${selectedCompanyId}/backups`), {
         credentials: "include",
+        signal,
       });
       // Status-bearing, so a revoked 401/403 shows the access state instead of cached rows.
       if (!res.ok) throw new ApiError("Failed to fetch backups", res.status);
@@ -211,6 +212,7 @@ export default function BackupRestore() {
     retry: false,
   });
   const backupsState = queryReadState(backupsQuery);
+  const backupsPaused = backupsQuery.fetchStatus === "paused";
   const backups = hasReadData(backupsState) ? (backupsQuery.data ?? []) : [];
   const refetchBackups = () => void backupsQuery.refetch();
 
@@ -219,7 +221,7 @@ export default function BackupRestore() {
       return apiRequest("POST", `/api/companies/${selectedCompanyId}/backups`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "backups"]);
       toast({
         title: translateNow("toasts.backupCreated"),
         description: translateNow("toasts.yourFinancialDataHasBeenBackedUp"),
@@ -242,7 +244,7 @@ export default function BackupRestore() {
       return apiRequest("DELETE", `/api/backups/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "backups"]);
       toast({
         title: translateNow("toasts.backupDeleted"),
         description: translateNow("toasts.theBackupHasBeenRemoved"),
@@ -289,7 +291,7 @@ export default function BackupRestore() {
     },
     onSuccess: (data: { message?: string }) => {
       restoreAttempt.current = null;
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "backups"]);
       toast({ title: c.restoreDone, description: data.message });
       setRestorePreview(null);
       setSelectedBackupForRestore(null);
@@ -312,9 +314,7 @@ export default function BackupRestore() {
     mutationFn: async (body: { frequency: string; retentionDays: number }) =>
       apiRequest("PUT", `/api/companies/${selectedCompanyId}/backups/schedule`, body),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "backups", "schedule"],
-      });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "backups", "schedule"]);
       setScheduleDraft(null);
       toast({ title: c.saved });
     },
@@ -568,15 +568,34 @@ export default function BackupRestore() {
             )}
           </CardHeader>
           <CardContent>
-            {backupsState === "stale" && (
+            {backupsPaused && hasReadData(backupsState) && (
+              <p
+                className="mb-3 text-sm text-muted-foreground"
+                role="status"
+                data-testid="state-backups-paused-cached"
+              >
+                {t["banking.query.pausedCached"]}
+              </p>
+            )}
+            {!backupsPaused && backupsState === "stale" && (
               <div className="mb-3">
                 <StaleDataNotice onRetry={refetchBackups} testId="state-backups-stale" />
               </div>
             )}
             {backupsState === "pending" ? (
-              <div className="flex items-center justify-center h-32">
-                <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
+              backupsPaused ? (
+                <p
+                  className="text-sm text-muted-foreground"
+                  role="status"
+                  data-testid="state-backups-waiting"
+                >
+                  {t["banking.query.paused"]}
+                </p>
+              ) : (
+                <div className="flex items-center justify-center h-32">
+                  <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              )
             ) : backupsState === "error" ? (
               <LoadErrorState
                 compact

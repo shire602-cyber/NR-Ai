@@ -260,5 +260,5 @@
   "firmOps.recurringIntervalUnit": "{count, plural, zero {يوم} one {{day}} two {يومان} few {{days}} many {يومًا} other {يوم}}",
   "firmOps.recurringIntervalDay": "يوم",
   "firmOps.recurringIntervalDays": "أيام",
-  "firmOps.chaseBulkSendUnavailable": "تعذّر تحديث قائمة المتابعة، وقد تكون قديمة. حدّثها قبل إرسال الكل."
+  "firmOps.chaseBulkSendUnavailable": "يتاح إرسال الكل بعد اكتمال تحديث قائمة المتابعة بنجاح."
 }

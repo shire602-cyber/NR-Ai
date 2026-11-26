@@ -11,7 +11,7 @@ import { formatDate, formatEmbeddedDates, parseCalendarDate } from "@/lib/format
 import { CheckCircle2, Plus, Send } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -179,15 +179,9 @@ export default function DocumentChasing() {
         description: translateNow("toasts.markedAsSent"),
       });
       if (data?.whatsappLink) window.open(data.whatsappLink, "_blank", "noopener,noreferrer");
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-chases", "queue"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-chases", "effectiveness"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-requirements"],
-      });
+      refreshAfterWrite(["/api/companies", companyId, "document-chases", "queue"]);
+      refreshAfterWrite(["/api/companies", companyId, "document-chases", "effectiveness"]);
+      refreshAfterWrite(["/api/companies", companyId, "document-requirements"]);
       setPreviewItem(null);
     },
     onError: (e: Error) =>
@@ -208,12 +202,8 @@ export default function DocumentChasing() {
           sentCount: data.sentCount,
         }),
       });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-chases", "queue"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-chases", "effectiveness"],
-      });
+      refreshAfterWrite(["/api/companies", companyId, "document-chases", "queue"]);
+      refreshAfterWrite(["/api/companies", companyId, "document-chases", "effectiveness"]);
     },
     onError: (e: Error) =>
       toast({
@@ -230,12 +220,8 @@ export default function DocumentChasing() {
       }),
     onSuccess: () => {
       toast({ title: t["documentChasing.markedReceived"] });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-requirements"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-chases", "queue"],
-      });
+      refreshAfterWrite(["/api/companies", companyId, "document-requirements"]);
+      refreshAfterWrite(["/api/companies", companyId, "document-chases", "queue"]);
     },
     onError: (e: Error) =>
       toast({
@@ -255,10 +241,9 @@ export default function DocumentChasing() {
     [requirementsState, requirementsQuery.data]
   );
   const queue = hasReadData(queueState) ? (queueQuery.data ?? []) : [];
-  // Bulk send posts no ids: the server sends its current queue. So the action is only offered
-  // against a queue that is current: not after a failed refresh, not while a refresh is paused.
+  // Bulk send rebuilds the queue on the server. Keep the action disabled until a refresh succeeds.
   const queuePaused = queueQuery.fetchStatus === "paused";
-  const queueCurrent = queueState === "ready" && !queuePaused;
+  const queueCurrent = queueState === "ready" && queueQuery.fetchStatus === "idle";
   const events = hasReadData(eventsState) ? (eventsQuery.data ?? []) : [];
 
   const missingDocs = useMemo(
@@ -342,7 +327,7 @@ export default function DocumentChasing() {
                     <T k="pages.cancel" />
                   </AlertDialogCancel>
                   <AlertDialogAction
-                    disabled={!queueCurrent}
+                    disabled={bulkSendMutation.isPending || !queueCurrent}
                     onClick={() => bulkSendMutation.mutate()}
                   >
                     <T k="pages.sendAll" />
@@ -835,12 +820,8 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
       }),
     onSuccess: () => {
       toast({ title: t["documentChasing.requirementAdded"] });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", props.companyId, "document-requirements"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", props.companyId, "document-chases", "queue"],
-      });
+      refreshAfterWrite(["/api/companies", props.companyId, "document-requirements"]);
+      refreshAfterWrite(["/api/companies", props.companyId, "document-chases", "queue"]);
       props.onClose();
     },
     onError: (e: Error) =>
@@ -981,9 +962,7 @@ function AddComplianceEventDialog(props: {
       }),
     onSuccess: () => {
       toast({ title: t["documentChasing.deadlineAdded"] });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", props.companyId, "compliance-calendar"],
-      });
+      refreshAfterWrite(["/api/companies", props.companyId, "compliance-calendar"]);
       props.onClose();
     },
     onError: (e: Error) =>

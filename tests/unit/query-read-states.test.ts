@@ -22,7 +22,7 @@ vi.mock("@/hooks/useDefaultCompany", () => ({
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 type Reply = { status?: number; body: unknown } | "never";
-type Route = Reply | ((init?: RequestInit) => Reply);
+type Route = Reply | ((init?: RequestInit) => Reply | Promise<Reply>);
 
 let container: HTMLDivElement;
 let root: Root;
@@ -54,7 +54,7 @@ beforeEach(async () => {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(String(input), "http://localhost").pathname;
       const route = routes[path] ?? { body: [] };
-      const reply = typeof route === "function" ? route(init) : route;
+      const reply = typeof route === "function" ? await route(init) : route;
       if (reply === "never") return new Promise<Response>(() => {});
       return new Response(JSON.stringify(reply.body), {
         status: reply.status ?? 200,
@@ -300,7 +300,11 @@ describe("firm list read states", () => {
     expect(byTestId("bulk-clients-error")).not.toBeNull();
   });
 
-  it("BulkOperations: OCR and period-close results use Arabic count forms", async () => {
+  it.each([
+    ["Anthropic: provider unavailable; OpenAI: Empty OpenAI response", "ocrEmptyResponse"],
+    ["Unable to save bulk OCR receipt", "ocrSaveFailed"],
+    ["Unrecognized provider error", "ocrFailed"],
+  ])("BulkOperations: localizes OCR error %s and result counts", async (error, errorKey) => {
     const Page = (await import("../../client/src/pages/firm/BulkOperations")).default;
     const { t, useI18n } = await import("../../client/src/lib/i18n");
     await act(async () => useI18n.getState().setLocale("ar"));
@@ -311,7 +315,7 @@ describe("firm list read states", () => {
         results: [
           JSON.parse(String(init?.body)).items[0].filename === "good.png"
             ? { success: true, receiptId: "r-1" }
-            : { success: false, error: "OCR failed" },
+            : { success: false, error },
         ],
       },
     });
@@ -355,10 +359,13 @@ describe("firm list read states", () => {
       row.textContent?.includes("bad.png")
     );
     expect(failedRow?.querySelector("[title]")?.getAttribute("title")).toBe(
-      t.ar["components.srv.firm.bulk.ocrFailed"]
+      t.ar[`components.srv.firm.bulk.${errorKey}`]
     );
 
     await act(async () => useI18n.getState().setLocale("en"));
+    expect(failedRow?.querySelector("[title]")?.getAttribute("title")).toBe(
+      t.en[`components.srv.firm.bulk.${errorKey}`]
+    );
     expect(text()).toContain("2 files queued");
     expect(text()).toContain("1 file done");
     expect(text()).toContain("1 file failed");
@@ -467,18 +474,41 @@ describe("DocumentChasing handles its two lists independently", () => {
     expect(byTestId("row-queue-item")).not.toBeNull();
 
     await act(async () => bulkButton().click());
-    routes[queue] = failed;
-    await refresh();
+    const confirmButton = () =>
+      document.querySelector<HTMLButtonElement>('[role="alertdialog"] button:last-child');
+    expect(confirmButton()?.disabled).toBe(false);
+
+    let finishRefresh!: (reply: Reply) => void;
+    const pendingRefresh = new Promise<Reply>((resolve) => {
+      finishRefresh = resolve;
+    });
+    routes[queue] = () => pendingRefresh;
+    let refreshDone!: Promise<void>;
+    await act(async () => {
+      refreshDone = client.refetchQueries({
+        queryKey: ["/api/companies", "c-1", "document-chases", "queue"],
+      });
+    });
+    await flush();
     expect(bulkButton().disabled).toBe(true);
-    expect(
-      document.querySelector<HTMLButtonElement>('[role="alertdialog"] button:last-child')?.disabled
-    ).toBe(true);
+    expect(confirmButton()?.disabled).toBe(true);
+    expect(byTestId("row-queue-item")).not.toBeNull();
+    expect(byTestId("queue-stale")).toBeNull();
+
+    await act(async () => {
+      finishRefresh(failed);
+      await refreshDone;
+    });
+    await flush();
+    expect(bulkButton().disabled).toBe(true);
+    expect(confirmButton()?.disabled).toBe(true);
     expect(byTestId("queue-stale")).not.toBeNull();
     expect(byTestId("row-queue-item")).not.toBeNull();
 
     routes[queue] = queued;
     await refresh();
     expect(bulkButton().disabled).toBe(false);
+    expect(confirmButton()?.disabled).toBe(false);
     expect(byTestId("queue-stale")).toBeNull();
   });
 

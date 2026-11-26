@@ -260,5 +260,5 @@
   "firmOps.recurringIntervalUnit": "{count, plural, one {{day}} other {{days}}}",
   "firmOps.recurringIntervalDay": "day",
   "firmOps.recurringIntervalDays": "days",
-  "firmOps.chaseBulkSendUnavailable": "The queue could not be refreshed, so it may be out of date. Refresh it before sending all."
+  "firmOps.chaseBulkSendUnavailable": "Send all becomes available when the queue refresh succeeds."
 }
