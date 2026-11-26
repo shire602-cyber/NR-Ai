@@ -113,7 +113,7 @@ function NumberingCard({
     },
     onSuccess: (_result, submitted) => {
       setError(null);
-      toast({ title: translateNow("settingsPages.numberingSaved") });
+      toast({ title: translateNow("settingsNumbering.numberingSaved") });
       const queryKey = ["/api/companies", submitted.companyId, "numbering"];
       setSaved({
         draft: submitted.draft,
@@ -127,7 +127,7 @@ function NumberingCard({
       setError(
         e instanceof ApiError && e.status >= 400 && e.status < 500 && e.message
           ? e.message
-          : t["settingsPages.numberingSaveFailed"]
+          : t["settingsNumbering.numberingSaveFailed"]
       );
     },
   });
@@ -136,9 +136,11 @@ function NumberingCard({
   return (
     <Card data-testid={`numbering-${row.docType}`}>
       <CardHeader>
-        <CardTitle className="text-h4">{t[`settingsPages.numberingDoc_${row.docType}`]}</CardTitle>
+        <CardTitle className="text-h4">
+          {t[`settingsNumbering.numberingDoc_${row.docType}`]}
+        </CardTitle>
         <CardDescription>
-          {formatMessage(t["settingsPages.numberingNextIs"], {
+          {formatMessage(t["settingsNumbering.numberingNextIs"], {
             number: locale === "ar" ? isolateLtrText(nextFormatted) : nextFormatted,
           })}
         </CardDescription>
@@ -151,7 +153,7 @@ function NumberingCard({
             if (save.isPending) return;
             if (nextTooLow) {
               setError(
-                formatMessage(t["settingsPages.numberingBelowIssued"], { last: row.lastIssued })
+                formatMessage(t["settingsNumbering.numberingBelowIssued"], { last: row.lastIssued })
               );
               return;
             }
@@ -169,7 +171,7 @@ function NumberingCard({
           }}
         >
           <div className="space-y-1.5">
-            <Label htmlFor={id("prefix")}>{t["settingsPages.numberingPrefix"]}</Label>
+            <Label htmlFor={id("prefix")}>{t["settingsNumbering.numberingPrefix"]}</Label>
             <Input
               id={id("prefix")}
               dir="ltr"
@@ -181,7 +183,7 @@ function NumberingCard({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor={id("padding")}>{t["settingsPages.numberingPadding"]}</Label>
+            <Label htmlFor={id("padding")}>{t["settingsNumbering.numberingPadding"]}</Label>
             <Select
               value={String(padding)}
               onValueChange={(v) => edit({ padding: Number(v) })}
@@ -193,14 +195,14 @@ function NumberingCard({
               <SelectContent>
                 {[3, 4, 5, 6, 7, 8].map((p) => (
                   <SelectItem key={p} value={String(p)}>
-                    {formatMessage(t["settingsPages.numberingDigits"], { count: p })}
+                    {formatMessage(t["settingsNumbering.numberingDigits"], { count: p })}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor={id("next")}>{t["settingsPages.numberingNext"]}</Label>
+            <Label htmlFor={id("next")}>{t["settingsNumbering.numberingNext"]}</Label>
             <Input
               id={id("next")}
               inputMode="numeric"
@@ -215,12 +217,14 @@ function NumberingCard({
             />
             <p id={id("next-help")} className="text-caption text-muted-foreground">
               {row.lastIssued > 0
-                ? formatMessage(t["settingsPages.numberingLastIssued"], { last: row.lastIssued })
-                : t["settingsPages.numberingNoneIssued"]}
+                ? formatMessage(t["settingsNumbering.numberingLastIssued"], {
+                    last: row.lastIssued,
+                  })
+                : t["settingsNumbering.numberingNoneIssued"]}
             </p>
           </div>
           <div className="flex items-center justify-between gap-3 sm:col-span-2 lg:col-span-1 lg:flex-col lg:items-start">
-            <Label htmlFor={id("reset")}>{t["settingsPages.numberingYearlyReset"]}</Label>
+            <Label htmlFor={id("reset")}>{t["settingsNumbering.numberingYearlyReset"]}</Label>
             <Switch
               id={id("reset")}
               checked={yearlyReset}
@@ -240,7 +244,7 @@ function NumberingCard({
               className="text-small text-muted-foreground sm:col-span-2 lg:col-span-4"
               data-testid={`numbering-save-waiting-${row.docType}`}
             >
-              {t["settingsPages.numberingSaveWaiting"]}
+              {t["settingsNumbering.numberingSaveWaiting"]}
             </p>
           ) : null}
           <div className="sm:col-span-2 lg:col-span-4">
@@ -250,7 +254,7 @@ function NumberingCard({
               data-testid={`numbering-save-${row.docType}`}
             >
               {save.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />}
-              {t["settingsPages.numberingSave"]}
+              {t["settingsNumbering.numberingSave"]}
             </Button>
           </div>
         </form>
@@ -277,11 +281,13 @@ export default function NumberingSettings() {
       <div className="space-y-6">
         <PageHeader
           eyebrow={t["pages.companyProfileEyebrow"]}
-          title={t["settingsPages.numberingTitle"]}
-          description={t["settingsPages.numberingDescription"]}
+          title={t["settingsNumbering.numberingTitle"]}
+          description={t["settingsNumbering.numberingDescription"]}
         />
         {!canManage ? (
-          <p className="text-small text-muted-foreground">{t["settingsPages.numberingReadOnly"]}</p>
+          <p className="text-small text-muted-foreground">
+            {t["settingsNumbering.numberingReadOnly"]}
+          </p>
         ) : null}
         {data.isLoading ? (
           <div
@@ -299,7 +305,7 @@ export default function NumberingSettings() {
             className="text-small text-muted-foreground"
             data-testid="numbering-waiting"
           >
-            {t["settingsPages.numberingWaiting"]}
+            {t["settingsNumbering.numberingWaiting"]}
           </p>
         ) : null}
         {(data.isLoadingError || data.isRefetchError) && data.fetchStatus === "idle" ? (
@@ -310,17 +316,17 @@ export default function NumberingSettings() {
           >
             <p className="text-small text-danger">
               {data.isLoadingError
-                ? t["settingsPages.numberingLoadFailed"]
-                : t["settingsPages.numberingRefreshFailed"]}
+                ? t["settingsNumbering.numberingLoadFailed"]
+                : t["settingsNumbering.numberingRefreshFailed"]}
             </p>
             <Button variant="outline" size="sm" onClick={() => void data.refetch()}>
-              {t["settingsPages.numberingRetry"]}
+              {t["settingsNumbering.numberingRetry"]}
             </Button>
           </div>
         ) : null}
         {data.isSuccess && data.fetchStatus === "idle" && data.data.numbering.length === 0 ? (
           <p className="text-small text-muted-foreground" data-testid="numbering-empty">
-            {t["settingsPages.numberingEmpty"]}
+            {t["settingsNumbering.numberingEmpty"]}
           </p>
         ) : null}
         {companyId
@@ -335,7 +341,9 @@ export default function NumberingSettings() {
               />
             ))
           : null}
-        <p className="text-caption text-muted-foreground">{t["settingsPages.numberingFtaNote"]}</p>
+        <p className="text-caption text-muted-foreground">
+          {t["settingsNumbering.numberingFtaNote"]}
+        </p>
       </div>
     </SettingsLayout>
   );

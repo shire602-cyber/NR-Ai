@@ -4,8 +4,8 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import en from "../../client/src/locales/en/settingsPages.json";
-import ar from "../../client/src/locales/ar/settingsPages.json";
+import en from "../../client/src/locales/en/settingsNumbering.json";
+import ar from "../../client/src/locales/ar/settingsNumbering.json";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -42,7 +42,7 @@ const ROW = {
 
 describe("numbering catalogs", () => {
   it.each(keys)("has English and Arabic copy for %s", (k) => {
-    const key = `settingsPages.${k}` as keyof typeof en;
+    const key = `settingsNumbering.${k}` as keyof typeof en;
     expect(en[key]).toBeTruthy();
     expect(ar[key]).toMatch(/[؀-ۿ]/);
   });
@@ -134,7 +134,7 @@ describe("Numbering page states", () => {
     mode = "error";
     await mount();
     const err = container.querySelector('[data-testid="numbering-load-error"]');
-    expect(err?.textContent).toContain(en["settingsPages.numberingLoadFailed"]);
+    expect(err?.textContent).toContain(en["settingsNumbering.numberingLoadFailed"]);
     const retry = err?.querySelector("button") as HTMLButtonElement | null;
     expect(retry).not.toBeNull();
 
@@ -174,7 +174,7 @@ describe("Numbering page states", () => {
     await mount();
     const waiting = byTestId("numbering-waiting");
     expect(waiting?.getAttribute("role")).toBe("status");
-    expect(waiting?.textContent).toBe(en["settingsPages.numberingWaiting"]);
+    expect(waiting?.textContent).toBe(en["settingsNumbering.numberingWaiting"]);
     expect(byTestId("numbering-empty")).toBeNull();
     expect(byTestId("numbering-load-error")).toBeNull();
 
@@ -188,8 +188,8 @@ describe("Numbering page states", () => {
     mode = "error";
     await mount({ numbering: [ROW] });
     const alert = byTestId("numbering-refresh-error");
-    expect(alert?.textContent).toContain(en["settingsPages.numberingRefreshFailed"]);
-    expect(alert?.textContent).toContain(en["settingsPages.numberingRetry"]);
+    expect(alert?.textContent).toContain(en["settingsNumbering.numberingRefreshFailed"]);
+    expect(alert?.textContent).toContain(en["settingsNumbering.numberingRetry"]);
     expect(byTestId("numbering-load-error")).toBeNull();
     expect(byTestId("numbering-invoice")).not.toBeNull();
   });
@@ -238,7 +238,7 @@ describe("Numbering page states", () => {
       await clickSave();
 
       expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-        en["settingsPages.numberingSaveFailed"]
+        en["settingsNumbering.numberingSaveFailed"]
       );
       expect(byTestId("numbering-save-waiting-invoice")).toBeNull();
       expect(postMessage).not.toHaveBeenCalled();
@@ -257,7 +257,7 @@ describe("Numbering page states", () => {
       const expectWaiting = () => {
         const waiting = byTestId("numbering-save-waiting-invoice");
         expect(waiting?.getAttribute("role")).toBe("status");
-        expect(waiting?.textContent).toBe(en["settingsPages.numberingSaveWaiting"]);
+        expect(waiting?.textContent).toBe(en["settingsNumbering.numberingSaveWaiting"]);
         expect((byTestId("numbering-save-invoice") as HTMLButtonElement).disabled).toBe(true);
         expect(puts()).toHaveLength(0);
       };
