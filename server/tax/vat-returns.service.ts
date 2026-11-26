@@ -6,7 +6,7 @@
  *   draft -> ready -> submitted -> filed        (amended: superseded by a newer return)
  */
 import { todayDubai } from "@shared/accounting-date";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, ne, sql } from "drizzle-orm";
 import { db } from "../db";
 import { DomainError } from "../errors";
 import { vatReturns, type VatReturn } from "../../shared/schema";
@@ -32,6 +32,7 @@ import {
   type VerifiedVatGroup,
 } from "../ledger/vat-group-scope";
 import { getVatReturnSettlement } from "./vat-settlement.service";
+import { effectiveVatFilingStatus, vatFilingVersionOrder } from "./vat-filing-filter";
 import {
   computeVat201,
   loadVatCompany,
@@ -176,18 +177,18 @@ export async function findReturnForPeriod(
   excludingId?: string | null
 ): Promise<VatReturn | undefined> {
   const [row] = await tx
-    .select()
+    .select({ ...getTableColumns(vatReturns), status: effectiveVatFilingStatus })
     .from(vatReturns)
     .where(
       and(
         eq(vatReturns.companyId, companyId),
         sql`${vatReturns.periodStart}::date = ${from}::date`,
         sql`${vatReturns.periodEnd}::date = ${to}::date`,
-        ne(vatReturns.status, "amended"),
+        ne(effectiveVatFilingStatus, "amended"),
         excludingId ? ne(vatReturns.id, excludingId) : undefined
       )
     )
-    .orderBy(sql`(${vatReturns.status} IN ('submitted', 'filed')) DESC`, desc(vatReturns.createdAt))
+    .orderBy(...vatFilingVersionOrder)
     .limit(1);
   return row;
 }
@@ -495,7 +496,7 @@ async function assertNoOtherFinalReturn(
         eq(vatReturns.companyId, vatReturn.companyId),
         ne(vatReturns.id, vatReturn.id),
         ...(predecessorId ? [ne(vatReturns.id, predecessorId)] : []),
-        sql`${vatReturns.status} IN ('submitted', 'filed')`,
+        sql`${effectiveVatFilingStatus} IN ('submitted', 'filed')`,
         sql`${vatReturns.periodStart}::date <= ${dateOf(vatReturn.periodEnd)}::date`,
         sql`${vatReturns.periodEnd}::date >= ${dateOf(vatReturn.periodStart)}::date`
       )
@@ -847,10 +848,10 @@ export async function amendVatReturn(input: {
 
 export async function listReturns(companyId: string) {
   return db
-    .select()
+    .select({ ...getTableColumns(vatReturns), status: effectiveVatFilingStatus })
     .from(vatReturns)
     .where(eq(vatReturns.companyId, companyId))
-    .orderBy(desc(vatReturns.periodEnd), desc(vatReturns.createdAt));
+    .orderBy(desc(sql`${vatReturns.periodEnd}::date`), ...vatFilingVersionOrder);
 }
 
 export { DERIVED_BOX_KEYS };

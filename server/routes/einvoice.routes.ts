@@ -83,11 +83,6 @@ import {
   verifyInboundSignature,
 } from "../services/einvoice/inbound";
 import {
-  activeEInvoicePartner,
-  appointmentGate,
-  getAppointment,
-} from "../services/einvoice-appointment.service";
-import {
   cancelAndPersist,
   canRecoverAcubeSubmission,
   recoverAcubeSubmission,
@@ -583,15 +578,6 @@ export function registerEInvoiceRoutes(app: Express) {
         );
       }
       const provider = await providerForSubmission(invoice, company, doc);
-      // Guard: tenant must have an active appointment before (re)submitting.
-      {
-        const partner = activeEInvoicePartner();
-        if (partner.requiresAppointment) {
-          const appt = await getAppointment(company.id, partner.provider);
-          const gate = appointmentGate(appt, partner);
-          if (gate) return res.status(409).json(gate);
-        }
-      }
       const result = await enqueueEInvoiceSubmission({
         invoice,
         company,
@@ -603,6 +589,7 @@ export function registerEInvoiceRoutes(app: Express) {
         return res.status(result.status).json({
           message: result.message,
           code: result.code,
+          state: result.state,
           issues: "issues" in result ? result.issues : undefined,
           validation: "validation" in result ? result.validation : undefined,
         });
@@ -628,15 +615,6 @@ export function registerEInvoiceRoutes(app: Express) {
       }
       const prior = await getEInvoiceDocument(company.id, invoice.id);
       const provider = await providerForSubmission(invoice, company, prior);
-      // Guard: tenant must have an active appointment before submitting.
-      {
-        const partner = activeEInvoicePartner();
-        if (partner.requiresAppointment) {
-          const appt = await getAppointment(company.id, partner.provider);
-          const gate = appointmentGate(appt, partner);
-          if (gate) return res.status(409).json(gate);
-        }
-      }
       const result = await enqueueEInvoiceSubmission({
         invoice,
         company,
@@ -647,6 +625,7 @@ export function registerEInvoiceRoutes(app: Express) {
         return res.status(result.status).json({
           message: result.message,
           code: result.code,
+          state: result.state,
           issues: result.issues,
           validation: result.validation,
         });

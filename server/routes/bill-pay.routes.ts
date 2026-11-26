@@ -17,7 +17,7 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
-import { assertRetentionExpired } from "../services/retention.service";
+import { assertRetentionExpired, computeRetentionExpiry } from "../services/retention.service";
 import { recordAudit } from "../services/audit.service";
 import { emitDomainEventInTx } from "../platform/event-outbox";
 import {
@@ -105,11 +105,17 @@ import { docRateSql, payableOpenSql, payableSettledSql } from "../reporting/sett
 const log = createLogger("bill-pay");
 
 /** Load a bill the caller may act on; another tenant's bill is a 404 (never 403). */
-async function loadBill(req: Request): Promise<BillRow & Record<string, unknown>> {
+async function loadBill(req: Request) {
   const { id } = req.params;
   if (!zUuid.safeParse(id).success)
     throw new DomainError("BILL_NOT_FOUND", 404, undefined, "Bill not found");
-  const r = await pool.query("SELECT * FROM vendor_bills WHERE id = $1", [id]);
+  const r = await pool.query<
+    BillRow &
+      Record<string, unknown> & {
+        created_at: Date | string | null;
+        retention_expires_at: Date | string | null;
+      }
+  >("SELECT * FROM vendor_bills WHERE id = $1", [id]);
   const bill = r.rows[0];
   if (!bill) throw new DomainError("BILL_NOT_FOUND", 404, undefined, "Bill not found");
   const ok = await storage.hasCompanyAccess(req.user!.id, bill.company_id);
@@ -648,8 +654,21 @@ export function registerBillPayRoutes(app: Express) {
             "This bill was posted to the ledger; void it instead of deleting it"
           );
         }
-        // Use the bill's document date as the retention clock's starting point.
-        assertRetentionExpired({ createdAt: bill.bill_date }, "Vendor bill");
+        const createdAt = new Date(
+          Math.max(
+            new Date(bill.bill_date).getTime(),
+            new Date(bill.created_at ?? bill.bill_date).getTime()
+          )
+        );
+        const floor = computeRetentionExpiry(createdAt);
+        const storedExpiry = bill.retention_expires_at && new Date(bill.retention_expires_at);
+        assertRetentionExpired(
+          {
+            createdAt,
+            retentionExpiresAt: storedExpiry && storedExpiry > floor ? storedExpiry : floor,
+          },
+          "Vendor bill"
+        );
       }
       await pool.query("DELETE FROM vendor_bills WHERE id = $1 AND company_id = $2", [
         bill.id,

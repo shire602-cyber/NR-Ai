@@ -19,7 +19,7 @@ export interface EInvoicePartner {
   /** Partner's own end-user terms. Null until configured; acceptance is then blocked. */
   termsUrl: string | null;
   termsVersion: string;
-  /** Mock/dev providers skip the gate; nothing real is transmitted. */
+  /** The mock provider skips the gate; nothing real is transmitted. */
   requiresAppointment: boolean;
 }
 
@@ -28,15 +28,20 @@ const DISPLAY_NAMES: Record<string, string> = {
   mock: "Test provider (no real transmission)",
 };
 
-/** Describe the active partner from env. Terms URL/version are config, never hard-coded. */
-export function activeEInvoicePartner(env: NodeJS.ProcessEnv = process.env): EInvoicePartner {
-  const provider = (env.EINVOICE_PROVIDER || "mock").toLowerCase();
-  const termsUrl = env.EINVOICE_ASP_TERMS_URL?.trim() || null;
+/** Describe the tenant's selected or resolved provider using its configured terms. */
+export function eInvoicePartner(
+  provider = "mock",
+  env: NodeJS.ProcessEnv = process.env
+): EInvoicePartner {
+  const prefix = `EINVOICE_ASP_${provider.toUpperCase()}_`;
+  const legacy = env.EINVOICE_PROVIDER?.toLowerCase() === provider;
+  const setting = (key: string) =>
+    env[prefix + key]?.trim() || (legacy ? env[`EINVOICE_ASP_${key}`]?.trim() : undefined);
   return {
     provider,
-    displayName: env.EINVOICE_ASP_DISPLAY_NAME?.trim() || DISPLAY_NAMES[provider] || provider,
-    termsUrl,
-    termsVersion: env.EINVOICE_ASP_TERMS_VERSION?.trim() || "unversioned",
+    displayName: setting("DISPLAY_NAME") || DISPLAY_NAMES[provider] || provider,
+    termsUrl: setting("TERMS_URL") || null,
+    termsVersion: setting("TERMS_VERSION") || "unversioned",
     requiresAppointment: provider !== "mock",
   };
 }
@@ -88,14 +93,13 @@ export function appointmentGate(
   return { code: "EINVOICE_APPOINTMENT_REQUIRED", message: GATE_MESSAGES[state], state };
 }
 
-/** Company roles that may bind the company to the partner's terms. */
-export const APPOINTMENT_ROLES = new Set(["owner", "cfo"]);
-
 export async function getAppointment(
   companyId: string,
-  provider: string
+  provider: string,
+  conn: Pick<typeof db, "select"> = db,
+  lock?: "share"
 ): Promise<EInvoiceAspAppointment | null> {
-  const [row] = await db
+  const query = conn
     .select()
     .from(einvoiceAspAppointments)
     .where(
@@ -105,7 +109,18 @@ export async function getAppointment(
       )
     )
     .limit(1);
+  const [row] = await (lock ? query.for(lock) : query);
   return row ?? null;
+}
+
+export async function submissionAppointmentGate(
+  companyId: string,
+  provider: string,
+  conn: Pick<typeof db, "select">
+) {
+  const partner = eInvoicePartner(provider);
+  if (!partner.requiresAppointment) return null;
+  return appointmentGate(await getAppointment(companyId, provider, conn, "share"), partner);
 }
 
 /** Record acceptance of the current terms. Accepting a newer terms version keeps
@@ -133,7 +148,8 @@ export async function acceptPartnerTerms(args: {
       target: [einvoiceAspAppointments.companyId, einvoiceAspAppointments.provider],
       set: {
         termsVersion: args.partner.termsVersion,
-        termsAcceptedAt: now,
+        // Keep acceptance distinct even if revocation and reacceptance share a clock tick.
+        termsAcceptedAt: sql`GREATEST(${now.toISOString()}::timestamp, ${einvoiceAspAppointments.termsAcceptedAt} + interval '1 millisecond')`,
         termsAcceptedBy: args.userId,
         revokedAt: null,
         revokedBy: null,
@@ -149,21 +165,24 @@ export async function acceptPartnerTerms(args: {
 }
 
 export async function confirmEmaraTaxAppointment(args: {
-  companyId: string;
-  provider: string;
+  accepted: Pick<
+    EInvoiceAspAppointment,
+    "id" | "companyId" | "provider" | "termsVersion" | "termsAcceptedAt"
+  >;
   userId: string;
 }): Promise<EInvoiceAspAppointment | null> {
   const now = new Date();
-  // Add revokedAt IS NULL so a concurrent revocation committed between the route's
-  // state check and this write causes the update to match no rows (returns null),
-  // which the caller surfaces as a 409 instead of silently confirming a revoked appointment.
+  const { accepted } = args;
   const [row] = await db
     .update(einvoiceAspAppointments)
     .set({ emarataxConfirmedAt: now, emarataxConfirmedBy: args.userId, updatedAt: now })
     .where(
       and(
-        eq(einvoiceAspAppointments.companyId, args.companyId),
-        eq(einvoiceAspAppointments.provider, args.provider),
+        eq(einvoiceAspAppointments.id, accepted.id),
+        eq(einvoiceAspAppointments.companyId, accepted.companyId),
+        eq(einvoiceAspAppointments.provider, accepted.provider),
+        eq(einvoiceAspAppointments.termsVersion, accepted.termsVersion),
+        eq(einvoiceAspAppointments.termsAcceptedAt, accepted.termsAcceptedAt),
         isNull(einvoiceAspAppointments.revokedAt)
       )
     )
