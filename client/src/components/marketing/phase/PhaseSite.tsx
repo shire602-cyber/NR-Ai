@@ -70,6 +70,9 @@ const SolutionPage = lazyPage("marketing-solution", () => import("./pages/Soluti
 const CompareTop = lazyPage<CompareProps>("marketing-compare", () =>
   import("./pages/ComparePage").then((m) => ({ default: m.CompareTop }))
 );
+const CompareAll = lazyPage<Omit<CompareProps, "vendor">>("marketing-compare-all", () =>
+  import("./pages/ComparePage").then((m) => ({ default: m.CompareAll }))
+);
 const CompareMigration = lazyPage<CompareProps>("marketing-compare-migration", () =>
   import("./pages/ComparePage").then((m) => ({ default: m.CompareMigration }))
 );
@@ -274,6 +277,7 @@ export default function PhaseSite() {
               {audience && (
                 <SolutionPage slug={audience.slug} base={base} locale={locale} tr={tr} />
               )}
+              {editorial === "/compare" && <CompareAll base={base} locale={locale} />}
               {vendor && editorial && (
                 <>
                   <CompareTop base={base} locale={locale} vendor={vendor} />

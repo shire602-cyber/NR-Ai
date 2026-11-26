@@ -22,6 +22,8 @@ import { planCta, planPhase } from "../../client/src/lib/plan-state";
 
 const sub = vi.hoisted(() => ({
   state: {} as Record<string, unknown>,
+  /** Overrides the gate's subscription query (unset = a loaded one built from `state`). */
+  query: null as Record<string, unknown> | null,
   canBilling: true,
   user: { id: "u1", isAdmin: false, firmRole: null } as {
     id: string;
@@ -31,15 +33,21 @@ const sub = vi.hoisted(() => ({
 }));
 vi.mock("../../client/src/hooks/useSubscription", () => ({
   useSubscription: () => sub.state,
-  useCompanySubscription: () => ({
-    data: {
-      trialLocked: sub.state.isReadOnly,
-      entitlement: {
-        chosenPlan: sub.state.chosenPlan,
-        activationRequestedAt: sub.state.activationRequestedAt,
+  useCompanySubscription: () =>
+    sub.query ?? {
+      data: {
+        trialLocked: sub.state.isReadOnly,
+        entitlement: {
+          chosenPlan: sub.state.chosenPlan,
+          activationRequestedAt: sub.state.activationRequestedAt,
+        },
       },
+      isPending: false,
+      isLoadingError: false,
+      fetchStatus: "idle",
+      error: null,
+      refetch: () => {},
     },
-  }),
   usePlanChoiceActions: () => ({
     choose: { isPending: false, mutate: () => {} },
     activate: { isPending: false, mutate: () => {} },
@@ -101,6 +109,12 @@ function stateFor(name: PhaseName): Record<string, unknown> {
     trial,
     subscription: { id: "s1", planId: "free", status: "active", billingCycle: "monthly" },
     usage: undefined,
+    planLoading: false,
+    loadError: null,
+    isPaused: false,
+    refreshError: null,
+    retryLoad: () => {},
+    usageState: { loaded: true, loadError: null, refreshError: null, retry: () => {} },
     chosenPlan: withChoice ? chosen : null,
     activationRequestedAt: requested ? REQUESTED : null,
     canWrite: () => false,
@@ -140,6 +154,7 @@ beforeEach(() => {
   sub.canBilling = true;
   sub.user = { id: "u1", isAdmin: false, firmRole: null };
   sub.state = stateFor("running-none");
+  sub.query = null;
 });
 
 afterEach(() => {
@@ -413,6 +428,47 @@ describe.each(["en", "ar"] as const)("trial lock screen and plan-limit dialog (%
   );
 });
 
+// ── the gate while the plan is unknown ─────────────────────────────────────────────────────
+// Real React Query behaviour for these states: trial-access-gate-load-states.test.ts.
+
+describe("trial gate when the first plan load fails", () => {
+  async function gate(path: string, refetch: () => void) {
+    window.history.replaceState(null, "", path);
+    sub.query = {
+      data: undefined,
+      isPending: false,
+      isLoadingError: true,
+      fetchStatus: "idle",
+      error: Object.assign(new Error("boom"), { status: 503 }),
+      refetch,
+    };
+    const { TrialAccessGate } = await import("../../client/src/components/billing/TrialAccessGate");
+    await render(
+      createElement(TrialAccessGate, {
+        children: createElement("div", null, "Workspace records"),
+        billing: createElement("div", null, "Billing recovery"),
+      })
+    );
+    expect(text()).not.toContain("Workspace records");
+    expect(text()).not.toContain("Billing recovery");
+    expect(text()).not.toContain("boom");
+  }
+
+  it("on /subscription shows the Billing error and retries the query", async () => {
+    const refetch = vi.fn();
+    await gate("/subscription", refetch);
+    const error = q("subscription-load-error")!;
+    await act(async () => error.querySelector("button")!.click());
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("elsewhere keeps the workspace closed with the access-check screen", async () => {
+    await gate("/invoices", () => {});
+    expect(q("trial-recovery-layout")).not.toBeNull();
+    expect(q("subscription-load-error")).toBeNull();
+  });
+});
+
 // ── Settings > Billing ──────────────────────────────────────────────────────────────────────
 
 describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) => {
@@ -424,6 +480,29 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
     const { default: Subscription } = await import("../../client/src/pages/Subscription");
     await render(createElement(Subscription));
   }
+
+  it("a failed plan load shows a translated error with Retry, not an empty plan page", async () => {
+    const retry = vi.fn();
+    sub.state = {
+      ...stateFor("running-none"),
+      planState: null,
+      entitlement: null,
+      trial: null,
+      subscription: undefined,
+      loadError: Object.assign(new Error("boom"), { status: 500 }),
+      retryLoad: retry,
+    };
+    const { default: Subscription } = await import("../../client/src/pages/Subscription");
+    await render(createElement(Subscription));
+    const err = q("subscription-load-error");
+    expect(err).not.toBeNull();
+    expect(text(err!)).toContain(L("Try again", "أعد المحاولة"));
+    expect(text()).not.toContain("boom");
+    expect(q("plan-choose-professional")).toBeNull();
+    const btn = err!.querySelector("button")!;
+    await act(async () => btn.click());
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
 
   it("running + chosen: honest 'choosing alone does not keep you working', sentence-form billing, trial caps", async () => {
     await page("running-chosen");

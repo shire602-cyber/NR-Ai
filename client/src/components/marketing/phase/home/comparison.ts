@@ -32,6 +32,8 @@ const ZOHO_SRC = COMPETITOR_PRICES.zoho.source;
 const ZOHO_EINVOICING_SRC = "https://www.zoho.com/ae/books/e-invoicing/";
 const ZOHO_EINVOICING_HELP_SRC = "https://www.zoho.com/ae/books/help/e-invoicing/";
 const ZOHO_SIGNUP_SRC = "https://www.zoho.com/ae/books/signup/";
+const WAFEQ_INVOICE_SRC = "https://www.wafeq.com/en-ae/create-invoice-online";
+const WAFEQ_ACCOUNTANTS_SRC = "https://www.wafeq.com/en-ae/accountants";
 
 const wafeq = (cell: ComparisonCell = {}): ComparisonCell => ({
   source: WAFEQ_SRC,
@@ -52,7 +54,9 @@ function includingVat(aed: number): number {
 /*
  * Vendor pricing pages cover prices. Zoho's sign-up page covers its trial; its e-invoicing page
  * covers the included allowance and packs, and its e-invoicing help page the bilingual PDF for
- * Peppol invoices. Cells with no `key` render as a dash.
+ * Peppol invoices. Wafeq's UAE invoice page covers invoices in Arabic, English, or both, and
+ * its accountants page covers concurrent multi-client management (not a client portal).
+ * Cells with no `key` render as a dash.
  */
 export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
@@ -62,7 +66,10 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
       muhasib: { key: "hxCmpPrice", vars: { price: PLAN_MONTHLY_PRICES.starter } },
       wafeq: wafeq({
         key: "hxCmpPriceYearly",
-        vars: { monthly: includingVat(WAFEQ_ENTRY.monthly), yearly: includingVat(WAFEQ_ENTRY.yearly) },
+        vars: {
+          monthly: includingVat(WAFEQ_ENTRY.monthly),
+          yearly: includingVat(WAFEQ_ENTRY.yearly),
+        },
       }),
       zoho: zoho({ key: "hxCmpZohoEntry", vars: { price: includingVat(ZOHO_ENTRY_PAID.annual) } }),
     },
@@ -110,7 +117,11 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
     labelKey: "hxCmpRowBilingual",
     cells: {
       muhasib: yes,
-      wafeq: wafeq(),
+      wafeq: wafeq({
+        ...yes,
+        source: WAFEQ_INVOICE_SRC,
+        sourceLabelKey: "hxCmpSrcWafeqInvoices",
+      }),
       zoho: zoho({
         key: "hxCmpBilingualZoho",
         source: ZOHO_EINVOICING_HELP_SRC,
@@ -131,16 +142,36 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
     id: "firm",
     labelKey: "hxCmpRowFirm",
-    cells: { muhasib: yes, wafeq: wafeq(), zoho: zoho() },
+    cells: {
+      muhasib: yes,
+      wafeq: wafeq({
+        key: "hxCmpFirmWafeq",
+        source: WAFEQ_ACCOUNTANTS_SRC,
+        sourceLabelKey: "hxCmpSrcWafeqAccountants",
+      }),
+      zoho: zoho(),
+    },
   },
 ];
 
 export const COMPARISON_SOURCES = {
-  wafeq: { url: WAFEQ_SRC, labelKey: "hxCmpSrcWafeq", pageKey: "hxCmpLinkWafeq", path: "wafeq" },
-  zoho: { url: ZOHO_SRC, labelKey: "hxCmpSrcZoho", pageKey: "hxCmpLinkZoho", path: "zoho" },
+  wafeq: {
+    url: WAFEQ_SRC,
+    labelKey: "hxCmpSrcWafeq",
+    pageKey: "hxCmpLinkWafeq",
+    vsKey: "hxFootCompareWafeq",
+    path: "wafeq",
+  },
+  zoho: {
+    url: ZOHO_SRC,
+    labelKey: "hxCmpSrcZoho",
+    pageKey: "hxCmpLinkZoho",
+    vsKey: "hxFootCompareZoho",
+    path: "zoho",
+  },
 } as const satisfies Record<
   Exclude<ComparisonColumn, "muhasib">,
-  { url: string; labelKey: MarketingKey; pageKey: MarketingKey; path: string }
+  { url: string; labelKey: MarketingKey; pageKey: MarketingKey; vsKey: MarketingKey; path: string }
 >;
 
 /** Vendor names are brand data: shown as-is, never translated. */

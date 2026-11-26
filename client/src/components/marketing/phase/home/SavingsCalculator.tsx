@@ -132,8 +132,14 @@ export function SavingsCalculator({ locale }: SectionProps) {
         <SectionHead title={text("hxSavTitle")} lead={text("hxSavLead")} />
 
         <div className="mz-sav-grid">
-          <fieldset className="mz-card mz-sav-inputs">
-            <legend className="mz-sav-legend">{text("hxSavInputs")}</legend>
+          <div
+            className="mz-card mz-sav-inputs"
+            role="group"
+            aria-labelledby={`${uid}-inputs-title`}
+          >
+            <h3 className="mz-sav-h3" id={`${uid}-inputs-title`}>
+              {text("hxSavInputs")}
+            </h3>
             <Slider
               id={`${uid}-invoices`}
               label={text("hxSavInvoices")}
@@ -208,7 +214,11 @@ export function SavingsCalculator({ locale }: SectionProps) {
                 </select>
               </div>
             </div>
-          </fieldset>
+            <div className="mz-sav-mini" aria-hidden="true" data-testid="savings-mini">
+              <span>{text("hxSavTimeYear")}</span>
+              <strong>{aed(formatAmount(yearAed))}</strong>
+            </div>
+          </div>
 
           <div className="mz-card mz-sav-results" ref={resultsRef}>
             <div className="mz-sav-results-head">
@@ -221,6 +231,11 @@ export function SavingsCalculator({ locale }: SectionProps) {
               <p className="mz-sav-big-num" aria-hidden="true">
                 {aed(formatAmount(shownYear))}
               </p>
+              {yearAed === 0 && (
+                <p className="mz-sav-big-hint" data-testid="savings-empty">
+                  {text("hxSavZeroHint")}
+                </p>
+              )}
             </div>
 
             <div aria-live="polite" aria-atomic="true" data-testid="savings-live">
@@ -273,9 +288,7 @@ export function SavingsCalculator({ locale }: SectionProps) {
 
             <div className="mz-sav-context" data-testid="savings-penalty">
               <p className="mz-sav-context-label">{text("hxSavContextLabel")}</p>
-              <p className="mz-sav-context-line">
-                {text("hxSavPenalty", PENALTY_TEXT_VARS)}
-              </p>
+              <p className="mz-sav-context-line">{text("hxSavPenalty", PENALTY_TEXT_VARS)}</p>
             </div>
 
             <Link className="phase-button phase-primary mz-sav-cta" href={trialSignupPath}>
