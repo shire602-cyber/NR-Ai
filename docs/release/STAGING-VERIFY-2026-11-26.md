@@ -169,6 +169,97 @@ Records created: F01 invoice 47b35d02-7383-46d0-beb2-6966664b570f (INV-2026-0001
 - F01 journal lines: 1040 D0.22 C0; 4020 D0 C0.2; 2020 D0 C0.02
 - F07 orig legs: {"1040":3801.04,"2020":-128.54,"4020":-2570.75,"4060":-1101.75}
 
+## Signed-in UI checks
+
+Run (UTC): 2026-11-26T14:00:26.037Z; staging https://nr-ai-staging.up.railway.app; demo account muhasib-demo-6e0a9f6a@example.com; Playwright (playwright-core 1.60.0) with local Chromium; forced failures via page.route (HTTP 500) on the named API reads; screenshots in C:/Users/arahm/AppData/Local/Temp/claude/41222dea18bab93d/e1151078-7588-42ff-ad47-a3c39dc0ed39/scratchpad/ui-shots.
+
+| Check | Item | Expected | Observed | Result | Screenshot |
+|---|---|---|---|---|---|
+| F03 | P&L en: failed read shows retryable error | testid report-pl-load-error visible, retry button present | visible; retry buttons: 1 | PASS | f03-p-l-en-failed.png |
+| F03 | P&L en: failed read does not show AED 0.00 | no AED 0.00 figures in main | no zero figures | PASS | f03-p-l-en-failed.png |
+| F03 | P&L en: after retry real figures show | error gone, figures rendered | error gone; main text sample: INSIGHTS Reports Financial statements, tax reports and comparisons from your books Export Books balanced Debits equal credits as of 26 Nov 2026 No period locked yet Back to reports Financial Statement | PASS | f03-p-l-en-after-retry.png |
+| F03 | Balance sheet en: failed read shows retryable error | testid report-bs-load-error visible, retry button present | visible; retry buttons: 1 | PASS | f03-balance-sheet-en-failed.png |
+| F03 | Balance sheet en: failed read does not show AED 0.00 | no AED 0.00 figures in main | no zero figures | PASS | f03-balance-sheet-en-failed.png |
+| F03 | Balance sheet en: after retry real figures show | error gone, figures rendered | error gone; main text sample: INSIGHTS Reports Financial statements, tax reports and comparisons from your books Export Books balanced Debits equal credits as of 26 Nov 2026 No period locked yet Back to reports Financial Statement | PASS | f03-balance-sheet-en-after-retry.png |
+| F03 | VAT en: failed read shows retryable error | testid report-vat-load-error visible, retry button present | visible; retry buttons: 1 | PASS | f03-vat-en-failed.png |
+| F03 | VAT en: failed read does not show AED 0.00 | no AED 0.00 figures in main | no zero figures | PASS | f03-vat-en-failed.png |
+| F03 | VAT en: after retry real figures show | error gone, figures rendered | error gone; main text sample: INSIGHTS Reports Financial statements, tax reports and comparisons from your books Export Books balanced Debits equal credits as of 26 Nov 2026 No period locked yet Back to reports Accountant & Taxes  | PASS | f03-vat-en-after-retry.png |
+| F03 | P&L ar: failed read shows retryable error | testid report-pl-load-error visible, retry button present | visible; retry buttons: 1 | PASS | f03-p-l-ar-failed.png |
+| F03 | P&L ar: failed read does not show AED 0.00 | no AED 0.00 figures in main | no zero figures | PASS | f03-p-l-ar-failed.png |
+| F03 | P&L ar: English text nodes in error state | none | PDF (العربية) / PDF (الإنجليزية) / ملف Excel | N/A | f03-p-l-ar-failed.png |
+| F03 | P&L ar: after retry real figures show | error gone, figures rendered | error gone; main text sample: الرؤى التقارير القوائم المالية والتقارير الضريبية والمقارنات من دفاترك تصدير الدفاتر متوازنة المدين يساوي الدائن حتى 26 نوفمبر 2026 لم تُقفل أي فترة بعد العودة إلى التقارير البيانات المالية الأرباح وا | PASS | f03-p-l-ar-after-retry.png |
+| F03 | P&L ar: English text nodes in loaded main content | none | PDF (العربية) / PDF (الإنجليزية) / ملف Excel | N/A | f03-p-l-ar-after-retry.png |
+| F03 | Balance sheet ar: failed read shows retryable error | testid report-bs-load-error visible, retry button present | visible; retry buttons: 1 | PASS | f03-balance-sheet-ar-failed.png |
+| F03 | Balance sheet ar: failed read does not show AED 0.00 | no AED 0.00 figures in main | no zero figures | PASS | f03-balance-sheet-ar-failed.png |
+| F03 | Balance sheet ar: English text nodes in error state | none | PDF (العربية) / PDF (الإنجليزية) / ملف Excel | N/A | f03-balance-sheet-ar-failed.png |
+| F03 | Balance sheet ar: after retry real figures show | error gone, figures rendered | error gone; main text sample: الرؤى التقارير القوائم المالية والتقارير الضريبية والمقارنات من دفاترك تصدير الدفاتر متوازنة المدين يساوي الدائن حتى 26 نوفمبر 2026 لم تُقفل أي فترة بعد العودة إلى التقارير البيانات المالية الميزانية  | PASS | f03-balance-sheet-ar-after-retry.png |
+| F03 | Balance sheet ar: English text nodes in loaded main content | none | PDF (العربية) / PDF (الإنجليزية) / ملف Excel | N/A | f03-balance-sheet-ar-after-retry.png |
+| F03 | VAT ar: failed read shows retryable error | testid report-vat-load-error visible, retry button present | visible; retry buttons: 1 | PASS | f03-vat-ar-failed.png |
+| F03 | VAT ar: failed read does not show AED 0.00 | no AED 0.00 figures in main | no zero figures | PASS | f03-vat-ar-failed.png |
+| F03 | VAT ar: English text nodes in error state | none | none | PASS | f03-vat-ar-failed.png |
+| F03 | VAT ar: after retry real figures show | error gone, figures rendered | error gone; main text sample: الرؤى التقارير القوائم المالية والتقارير الضريبية والمقارنات من دفاترك تصدير الدفاتر متوازنة المدين يساوي الدائن حتى 26 نوفمبر 2026 لم تُقفل أي فترة بعد العودة إلى التقارير المحاسب والضرائب ملخص ضريبة | PASS | f03-vat-ar-after-retry.png |
+| F03 | VAT ar: English text nodes in loaded main content | none | none | PASS | f03-vat-ar-after-retry.png |
+| F03 | company switch never shows prior company's totals | n/a | NOT RUN: the demo account has one company, so there is nothing to switch to | N/A |  |
+| F04 | en: failed checklist read shows error (testid checklist-error) | error + retry visible | visible | PASS | f04-month-end-en-checklist-failed.png |
+| F04 | en: no fabricated 0/7, All Clear, Select a period | none of them | none present | PASS | f04-month-end-en-checklist-failed.png |
+| F04 | en: after retry the checklist renders | error gone, checklist/empty state shown | error gone; ACCOUNTING Month-end close Review, validate, and lock your monthly accounting period Period: October 2026 Refresh Close checklist 11/11 items complete for Oct 2 | PASS | f04-month-end-en-checklist-after-retry.png |
+| F04 | en: failed history read shows its own error (history-error) | visible | visible | PASS | f04-month-end-en-history-failed.png |
+| F04 | en: failed history does not say 'No period closings recorded' / history-empty | absent | absent | PASS | f04-month-end-en-history-failed.png |
+| F04 | en: after retry history renders | error gone | gone; empty=false | PASS | f04-month-end-en-history-after-retry.png |
+| F04 | ar: failed checklist read shows error (testid checklist-error) | error + retry visible | visible | PASS | f04-month-end-ar-checklist-failed.png |
+| F04 | ar: no fabricated 0/7, All Clear, Select a period | none of them | none present | PASS | f04-month-end-ar-checklist-failed.png |
+| F04 | ar: English text nodes in checklist-error state | none | muhasib-demo-6e0a9f6a@example.com | N/A | f04-month-end-ar-checklist-failed.png |
+| F04 | ar: after retry the checklist renders | error gone, checklist/empty state shown | error gone; المحاسبة الإقفال الشهري راجع فترتك المحاسبية الشهرية وتحقق منها وأقفلها الفترة: أكتوبر 2026 تحديث قائمة تحقق الإقفال اكتمل 11/11 من البنود لفترة أكتوبر 2026 كل  | PASS | f04-month-end-ar-checklist-after-retry.png |
+| F04 | ar: English text nodes in loaded month-end content | none | muhasib-demo-6e0a9f6a@example.com | N/A | f04-month-end-ar-checklist-after-retry.png |
+| F04 | ar: failed history read shows its own error (history-error) | visible | visible | PASS | f04-month-end-ar-history-failed.png |
+| F04 | ar: failed history does not say 'No period closings recorded' / history-empty | absent | absent | PASS | f04-month-end-ar-history-failed.png |
+| F04 | ar: after retry history renders | error gone | gone; empty=false | PASS | f04-month-end-ar-history-after-retry.png |
+| F05 | en: failed forecast shows forecast error | cashflow-forecast-error visible | visible | PASS | f05-cashflow-en-forecast-failed.png |
+| F05 | en: failed forecast hides projections card | forecast-projections absent | absent | PASS | f05-cashflow-en-forecast-failed.png |
+| F05 | en: after retry projections render | forecast-projections visible | visible | PASS | f05-cashflow-en-forecast-after-retry.png |
+| F05 | en: failed history shows history error | cashflow-history-error visible | visible | PASS | f05-cashflow-en-history-failed.png |
+| F05 | en: failed history does not show the empty message | cashflow-history-empty absent | absent | PASS | f05-cashflow-en-history-failed.png |
+| F05 | en: after retry history renders (table or empty message) | error gone | gone; empty message=false | PASS | f05-cashflow-en-history-after-retry.png |
+| F05 | ar: failed forecast shows forecast error | cashflow-forecast-error visible | visible | PASS | f05-cashflow-ar-forecast-failed.png |
+| F05 | ar: failed forecast hides projections card | forecast-projections absent | absent | PASS | f05-cashflow-ar-forecast-failed.png |
+| F05 | ar: English text nodes in forecast-error state | none | none | PASS | f05-cashflow-ar-forecast-failed.png |
+| F05 | ar: after retry projections render | forecast-projections visible | visible | PASS | f05-cashflow-ar-forecast-after-retry.png |
+| F05 | ar: English text nodes in loaded cash-flow content | none | none | PASS | f05-cashflow-ar-forecast-after-retry.png |
+| F05 | ar: failed history shows history error | cashflow-history-error visible | visible | PASS | f05-cashflow-ar-history-failed.png |
+| F05 | ar: failed history does not show the empty message | cashflow-history-empty absent | absent | PASS | f05-cashflow-ar-history-failed.png |
+| F05 | ar: after retry history renders (table or empty message) | error gone | gone; empty message=false | PASS | f05-cashflow-ar-history-after-retry.png |
+
+## Signed-in UI checks (2)
+
+Run (UTC): 2026-11-26T14:06:38.132Z; company A Demo Trading LLC 15943f48-7ab9-4a57-af69-552d24a4d8cb; company B Demo Second LLC eb6e1f5e-d536-447c-b0a0-90c4ef7b6718 (created via POST /api/companies, one AED 777.77 zero-rated invoice INV-2026-00001 issued); forced failures via page.route; screenshots in C:/Users/arahm/AppData/Local/Temp/claude/41222dea18bab93d/e1151078-7588-42ff-ad47-a3c39dc0ed39/scratchpad/ui-shots.
+
+| Check | Item | Expected | Observed | Result | Screenshot |
+|---|---|---|---|---|---|
+| F03 switch | company A P&L loads with its own figures | revenue figure shown | 14,750.20 | PASS | f03-switch-a-loaded.png |
+| F03 switch | A->B while B loads (delayed 3s) and after B fails: A totals never shown | A figure 14,750.20 absent in 16 samples | never shown | PASS | f03-switch-a-to-b-failed.png |
+| F03 switch | A->B failure shows B error state, not zeros | report-pl-load-error visible, no AED 0.00 | visible; zero shown=false | PASS | f03-switch-a-to-b-failed.png |
+| F03 switch | after retry B shows its own figures | revenue 777.77 | 777.77 | PASS | f03-switch-b-after-retry.png |
+| F03 switch | B->A while A loads (delayed) and after A fails: B totals never shown | 777.77 absent in 16 samples | never shown | PASS | f03-switch-b-to-a-failed.png |
+| F03 switch | B->A failure shows A error state, not zeros | report-pl-load-error visible | visible; zero shown=false | PASS | f03-switch-b-to-a-failed.png |
+| F03 switch | after retry A shows its own figures again | revenue 14,750.20 | 14,750.20 | PASS | f03-switch-a-after-retry.png |
+| F05 sched | en: failed list read shows scoped retryable error | scheduled-items-load-error visible | visible | PASS | f05-sched-en-list-failed.png |
+| F05 sched | en: forecast and history stay visible | projections visible, no forecast/history error | projections=true forecastErr=0 historyErr=0 | PASS | f05-sched-en-list-failed.png |
+| F05 sched | en: after retry the item is listed | remove button for item visible | visible | PASS | f05-sched-en-list-after-retry.png |
+| F05 sched | en: failed DELETE keeps the item, retry available | item present, button enabled again | present=true enabled=true | PASS | f05-sched-en-delete-failed.png |
+| F05 sched | en: Remove not double-firing | 1 DELETE request for two clicks | DELETE requests=1; disabled while pending=true | PASS | f05-sched-en-delete-failed.png |
+| F05 sched | en: successful DELETE removes the item | item gone | gone | PASS | f05-sched-en-delete-succeeded.png |
+| F05 sched | en: item stays gone after a refetch (reload) | item absent | absent | PASS | f05-sched-en-after-refetch.png |
+| F05 sched | en: server no longer lists the item | absent in API | absent | PASS | f05-sched-en-after-refetch.png |
+| F05 sched | ar: failed list read shows scoped retryable error | scheduled-items-load-error visible | visible | PASS | f05-sched-ar-list-failed.png |
+| F05 sched | ar: forecast and history stay visible | projections visible, no forecast/history error | projections=true forecastErr=0 historyErr=0 | PASS | f05-sched-ar-list-failed.png |
+| F05 sched | ar: after retry the item is listed | remove button for item visible | visible | PASS | f05-sched-ar-list-after-retry.png |
+| F05 sched | ar: failed DELETE keeps the item, retry available | item present, button enabled again | present=true enabled=true | PASS | f05-sched-ar-delete-failed.png |
+| F05 sched | ar: Remove not double-firing | 1 DELETE request for two clicks | DELETE requests=1; disabled while pending=true | PASS | f05-sched-ar-delete-failed.png |
+| F05 sched | ar: successful DELETE removes the item | item gone | gone | PASS | f05-sched-ar-delete-succeeded.png |
+| F05 sched | ar: item stays gone after a refetch (reload) | item absent | absent | PASS | f05-sched-ar-after-refetch.png |
+| F05 sched | ar: server no longer lists the item | absent in API | absent | PASS | f05-sched-ar-after-refetch.png |
+| F05 sched | cleanup: no UI-verify scheduled items left | 0 | 0 | PASS |  |
+
 ## Public site sweep (council, browser pane, 2026-11-26 ~13:45 UTC)
 
 All 88 sitemap URLs (`/en/*` and `/ar/*`) rendered in the SPA and scanned for: ZATCA, Saudi (EN/AR), A-Cube, Complyance, OFX, QIF, MT940, "PDF statement", AED 49/149/299. **0 hits.**
@@ -178,6 +269,7 @@ Headers on `/en` (commit 448dcac1): HSTS 1 year + includeSubDomains, nonce CSP, 
 ## Notes
 
 - S05 wording: a blank-amount row is reported in `parseErrors` ("Row N: Missing amount"); explicit zero-value rows count in `skippedRows`. Both are visible to the caller, which is the S05 fix; the register wording is corrected accordingly.
+- Screenshots (43 PNG, demo tenant) are kept outside the repo in the session scratchpad `ui-shots/`.
 - F06 does not discriminate UTC from Dubai at 13:41 UTC (same calendar date). A run between 20:00 and 24:00 UTC is needed to prove the undated default uses the Dubai date on staging.
 - F02 needs a submitted/filed return, which crosses the FTA submission boundary; not verifiable on staging.
 - Demo tenant data left on staging: invoices INV-2026-00001..~00027, credit notes, payments, customer credits, one USD→AED 3.6725 rate, fixture TRN 100000000000003 on the demo company; Feb 2026 lock removed after the F06 check.
