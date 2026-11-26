@@ -11,7 +11,7 @@
  *                    ↘ retrying → sending … → dead                   (after max_attempts)
  *   queued → blocked_no_provider → queued (when a provider appears, rows < 24h old)
  */
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql, type AnyColumn } from "drizzle-orm";
 import { db, pool } from "../db";
 import {
   emailDeliveryEvents,
@@ -312,6 +312,13 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     .from(emailOutboxAttachments)
     .where(eq(emailOutboxAttachments.outboxId, row.id));
   const attempts = row.attempts + 1;
+  // A provider webhook can settle the row before the transport call returns. These expressions run
+  // inside the UPDATE below, so that state (and its error) is never overwritten.
+  const providerSettled = sql`${emailOutbox.status} IN ('delivered', 'bounced', 'complained', 'dead')`;
+  const unlessSettled = (column: AnyColumn, value: string | Date | null) =>
+    sql`CASE WHEN ${providerSettled} THEN ${column} ELSE ${
+      value === null ? sql`NULL` : sql.param(value, column)
+    } END`;
   try {
     if (row.category === "notification") {
       // Historical and new notification keys end in the intended user id.
@@ -348,13 +355,13 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
       .update(emailOutbox)
       .set({
         ...refreshed,
-        status: "sent",
+        status: unlessSettled(emailOutbox.status, "sent"),
         attempts,
         provider: transport.name,
         providerMessageId,
         sentAt: new Date(),
         lockedUntil: null,
-        lastError: null,
+        lastError: unlessSettled(emailOutbox.lastError, null),
         updatedAt: new Date(),
         ...(row.sensitive ? { html: null, textBody: null } : {}),
       })
@@ -373,14 +380,21 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
       .update(emailOutbox)
       .set({
         ...refreshed,
-        status: dead ? "dead" : "retrying",
+        status: unlessSettled(emailOutbox.status, dead ? "dead" : "retrying"),
         attempts,
         provider: transport.name,
-        lastError: message.slice(0, 2000),
+        lastError: unlessSettled(emailOutbox.lastError, message.slice(0, 2000)),
         lockedUntil: null,
         nextAttemptAt: new Date(Date.now() + backoffMs(attempts)),
-        deadAt: dead ? new Date() : null,
+        deadAt: unlessSettled(emailOutbox.deadAt, dead ? new Date() : null),
         updatedAt: new Date(),
+        // A sensitive message the provider already settled is never retried: drop its body.
+        ...(row.sensitive
+          ? {
+              html: sql`CASE WHEN ${emailOutbox.status} IN ('delivered', 'bounced', 'complained') THEN NULL ELSE ${emailOutbox.html} END`,
+              textBody: sql`CASE WHEN ${emailOutbox.status} IN ('delivered', 'bounced', 'complained') THEN NULL ELSE ${emailOutbox.textBody} END`,
+            }
+          : {}),
       })
       .where(eq(emailOutbox.id, row.id))
       .returning();

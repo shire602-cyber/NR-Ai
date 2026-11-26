@@ -407,7 +407,9 @@ export function registerCostCenterRoutes(app: Express) {
       const other = await pool.query(
         `SELECT (SELECT COUNT(*) FROM cost_centers WHERE parent_id = $1)
               + (SELECT COUNT(*) FROM bill_line_items WHERE cost_center_id = $1)
-              + (SELECT COUNT(*) FROM fixed_assets WHERE cost_center_id = $1) AS n`,
+              + (SELECT COUNT(*) FROM fixed_assets WHERE cost_center_id = $1)
+              + (SELECT COUNT(*) FROM budget_plans WHERE cost_center_id = $1)
+              + (SELECT COUNT(*) FROM budget_lines WHERE cost_center_id = $1) AS n`,
         [cc.id]
       );
       if (Number(other.rows[0]?.n ?? 0) > 0) {

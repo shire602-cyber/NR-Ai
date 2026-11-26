@@ -801,22 +801,44 @@ export function registerBudgetRoutes(app: Express) {
           "The file has invalid rows; nothing was imported"
         );
       }
-      if (b.replace) await db.query(`DELETE FROM budget_lines WHERE budget_id = $1`, [plan.id]);
-      for (const p of prepared) {
-        await db.query(
-          `INSERT INTO budget_lines (budget_id, account_id, category, cost_center_id, is_contra,
-             jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec, annual_total)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
-          [
-            plan.id,
-            p.accountId,
-            p.category,
-            p.costCenterId,
-            p.isContra,
-            ...BUDGET_MONTHS.map((m) => p.months[m]),
-            annualOf(p.months),
-          ]
+      // One transaction: a failed insert (for example an amount overflow) rolls back the delete.
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        // Lock the plan row so concurrent imports run one at a time, then re-check it is a draft.
+        const locked = await client.query(
+          `SELECT * FROM budget_plans WHERE id = $1 AND company_id = $2 FOR UPDATE`,
+          [plan.id, plan.company_id]
         );
+        if (!locked.rows[0]) {
+          throw new DomainError("BUDGET_NOT_FOUND", 404, undefined, "Budget not found");
+        }
+        assertDraft(locked.rows[0] as BudgetPlanRow);
+        if (b.replace) {
+          await client.query(`DELETE FROM budget_lines WHERE budget_id = $1`, [plan.id]);
+        }
+        for (const p of prepared) {
+          await client.query(
+            `INSERT INTO budget_lines (budget_id, account_id, category, cost_center_id, is_contra,
+               jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec, annual_total)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+            [
+              plan.id,
+              p.accountId,
+              p.category,
+              p.costCenterId,
+              p.isContra,
+              ...BUDGET_MONTHS.map((m) => p.months[m]),
+              annualOf(p.months),
+            ]
+          );
+        }
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw err;
+      } finally {
+        client.release();
       }
       res.json({ imported: prepared.length, replaced: b.replace === true });
     })

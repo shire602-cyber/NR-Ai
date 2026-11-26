@@ -460,6 +460,7 @@ export interface IStorage {
     tx?: typeof db
   ): Promise<{ receipt: Receipt; entry: JournalEntry; reversal: JournalEntry }>;
   splitReceiptAtomic(args: SplitReceiptAtomicArgs): Promise<Receipt[]>;
+  isReceiptImageReferenced(companyId: string, imagePath: string): Promise<boolean>;
   deleteReceipt(id: string, companyId: string): Promise<void>;
 
   // Customer Contacts

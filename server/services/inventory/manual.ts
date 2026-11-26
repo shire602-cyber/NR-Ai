@@ -607,7 +607,7 @@ export async function createStocktake(
   return st;
 }
 
-/** Post a draft stocktake: variance (counted − current level) per product against 5007. */
+/** Post a draft stocktake: variance (counted − system qty at count) per product against 5007. */
 export async function postStocktake(
   tx: LedgerTx,
   args: { companyId: string; stocktakeId: string; actorId: string }
@@ -620,18 +620,38 @@ export async function postStocktake(
   if (!st) throw new DomainError("STOCKTAKE_NOT_FOUND", 404);
   if (st.status !== "draft")
     throw new DomainError("STOCKTAKE_NOT_DRAFT", 409, { status: st.status });
-  const stLines = await q<{ id: string; product_id: string; counted_qty: number }>(
+  const stLines = await q<{
+    id: string;
+    product_id: string;
+    system_qty: number;
+    counted_qty: number;
+  }>(
     tx,
-    sql`SELECT id, product_id, counted_qty FROM stocktake_lines WHERE stocktake_id = ${st.id} ORDER BY id`
+    sql`SELECT id, product_id, system_qty, counted_qty FROM stocktake_lines
+         WHERE stocktake_id = ${st.id} ORDER BY product_id, id`
   );
+  // Lock every product before marking the stocktake posted, zero variance included, so posting
+  // serializes with deleteProduct (stocktake_lines cascade on product delete). Ordered by
+  // product_id above so concurrent stocktakes take the locks in a stable order.
+  for (const l of stLines) await lockProduct(tx, args.companyId, l.product_id);
   const adj = await ensureAccountByCode(tx, args.companyId, INVENTORY_CODES.ADJUSTMENTS);
   const draft: DraftLine[] = [];
   const movementIds: string[] = [];
   for (const l of stLines) {
-    const level = await levelOf(tx, l.product_id, st.warehouse_id);
-    const variance = Number(l.counted_qty) - level;
+    const variance = Number(l.counted_qty) - Number(l.system_qty);
     let valueFils = 0;
     if (variance !== 0) {
+      // A level that moved since the count (e.g. an overlapping stocktake posted this variance
+      // already) would apply it twice. The product lock above keeps it still until we post.
+      const level = await levelOf(tx, l.product_id, st.warehouse_id);
+      if (level !== Number(l.system_qty)) {
+        throw new DomainError(
+          "STOCKTAKE_STALE",
+          409,
+          { productId: l.product_id },
+          "Stock levels changed after this count. Create a new stocktake before posting."
+        );
+      }
       const ctx: MoveContext = {
         companyId: args.companyId,
         actorId: args.actorId,

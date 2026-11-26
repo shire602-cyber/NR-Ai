@@ -151,7 +151,8 @@ export async function getCloseChecklist(
      FROM bank_transactions
      WHERE company_id = $1
        AND transaction_date >= $2::date
-       AND transaction_date <= $3::date`,
+       AND transaction_date <= $3::date
+       AND deleted_at IS NULL`,
     [companyId, periodStart, periodEnd]
   );
   const bankTotal = parseInt(bankResult.rows[0]?.total || "0");
