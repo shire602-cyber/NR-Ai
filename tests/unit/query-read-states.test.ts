@@ -409,6 +409,30 @@ describe("firm list read states", () => {
     expect(row?.textContent).toContain(t.ar["firmOps.intakeStatusPaused"]);
     expect(row?.textContent).not.toContain("paused");
   });
+
+  it("EmailIntake: opens the lazy completeness form in Arabic", async () => {
+    const Page = (await import("../../client/src/pages/firm/EmailIntake")).default;
+    const { useI18n } = await import("../../client/src/lib/i18n");
+    useI18n.getState().setLocale("ar");
+    await mount(Page);
+    expect(byTestId("select-completeness-client")).toBeNull();
+
+    const tab = byTestId("tab-completeness")!;
+    await act(async () => {
+      tab.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    });
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+    await act(async () => {
+      await import("../../client/src/pages/firm/EmailIntakeCompletenessTab");
+    });
+    await flush();
+
+    const t = await catalog();
+    expect(byTestId("select-completeness-client")?.getAttribute("aria-label")).toBe(
+      t.ar["pages.client"]
+    );
+    expect(text()).toContain(t.ar["pages.checkAPeriodForMissingDocuments"]);
+  }, 15_000);
 });
 
 describe("DocumentChasing handles its two lists independently", () => {
