@@ -29,6 +29,7 @@
  * Column layouts of Xero, QuickBooks Online, Zoho Books and Wafeq exports are
  * mapped in ./mappers.ts. All money is integer fils.
  */
+import { todayDubai } from "@shared/accounting-date";
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { db } from "../../db";
 import {
@@ -704,7 +705,7 @@ export async function validateImport(companyId: string, jobId: string): Promise<
   const warn = (row: number | null, code: string, message: string) =>
     issues.push({ row, level: "warning", code: `V_${code}`, message });
   const cutOver = job.cut_over_date ? String(job.cut_over_date).slice(0, 10) : null;
-  if (cutOver && cutOver > new Date().toISOString().slice(0, 10)) {
+  if (cutOver && cutOver > todayDubai()) {
     err(null, "CUT_OVER_IN_FUTURE", "The cut-over date cannot be in the future");
   }
 

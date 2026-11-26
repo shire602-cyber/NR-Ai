@@ -9,6 +9,7 @@
  * With no live/sandbox provider nothing is offered: paymentsAvailability() reports
  * requires_external and the UI shows no Pay button.
  */
+import { todayDubai } from "@shared/accounting-date";
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import crypto from "crypto";
 import { and, desc, eq, gt, inArray } from "drizzle-orm";
@@ -42,6 +43,7 @@ import {
   type VerifiedPaymentEvent,
 } from "./types";
 import type { RecordInvoicePaymentService } from "../invoice-payment.service";
+import { toAccountingDate } from "@shared/accounting-date";
 
 export * from "./types";
 export { setStripeFetch, signStripePayload, verifyStripeSignature } from "./stripe";
@@ -606,7 +608,9 @@ async function applyPaidEvent(
       invoiceId: link.invoiceId,
       companyId: link.companyId,
       amount: Number(fromFils(amountFils)),
-      date: new Date(),
+      // F06: the Dubai business date (UTC midnight), not the raw instant, which the posting
+      // path reads as a UTC date and so booked 00:00-04:00 Dubai receipts to the day before.
+      date: toAccountingDate(new Date())!.date,
       method: "online",
       reference: `${event.provider}:${event.paymentReference ?? event.sessionId ?? event.eventId}`,
       notes: `Online payment via ${adapter.label.en} (link ${link.id})`,
@@ -633,7 +637,7 @@ async function applyPaidEvent(
       const { entry } = await postJournal(
         {
           companyId: link.companyId,
-          date: new Date().toISOString().slice(0, 10),
+          date: todayDubai(),
           ...journalMemo("gatewayFee", { provider: event.provider, link: link.id }),
           status: "posted",
           source: "payment_gateway_fee",
