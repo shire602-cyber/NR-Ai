@@ -9,6 +9,7 @@ import { PricingPage } from "../../client/src/components/marketing/phase/pages/P
 import { SignupPlanStep } from "../../client/src/components/auth/SignupPlanStep";
 import { formatMoneyText } from "../../client/src/lib/format-money";
 import { loadNamespaces, t, useI18n } from "../../client/src/lib/i18n";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { PAID_PLAN_IDS, PLAN_CURRENCY, TOP_PLAN_ID, planPrice } from "../../shared/plans";
 import { TRIAL_DAYS } from "../../shared/trial";
 import { findBankFeedMention } from "../e2e/lib/bank-feed-claims.mjs";
@@ -95,9 +96,95 @@ function sourceCopy(file: string, text: string, isPublic: boolean): Copy[] {
   return entries;
 }
 
+// Shipped HTML metadata (title and every meta content) is customer-visible in search results
+// and link previews, so it is scanned like any other public copy. DOMParser comes from jsdom.
+function htmlCopy(file: string, html: string): Copy[] {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const entries: Copy[] = [];
+  const title = doc.querySelector("title")?.textContent;
+  if (title) entries.push({ file, location: "title", value: title, public: true });
+  for (const meta of Array.from(doc.querySelectorAll("meta[content]"))) {
+    const name = meta.getAttribute("name") ?? meta.getAttribute("property") ?? "meta";
+    entries.push({
+      file,
+      location: `meta[${name}]`,
+      value: meta.getAttribute("content") ?? "",
+      public: true,
+    });
+  }
+  return entries;
+}
+
+// Public code can reach a catalog entry with a computed key, e.g.
+// t[`pageLabels.companySettings.currency.${code}`], "pageLabels.x." + code, or a const alias of
+// either. Every template/concatenation in a public file becomes a pattern (parts only known at run
+// time match anything) and each catalog location it could match counts as publicly used. Only
+// expressions that start with a static dotted prefix count; conditionals and imports are not followed.
+type KeyPart = string | null; // null = a value only known at run time
+
+function keyParts(node: ts.Node): KeyPart[] {
+  if (
+    ts.isParenthesizedExpression(node) ||
+    ts.isAsExpression(node) ||
+    ts.isNonNullExpression(node) ||
+    ts.isSatisfiesExpression(node) ||
+    ts.isTypeAssertionExpression(node)
+  ) {
+    return keyParts(node.expression);
+  }
+  if (ts.isStringLiteralLike(node)) return [node.text];
+  if (ts.isTemplateExpression(node)) {
+    return [
+      node.head.text,
+      ...node.templateSpans.flatMap((span) => [...keyParts(span.expression), span.literal.text]),
+    ];
+  }
+  if (isPlus(node)) return [...keyParts(node.left), ...keyParts(node.right)];
+  return [null];
+}
+
+const isPlus = (node: ts.Node): node is ts.BinaryExpression =>
+  ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken;
+
+function computedKeyPatterns(file: string, text: string): RegExp[] {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const bodies = new Set<string>();
+
+  function visit(node: ts.Node) {
+    // Outermost expression only: a nested part would give a looser prefix pattern.
+    if ((ts.isTemplateExpression(node) || isPlus(node)) && !isPlus(node.parent)) {
+      const parts = keyParts(node);
+      const prefix = parts[0];
+      if (typeof prefix === "string" && prefix.length >= 6 && prefix.includes(".")) {
+        bodies.add(
+          parts
+            .map((part) => (part === null ? ".*" : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+            .join("")
+        );
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(source);
+  return [...bodies].map((body) => new RegExp(`^${body}$`, "su"));
+}
+
+function markPublic(copy: Copy[], publicKeys: ReadonlySet<string>, patterns: readonly RegExp[]) {
+  for (const entry of copy) {
+    entry.public ||=
+      publicKeys.has(entry.location) || patterns.some((pattern) => pattern.test(entry.location));
+  }
+}
+
 function readCopy(): Copy[] {
   const source: Copy[] = [];
   const catalogs: Copy[] = [];
+  const patterns: RegExp[] = [];
+  const html = htmlCopy(
+    "client/index.html",
+    readFileSync(join(repoRoot, "client/index.html"), "utf8")
+  );
   for (const directory of ["client/src", "shared", "server"]) {
     for (const file of filesIn(directory)) {
       if (/\.(?:test|spec)\.[^.]+$/.test(file)) continue;
@@ -117,15 +204,14 @@ function readCopy(): Copy[] {
         if (isPublic || removedPlatform.test(normalized(text)) || /\\[ux]/.test(text)) {
           source.push(...sourceCopy(file, text, isPublic));
         }
+        if (isPublic) patterns.push(...computedKeyPatterns(file, text));
       }
     }
   }
 
   const publicKeys = new Set(source.filter((copy) => copy.public).map((copy) => copy.value));
-  for (const copy of catalogs) {
-    copy.public ||= publicKeys.has(copy.location);
-  }
-  return [...source, ...catalogs];
+  markPublic(catalogs, publicKeys, patterns);
+  return [...html, ...source, ...catalogs];
 }
 
 function normalized(value: string): string {
@@ -134,6 +220,70 @@ function normalized(value: string): string {
     .replace(/\u0640|[\u064b-\u065f]|\u0670|[\u00ad\u200b-\u200d\u2060]/gu, "")
     .trim();
 }
+
+function saudiViolation(value: string, { public: isPublic, file, location }: Copy): boolean {
+  const isOption = countryAndCurrencyOptions.get(file)?.includes(location);
+  return (isPublic || (countryAndCurrencyOptions.has(file) && !isOption)) && saudi.test(value);
+}
+
+// Bank statement import is CSV only. A sentence or clause about the bank statement must not name
+// another format. Sentences are split so unrelated text next to it (the Document Vault line in
+// marketing.migrationFilesBody mentions Excel) is not mistaken for a bank claim.
+const competingBankFormat =
+  /\b(?:excel|xlsx?|ofx|qif|mt940|camt\.?\d*|pdf)\b|\.xlsx?\b|[إا]كس[يـ]?ل/iu;
+const csvFormat = /\bcsv\b/i;
+const bankMention = /\bbank|بنك|مصرف/iu;
+const statementMention = /\bstatements?\b|كشف/iu;
+const importAction =
+  /\b(?:upload\w*|import\w*|load\w*|export\w*|reconcil\w*|match\w*)\b|ارفع|رفع|استيراد|استورد|تحميل|يحمل|مصدر|طابق|مطابق|تسوية/iu;
+
+function clauses(value: string): string[] {
+  return normalized(value)
+    .split(/[.;:!?؟]+(?=\s|$)|\n+/u)
+    .map((clause) => clause.trim())
+    .filter(Boolean);
+}
+
+/** Generic public scan: a bank import clause may not name a competing format. */
+function competingBankFormats(value: string): string[] {
+  return clauses(value).filter(
+    (clause) =>
+      bankMention.test(clause) && importAction.test(clause) && competingBankFormat.test(clause)
+  );
+}
+
+/** Known bank-import copy: must say CSV about the bank statement and nothing else. */
+function bankImportProblems(value: string): string[] {
+  const about = clauses(value).filter(
+    (clause) => bankMention.test(clause) || statementMention.test(clause)
+  );
+  const problems: string[] = [];
+  if (!about.length) problems.push("no clause about the bank statement");
+  else if (!about.some((clause) => csvFormat.test(clause))) problems.push("bank clause lacks CSV");
+  for (const clause of about) {
+    if (competingBankFormat.test(clause)) problems.push(`competing format: ${clause}`);
+  }
+  return problems;
+}
+
+// Every public bank-import surface, in both locales. Inline public copy is covered by the generic
+// competing-format scan over all public entries below.
+const bankImportKeys = {
+  "client/src/locales/%/marketing.json": [
+    "marketing.bankBody",
+    "marketing.faq3A",
+    "marketing.helpGuide4Body",
+    "marketing.prEveryBankBody",
+    "marketing.demoCheck4",
+    "marketing.demoBankTitle",
+    "marketing.migrationFilesBody",
+  ],
+  "client/src/locales/%/marketingHome.json": [
+    "marketing.hxShowBankLead",
+    "marketing.hxShowBankB1",
+    "marketing.hxTourBlurb3",
+  ],
+} as const;
 
 describe("launch copy rules", () => {
   let copy: Copy[];
@@ -147,15 +297,16 @@ describe("launch copy rules", () => {
     expect(matches(copy, (value) => removedPlatform.test(value))).toEqual([]);
   });
 
+  it("scans the shipped HTML metadata", () => {
+    const html = copy.filter((entry) => entry.file === "client/index.html");
+    expect(html.map((entry) => entry.location)).toEqual(
+      expect.arrayContaining(["title", "meta[description]", "meta[og:title]"])
+    );
+    expect(html.every((entry) => entry.value.trim() !== "")).toBe(true);
+  });
+
   it("keeps public marketing focused on the UAE", () => {
-    expect(
-      matches(copy, (value, { public: isPublic, file, location }) => {
-        const isOption = countryAndCurrencyOptions.get(file)?.includes(location);
-        return (
-          (isPublic || (countryAndCurrencyOptions.has(file) && !isOption)) && saudi.test(value)
-        );
-      })
-    ).toEqual([]);
+    expect(matches(copy, saudiViolation)).toEqual([]);
   });
 
   it("describes banking using CSV import terminology", () => {
@@ -165,6 +316,24 @@ describe("launch copy rules", () => {
         (value, entry) => entry.public && (bank.test(value) || !!findBankFeedMention(value))
       )
     ).toEqual([]);
+  });
+
+  it("names CSV as the only bank statement format on public surfaces", () => {
+    expect(
+      matches(copy, (value, entry) => entry.public && competingBankFormats(value).length > 0)
+    ).toEqual([]);
+    for (const locale of locales) {
+      const surfaces = Object.entries(bankImportKeys).flatMap(([pattern, keys]) =>
+        keys.map((key) => ({ file: pattern.replace("%", locale), key }))
+      );
+      for (const { file, key } of surfaces) {
+        const entry = copy.find((item) => item.file === file && item.location === key);
+        expect(entry, `${file} ${key} is missing`).toBeDefined();
+        expect(bankImportProblems(entry?.value ?? ""), `${file} ${key}`).toEqual([]);
+      }
+      expect(bankImportProblems(BANK_RECONCILIATION_COPY[locale]), locale).toEqual([]);
+      expect(competingBankFormats(BANK_RECONCILIATION_COPY[locale]), locale).toEqual([]);
+    }
   });
 
   it("keeps provider brands off public pages", () => {
@@ -180,6 +349,116 @@ describe("launch copy rules", () => {
   });
 });
 
+describe("launch copy guard regressions", () => {
+  it("scans title and meta content in shipped HTML", () => {
+    const entries = htmlCopy(
+      "x.html",
+      `<html><head><title>Zatca ready books</title>
+       <meta name="description" content="Connect your bank account today" />
+       <meta property="og:title" content="Accounting for Riyadh" /></head></html>`
+    );
+    expect(matches(entries, (value) => removedPlatform.test(value))).toHaveLength(1);
+    expect(matches(entries, saudiViolation)).toHaveLength(1);
+    expect(matches(entries, (value) => bank.test(value))).toHaveLength(1);
+  });
+
+  it("finds catalog entries reached through computed keys", () => {
+    const entry = (location: string): Copy => ({
+      file: "client/src/locales/en/pageLabels.json",
+      location,
+      value: "SAR Saudi Riyal",
+      public: false,
+    });
+    const sources: [string, string][] = [
+      ["template.tsx", "const x = t[`pageLabels.companySettings.${kind}.${code}`];"],
+      ["concat.tsx", 'const x = t[("pageLabels.companySettings.currency." + code) as K];'],
+      ["alias.tsx", 'const key = "pageLabels.companySettings." + "currency." + code; t[key];'],
+      ["static.tsx", 't["pageLabels.companySettings." + "currency.SAR"];'],
+    ];
+    for (const [file, text] of sources) {
+      const copy = [
+        entry("pageLabels.companySettings.currency.SAR"),
+        entry("pageLabels.companySettings.country.SA"),
+        entry("pageLabels.other.thing"),
+      ];
+      markPublic(copy, new Set(), computedKeyPatterns(file, text));
+      const flagged = matches(copy, saudiViolation).map((line) => line.split(" ")[0]);
+      expect(flagged, file).toContain(
+        "client/src/locales/en/pageLabels.json:pageLabels.companySettings.currency.SAR"
+      );
+      expect(copy[2].public, file).toBe(false);
+    }
+    // Wholly dynamic keys carry no information, so they must not mark everything public.
+    expect(computedKeyPatterns("f.tsx", "const x = t[`${a}${b}`]; f(a + b);")).toEqual([]);
+    // Private use of the allow-listed entry stays allowed.
+    const privateCopy = [entry("pageLabels.companySettings.currency.SAR")];
+    markPublic(
+      privateCopy,
+      new Set(),
+      computedKeyPatterns("g.tsx", "const x = t[`ledger.${code}`];")
+    );
+    expect(matches(privateCopy, saudiViolation)).toEqual([]);
+  });
+
+  it("requires CSV, and no other format, in the bank statement sentence", () => {
+    const good = [
+      BANK_RECONCILIATION_COPY.en,
+      BANK_RECONCILIATION_COPY.ar,
+      "CSV statement import",
+      // Excel appears in a different sentence about the Document Vault.
+      "Bank reconciliation supports CSV formats from Emirates NBD. Report packs from Excel go in Document Vault.",
+      "وتدعم التسوية البنكية صيغ CSV من بنك الإمارات. أما حزم التقارير من Excel فتحفظ في خزنة المستندات.",
+    ];
+    for (const value of good) {
+      expect(bankImportProblems(value), value).toEqual([]);
+      expect(competingBankFormats(value), value).toEqual([]);
+    }
+    const bad = [
+      "Upload an Excel statement exported from your bank.",
+      "Upload a CSV or Excel statement exported from your bank.",
+      "Upload your bank statement as .xlsx",
+      "Reconcile a bank statement PDF.",
+      "ارفع كشف حساب بنكي بصيغة Excel",
+      "ارفع كشف حساب بنكي بصيغة CSV أو إكسل",
+    ];
+    for (const value of bad) {
+      expect(bankImportProblems(value), value).not.toEqual([]);
+      expect(competingBankFormats(value), value).not.toEqual([]);
+    }
+    expect(bankImportProblems("Upload a statement exported from your bank.")).toEqual([
+      "bank clause lacks CSV",
+    ]);
+  });
+
+  it("accepts only the affirmative 14-day Enterprise no-card offer", () => {
+    const accepted: [string, (typeof locales)[number]][] = [
+      ["Every new account starts on Enterprise free for 14 days. No card.", "en"],
+      ["No. Start a 14-day free trial of the Enterprise plan without entering card details.", "en"],
+      ["Yes, 14 days of Enterprise, no card", "en"],
+      ["Get 14 days of every feature, free, with an Enterprise trial. No card needed.", "en"],
+      ["كل حساب جديد يبدأ بباقة المؤسسات مجانًا لمدة 14 يومًا، دون بطاقة.", "ar"],
+      ["لا. ابدأ تجربة مجانية لباقة المؤسسات لمدة 14 يومًا دون إدخال بيانات البطاقة.", "ar"],
+      ["نعم، 14 يومًا من باقة المؤسسات دون بطاقة", "ar"],
+    ];
+    for (const [value, locale] of accepted) {
+      expect(trialViolations(value, locale), value).toEqual([]);
+    }
+    const rejected: [string, (typeof locales)[number]][] = [
+      ["The 14-day Enterprise trial is no longer available without a card.", "en"],
+      ["The 14-day Enterprise trial is not available without a card.", "en"],
+      ["Start a 14-day Enterprise trial. A card is required.", "en"],
+      ["Start your Enterprise trial without a card.", "en"],
+      ["Start a 14-day Enterprise trial. Pay by card. No.", "en"],
+      ["لم تعد تجربة باقة المؤسسات لمدة 14 يومًا متاحة دون بطاقة.", "ar"],
+      ["تجربة مجانية لباقة المؤسسات لمدة 14 يومًا دون بطاقة.", "ar"],
+      ["ابدأ تجربة لمدة 14 يومًا دون بطاقة.", "ar"],
+    ];
+    for (const [value, locale] of rejected) {
+      expect(trialViolations(value, locale), value).not.toEqual([]);
+    }
+  });
+});
+
 function matches(copy: Copy[], violates: (value: string, entry: Copy) => boolean): string[] {
   return copy
     .filter((entry) => violates(normalized(entry.value), entry))
@@ -191,33 +470,63 @@ const planIds = Object.keys(monthlyPrices) as (keyof typeof monthlyPrices)[];
 const wording = {
   en: {
     money: (price: number) => `AED${price}per month`,
-    month: /\ba month\b/i,
+    perMonth: "a month",
     badge: /^e[-\s]invoicing included$/i,
     feature: /^e[-\s]invoicing\b/i,
     included: /^included$/i,
-    trial: [
-      /\benterprise\b/i,
-      /\b14[-\s]+days?\b/i,
-      /\b(?:no|without (?:a|needing a|entering)) (?:credit |payment )?card\b/i,
-    ],
+    plan: /\benterprise\b/i,
+    days: /\b14[-\s]+days?\b/i,
+    card: /\b(?:no (?:credit |payment )?card|without (?:(?:needing|entering|using|providing) )?(?:an? )?(?:credit |payment )?card(?: details)?)\b/i,
+    cardOnly: /^no (?:credit |payment )?card(?: (?:needed|required))?$/i,
+    bare: /^no$/i,
+    offer: /\b(?:start(?:s|ed)?|get|gets|try|begin|yes)\b/i,
+    negation:
+      /\b(?:no longer|not (?:be )?(?:available|offered|included|possible)|unavailable|isn'?t|aren'?t|cannot|can'?t|ended|expired|discontinued|withdrawn)\b/i,
   },
   ar: {
     money: (price: number) => `${price}د.إشهريًا`,
-    month: /شهريا/u,
+    perMonth: "شهريًا",
     badge: /^الفوترة الالكترونية مشمولة$/u,
     feature: /^الفوترة الالكترونية/u,
     included: /^مشمول$/u,
-    trial: [
-      /باقة المؤسسات/u,
-      /(?<!\p{Nd})(?:14|١٤) يوما/u,
-      /(?:دون|بدون) (?:الحاجة الى |ادخال بيانات )?(?:ال)?بطاقة/u,
-    ],
+    plan: /باقة المؤسسات/u,
+    days: /(?<!\p{Nd})(?:14|١٤) يوما/u,
+    card: /(?:دون|بدون) (?:(?:الحاجة الى|ادخال|استخدام|استعمال)(?: بيانات)? )?(?:ال)?بطاقة/u,
+    cardOnly: /^(?:دون|بدون) (?:ال)?بطاقة$/u,
+    bare: /^لا$/u,
+    offer: /(?<!\p{L})(?:ابدا|يبدا|جرب|نعم|احصل)/u,
+    negation:
+      /(?<!\p{L})(?:لم (?:يعد|تعد)|لا (?:يتوفر|تتوفر|يمكن|تتاح|يتاح)|غير (?:متاح|متوفر)|لن |ليس|انتهت|منتهي|ملغ|متوقف)/u,
   },
 };
 
+/**
+ * The trial must be offered, not withdrawn: one sentence has an affirmative verb, Enterprise and
+ * 14 days, and the no-card wording is in that sentence or is the sentence right after it ("No
+ * card."). A standalone "No." (FAQ answer) is ignored; negated availability is a violation.
+ */
+function trialViolations(
+  value: string | null | undefined,
+  locale: (typeof locales)[number]
+): string[] {
+  const rules = wording[locale];
+  const sentences = clauses((value ?? "").normalize("NFKC").replace(/[إأ]/gu, "ا")).filter(
+    (sentence) => !rules.bare.test(sentence)
+  );
+  const at = sentences.findIndex(
+    (s) => rules.offer.test(s) && rules.plan.test(s) && rules.days.test(s)
+  );
+  if (at < 0) return ["no sentence offers a 14-day Enterprise trial"];
+  const problems: string[] = [];
+  if (!rules.card.test(sentences[at]) && !rules.cardOnly.test(sentences[at + 1] ?? "")) {
+    problems.push("no-card wording is not part of the offer");
+  }
+  if (sentences.some((s) => rules.negation.test(s))) problems.push("negates the offer");
+  return problems;
+}
+
 function assertTrialCopy(value: string | null | undefined, locale: (typeof locales)[number]) {
-  const text = normalized(value ?? "").replace(/[إأ]/gu, "ا");
-  for (const phrase of wording[locale].trial) expect(text).toMatch(phrase);
+  expect(trialViolations(value, locale), value ?? "").toEqual([]);
 }
 
 describe("the public pricing and signup offer", () => {
@@ -267,10 +576,10 @@ describe("the public pricing and signup offer", () => {
           const column = container.querySelector(
             `[data-testid="plan-matrix"] th[data-plan="${id}"] small`
           );
-          expect(column?.textContent, id).toContain(
-            formatMoneyText(price, "AED", locale, { fractionDigits: 0 })
-          );
-          expect(normalized(column?.textContent ?? ""), id).toMatch(expected.month);
+          // Independent of the locale template: the formatted amount plus the pinned suffix.
+          const label = `${formatMoneyText(price, "AED", locale, { fractionDigits: 0 })} ${expected.perMonth}`;
+          const squash = (value: string) => normalized(value).replace(/\s+/gu, " ");
+          expect(squash(column?.textContent ?? ""), id).toBe(squash(label));
           const badge = container.querySelector(`[data-testid="badge-einvoicing-${id}"]`);
           expect(normalized(badge?.textContent ?? "").replace(/[إأ]/gu, "ا"), id).toMatch(
             expected.badge
@@ -301,7 +610,8 @@ describe("the public pricing and signup offer", () => {
           );
         });
         assertTrialCopy(
-          container.querySelector('[data-testid="signup-plan-step"] header')?.textContent,
+          container.querySelector('[data-testid="signup-plan-step"] header > p:last-child')
+            ?.textContent,
           locale
         );
         for (const key of ["signupTrialOffer", "hxCmpTrialMuhasib", "hxFaqCardA"]) {
