@@ -363,6 +363,8 @@ export default function CashFlowForecast() {
   const historyPaused = historyFetchStatus === "paused" && !history && !historyError;
   const scheduledPaused = scheduledFetchStatus === "paused" && !scheduledItems && !scheduledError;
   const showScheduledError = !!scheduledError || scheduledPaused;
+  // isHistoryError: true when history failed to load and no prior data is cached.
+  const isHistoryError = !!historyError && !history;
 
   return (
     <div className="space-y-6">
@@ -433,7 +435,7 @@ export default function CashFlowForecast() {
         <LoadErrorState
           error={forecastError}
           onRetry={() => refetchForecast()}
-          testId="forecast-load-error"
+          testId="cashflow-forecast-error"
         />
       ) : forecastPaused ? (
         <LoadErrorState error={null} onRetry={() => refetchForecast()} testId="forecast-offline" />
@@ -497,7 +499,7 @@ export default function CashFlowForecast() {
       )}
 
       {/* Projection Table */}
-      {!forecastEmpty && !forecastPaused && !(forecastError && !forecast) && (
+      {!forecastEmpty && !forecastPaused && (
         <Card data-testid="forecast-projections">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -519,6 +521,13 @@ export default function CashFlowForecast() {
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
               </div>
+            ) : forecastError && !forecast ? (
+              <LoadErrorState
+                error={forecastError}
+                onRetry={() => refetchForecast()}
+                compact
+                testId="cashflow-projections-error"
+              />
             ) : forecast && forecast.projections.length > 0 ? (
               <div className="overflow-x-auto">
                 <Table>
@@ -888,12 +897,12 @@ export default function CashFlowForecast() {
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
-          ) : historyError && !history ? (
+          ) : isHistoryError ? (
             <LoadErrorState
               error={historyError}
               onRetry={() => refetchHistory()}
               compact
-              testId="history-load-error"
+              testId="cashflow-history-error"
             />
           ) : historyPaused ? (
             <LoadErrorState
@@ -954,7 +963,10 @@ export default function CashFlowForecast() {
               </Table>
             </div>
           ) : history && history.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
+            <p
+              data-testid="cashflow-history-empty"
+              className="text-muted-foreground text-center py-8"
+            >
               {t["cashFlowForecast.noHistoricalDataAvailableYet"]}
             </p>
           ) : null}

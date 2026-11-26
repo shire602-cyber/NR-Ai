@@ -985,5 +985,8 @@
   "reportCenter.code.credit_note_cogs": "تكلفة البضاعة المباعة للإشعار الدائن",
   "reportCenter.code.expense_claim_payment": "دفعة مطالبة مصروفات",
   "reportCenter.code.inventory_adjustment": "تسوية المخزون",
-  "reportCenter.code.manual_workpaper": "ورقة عمل يدوية"
+  "reportCenter.code.manual_workpaper": "ورقة عمل يدوية",
+  "reportCenter.dataLoadError": "تعذّر تحميل بيانات التقرير. تحقق من اتصالك وأعد المحاولة.",
+  "reportCenter.dataStale": "يتم عرض البيانات المحمّلة مسبقاً. قد تكون قديمة.",
+  "reportCenter.retry": "أعد المحاولة"
 }

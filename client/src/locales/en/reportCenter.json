@@ -985,5 +985,8 @@
   "reportCenter.code.credit_note_cogs": "Credit note cost of goods sold",
   "reportCenter.code.expense_claim_payment": "Expense claim payment",
   "reportCenter.code.inventory_adjustment": "Inventory adjustment",
-  "reportCenter.code.manual_workpaper": "Manual workpaper"
+  "reportCenter.code.manual_workpaper": "Manual workpaper",
+  "reportCenter.dataLoadError": "Report data could not be loaded. Check your connection and try again.",
+  "reportCenter.dataStale": "Showing last-loaded data. It may be out of date.",
+  "reportCenter.retry": "Try again"
 }

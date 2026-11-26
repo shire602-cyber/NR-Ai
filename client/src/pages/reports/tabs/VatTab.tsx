@@ -1,6 +1,7 @@
 // Reports > vat tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { useTranslation } from "@/lib/i18n";
@@ -9,7 +10,8 @@ import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function VatTab() {
-  const { dateRange, t, vatLoading, vatSummary } = useReportsPageContext();
+  const { dateRange, refetchVat, t, vatLoading, vatReadState, vatSummary } =
+    useReportsPageContext();
   const { locale } = useTranslation();
   return (
     <>
@@ -23,10 +25,29 @@ export default function VatTab() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {vatLoading ? (
+          {vatReadState === "error" ? (
+            <ErrorState
+              title={t["reportCenter.dataLoadError"]}
+              onRetry={() => refetchVat()}
+            />
+          ) : vatLoading ? (
             <Skeleton className="h-64" />
           ) : (
             <div className="space-y-6">
+              {vatReadState === "stale" && (
+                <div
+                  role="status"
+                  className="rounded-md bg-warning-subtle p-3 text-small text-warning-subtle-foreground flex items-center justify-between gap-4"
+                >
+                  <span>{t["reportCenter.dataStale"]}</span>
+                  <button
+                    onClick={() => void refetchVat()}
+                    className="shrink-0 text-sm font-medium underline underline-offset-2"
+                  >
+                    {t["reportCenter.retry"]}
+                  </button>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <h3 className="font-semibold text-success ">{t["reportCenter.text.vatSales"]}</h3>

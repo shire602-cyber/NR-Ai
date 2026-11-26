@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DollarSign, TrendingDown, TrendingUp } from "lucide-react";
 import { ProfitLossSections, StatementDownloads } from "../StatementParts";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/ui/error-state";
 import { T } from "@/components/layout/T";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
@@ -13,7 +14,15 @@ import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function ProfitLossTab() {
-  const { dateRange, plLoading, profitLoss, selectedCompanyId, t } = useReportsPageContext();
+  const {
+    dateRange,
+    plLoading,
+    plReadState,
+    profitLoss,
+    refetchProfitLoss,
+    selectedCompanyId,
+    t,
+  } = useReportsPageContext();
   const { locale } = useTranslation();
   // SWEEP: Arabic statements showed English account names and dates.
   const accountLabel = (item: { accountName?: string | null; accountNameAr?: string | null }) =>
@@ -31,7 +40,13 @@ export default function ProfitLossTab() {
             </div>
           </CardHeader>
           <CardContent>
-            {plLoading ? (
+            {plReadState === "error" ? (
+              <ErrorState
+                compact
+                title={t["reportCenter.dataLoadError"]}
+                onRetry={() => refetchProfitLoss()}
+              />
+            ) : plLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="text-kpi tabular-nums" data-testid="text-total-revenue">
@@ -51,7 +66,13 @@ export default function ProfitLossTab() {
             </div>
           </CardHeader>
           <CardContent>
-            {plLoading ? (
+            {plReadState === "error" ? (
+              <ErrorState
+                compact
+                title={t["reportCenter.dataLoadError"]}
+                onRetry={() => refetchProfitLoss()}
+              />
+            ) : plLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="text-kpi tabular-nums" data-testid="text-total-expenses">
@@ -71,7 +92,13 @@ export default function ProfitLossTab() {
             </div>
           </CardHeader>
           <CardContent>
-            {plLoading ? (
+            {plReadState === "error" ? (
+              <ErrorState
+                compact
+                title={t["reportCenter.dataLoadError"]}
+                onRetry={() => refetchProfitLoss()}
+              />
+            ) : plLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="text-kpi tabular-nums" data-testid="text-net-profit">
@@ -81,6 +108,21 @@ export default function ProfitLossTab() {
           </CardContent>
         </Card>
       </div>
+
+      {plReadState === "stale" && (
+        <div
+          role="status"
+          className="rounded-md bg-warning-subtle p-3 text-small text-warning-subtle-foreground flex items-center justify-between gap-4"
+        >
+          <span>{t["reportCenter.dataStale"]}</span>
+          <button
+            onClick={() => void refetchProfitLoss()}
+            className="shrink-0 text-sm font-medium underline underline-offset-2"
+          >
+            {t["reportCenter.retry"]}
+          </button>
+        </div>
+      )}
 
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
@@ -100,7 +142,12 @@ export default function ProfitLossTab() {
           />
         </CardHeader>
         <CardContent>
-          {plLoading ? (
+          {plReadState === "error" ? (
+            <ErrorState
+              title={t["reportCenter.dataLoadError"]}
+              onRetry={() => refetchProfitLoss()}
+            />
+          ) : plLoading ? (
             <Skeleton className="h-64" />
           ) : profitLoss?.sections ? (
             <ProfitLossSections report={profitLoss} />

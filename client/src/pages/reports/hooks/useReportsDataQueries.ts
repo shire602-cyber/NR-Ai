@@ -43,6 +43,8 @@ import {
   reportText,
   startOfReportMonth,
 } from "../shared";
+import { reportReadState } from "@/lib/reportReadState";
+import type { ReportReadState } from "@/lib/reportReadState";
 import type { Company } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
@@ -146,7 +148,12 @@ export function useReportsDataQueries({
   const shouldLoadReportDeliveryData =
     Boolean(selectedCompanyId) &&
     ["home", "automation", "delivery", "suites"].includes(activeReportWorkspaceTab);
-  const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
+  const {
+    data: profitLoss,
+    isLoading: plLoading,
+    isError: plError,
+    refetch: refetchProfitLoss,
+  } = useQuery<ProfitLossReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "pl", dateParams],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("profit-loss"),
@@ -162,12 +169,22 @@ export function useReportsDataQueries({
       ...reportQueryOptions,
       enabled: shouldLoadReportData("cost-center-profitability"),
     });
-  const { data: balanceSheet, isLoading: bsLoading } = useQuery<BalanceSheetReport>({
+  const {
+    data: balanceSheet,
+    isLoading: bsLoading,
+    isError: bsError,
+    refetch: refetchBs,
+  } = useQuery<BalanceSheetReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "balance-sheet", dateParams],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("balance-sheet"),
   });
-  const { data: vatSummary, isLoading: vatLoading } = useQuery<VATSummaryReport>({
+  const {
+    data: vatSummary,
+    isLoading: vatLoading,
+    isError: vatError,
+    refetch: refetchVat,
+  } = useQuery<VATSummaryReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "vat-summary", dateParams],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("vat-summary"),
@@ -602,7 +619,12 @@ export function useReportsDataQueries({
       warningCount: (serverConsolidationCurrent.data?.warnings ?? []).length,
     };
   }, [consolidationGroup, serverConsolidationCurrent.data, serverConsolidationPrevious.data]);
-  const { data: trialBalance, isLoading: trialBalanceLoading } = useQuery<TrialBalanceReport>({
+  const {
+    data: trialBalance,
+    isLoading: trialBalanceLoading,
+    isError: tbError,
+    refetch: refetchTrialBalance,
+  } = useQuery<TrialBalanceReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "trial-balance", trialBalanceParams],
     queryFn: () =>
       apiRequest(
@@ -788,6 +810,37 @@ export function useReportsDataQueries({
     inventoryProductsLoading ||
     inventoryMovementsLoading;
 
+  // F03 — read states for the four main statement queries.
+  const plReadState = reportReadState({
+    isLoading: plLoading,
+    isError: plError,
+    hasData: Boolean(profitLoss),
+  });
+  const bsReadState = reportReadState({
+    isLoading: bsLoading,
+    isError: bsError,
+    hasData: Boolean(balanceSheet),
+  });
+  const vatReadState = reportReadState({
+    isLoading: vatLoading,
+    isError: vatError,
+    hasData: Boolean(vatSummary),
+  });
+  const trialBalanceReadState = reportReadState({
+    isLoading: trialBalanceLoading,
+    isError: tbError,
+    hasData: Boolean(trialBalance),
+  });
+  // coreReportReadStates: used by exports to gate export on error (unreadableReportIds).
+  const coreReportReadStates: Record<string, ReportReadState> = {
+    "profit-loss": plReadState,
+    "balance-sheet": bsReadState,
+    "vat-summary": vatReadState,
+    "trial-balance": trialBalanceReadState,
+  };
+  // activeCoreReportId: the focused report whose read state governs exports.
+  const activeCoreReportId = selectedReportId;
+
   return {
     comparisonRanges,
     comparisonCurrentLabel,
@@ -803,12 +856,18 @@ export function useReportsDataQueries({
     shouldLoadReportDeliveryData,
     profitLoss,
     plLoading,
+    plReadState,
+    refetchProfitLoss,
     costCenterProfitability,
     costCenterProfitabilityLoading,
     balanceSheet,
     bsLoading,
+    bsReadState,
+    refetchBs,
     vatSummary,
     vatLoading,
+    vatReadState,
+    refetchVat,
     cashFlowStatement,
     cashFlowStatementLoading,
     agingReport,
@@ -854,6 +913,10 @@ export function useReportsDataQueries({
     serverGroupConsolidation,
     trialBalance,
     trialBalanceLoading,
+    trialBalanceReadState,
+    refetchTrialBalance,
+    coreReportReadStates,
+    activeCoreReportId,
     invoices,
     invoicesLoading,
     salesProductServiceReport,

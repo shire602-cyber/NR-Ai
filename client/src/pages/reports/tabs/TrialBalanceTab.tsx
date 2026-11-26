@@ -2,6 +2,7 @@
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import {
@@ -18,8 +19,15 @@ import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function TrialBalanceTab() {
-  const { dateRange, t, trialBalance, trialBalanceLoading, trialBalanceSummary } =
-    useReportsPageContext();
+  const {
+    dateRange,
+    refetchTrialBalance,
+    t,
+    trialBalance,
+    trialBalanceLoading,
+    trialBalanceReadState,
+    trialBalanceSummary,
+  } = useReportsPageContext();
   // SWEEP: the Arabic trial balance showed English account names, raw type keys ("expense")
   // and English headings / dates. Names, types and dates now follow the UI language.
   const { locale } = useTranslation();
@@ -36,65 +44,94 @@ export default function TrialBalanceTab() {
   return (
     <>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="reportCenter.debitCreditStatus" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {trialBalanceLoading ? (
-              <Skeleton className="h-8 w-32" />
-            ) : (
-              <div className="space-y-1">
-                <div className="tabular-nums text-kpi" data-testid="text-trial-balance-difference">
-                  <Money
-                    amount={trialBalance?.totals?.difference ?? 0}
-                    currency={trialBalance?.reportCurrency ?? "AED"}
-                  />
-                </div>
-                <Badge variant={trialBalanceSummary.isBalanced ? "success" : "warning"} dot>
-                  {trialBalanceSummary.isBalanced
-                    ? t["consolidation.balanced"]
-                    : t["reportCenter.needsReview"]}
-                </Badge>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {trialBalanceReadState === "error" ? (
+          <div className="col-span-full">
+            <ErrorState
+              title={t["reportCenter.dataLoadError"]}
+              onRetry={() => refetchTrialBalance()}
+            />
+          </div>
+        ) : (
+          <>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">
+                  <T k="reportCenter.debitCreditStatus" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {trialBalanceLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="space-y-1">
+                    <div
+                      className="tabular-nums text-kpi"
+                      data-testid="text-trial-balance-difference"
+                    >
+                      <Money
+                        amount={trialBalance?.totals?.difference ?? 0}
+                        currency={trialBalance?.reportCurrency ?? "AED"}
+                      />
+                    </div>
+                    <Badge variant={trialBalanceSummary.isBalanced ? "success" : "warning"} dot>
+                      {trialBalanceSummary.isBalanced
+                        ? t["consolidation.balanced"]
+                        : t["reportCenter.needsReview"]}
+                    </Badge>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="reportCenter.activeAccounts" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {trialBalanceLoading ? (
-              <Skeleton className="h-8 w-24" />
-            ) : (
-              <div className="tabular-nums text-kpi">{trialBalanceSummary.activeAccounts}</div>
-            )}
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">
+                  <T k="reportCenter.activeAccounts" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {trialBalanceLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div className="tabular-nums text-kpi">{trialBalanceSummary.activeAccounts}</div>
+                )}
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="reportCenter.fxAccounts" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {trialBalanceLoading ? (
-              <Skeleton className="h-8 w-24" />
-            ) : (
-              <div className="tabular-nums text-kpi">
-                {trialBalanceSummary.foreignCurrencyAccounts}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium">
+                  <T k="reportCenter.fxAccounts" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {trialBalanceLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div className="tabular-nums text-kpi">
+                    {trialBalanceSummary.foreignCurrencyAccounts}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
+      {trialBalanceReadState === "stale" && (
+        <div
+          role="status"
+          className="rounded-md bg-warning-subtle p-3 text-small text-warning-subtle-foreground flex items-center justify-between gap-4"
+        >
+          <span>{t["reportCenter.dataStale"]}</span>
+          <button
+            onClick={() => void refetchTrialBalance()}
+            className="shrink-0 text-sm font-medium underline underline-offset-2"
+          >
+            {t["reportCenter.retry"]}
+          </button>
+        </div>
+      )}
+
 
       <Card>
         <CardHeader>

@@ -29,21 +29,53 @@ describe("F03 reportReadState", () => {
   });
 });
 
+// After the W5-A refactor the monolithic Reports.tsx was split into tab modules and hooks.
+// Source checks target the files that now carry the implementations.
 describe("F03 Reports page source invariants", () => {
-  const src = readFileSync("client/src/pages/Reports.tsx", "utf8");
+  const plTabSrc = readFileSync(
+    "client/src/pages/reports/tabs/ProfitLossTab.tsx",
+    "utf8"
+  );
+  const bsTabSrc = readFileSync(
+    "client/src/pages/reports/tabs/BalanceSheetTab.tsx",
+    "utf8"
+  );
+  const vatTabSrc = readFileSync(
+    "client/src/pages/reports/tabs/VatTab.tsx",
+    "utf8"
+  );
+  const exportsSrc = readFileSync(
+    "client/src/pages/reports/hooks/useReportsExports.ts",
+    "utf8"
+  );
+  const dataQueriesSrc = readFileSync(
+    "client/src/pages/reports/hooks/useReportsDataQueries.ts",
+    "utf8"
+  );
+
   it("P&L, balance sheet and VAT render an error branch with retry", () => {
-    expect(src.match(/plReadState === "error"/g)?.length).toBeGreaterThanOrEqual(4);
-    expect(src).toContain('bsReadState === "error"');
-    expect(src).toContain('vatReadState === "error"');
-    expect(src).toContain("onRetry={() => refetchProfitLoss()}");
+    // Source-inspection: behaviour tests would require mocking react-query and the context.
+    // plReadState === "error" guards 3 KPI cards + the detail card = 4 occurrences minimum.
+    expect(plTabSrc.match(/plReadState === "error"/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(bsTabSrc).toContain('bsReadState === "error"');
+    expect(vatTabSrc).toContain('vatReadState === "error"');
+    expect(plTabSrc).toContain("onRetry={() => refetchProfitLoss()}");
   });
   it("exports refuse failed reads", () => {
-    expect(src).toContain("unreadableReportIds(");
-    expect(src).toMatch(/coreReportReadStates\[activeCoreReportId\] === "error"/);
+    // Source-inspection: gating logic lives in useReportsExports, not in a React component,
+    // making a behaviour test impractical without a full hook harness.
+    expect(exportsSrc).toContain("unreadableReportIds(");
+    expect(exportsSrc).toMatch(/coreReportReadStates\[activeCoreReportId\] === "error"/);
   });
   it("report queries are keyed by company and period and do not keep previous data", () => {
-    expect(src).toContain('queryKey: ["/api/companies", selectedCompanyId, "reports", "pl", dateParams]');
-    const opts = src.slice(src.indexOf("const reportQueryOptions"), src.indexOf("const reportQueryOptions") + 300);
+    // Source-inspection: verifies the query key shape that react-query uses for cache separation.
+    expect(dataQueriesSrc).toContain(
+      'queryKey: ["/api/companies", selectedCompanyId, "reports", "pl", dateParams]'
+    );
+    const opts = dataQueriesSrc.slice(
+      dataQueriesSrc.indexOf("const reportQueryOptions"),
+      dataQueriesSrc.indexOf("const reportQueryOptions") + 300
+    );
     expect(opts).not.toMatch(/placeholderData|keepPreviousData/);
   });
 });
