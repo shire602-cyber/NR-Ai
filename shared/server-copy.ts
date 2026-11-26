@@ -754,6 +754,7 @@ export const FIRM_TEMPLATES: readonly CopyTemplate[] = [
   T("firm.blocker.noActivity30", "No activity in 30+ days"),
   T("firm.blocker.tbOffBy", "Trial balance off by AED {amount}"),
   T("firm.blocker.noPostedJournals", "No posted journals"),
+  T("firm.bulk.ocrFailed", "OCR failed"),
   // Period-close checklist issues (server: firm-bulk.routes)
   T("firm.bulk.unpostedReceipts", "{n} unposted receipt(s)"),
   T("firm.bulk.unreconciledTransactions", "{n} unreconciled transaction(s)"),

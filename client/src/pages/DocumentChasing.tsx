@@ -312,7 +312,7 @@ export default function DocumentChasing() {
   return (
     <div className="space-y-6" data-testid="page-document-chasing">
       <PageHeader
-        eyebrow="Compliance"
+        eyebrow={t["pages.eyebrowCompliance"]}
         title={t["documentChasing.documentChasingAutopilot"]}
         description={t["documentChasing.trackMissingUaeComplianceDocuments"]}
         actions={

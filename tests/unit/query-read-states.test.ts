@@ -22,11 +22,12 @@ vi.mock("@/hooks/useDefaultCompany", () => ({
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 type Reply = { status?: number; body: unknown } | "never";
+type Route = Reply | ((init?: RequestInit) => Reply);
 
 let container: HTMLDivElement;
 let root: Root;
 let client: QueryClient;
-let routes: Record<string, Reply> = {};
+let routes: Record<string, Route> = {};
 
 const byTestId = (id: string) => document.querySelector(`[data-testid="${id}"]`);
 const text = () => document.body.textContent ?? "";
@@ -50,9 +51,10 @@ beforeEach(async () => {
   company.value = { companyId: "c-1", companyListState: "ready", isLoading: false };
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(String(input), "http://localhost").pathname;
-      const reply = routes[path] ?? { body: [] };
+      const route = routes[path] ?? { body: [] };
+      const reply = typeof route === "function" ? route(init) : route;
       if (reply === "never") return new Promise<Response>(() => {});
       return new Response(JSON.stringify(reply.body), {
         status: reply.status ?? 200,
@@ -100,6 +102,25 @@ async function refresh() {
   await act(async () => {
     await client.refetchQueries();
   });
+  await flush();
+}
+
+/** Radix tabs activate on mousedown. */
+async function openTab(name: string) {
+  const tab = document.querySelector(`[role="tab"][aria-controls$="-content-${name}"]`);
+  expect(tab).not.toBeNull();
+  await act(async () => {
+    tab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+  });
+  await flush();
+}
+
+async function clickButton(label: string) {
+  const button = Array.from(document.querySelectorAll("button")).find(
+    (el) => el.textContent?.trim() === label
+  );
+  expect(button).toBeDefined();
+  await act(async () => button!.click());
   await flush();
 }
 
@@ -279,6 +300,75 @@ describe("firm list read states", () => {
     expect(byTestId("bulk-clients-error")).not.toBeNull();
   });
 
+  it("BulkOperations: OCR and period-close results use Arabic count forms", async () => {
+    const Page = (await import("../../client/src/pages/firm/BulkOperations")).default;
+    const { t, useI18n } = await import("../../client/src/lib/i18n");
+    await act(async () => useI18n.getState().setLocale("ar"));
+    routes["/api/firm/clients"] = { body: [{ id: "c-1", name: "شركة الاختبار" }] };
+    routes["/api/csrf-token"] = { body: { csrfToken: "test-token" } };
+    routes["/api/firm/bulk/ocr"] = (init) => ({
+      body: {
+        results: [
+          JSON.parse(String(init?.body)).items[0].filename === "good.png"
+            ? { success: true, receiptId: "r-1" }
+            : { success: false, error: "OCR failed" },
+        ],
+      },
+    });
+    routes["/api/firm/bulk/period-close"] = {
+      body: [
+        {
+          companyId: "c-1",
+          companyName: "شركة الاختبار",
+          period: "Q4 2026",
+          checks: {
+            trialBalanceOk: true,
+            bankRecDone: false,
+            allReceiptsPosted: false,
+            vatPrepared: false,
+          },
+          issues: [
+            "2 unposted receipt(s)",
+            "3 unreconciled transaction(s)",
+            "VAT return not prepared",
+          ],
+          readyToClose: false,
+        },
+      ],
+    };
+    await mount(Page);
+
+    const input = document.querySelector('input[type="file"]')!;
+    Object.defineProperty(input, "files", {
+      value: ["good.png", "bad.png"].map(
+        (name) => new File(["image"], name, { type: "image/png" })
+      ),
+    });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    expect(text()).toContain("ملفان في الانتظار");
+    await clickButton(t.ar["firmOps.bulkProcessAll"]);
+    await vi.waitFor(() => {
+      expect(text()).toContain("ملف واحد مكتمل");
+      expect(text()).toContain("ملف واحد فاشل");
+    });
+    const failedRow = Array.from(document.querySelectorAll("tbody tr")).find((row) =>
+      row.textContent?.includes("bad.png")
+    );
+    expect(failedRow?.querySelector("[title]")?.getAttribute("title")).toBe(
+      t.ar["components.srv.firm.bulk.ocrFailed"]
+    );
+
+    await act(async () => useI18n.getState().setLocale("en"));
+    expect(text()).toContain("2 files queued");
+    expect(text()).toContain("1 file done");
+    expect(text()).toContain("1 file failed");
+
+    await act(async () => useI18n.getState().setLocale("ar"));
+    await openTab("close");
+    await clickButton(t.ar["firmOps.bulkRunChecklist"]);
+    expect(text()).toContain("3 ملاحظات");
+  });
+
   it("EmailIntake: failure is not an empty list; status is localized in Arabic", async () => {
     const Page = (await import("../../client/src/pages/firm/EmailIntake")).default;
     const sources = "/api/firm/email-intake/sources";
@@ -327,19 +417,6 @@ describe("DocumentChasing handles its two lists independently", () => {
 
   const load = async () => (await import("../../client/src/pages/DocumentChasing")).default;
 
-  /** Radix tabs activate on mousedown, not click. */
-  async function openTab(name: "queue" | "calendar" | "metrics") {
-    const tab = Array.from(document.querySelectorAll('[role="tab"]')).find(
-      (el) =>
-        el.id.endsWith(`-trigger-${name}`) ||
-        el.getAttribute("aria-controls")?.endsWith(`-content-${name}`)
-    );
-    expect(tab).toBeDefined();
-    await act(async () => {
-      tab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
-    });
-    await flush();
-  }
   const openQueueTab = () => openTab("queue");
 
   it("a failed queue does not block the requirements list", async () => {
@@ -363,13 +440,68 @@ describe("DocumentChasing handles its two lists independently", () => {
     expect(byTestId("queue-error")?.querySelector("button")).toBeTruthy();
   });
 
-  it("keeps the page with a warning when a refresh fails", async () => {
+  it("keeps the requirements list with a warning when a refresh fails", async () => {
     await mount(await load());
     routes[queue] = failed;
     routes[requirements] = failed;
     await refresh();
     expect(byTestId("document-chasing-error")).toBeNull();
     expect(byTestId("requirements-stale")).not.toBeNull();
+  });
+
+  it("keeps cached queue rows and blocks bulk send until the queue refresh succeeds", async () => {
+    const queued = {
+      body: [
+        {
+          requirement: { id: "r-1", documentType: "trade_license", dueDate: "2026-01-01" },
+          nextLevel: "friendly",
+          daysOverdue: 1,
+        },
+      ],
+    };
+    routes[queue] = queued;
+    await mount(await load());
+    await openQueueTab();
+    const bulkButton = () => byTestId("btn-bulk-send") as HTMLButtonElement;
+    expect(bulkButton().disabled).toBe(false);
+    expect(byTestId("row-queue-item")).not.toBeNull();
+
+    await act(async () => bulkButton().click());
+    routes[queue] = failed;
+    await refresh();
+    expect(bulkButton().disabled).toBe(true);
+    expect(
+      document.querySelector<HTMLButtonElement>('[role="alertdialog"] button:last-child')?.disabled
+    ).toBe(true);
+    expect(byTestId("queue-stale")).not.toBeNull();
+    expect(byTestId("row-queue-item")).not.toBeNull();
+
+    routes[queue] = queued;
+    await refresh();
+    expect(bulkButton().disabled).toBe(false);
+    expect(byTestId("queue-stale")).toBeNull();
+  });
+
+  it("renders Arabic day units in a recurring requirement", async () => {
+    const { useI18n } = await import("../../client/src/lib/i18n");
+    await act(async () => useI18n.getState().setLocale("ar"));
+    await mount(await load());
+    await act(async () => (byTestId("btn-add-requirement") as HTMLButtonElement).click());
+    await act(async () => document.querySelector<HTMLButtonElement>("#isRecurring")!.click());
+    const input = document.querySelector<HTMLInputElement>('input[type="number"]')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    for (const [count, unit] of [
+      ["1", "يوم"],
+      ["2", "يومان"],
+      ["3", "أيام"],
+      ["11", "يومًا"],
+    ]) {
+      await act(async () => {
+        setValue.call(input, count);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      expect(byTestId("recurring-interval-unit")?.textContent).toBe(unit);
+    }
   });
 
   it("calendar and effectiveness: failure with retry, then cached rows marked stale", async () => {
@@ -415,6 +547,45 @@ describe("DocumentChasing handles its two lists independently", () => {
     await openTab("calendar");
     expect(byTestId("events-stale")).not.toBeNull();
     expect(byTestId("row-event")).not.toBeNull();
+  });
+});
+
+describe("company-list read states", () => {
+  it.each([
+    {
+      load: () => import("../../client/src/pages/DocumentChasing"),
+      waitingId: "document-chasing-waiting",
+      errorId: "document-chasing-company-error",
+      emptyKey: "pages.noCompanySelected",
+    },
+    {
+      load: () => import("../../client/src/pages/BackupRestore"),
+      waitingId: "backups-company-waiting",
+      errorId: "backups-company-error",
+      emptyKey: "pageLabels.pleaseSelectACompanyToManageBackups",
+    },
+  ])("$errorId: only prompts for a company after a successful empty read", async (fixture) => {
+    const Page = (await fixture.load()).default;
+    const t = await catalog();
+    const retryCompanyList = vi.fn();
+
+    company.value = { companyListState: "waiting" };
+    await mount(Page);
+    expect(byTestId(fixture.waitingId)).not.toBeNull();
+    expect(text()).not.toContain(t.en[fixture.emptyKey]);
+
+    company.value = { companyListState: "error", error: new Error("failed"), retryCompanyList };
+    await mount(Page);
+    const retry = byTestId(fixture.errorId)?.querySelector("button");
+    expect(retry).toBeTruthy();
+    expect(text()).not.toContain(t.en[fixture.emptyKey]);
+    await act(async () => retry!.click());
+    expect(retryCompanyList).toHaveBeenCalledOnce();
+
+    company.value = { companyListState: "empty" };
+    await mount(Page);
+    expect(byTestId(fixture.errorId)).toBeNull();
+    expect(text()).toContain(t.en[fixture.emptyKey]);
   });
 });
 

@@ -358,6 +358,7 @@
   "components.srv.firm.blocker.tbOffBy": "Trial balance off by AED {amount}",
   "components.srv.firm.blocker.noPostedJournals": "No posted journals",
   "components.srv.firm.bulk.unpostedReceipts": "{n} unposted receipt(s)",
+  "components.srv.firm.bulk.ocrFailed": "OCR failed",
   "components.srv.firm.bulk.unreconciledTransactions": "{n} unreconciled transaction(s)",
   "components.srv.firm.bulk.vatNotPrepared": "VAT return not prepared",
   "components.srv.firm.bulk.noActivity": "No financial activity found",

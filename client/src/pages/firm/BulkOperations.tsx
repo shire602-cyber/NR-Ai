@@ -221,9 +221,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
           );
         } else {
           setItems((prev) =>
-            prev.map((i) =>
-              i.id === item.id ? { ...i, status: "error", error: r?.error ?? "OCR failed" } : i
-            )
+            prev.map((i) => (i.id === item.id ? { ...i, status: "error", error: r?.error } : i))
           );
         }
       } catch (err: any) {
@@ -374,7 +372,13 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                           </Badge>
                         )}
                         {item.status === "error" && (
-                          <Badge variant="destructive" title={item.error}>
+                          <Badge
+                            variant="destructive"
+                            title={
+                              localizeFirmText(item.error, t) ||
+                              t["components.srv.firm.bulk.ocrFailed"]
+                            }
+                          >
                             <XCircle className="w-3 h-3 me-1" />
                             <T k="pages.failed" />
                           </Badge>

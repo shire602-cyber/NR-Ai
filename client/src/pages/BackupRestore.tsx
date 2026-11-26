@@ -361,21 +361,21 @@ export default function BackupRestore() {
       case "completed":
         return (
           <Badge className="bg-success/10 text-success border-success/20">
-            <CheckCircle className="h-3 w-3 mr-1" />
+            <CheckCircle className="h-3 w-3 me-1" />
             <T k="pages.completed" />
           </Badge>
         );
       case "in_progress":
         return (
           <Badge className="bg-info/10 text-info border-info/20">
-            <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+            <RefreshCw className="h-3 w-3 me-1 animate-spin" />
             <T k="pages.inProgress" />
           </Badge>
         );
       case "failed":
         return (
           <Badge variant="destructive">
-            <XCircle className="h-3 w-3 mr-1" />
+            <XCircle className="h-3 w-3 me-1" />
             <T k="pages.failed" />
           </Badge>
         );
@@ -443,7 +443,7 @@ export default function BackupRestore() {
   if (accessKnown && !canManageBackups) {
     return (
       <div className="space-y-6">
-        <PageHeader eyebrow="Settings" title={t["backupRestore.backupRestore"]} />
+        <PageHeader eyebrow={t["shell.nav.settings"]} title={t["backupRestore.backupRestore"]} />
         <EmptyState
           icon={Database}
           title={t["common.noAccessTitle"]}
@@ -458,7 +458,7 @@ export default function BackupRestore() {
     <SettingsLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t["shell.nav.settings"]}
           title={t["backupRestore.backupRestore"]}
           testId="text-backup-title"
           description={t["backupRestore.safeguardYourFinancialRecordsWith"]}
@@ -618,7 +618,7 @@ export default function BackupRestore() {
                     <TableHead>
                       <T k="pages.created" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead className="text-end">
                       <T k="pages.actions" />
                     </TableHead>
                   </TableRow>
@@ -661,7 +661,7 @@ export default function BackupRestore() {
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         <div className="flex items-center justify-end gap-2">
                           <Button
                             variant="outline"

@@ -201,7 +201,7 @@ export default function ClientImport() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Admin"
+        eyebrow={t["pages.eyebrowAdmin"]}
         title={t["pages.importClients"]}
         testId="text-import-title"
         description={t["clientImport.bulkImportClientCompaniesFrom"]}

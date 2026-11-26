@@ -433,7 +433,7 @@ export default function FirmCommandCenter() {
     return (
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Firm"
+          eyebrow={t["firm.eyebrowFirm"]}
           title={t["firmCommandCenter.firmCommandCenter"]}
           testId="page-title"
         />
@@ -450,7 +450,7 @@ export default function FirmCommandCenter() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
+        eyebrow={t["firm.eyebrowFirm"]}
         title={t["firmCommandCenter.firmCommandCenter"]}
         testId="page-title"
         description={t["firmCommandCenter.birdSEyeViewAcross"]}

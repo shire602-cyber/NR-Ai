@@ -1563,7 +1563,7 @@ export default function Invoices() {
       testId="dialog-invoice-form"
       backHref="/invoices"
       backLabel={t["invoices.editor.back"]}
-      eyebrow="Sales"
+      eyebrow={t["pages.sales"]}
       title={
         editingInvoice
           ? isIssued
@@ -2357,7 +2357,7 @@ export default function Invoices() {
       </Dialog>
       {!editorOpen && (
         <PageHeader
-          eyebrow="Sales"
+          eyebrow={t["pages.sales"]}
           title={t.invoices}
           description={(t as any).manageInvoices ?? t["invoices.manageInvoicesAndCustomizeTheir"]}
           actions={
