@@ -4,7 +4,7 @@ import { useHarness } from "./harness";
 
 const h = useHarness();
 
-async function readyInvoice() {
+async function readyInvoice(invoiceFields: Record<string, unknown> = {}) {
   const tenant = await h.createTenant({
     companyColumns: {
       trn_vat_number: "100123456700003",
@@ -33,6 +33,7 @@ async function readyInvoice() {
     date: new Date().toISOString().slice(0, 10),
     paymentTerms: "net30",
     lines: [{ description: "Consulting", quantity: 2, unitPrice: 500, vatRate: 5 }],
+    ...invoiceFields,
   });
   expect(created.status, created.text).toBe(200);
   const issued = await tenant.as.patch(`/api/invoices/${created.body.id}/status`, {
@@ -78,7 +79,137 @@ async function selectComplyance(companyId: string) {
   );
 }
 
+/** Rewrite a queued snapshot to the earlier shape: line amounts in the document currency. */
+async function freezePreUpgradeSnapshot(invoiceId: string) {
+  const { sha256Hex } = await import("../../server/services/einvoice/store");
+  const current = (await storedDocument(invoiceId)).einvoice_xml as string;
+  const legacy = current.replace(
+    /<cac:ItemPriceExtension>[\s\S]*?<\/cac:ItemPriceExtension>/g,
+    (block) => block.replaceAll('currencyID="AED"', 'currencyID="USD"')
+  );
+  expect(legacy).not.toBe(current);
+  await h.sql("UPDATE invoices SET einvoice_xml = $1, einvoice_hash = $2 WHERE id = $3", [
+    legacy,
+    sha256Hex(legacy),
+    invoiceId,
+  ]);
+  await h.sql("UPDATE einvoice_documents SET xml_hash = $1 WHERE invoice_id = $2", [
+    sha256Hex(legacy),
+    invoiceId,
+  ]);
+  return legacy;
+}
+
 describe("Durable UAE e-invoice submission queue", () => {
+  it("[PR174] stops a never-attempted pre-upgrade FX snapshot and sends a regenerated one", async () => {
+    const args = await readyInvoice({ currency: "USD", exchangeRate: 3.6725 });
+    const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+      await import("../../server/services/einvoice/workflow");
+    const { frozenEInvoiceLineCurrencyIssue } =
+      await import("../../server/services/einvoice.service");
+    const sent: string[] = [];
+    const provider = fakeProvider({
+      submit: async ({ uuid, xml }) => {
+        sent.push(xml);
+        return { providerMessageId: uuid, status: "submitted" };
+      },
+    });
+    const now = new Date();
+    expect((await enqueueEInvoiceSubmission({ ...args, provider, now })).ok).toBe(true);
+    await freezePreUpgradeSnapshot(args.invoice.id);
+
+    expect(await runEInvoiceRetries(now, () => provider)).toEqual({ attempted: 0, submitted: 0 });
+    expect(sent).toEqual([]);
+    expect(await storedDocument(args.invoice.id)).toMatchObject({
+      status: "failed",
+      einvoice_status: "failed",
+      attempts: 0,
+      next_retry_at: null,
+      last_error_code: "EINVOICE_SCHEMA_INVALID",
+    });
+
+    const again = await enqueueEInvoiceSubmission({ ...args, provider, now, regenerate: true });
+    expect(again.ok, JSON.stringify(again)).toBe(true);
+    expect(await runEInvoiceRetries(now, () => provider)).toEqual({ attempted: 1, submitted: 1 });
+    expect(sent).toHaveLength(1);
+    expect(frozenEInvoiceLineCurrencyIssue(sent[0])).toBeNull();
+  });
+
+  it.each(["a stale claim", "a recorded attempt"])(
+    "[PR174] replays the frozen pre-upgrade FX request unchanged after %s",
+    async (history) => {
+      const args = await readyInvoice({ currency: "USD", exchangeRate: 3.6725 });
+      const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+        await import("../../server/services/einvoice/workflow");
+      const { SUBMISSION_LEASE_MS } = await import("../../server/services/einvoice/store");
+      const sent: string[] = [];
+      const provider = fakeProvider({
+        submit: async ({ uuid, xml }) => {
+          sent.push(xml);
+          return { providerMessageId: uuid, status: "submitted" };
+        },
+      });
+      const now = new Date();
+      expect((await enqueueEInvoiceSubmission({ ...args, provider, now })).ok).toBe(true);
+      const legacy = await freezePreUpgradeSnapshot(args.invoice.id);
+      if (history === "a stale claim") {
+        await h.sql(
+          "UPDATE einvoice_documents SET submit_claimed_at = $1, attempts = 1 WHERE invoice_id = $2",
+          [now.toISOString(), args.invoice.id]
+        );
+      } else {
+        await h.sql(
+          `UPDATE einvoice_documents SET attempts = 1,
+             validation = jsonb_set(validation::jsonb, '{submission,providerAttempted}', 'true')
+           WHERE invoice_id = $1`,
+          [args.invoice.id]
+        );
+      }
+
+      const later = new Date(now.getTime() + SUBMISSION_LEASE_MS);
+      expect(await runEInvoiceRetries(later, () => provider)).toEqual({
+        attempted: 1,
+        submitted: 1,
+      });
+      expect(sent).toEqual([legacy]);
+    }
+  );
+
+  it("[PR174] converts a non-AED ledger's document at the tax-point rate, not the issue rate", async () => {
+    const args = await readyInvoice();
+    const other = await h.createSecondTenant();
+    const day = (offset: number) =>
+      new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+    const addRate = (companyId: string, rate: number, date: string) =>
+      h.sql(
+        `INSERT INTO exchange_rates (company_id, base_currency, target_currency, rate, date, source)
+         VALUES ($1, 'EUR', 'AED', $2, $3, 'manual')`,
+        [companyId, rate, date]
+      );
+    await addRate(args.company.id, 4, day(-10));
+    await addRate(args.company.id, 4.2, day(0));
+    // Newer than the tenant's tax-point rate, but it belongs to another company.
+    await addRate(other.company.id, 9, day(-9));
+    await h.sql("UPDATE companies SET base_currency = 'EUR' WHERE id = $1", [args.company.id]);
+    await h.sql(
+      "UPDATE invoices SET currency = 'GBP', exchange_rate = 1.2, supply_date = $1 WHERE id = $2",
+      [day(-9), args.invoice.id]
+    );
+    const { loadEInvoiceContext } = await import("../../server/services/einvoice/context");
+    const { storage } = await import("../../server/storage");
+    const company = (await storage.getCompany(args.company.id))!;
+    const invoice = (await storage.getInvoice(args.invoice.id, company.id))!;
+
+    // 1.2 EUR per GBP at booking, times 4 AED per EUR on the supply date.
+    expect((await loadEInvoiceContext(invoice, company)).options?.taxExchangeRate).toBe("4.8");
+
+    const foreign = await loadEInvoiceContext(invoice, {
+      ...company,
+      id: other.company.id,
+    });
+    expect(foreign.options?.taxExchangeRate).toBeNull();
+  });
+
   it("queues a single audited snapshot and sends it once through parallel workers", async () => {
     const args = await readyInvoice();
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =

@@ -4,12 +4,13 @@
  * the original invoice for credit/debit notes. Tenant-scoped: a contact or
  * original invoice from another company is ignored.
  */
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import Decimal from "decimal.js";
 import { db, type AppDatabase } from "../../db";
 import { DomainError } from "../../errors";
 import { baseCurrencyOf } from "../../ledger/currency";
-import { resolve } from "../../platform";
+import { resolve } from "../../platform/service-registry";
+import { salesTaxPointSql } from "../../tax/sales-tax-point";
 import type { FxGetRate } from "../fx";
 import {
   customerContacts,
@@ -120,15 +121,19 @@ async function loadTaxExchangeRate(
   if (currency === "AED" || baseCurrency === "AED") return undefined;
   const documentRate = currency === baseCurrency ? 1 : Number(invoice.exchangeRate);
   if (!Number.isFinite(documentRate) || documentRate <= 0) return null;
+  // The base-to-AED leg uses the same tax point as the VAT 201 return, not just the issue date.
+  const [sale] = await conn
+    .select({ taxPoint: sql<string>`(${sql.raw(salesTaxPointSql("invoices"))})::text` })
+    .from(invoices)
+    .where(and(eq(invoices.companyId, company.id), eq(invoices.id, invoice.id)));
+  if (!sale) return null;
   try {
     const baseRate = await resolve<FxGetRate>("fx.getRate")(
       company.id,
       baseCurrency,
       "AED",
-      invoice.date,
-      {
-        tx: conn,
-      }
+      sale.taxPoint,
+      { tx: conn }
     );
     return new Decimal(documentRate).times(baseRate.rateText).toDecimalPlaces(6).toString();
   } catch (err) {

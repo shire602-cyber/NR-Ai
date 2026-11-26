@@ -65,7 +65,7 @@ import {
 } from "../einvoice-status";
 import { loadEInvoiceContext } from "./context";
 import { invoiceReportingDeadline, invoiceReportingRequired } from "./reporting";
-import { frozenEInvoiceDispatchIssue } from "../einvoice.service";
+import { frozenEInvoiceDispatchIssue, frozenEInvoiceLineCurrencyIssue } from "../einvoice.service";
 import { PEPPOL_SCHEME_UAE_TIN } from "./pint-ae-codes";
 import {
   archiveEInvoiceXml,
@@ -688,6 +688,18 @@ async function claimQueuedSubmission(
     if (unissuedInvoice(invoice) && !ambiguous) {
       await stopQueuedSubmission(tx, invoice, unissuedInvoiceCode(invoice), now);
       return null;
+    }
+    // Only a snapshot no provider has seen may be replaced. Submitting again rebuilds it.
+    // An authorized correction or definitive-refusal retry is enqueued with providerAttempted
+    // copied from its predecessor, but the new revision itself has not been sent: enqueue sets
+    // verifiedEmailRequired only for those, and attempts stays 0 until this first claim.
+    const initialVerifiedRevision = metadata.verifiedEmailRequired === true && doc.attempts === 0;
+    if (!ambiguous && (!submissionTriedProvider(doc) || initialVerifiedRevision)) {
+      const outdated = frozenEInvoiceLineCurrencyIssue(built.xml);
+      if (outdated) {
+        await stopQueuedSubmission(tx, invoice, outdated, now);
+        return null;
+      }
     }
 
     const attempt = doc.attempts + 1;

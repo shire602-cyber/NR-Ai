@@ -105,7 +105,7 @@ export interface EInvoiceOptions {
   uuid?: string;
   /** An explicit UAE business clock time (HH:MM:SS). */
   issueTime?: string;
-  /** Issue-date conversion from the document currency into AED. */
+  /** Conversion from the document currency into AED (tax-point dated for a non-AED ledger). */
   taxExchangeRate?: string | null;
   originalInvoice?: { number: string; date: Date | string } | null;
   creditNoteReasonCode?: CreditNoteReasonCode | null;
@@ -802,6 +802,30 @@ export function frozenEInvoiceDispatchIssue(xml: string): string | null {
     }
     return null;
   } catch {
+    return "EINVOICE_SCHEMA_INVALID";
+  }
+}
+
+/**
+ * PINT AE states each line's VAT and payable amount of a foreign-currency document in AED.
+ * Snapshots frozen by an earlier release used the document currency; they must be regenerated
+ * before a first provider attempt. Attempted requests are replayed unchanged, so this is not
+ * part of frozenEInvoiceDispatchIssue.
+ */
+export function frozenEInvoiceLineCurrencyIssue(xml: string): string | null {
+  try {
+    const root = parseXml(xml).documentElement;
+    if (textAt(root, "cbc:DocumentCurrencyCode") === "AED") return null;
+    const lineTag = root.localName === "CreditNote" ? "cac:CreditNoteLine" : "cac:InvoiceLine";
+    const outdated = all(root, lineTag).some((line) => {
+      const payable = first(line, "cac:ItemPriceExtension/cbc:Amount");
+      const vat = first(line, "cac:ItemPriceExtension/cac:TaxTotal/cbc:TaxAmount");
+      return attr(payable, "currencyID") !== "AED" || (!!vat && attr(vat, "currencyID") !== "AED");
+    });
+    return outdated ? "EINVOICE_SCHEMA_INVALID" : null;
+  } catch {
+    // Unparseable frozen XML must stop the queued job (schema invalid), never throw out of the
+    // claim transaction and leave the job due forever.
     return "EINVOICE_SCHEMA_INVALID";
   }
 }
