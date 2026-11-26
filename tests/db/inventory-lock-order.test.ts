@@ -43,7 +43,7 @@ async function waitUntilBlocking(pid: number, deadlineMs = 15_000): Promise<void
     if (row.blocked) return;
     await new Promise((r) => setTimeout(r, 25));
   }
-  throw new Error("the invoice never blocked on the stocktake's product lock");
+  throw new Error("the competing transaction never blocked on the stocktake's product lock");
 }
 
 function deferred<T>() {
@@ -161,6 +161,89 @@ describe("inventory product lock order", () => {
     );
     expect(movements.map((m) => m.product_id).sort()).toEqual([low, high]);
     expect(movements.every((m) => m.journal_entry_id)).toBe(true);
+  });
+
+  it("a vendor debit-note void and same-date stocktake do not deadlock", async (ctx) => {
+    if (!h.concurrencySupported) ctx.skip();
+    const t = await h.createTenant();
+    const companyId = t.company.id;
+    const base = `/api/companies/${companyId}`;
+    const date = today();
+    const productId = await stockedProduct(t, "Demo returned item");
+    const bill = await t.as.post(`${base}/bills`, {
+      vendor_name: "Demo Supplier LLC",
+      bill_number: "DEMO-RETURN-1",
+      bill_date: date,
+      due_date: date,
+      line_items: [{ description: "Supplies", quantity: 1, unit_price: 40, vat_rate: 0 }],
+    });
+    expect(bill.status, bill.text).toBe(200);
+    const approved = await t.as.post(`/api/bills/${bill.body.id}/approve`, {});
+    expect(approved.status, approved.text).toBe(200);
+    const note = await t.as.post(`${base}/debit-notes`, {
+      bill_id: bill.body.id,
+      note_date: date,
+      reason: "Demo return",
+      lines: [
+        { description: "Returned", amount: 40, vat_rate: 0, product_id: productId, quantity: 1 },
+      ],
+    });
+    expect([200, 201], note.text).toContain(note.status);
+
+    // 10 stocked, 1 returned. Count 8 to ensure posting needs the same journal-number lock.
+    const stocktake = await t.as.post(`${base}/stocktakes`, {
+      countDate: date,
+      lines: [{ productId, countedQty: 8 }],
+    });
+    expect(stocktake.status, stocktake.text).toBe(201);
+
+    const { withLedgerTx } = await import("../../server/ledger");
+    const { lockProduct, q } = await import("../../server/services/inventory/store");
+    const { postStocktake } = await import("../../server/services/inventory/manual");
+    const { voidDebitNote } = await import("../../server/services/bill-payment.service");
+
+    const locked = deferred<number>();
+    const proceed = deferred<void>();
+    const stocktakeRun = withLedgerTx(async (tx) => {
+      await lockProduct(tx, companyId, productId);
+      const [backend] = await q<{ pid: number }>(tx, sql`SELECT pg_backend_pid() AS pid`);
+      locked.resolve(Number(backend.pid));
+      await proceed.promise;
+      return postStocktake(tx, { companyId, stocktakeId: stocktake.body.id, actorId: t.user.id });
+    });
+    stocktakeRun.catch((err) => locked.reject(err));
+
+    const pid = await locked.promise;
+    const voidRun = voidDebitNote({
+      companyId,
+      debitNoteId: note.body.id,
+      actorId: t.user.id,
+      reason: "Demo void",
+    });
+    const results = Promise.allSettled([stocktakeRun, voidRun]);
+    try {
+      await waitUntilBlocking(pid);
+      proceed.resolve();
+    } catch (err) {
+      proceed.reject(err);
+      await results;
+      throw err;
+    }
+
+    const [posted, voided] = await results;
+    if (posted.status === "rejected") throw posted.reason;
+    if (voided.status === "rejected") throw voided.reason;
+    expect(voided.value.debitNote.status).toBe("void");
+    const [stocktakeRow] = await h.sql<{ journal_entry_id: string | null }>(
+      `SELECT journal_entry_id FROM stocktakes WHERE id = $1`,
+      [stocktake.body.id]
+    );
+    expect(stocktakeRow.journal_entry_id).toBeTruthy();
+    const [product] = await h.sql<{ current_stock: number }>(
+      `SELECT current_stock FROM products WHERE id = $1`,
+      [productId]
+    );
+    expect(Number(product.current_stock)).toBe(9); // 8 counted, then 1 put back.
   });
 
   it("a mixed stocktake (zero variance A, shortage B) and a regular invoice issue do not deadlock", async (ctx) => {

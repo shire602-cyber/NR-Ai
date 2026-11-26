@@ -64,7 +64,11 @@ import {
 import { resolveVendor } from "./vendor.service";
 import { assertNotOwnTrn } from "./bill-capture.service";
 import { recostBillAssetsForDebitNote } from "./fixed-assets/index";
-import { afterBillPosted, planPurchaseReturnStock } from "./inventory/documents";
+import {
+  afterBillPosted,
+  lockDocumentProducts,
+  planPurchaseReturnStock,
+} from "./inventory/documents";
 import { planDebitNoteVat, type DebitNoteBillVat } from "./debit-note-vat";
 import { debitNoteCreateSchema, inboundBillSchema } from "../../shared/validators/bills";
 import { parseStrict } from "../http/strict-body";
@@ -2223,6 +2227,12 @@ export async function voidDebitNote(args: {
         "This debit note re-costed a fixed asset; adjust the asset before voiding it"
       );
     }
+    // Stocktakes hold their product locks while taking the journal-number lock.
+    await lockDocumentProducts(tx, {
+      companyId,
+      sourceType: "vendor_debit_note",
+      sourceId: note.id,
+    });
     await reverseBySource(
       companyId,
       "vendor_debit_note",

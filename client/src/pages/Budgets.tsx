@@ -287,31 +287,38 @@ const NO_LINES: BudgetLine[] = [];
 
 type ReadView = "loading" | "paused" | "error" | "ready";
 
-/**
- * What a read may honestly show. Rows already held (even stale) are "ready"; without rows a
- * failed first load is "error", a paused one "paused", anything else "loading". A successful
- * empty answer is "ready" with no rows, so it is never confused with these.
- */
-function readView(q: { data: unknown; isLoadingError: boolean; fetchStatus: string }): ReadView {
+/** A paused read replaces the empty state, while cached rows can stay visible. */
+function readView(
+  q: { data: unknown; isLoadingError: boolean; fetchStatus: string },
+  hasRows: boolean
+): ReadView {
+  if (q.fetchStatus === "paused" && !hasRows) return "paused";
   if (q.data !== undefined) return "ready";
   if (q.isLoadingError) return "error";
-  if (q.fetchStatus === "paused") return "paused";
   return "loading";
 }
 
-/** Loading, paused or failed-with-retry block shown in place of rows that are not known. */
+/** Shows the read status above cached rows or in place of the empty state. */
 function ReadStatus({
   view,
   errorText,
   onRetry,
   testId,
+  refresh,
 }: {
-  view: Exclude<ReadView, "ready">;
+  view: ReadView;
+  refresh?: { fetchStatus: string; isRefetchError: boolean };
   errorText: string;
   onRetry: () => void;
   testId: string;
 }) {
   const { t } = useTranslation();
+  if (view === "ready") {
+    const paused = refresh?.fetchStatus === "paused";
+    return paused || refresh?.isRefetchError ? (
+      <RefreshNotice paused={paused} onRetry={onRetry} />
+    ) : null;
+  }
   if (view === "error") {
     return (
       <div
@@ -337,19 +344,21 @@ function ReadStatus({
   );
 }
 
-/** Shown above rows that are kept after a refresh failed. */
-function RefreshFailedNotice({ onRetry }: { onRetry: () => void }) {
+/** Shown above cached rows while a refresh is paused or has failed. */
+function RefreshNotice({ paused, onRetry }: { paused: boolean; onRetry: () => void }) {
   const { t } = useTranslation();
   return (
     <div
       className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted px-3 py-2 text-sm text-foreground"
       role="status"
-      data-testid="budgets-refresh-failed"
+      data-testid={paused ? "budgets-refresh-paused" : "budgets-refresh-failed"}
     >
-      <span>{t["budgets.refreshFailed"]}</span>
-      <Button variant="outline" size="sm" onClick={onRetry}>
-        {t.tryAgain}
-      </Button>
+      <span>{paused ? t["budgets.readPaused"] : t["budgets.refreshFailed"]}</span>
+      {!paused && (
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          {t.tryAgain}
+        </Button>
+      )}
     </div>
   );
 }
@@ -382,7 +391,7 @@ export default function Budgets() {
     enabled: !!companyId,
   });
   const budgetPlans = budgetsQuery.data ?? NO_PLANS;
-  const budgetsView = readView(budgetsQuery);
+  const budgetsView = readView(budgetsQuery, budgetPlans.length > 0);
   const refetchBudgets = budgetsQuery.refetch;
 
   const linesQuery = useQuery<BudgetLine[]>({
@@ -390,14 +399,14 @@ export default function Budgets() {
     enabled: !!selectedBudget?.id,
   });
   const budgetLines = linesQuery.data ?? NO_LINES;
-  const linesView = readView(linesQuery);
+  const linesView = readView(linesQuery, budgetLines.length > 0);
 
   const varianceQuery = useQuery<VarianceData>({
     queryKey: [`/api/budget-plans/${selectedBudget?.id}/variance`],
     enabled: !!selectedBudget?.id && activeTab === "variance",
   });
   const varianceData = varianceQuery.data;
-  const varianceView = readView(varianceQuery);
+  const varianceView = readView(varianceQuery, (varianceData?.varianceLines.length ?? 0) > 0);
 
   // E2 (J3-r2): every line budgets one P&L account (not a control account), so actuals come
   // from the ledger and income is never added to expenses.
@@ -1068,17 +1077,14 @@ export default function Budgets() {
               )}
             </CardHeader>
             <CardContent>
-              {budgetsView === "ready" && budgetsQuery.isRefetchError && (
-                <RefreshFailedNotice onRetry={() => void refetchBudgets()} />
-              )}
-              {budgetsView !== "ready" ? (
-                <ReadStatus
-                  view={budgetsView}
-                  errorText={t["budgets.listLoadError"]}
-                  onRetry={() => void refetchBudgets()}
-                  testId="budgets-load-error"
-                />
-              ) : budgetPlans.length === 0 ? (
+              <ReadStatus
+                view={budgetsView}
+                refresh={budgetsQuery}
+                errorText={t["budgets.listLoadError"]}
+                onRetry={() => void refetchBudgets()}
+                testId="budgets-load-error"
+              />
+              {budgetsView !== "ready" ? null : budgetPlans.length === 0 ? (
                 <EmptyState
                   icon={PiggyBank}
                   title={t["pages.noBudgetPlansYetCreateYourFirstBudgetToGetStarte"]}
@@ -1250,17 +1256,14 @@ export default function Budgets() {
                 </div>
               </CardHeader>
               <CardContent>
-                {linesView === "ready" && linesQuery.isRefetchError && (
-                  <RefreshFailedNotice onRetry={() => void linesQuery.refetch()} />
-                )}
-                {linesView !== "ready" ? (
-                  <ReadStatus
-                    view={linesView}
-                    errorText={t["budgets.linesLoadError"]}
-                    onRetry={() => void linesQuery.refetch()}
-                    testId="budget-lines-state"
-                  />
-                ) : budgetLines.length === 0 ? (
+                <ReadStatus
+                  view={linesView}
+                  refresh={linesQuery}
+                  errorText={t["budgets.linesLoadError"]}
+                  onRetry={() => void linesQuery.refetch()}
+                  testId="budget-lines-state"
+                />
+                {linesView !== "ready" ? null : budgetLines.length === 0 ? (
                   <EmptyState
                     size="sm"
                     title={t["pages.noBudgetLinesYetAddCategoriesAndMonthlyAllocatio"]}
@@ -1387,17 +1390,15 @@ export default function Budgets() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {varianceView === "ready" && varianceQuery.isRefetchError && (
-                  <RefreshFailedNotice onRetry={() => void varianceQuery.refetch()} />
-                )}
-                {varianceView !== "ready" ? (
-                  <ReadStatus
-                    view={varianceView}
-                    errorText={t["budgets.varianceLoadError"]}
-                    onRetry={() => void varianceQuery.refetch()}
-                    testId="budget-variance-state"
-                  />
-                ) : !varianceData || varianceData.varianceLines.length === 0 ? (
+                <ReadStatus
+                  view={varianceView}
+                  refresh={varianceQuery}
+                  errorText={t["budgets.varianceLoadError"]}
+                  onRetry={() => void varianceQuery.refetch()}
+                  testId="budget-variance-state"
+                />
+                {varianceView !== "ready" ? null : !varianceData ||
+                  varianceData.varianceLines.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     {t["budgets.noVarianceDataAvailableAdd"]}
                   </div>

@@ -198,6 +198,30 @@ describe("Budgets list read states", () => {
     expect(mocks.queryFn).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])("shows a paused refresh with cached rows present: %s", async (hasRows) => {
+    queryClient.setQueryData(plansKey, hasRows ? [demoPlan] : []);
+    await renderBudgets();
+    await until(() => !!byTestId("budgets-count"));
+    expect(!!byTestId("budgets-empty")).toBe(!hasRows);
+
+    await act(async () => {
+      onlineManager.setOnline(false);
+      void queryClient.invalidateQueries({ queryKey: plansKey });
+    });
+    const waitingId = hasRows ? "budgets-refresh-paused" : "budgets-load-error-paused";
+    await until(() => !!byTestId(waitingId));
+    expect(byTestId(waitingId)?.textContent).toContain("Waiting for a connection");
+    expect(byTestId("budgets-empty")).toBeNull();
+    expect(!!byTestId("budgets-count")).toBe(hasRows);
+    expect(document.body.textContent?.includes(demoPlan.name)).toBe(hasRows);
+
+    await act(async () => {
+      onlineManager.setOnline(true);
+    });
+    await until(() => !byTestId(waitingId) && !!byTestId("budgets-count"));
+    expect(document.body.textContent).toContain(demoPlan.name);
+  });
+
   it("a failed first read shows an error with a retry that loads the rows", async () => {
     failPlans();
     await renderBudgets();
