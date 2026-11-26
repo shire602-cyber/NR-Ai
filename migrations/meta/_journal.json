@@ -1107,6 +1107,20 @@
    "when": 1795533357303,
    "tag": "0157_preserve_period_locks_and_repair_cash_sale_numbering",
    "breakpoints": true
+  },
+  {
+   "idx": 158,
+   "version": "7",
+   "when": 1795533367303,
+   "tag": "0158_s4_einvoice_asp_appointments",
+   "breakpoints": false
+  },
+  {
+   "idx": 159,
+   "version": "7",
+   "when": 1795713570688,
+   "tag": "0159_preserve_invoice_line_document_discounts",
+   "breakpoints": true
   }
  ]
 }

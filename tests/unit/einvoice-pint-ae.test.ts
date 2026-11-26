@@ -11,7 +11,11 @@ import {
   fixtureCompany,
   type PintAeFixture,
 } from "../fixtures/pint-ae/fixtures";
-import { generateEInvoiceXML, validateForEInvoicing } from "../../server/services/einvoice.service";
+import {
+  frozenEInvoiceLineCurrencyIssue,
+  generateEInvoiceXML,
+  validateForEInvoicing,
+} from "../../server/services/einvoice.service";
 import {
   artefactStatus,
   runPintAeSchematron,
@@ -142,6 +146,20 @@ describe("R07-04 mandatory PINT AE content", () => {
     // 50 USD VAT x 3.6725 = 183.63 AED; 1050 x 3.6725 = 3856.13 AED
     expect(out).toContain('<cbc:TaxAmount currencyID="AED">183.63</cbc:TaxAmount>');
     expect(out).toContain("<cbc:DocumentDescription>3856.13</cbc:DocumentDescription>");
+  });
+
+  it("[PR174] flags a frozen foreign-currency snapshot whose line amounts are not in AED", () => {
+    const fx = PINT_AE_FIXTURES.find((f) => f.name === "foreign currency") as PintAeFixture;
+    const out = generate(fx).xml;
+    expect(frozenEInvoiceLineCurrencyIssue(out)).toBeNull();
+    expect(frozenEInvoiceLineCurrencyIssue(xml)).toBeNull();
+    const legacy = out.replace(
+      /<cac:ItemPriceExtension>[\s\S]*?<\/cac:ItemPriceExtension>/g,
+      (block) => block.replaceAll('currencyID="AED"', 'currencyID="USD"')
+    );
+    expect(frozenEInvoiceLineCurrencyIssue(legacy)).toBe("EINVOICE_SCHEMA_INVALID");
+    expect(frozenEInvoiceLineCurrencyIssue("<Invoice><cbc:ID>")).toBe("EINVOICE_SCHEMA_INVALID");
+    expect(frozenEInvoiceLineCurrencyIssue("not xml at all")).toBe("EINVOICE_SCHEMA_INVALID");
   });
 
   it("credit notes are UBL CreditNote documents with reason code and billing reference", () => {

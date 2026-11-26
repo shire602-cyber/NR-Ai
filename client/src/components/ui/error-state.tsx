@@ -9,6 +9,7 @@ export interface ErrorStateProps {
   description?: ReactNode;
   onRetry?: () => void;
   retryLabel?: string;
+  secondaryAction?: ReactNode;
   /** A retry is in flight: the button spins and cannot be pressed again. */
   retrying?: boolean;
   /** The button cannot be pressed, without spinning (a retry is queued). */
@@ -28,6 +29,7 @@ export function ErrorState({
   description,
   onRetry,
   retryLabel,
+  secondaryAction,
   retrying = false,
   disabled = false,
   compact = false,
@@ -60,18 +62,22 @@ export function ErrorState({
       <p className={cn("mt-1 max-w-md leading-relaxed text-muted-foreground", "text-small")}>
         {description ?? t["components.errorStateDescription"]}
       </p>
-      {onRetry && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-5"
-          onClick={onRetry}
-          disabled={retrying || disabled}
-          aria-busy={retrying || undefined}
-        >
-          <RotateCw className={retrying ? "animate-spin" : undefined} aria-hidden />
-          {retryLabel ?? t["components.errorRetry"]}
-        </Button>
+      {(onRetry || secondaryAction) && (
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          {onRetry && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRetry}
+              disabled={retrying || disabled}
+              aria-busy={retrying || undefined}
+            >
+              <RotateCw className={retrying ? "animate-spin" : undefined} aria-hidden />
+              {retryLabel ?? t["components.errorRetry"]}
+            </Button>
+          )}
+          {secondaryAction}
+        </div>
       )}
     </div>
   );

@@ -16,7 +16,7 @@ export class RetentionViolationError extends Error {
   }
 }
 
-function computeExpiry(createdAt: Date | string): Date {
+export function computeRetentionExpiry(createdAt: Date | string): Date {
   const d = new Date(createdAt);
   d.setFullYear(d.getFullYear() + RETENTION_YEARS);
   return d;
@@ -28,7 +28,7 @@ export function isWithinRetention(record: {
 }): boolean {
   const expiry = record.retentionExpiresAt
     ? new Date(record.retentionExpiresAt)
-    : computeExpiry(record.createdAt);
+    : computeRetentionExpiry(record.createdAt);
   return new Date() < expiry;
 }
 
@@ -40,7 +40,7 @@ export function assertRetentionExpired(
 ): void {
   const expiry = record.retentionExpiresAt
     ? new Date(record.retentionExpiresAt)
-    : computeExpiry(record.createdAt);
+    : computeRetentionExpiry(record.createdAt);
   if (new Date() < expiry) {
     throw new RetentionViolationError(expiry, recordType);
   }
@@ -55,7 +55,7 @@ export function retentionWarning(record: {
 }): string | null {
   const expiry = record.retentionExpiresAt
     ? new Date(record.retentionExpiresAt)
-    : computeExpiry(record.createdAt);
+    : computeRetentionExpiry(record.createdAt);
   const now = new Date();
   if (now >= expiry) return null;
   const daysRemaining = Math.ceil((expiry.getTime() - now.getTime()) / 86400000);

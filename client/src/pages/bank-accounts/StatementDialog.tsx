@@ -1,10 +1,10 @@
 /**
  * Reconciliation statement dialog. The frame (title, description, close) renders at once and stays
- * mounted; only the body is a separate chunk. A failed chunk load keeps the page and its cached
- * rows: no automatic reload (`reload: false`), the dialog offers a manual one instead.
+ * mounted; only the body and its `bankStatement` catalog are separate chunks. A failed chunk load
+ * keeps the page and its cached rows: no automatic reload (`reload: false`), the dialog offers a
+ * manual one instead.
  */
 import { lazy, Suspense, useState, type ComponentType } from "react";
-import { onlineManager } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,28 +14,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useTranslation } from "@/lib/i18n";
+import { loadNamespaces, useI18n, useTranslation } from "@/lib/i18n";
 import { loadWithChunkRetry } from "@/lib/lazyWithReload";
-
-function BodyLoadFailed() {
-  const { t } = useTranslation();
-  return (
-    <p role="alert" className="text-small text-muted-foreground">
-      {onlineManager.isOnline()
-        ? t["components.errorSectionCouldNotLoad"]
-        : `${t["banking.common.offline"]}. ${t["banking.common.offlineBody"]}`}{" "}
-      <Button variant="link" size="sm" onClick={() => window.location.reload()}>
-        {t["components.errorRetry"]}
-      </Button>
-    </p>
-  );
-}
+import { BodyLoadFailed } from "./BodyLoadFailed";
+import { STATEMENT_NAMESPACES } from "./statement-namespaces";
 
 // A new lazy component per opening: React.lazy remembers its first result, failures included.
 const lazyBody = () =>
   lazy(() =>
     loadWithChunkRetry<{ default: ComponentType<{ companyId: string; accountId: string }> }>(
-      () => import("./StatementDialogBody"),
+      async () => {
+        const [body] = await Promise.all([
+          import("./StatementDialogBody"),
+          loadNamespaces(useI18n.getState().locale, STATEMENT_NAMESPACES),
+        ]);
+        return body;
+      },
       { key: "bank-statement-dialog", reload: false }
     ).catch(() => ({ default: BodyLoadFailed }))
   );

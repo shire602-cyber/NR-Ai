@@ -247,5 +247,5 @@
   "onboarding.wq7Cutover": "Cut-over date",
   "onboarding.wq7CutoverHelp": "Your opening balances are as at the end of this day.",
   "onboarding.wq7CutoverRequired": "Choose the cut-over date.",
-  "onboarding.trialStartedNote": "Your {days}-day trial of every feature has started. Plan after the trial: {plan}. Activate it before the trial ends to keep working; change it any time in Settings › {billing}."
+  "onboarding.trialStartedNote": "Your {days}-day Enterprise trial has started. It includes up to {companies} companies, {credits} AI credits per month and {storageGb} GB of storage. Plan after the trial: {plan}. Activate it before the trial ends to keep working. You can change it any time in Settings › {billing}."
 }

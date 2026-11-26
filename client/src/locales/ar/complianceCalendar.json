@@ -1,0 +1,21 @@
+{
+  "complianceCalendar.eyebrow": "الامتثال",
+  "complianceCalendar.next30Days": "خلال 30 يومًا",
+  "complianceCalendar.overdue": "متأخرة",
+  "complianceCalendar.noEventsOnDay": "لا مواعيد في هذا اليوم.",
+  "complianceCalendar.noDeadlinesYet": "لا توجد مواعيد بعد. أضف في الإعدادات بيانات ضريبتي القيمة المضافة والشركات والرخصة.",
+  "complianceCalendar.loadErrorTitle": "تعذّر تحميل مهام الامتثال",
+  "complianceCalendar.obligationsErrorTitle": "تعذّر تحميل بعض مواعيد التقديم",
+  "complianceCalendar.status.upcoming": "قادم",
+  "complianceCalendar.status.completed": "مكتمل",
+  "complianceCalendar.status.overdue": "متأخر",
+  "complianceCalendar.status.dismissed": "مُستبعد",
+  "complianceCalendar.status.pending": "قيد الانتظار",
+  "complianceCalendar.status.in_progress": "قيد التنفيذ",
+  "complianceCalendar.status.cancelled": "ملغى",
+  "complianceCalendar.stillLoading": "المواعيد قيد التحميل.",
+  "complianceCalendar.refreshPaused": "تحديث المواعيد متوقف مؤقتًا. قد تكون المواعيد ناقصة أو قديمة.",
+  "complianceCalendar.deadlinesIncomplete": "المواعيد غير مكتملة.",
+  "complianceCalendar.tasksRefreshErrorTitle": "تعذّر تحديث المهام. تُعرض آخر بيانات محمّلة.",
+  "complianceCalendar.obligationsRefreshErrorTitle": "تعذّر تحديث مواعيد التقديم. تُعرض آخر بيانات محمّلة."
+}

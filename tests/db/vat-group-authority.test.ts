@@ -226,11 +226,21 @@ describe("VAT group management authority and filing exclusivity", () => {
         member.company.id,
         representative.company.id
       );
+      if (first === "representative") {
+        const amendment = await representative.as.post(`/api/vat-returns/${repId}/amend`, {
+          reason: "Correct the group return",
+        });
+        expect(amendment.status, amendment.text).toBe(201);
+        const overlapping = await memberFiling();
+        expectPrivateConflict(overlapping, repId, amendment.body.id, memberId, group.body.id);
+      }
       const final = await h.sql<{ id: string; status: string }>(
         "SELECT id, status FROM vat_returns WHERE id = ANY($1::uuid[]) ORDER BY status",
         [[repId, memberId]]
       );
-      expect(final.map((row) => row.status)).toEqual(["draft", "filed"]);
+      expect(final.map((row) => row.status)).toEqual(
+        first === "representative" ? ["amended", "draft"] : ["draft", "filed"]
+      );
     }
   );
 });

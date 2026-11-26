@@ -29,6 +29,7 @@
  * Column layouts of Xero, QuickBooks Online, Zoho Books and Wafeq exports are
  * mapped in ./mappers.ts. All money is integer fils.
  */
+import { todayDubai } from "@shared/accounting-date";
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { db } from "../../db";
 import {
@@ -42,6 +43,7 @@ import { fromFils, mulRate } from "../../../shared/money";
 import { resolve } from "../../platform/service-registry";
 import type { FxGetRate } from "../fx";
 import { DomainError } from "../../errors";
+import { reserveIssuedNumbers } from "../invoice-numbering.service";
 import { postJournal, withLedgerTx, type PostJournalLineInput } from "../../ledger";
 import { controlAccountsAmong, type ControlLedger } from "../../ledger/control-accounts";
 import { emitDomainEvent } from "../../platform/domain-events";
@@ -704,7 +706,7 @@ export async function validateImport(companyId: string, jobId: string): Promise<
   const warn = (row: number | null, code: string, message: string) =>
     issues.push({ row, level: "warning", code: `V_${code}`, message });
   const cutOver = job.cut_over_date ? String(job.cut_over_date).slice(0, 10) : null;
-  if (cutOver && cutOver > new Date().toISOString().slice(0, 10)) {
+  if (cutOver && cutOver > todayDubai()) {
     err(null, "CUT_OVER_IN_FUTURE", "The cut-over date cannot be in the future");
   }
 
@@ -1532,6 +1534,11 @@ async function commitOpenInvoices(
     created++;
     totalFils += dueBase;
   }
+  // Imported numbers bypass the allocator: move the invoice counter past them so the next
+  // invoice does not collide (the allocator also skips any number already taken).
+  await withLedgerTx(async (tx) => {
+    await reserveIssuedNumbers(companyId, "invoice", tx);
+  });
   return { documentsCreated: created, controlTotalFils: totalFils };
 }
 

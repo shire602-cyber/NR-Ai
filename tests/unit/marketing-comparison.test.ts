@@ -10,7 +10,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { MARKETING_BRAND } from "../../shared/marketing-brand";
-import { PLAN_MONTHLY_PRICES } from "../../shared/plans";
+import { PLAN_MONTHLY_PRICES, planPrice } from "../../shared/plans";
 import {
   COMPARISON_ROWS,
   visibleColumns,
@@ -18,6 +18,9 @@ import {
 import { COMPETITOR_PRICES } from "../../client/src/components/marketing/phase/home/competitor-prices";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+/** Per-month annual price as the table shows it: two decimals, trailing zeros dropped. */
+const money = (n: number) => String(Math.round(n * 100) / 100);
 
 describe("comparison config", () => {
   it("keeps the price config dated and Xero without an AED price", () => {
@@ -50,9 +53,21 @@ describe("comparison config", () => {
   it("reads Muhasib prices from shared/plans.ts", () => {
     const entry = COMPARISON_ROWS.find((r) => r.id === "entry")!;
     const top = COMPARISON_ROWS.find((r) => r.id === "top")!;
-    expect(entry.cells.muhasib.vars?.price).toBe(PLAN_MONTHLY_PRICES.starter);
-    expect(top.cells.muhasib.vars?.price).toBe(PLAN_MONTHLY_PRICES.enterprise);
-    expect([entry.cells.muhasib.vars?.price, top.cells.muhasib.vars?.price]).toEqual([59, 229]);
+    const perMonthOnAnnual = (plan: "starter" | "enterprise") =>
+      Math.round((planPrice(plan, "yearly") / 12) * 100) / 100;
+    expect(entry.cells.muhasib.key).toBe("hxCmpPriceYearly");
+    expect(entry.cells.muhasib.vars).toEqual({
+      monthly: PLAN_MONTHLY_PRICES.starter,
+      yearly: perMonthOnAnnual("starter"),
+    });
+    expect(top.cells.muhasib.vars).toEqual({
+      monthly: PLAN_MONTHLY_PRICES.enterprise,
+      yearly: perMonthOnAnnual("enterprise"),
+    });
+    // Plan prices are VAT-inclusive (shared/plans.ts), so they match the "includes 5% VAT" footnote.
+    expect([entry.cells.muhasib.vars?.yearly, top.cells.muhasib.vars?.yearly]).toEqual([
+      49.17, 190.83,
+    ]);
   });
 
   it("adds VAT to competitor list prices and carries a source on every competitor cell", () => {
@@ -73,6 +88,17 @@ describe("comparison config", () => {
   it("picks the visible columns", () => {
     expect(visibleColumns()).toEqual(["muhasib", "wafeq", "zoho"]);
     expect(visibleColumns("zoho")).toEqual(["muhasib", "zoho"]);
+  });
+
+  it("sources Wafeq bilingual invoices and the multi-client accountant workspace", () => {
+    const bilingual = COMPARISON_ROWS.find((r) => r.id === "bilingual")!;
+    const firm = COMPARISON_ROWS.find((r) => r.id === "firm")!;
+    expect(bilingual.cells.wafeq.key).toBe("hxCmpYes");
+    expect(bilingual.cells.wafeq.source).toBe("https://www.wafeq.com/en-ae/create-invoice-online");
+    expect(bilingual.cells.wafeq.sourceLabelKey).toBe("hxCmpSrcWafeqInvoices");
+    expect(firm.cells.wafeq.key).toBe("hxCmpFirmWafeq");
+    expect(firm.cells.wafeq.source).toBe("https://www.wafeq.com/en-ae/accountants");
+    expect(firm.cells.wafeq.sourceLabelKey).toBe("hxCmpSrcWafeqAccountants");
   });
 });
 
@@ -131,7 +157,9 @@ describe("comparison render", () => {
     }
     const entry = table.querySelector('tr[data-row="entry"]')!;
     expect(entry.querySelector('td[data-column="muhasib"]')?.textContent).toBe(
-      "AED 59 with monthly billing"
+      `AED ${PLAN_MONTHLY_PRICES.starter} with monthly billing or AED ${money(
+        planPrice("starter", "yearly") / 12
+      )} per month with annual billing`
     );
     expect(entry.querySelector('td[data-column="wafeq"]')?.textContent).toBe(
       "AED 72.45 with monthly billing or AED 59.85 per month with annual billing"
@@ -140,7 +168,9 @@ describe("comparison render", () => {
       "Free plan or AED 63 per month with annual billing"
     );
     expect(table.querySelector('tr[data-row="top"] td[data-column="muhasib"]')?.textContent).toBe(
-      "AED 229 with monthly billing"
+      `AED ${PLAN_MONTHLY_PRICES.enterprise} with monthly billing or AED ${money(
+        planPrice("enterprise", "yearly") / 12
+      )} per month with annual billing`
     );
     expect(container.textContent).not.toMatch(/A-Cube|Complyance|ZATCA/i);
   });
@@ -174,6 +204,22 @@ describe("comparison render", () => {
       zohoBilingual.querySelector('a[href="https://www.zoho.com/ae/books/help/e-invoicing/"]')
         ?.textContent
     ).toBe("UAE e-invoicing documentation");
+    const wafeqBilingual = container.querySelector(
+      'tr[data-row="bilingual"] td[data-column="wafeq"]'
+    )!;
+    expect(wafeqBilingual.getAttribute("data-dash")).not.toBe("true");
+    expect(wafeqBilingual.textContent).toContain("Yes");
+    expect(
+      wafeqBilingual.querySelector('a[href="https://www.wafeq.com/en-ae/create-invoice-online"]')
+        ?.textContent
+    ).toBe("Create invoice online");
+    const wafeqFirm = container.querySelector('tr[data-row="firm"] td[data-column="wafeq"]')!;
+    expect(wafeqFirm.getAttribute("data-dash")).not.toBe("true");
+    expect(wafeqFirm.textContent).toContain("Multi-client management");
+    expect(wafeqFirm.textContent).not.toContain("client portal");
+    expect(
+      wafeqFirm.querySelector('a[href="https://www.wafeq.com/en-ae/accountants"]')?.textContent
+    ).toBe("For accountants");
     expect(container.querySelector('a[href="/en/compare/wafeq"]')).not.toBeNull();
     expect(container.querySelector('a[href="/en/compare/zoho"]')).not.toBeNull();
   });
@@ -203,7 +249,16 @@ describe("comparison render", () => {
     );
     const entry = container.querySelector('tr[data-row="entry"]')!;
     expect(entry.querySelector('td[data-column="muhasib"]')?.textContent).toBe(
-      "59 درهم بالدفع الشهري"
+      `${PLAN_MONTHLY_PRICES.starter} درهم بالدفع الشهري أو ${money(
+        planPrice("starter", "yearly") / 12
+      )} درهم شهريًا بالدفع السنوي`
+    );
+    expect(
+      container.querySelector('tr[data-row="top"] td[data-column="muhasib"]')?.textContent
+    ).toBe(
+      `${PLAN_MONTHLY_PRICES.enterprise} درهم بالدفع الشهري أو ${money(
+        planPrice("enterprise", "yearly") / 12
+      )} درهم شهريًا بالدفع السنوي`
     );
     expect(entry.querySelector('td[data-column="wafeq"]')?.textContent).toBe(
       "72.45 درهم بالدفع الشهري أو 59.85 درهم شهريًا بالدفع السنوي"
@@ -221,6 +276,16 @@ describe("comparison render", () => {
     expect(
       container.querySelector('tr[data-row="bilingual"] td[data-column="zoho"]')?.textContent
     ).toContain("ملف PDF بالإنجليزية والعربية للفواتير المرسلة عبر");
+    const arBilingualWafeq = container.querySelector(
+      'tr[data-row="bilingual"] td[data-column="wafeq"]'
+    )!;
+    expect(arBilingualWafeq.getAttribute("data-dash")).not.toBe("true");
+    expect(arBilingualWafeq.textContent).toContain("نعم");
+    expect(arBilingualWafeq.querySelector("a")?.textContent).toBe("إنشاء فاتورة عبر الإنترنت");
+    const arFirmWafeq = container.querySelector('tr[data-row="firm"] td[data-column="wafeq"]')!;
+    expect(arFirmWafeq.getAttribute("data-dash")).not.toBe("true");
+    expect(arFirmWafeq.textContent).toContain("إدارة متعددة العملاء");
+    expect(arFirmWafeq.querySelector("a")?.textContent).toBe("للمحاسبين");
     expect(container.querySelector('a[href="/ar/compare/wafeq"]')).not.toBeNull();
     expect(container.textContent).not.toMatch(/[٠-٩۰-۹]/);
     for (const cell of container.querySelectorAll("tbody td")) {

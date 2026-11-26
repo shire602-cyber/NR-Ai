@@ -17,7 +17,7 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
-import { assertRetentionExpired } from "../services/retention.service";
+import { assertRetentionExpired, computeRetentionExpiry } from "../services/retention.service";
 import { recordAudit } from "../services/audit.service";
 import { emitDomainEventInTx } from "../platform/event-outbox";
 import {
@@ -46,6 +46,7 @@ import {
 import {
   applyBillRevision,
   applyDebitNote,
+  voidDebitNote,
   applyPrepayment,
   batchPaymentCsv,
   createBill,
@@ -81,6 +82,7 @@ import {
   billReviseSchema,
   billUpdateSchema,
   debitNoteCreateSchema,
+  debitNoteVoidSchema,
   inboundBillSchema,
   inboundVendorCreditSchema,
   prepaymentCreateSchema,
@@ -105,11 +107,17 @@ import { docRateSql, payableOpenSql, payableSettledSql } from "../reporting/sett
 const log = createLogger("bill-pay");
 
 /** Load a bill the caller may act on; another tenant's bill is a 404 (never 403). */
-async function loadBill(req: Request): Promise<BillRow & Record<string, unknown>> {
+async function loadBill(req: Request) {
   const { id } = req.params;
   if (!zUuid.safeParse(id).success)
     throw new DomainError("BILL_NOT_FOUND", 404, undefined, "Bill not found");
-  const r = await pool.query("SELECT * FROM vendor_bills WHERE id = $1", [id]);
+  const r = await pool.query<
+    BillRow &
+      Record<string, unknown> & {
+        created_at: Date | string | null;
+        retention_expires_at: Date | string | null;
+      }
+  >("SELECT * FROM vendor_bills WHERE id = $1", [id]);
   const bill = r.rows[0];
   if (!bill) throw new DomainError("BILL_NOT_FOUND", 404, undefined, "Bill not found");
   const ok = await storage.hasCompanyAccess(req.user!.id, bill.company_id);
@@ -516,7 +524,14 @@ export function registerBillPayRoutes(app: Express) {
             undefined,
             "Void the bill's payments first"
           );
-        const reversals = await reverseBillJournal(tx, locked, actor.id, { reason });
+        // Lock old movements' products and the new lines' products together, before the reversal.
+        const reversals = await reverseBillJournal(tx, locked, actor.id, {
+          reason,
+          revisionProductIds:
+            prepared.lines
+              ?.map((l) => l.product_id)
+              .filter((id): id is string => typeof id === "string") ?? null,
+        });
         const updated = await applyBillRevision(tx, bill.id, prepared);
         const lines = await txRows<{
           description: string;
@@ -648,11 +663,18 @@ export function registerBillPayRoutes(app: Express) {
             "This bill was posted to the ledger; void it instead of deleting it"
           );
         }
-        // FTA 5-year retention applies to posted documents.
+        const createdAt = new Date(
+          Math.max(
+            new Date(bill.bill_date).getTime(),
+            new Date(bill.created_at ?? bill.bill_date).getTime()
+          )
+        );
+        const floor = computeRetentionExpiry(createdAt);
+        const storedExpiry = bill.retention_expires_at && new Date(bill.retention_expires_at);
         assertRetentionExpired(
           {
-            createdAt: bill.created_at as string,
-            retentionExpiresAt: bill.retention_expires_at as string | null,
+            createdAt,
+            retentionExpiresAt: storedExpiry && storedExpiry > floor ? storedExpiry : floor,
           },
           "Vendor bill"
         );
@@ -1024,7 +1046,7 @@ export function registerBillPayRoutes(app: Express) {
       const netFils = toFils(String(receipt.amount ?? 0), { rounding: "halfUp" });
       if (netFils <= 0) throw new DomainError("RECEIPT_AMOUNT_INVALID", 422);
       const vatFils = toFils(String(receipt.vatAmount ?? 0), { rounding: "halfUp" });
-      const date = (receipt.date ?? new Date()).toISOString().slice(0, 10);
+      const date = receipt.date ? receipt.date.toISOString().slice(0, 10) : uaeToday();
       const result = await createDraftFromParsedInbound(companyId, req.user!.id, {
         vendorName: receipt.merchant || "Unknown vendor",
         vendorTrn:
@@ -1146,6 +1168,26 @@ export function registerBillPayRoutes(app: Express) {
         bill_status: out.billStatus,
         amount_paid: out.amountPaid,
       });
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/debit-notes/:debitNoteId/void",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("ledger.post"),
+    strictBody(debitNoteVoidSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, debitNoteId } = req.params;
+      if (!zUuid.safeParse(debitNoteId).success) throw new DomainError("DEBIT_NOTE_NOT_FOUND", 404);
+      const out = await voidDebitNote({
+        companyId,
+        debitNoteId,
+        actorId: req.user!.id,
+        reason: req.body.reason,
+        req,
+      });
+      res.json(out.debitNote);
     })
   );
 

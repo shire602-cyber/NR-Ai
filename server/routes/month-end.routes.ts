@@ -42,6 +42,7 @@ import {
   type CloseActor,
 } from "../services/period-lock.service";
 import { fiscalYearStart, loadCompany, monthEnd, monthStart, parseReportDate } from "../reporting";
+import { todayDubai } from "@shared/accounting-date";
 import { assertDifferentActor, companyHasSingleMember } from "../middleware/companyRolePolicy";
 
 function parseStepKey(raw: unknown): CloseStepKey {
@@ -758,7 +759,7 @@ export function registerMonthEndRoutes(app: Express) {
         lockThroughDate,
         fiscalYearStartMonth: company.fiscalYearStartMonth,
         currentFiscalYearStart: fiscalYearStart(
-          new Date().toISOString().slice(0, 10),
+          todayDubai(),
           company.fiscalYearStartMonth
         ),
         locks,

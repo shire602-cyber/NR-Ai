@@ -1170,7 +1170,7 @@ const pendingLocales = new Map<Locale, Promise<void>>();
  * Loaded only by the component that declares them, never by the app-wide load: a failed chunk
  * stays inside that component instead of rejecting `loadLocale` for the whole app.
  */
-const ON_DEMAND_NAMESPACES = new Set(["yearEndClose"]);
+const ON_DEMAND_NAMESPACES = new Set(["yearEndClose", "bankStatement"]);
 
 function pathsFor(locale: Locale, namespaces: string[] | null): string[] {
   const loaders = namespaceLoaders[locale] ?? {};
@@ -1313,7 +1313,7 @@ function expandPlurals(template: string, values: Record<string, string | number>
     if (depth !== 0) break;
     const body = template.slice(bodyStart, i - 1);
     const forms: Record<string, string> = {};
-    const formRe = /(\w+)\s*\{([^{}]*)\}/g;
+    const formRe = /(\w+)\s*\{((?:[^{}]|\{\w+\})*)\}/g;
     for (let f = formRe.exec(body); f; f = formRe.exec(body)) forms[f[1]] = f[2];
     const n = Number(values[m[1]]);
     const category = Number.isFinite(n) ? rules.select(n) : "other";

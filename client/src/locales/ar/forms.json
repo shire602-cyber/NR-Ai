@@ -387,6 +387,7 @@
   "forms.serverErrors.USAGE_LIMIT_REACHED_ai_calls": "استُخدمت أرصدة الذكاء الاصطناعي لهذا الشهر في خطتك. قم بالترقية للمزيد.",
   "forms.serverErrors.NUMBERING_BELOW_ISSUED": "يجب أن يكون الرقم التالي أكبر من آخر رقم صادر.",
   "forms.serverErrors.NUMBERING_PREFIX_IN_USE": "نوع مستند آخر يستخدم هذه البادئة بالفعل.",
+  "forms.serverErrors.NUMBERING_COLLISION": "تعذر العثور على رقم مستند متاح. راجع إعدادات الترقيم.",
   "forms.serverErrors.AUTOMATION_NOT_FOUND": "هذه المهمة التلقائية غير موجودة.",
   "forms.contact.role": "الدور",
   "forms.contact.roleHelp": "سجل واحد للحالتين: جهة الاتصال المورّدة تظهر في الفواتير الواردة وأوامر الشراء.",

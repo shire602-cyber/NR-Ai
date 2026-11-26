@@ -80,6 +80,7 @@ function trialState_(extra: Record<string, unknown> = {}): Record<string, unknow
     trial: trialState(new Date(Date.now() - 4 * 86400_000)),
     subscription: { id: "s1", planId: "free", status: "active", billingCycle: "monthly" },
     usage: undefined,
+    usageState: { loaded: true, loadError: null, refreshError: false, retry: vi.fn() },
     chosenPlan: chosen,
     activationRequestedAt: null,
     ...extra,

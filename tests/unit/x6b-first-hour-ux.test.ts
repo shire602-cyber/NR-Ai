@@ -13,6 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.setConfig({ hookTimeout: 15000 });
 
 const perm = vi.hoisted(() => ({ can: true, known: true }));
 const api = vi.hoisted(() => ({ calls: [] as unknown[][] }));

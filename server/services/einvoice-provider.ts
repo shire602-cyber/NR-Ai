@@ -28,11 +28,18 @@ export interface EInvoiceSubmission {
   uuid: string;
   xml: string;
   documentType?: string;
+  /** Exact amounts in document currency for providers whose line fields require it. */
+  documentCurrencyLines?: EInvoiceDocumentCurrencyLine[];
   /** E2: our company id, for providers that address each submission to a per-company source. */
   companyId?: string;
   /** When set, verify that the routed request uses this exact provider deduplication scope. */
   scopeFingerprint?: string;
   context?: EInvoiceProviderContext;
+}
+
+export interface EInvoiceDocumentCurrencyLine {
+  taxAmount: number;
+  lineTotal: number;
 }
 
 /** Local routing data read under the same lock as the handoff authorization. */
