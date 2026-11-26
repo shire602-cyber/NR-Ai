@@ -43,6 +43,25 @@ describe("buildEInvoiceDocument", () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.xml).toContain("<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>");
   });
+  it("rebuilds an unsent stored document with stale VAT and preserves its UUID", () => {
+    const invoice = baseInvoice();
+    const generated = buildEInvoiceDocument(invoice, lines, company, ctx);
+    expect(generated.ok).toBe(true);
+    if (!generated.ok) return;
+    const stale = generated.xml.replaceAll(">50.00<", ">49.99<");
+    const saved = {
+      ...invoice,
+      einvoiceXml: stale,
+      einvoiceHash: "previous-hash",
+      einvoiceUuid: generated.uuid,
+    };
+    expect(buildEInvoiceDocument(saved, lines, company, ctx)).toEqual(generated);
+    expect(buildEInvoiceDocument(saved, lines, company, ctx, true)).toMatchObject({
+      ok: true,
+      xml: stale,
+      hash: "previous-hash",
+    });
+  });
   it("returns issues for an invalid invoice (missing supplier TRN)", () => {
     const r = buildEInvoiceDocument(baseInvoice(), lines, { ...company, trnVatNumber: null });
     expect(r.ok).toBe(false);

@@ -13,6 +13,7 @@ import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { filsToNumber } from "../../shared/money";
 import {
   computeEInvoiceAmounts,
+  frozenEInvoiceAmountsMatch,
   validateForEInvoicing,
   generateEInvoiceXML,
   readEInvoiceDocumentType,
@@ -166,7 +167,8 @@ export function buildEInvoiceDocument(
   invoice: Invoice,
   lines: InvoiceLine[],
   company: Company,
-  ctx: EInvoiceContext = {}
+  ctx: EInvoiceContext = {},
+  providerAttempted = false
 ):
   | { ok: true; xml: string; uuid: string; hash: string; documentType: string | null }
   | { ok: false; issues: EInvoiceIssue[] } {
@@ -183,7 +185,15 @@ export function buildEInvoiceDocument(
   // E1: a regenerated document keeps the invoice's e-invoice UUID, so a resubmission after a
   // fix is the same document to the ASP (idempotency key) rather than a new one.
   const uuid = ctx.options?.uuid ?? invoice.einvoiceUuid ?? undefined;
-  if (invoice.einvoiceXml && invoice.einvoiceUuid && invoice.einvoiceHash) {
+  if (
+    invoice.einvoiceXml &&
+    invoice.einvoiceUuid &&
+    invoice.einvoiceHash &&
+    (providerAttempted ||
+      invoice.einvoiceProviderMessageId ||
+      invoice.einvoiceSubmittedAt ||
+      frozenEInvoiceAmountsMatch(invoice.einvoiceXml, invoice, lines))
+  ) {
     return {
       ok: true,
       xml: invoice.einvoiceXml,
@@ -232,6 +242,7 @@ export async function prepareEInvoiceSubmission(args: {
   company: Company;
   ctx?: EInvoiceContext;
   now?: Date;
+  attempts?: number;
 }): Promise<PreparedSubmission | SubmitErr> {
   const { invoice, lines, company } = args;
   const now = args.now ?? new Date();
@@ -280,7 +291,7 @@ export async function prepareEInvoiceSubmission(args: {
       message: EINVOICE_NOT_REQUIRED_MESSAGE,
     };
   }
-  const built = buildEInvoiceDocument(invoice, lines, company, args.ctx);
+  const built = buildEInvoiceDocument(invoice, lines, company, args.ctx, (args.attempts ?? 0) > 0);
   if (!built.ok) {
     return {
       ok: false,

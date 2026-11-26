@@ -202,6 +202,70 @@ it("preserves the posted VAT and payable when VAT rounds up on two AED 0.10 line
   ).toEqual(["0.01", "0.01"]);
 }, 60_000);
 
+it("validates six AED 0.10 lines with AED 0.06 posted line VAT and AED 0.66 payable", async () => {
+  const result = await prepareEInvoiceSubmission({
+    invoice: { ...invoice, subtotal: 0.6, vatAmount: 0.06, total: 0.66 },
+    lines: Array.from({ length: 6 }, () => ({
+      ...standard.lines[1],
+      quantity: 1,
+      unitPrice: 0.1,
+      netAmount: 0.1,
+    })),
+    company: fixtureCompany,
+    ctx: { customer: standard.customer, options: standard.opts },
+    now: new Date("2027-01-15T12:00:00Z"),
+  });
+  expect(result).toMatchObject({
+    ok: true,
+    validation: { valid: true, schematron: { available: true } },
+  });
+  if (!result.ok) return;
+  const root = parseXml(result.xml).documentElement;
+  expect(textAt(root, "cac:TaxTotal/cbc:TaxAmount")).toBe("0.03");
+  expect(textAt(root, "cac:LegalMonetaryTotal/cbc:PayableRoundingAmount")).toBe("0.03");
+  expect(textAt(root, "cac:LegalMonetaryTotal/cbc:PayableAmount")).toBe("0.66");
+  expect(
+    children(root, "cac:InvoiceLine").map((row) =>
+      textAt(row, "cac:ItemPriceExtension/cac:TaxTotal/cbc:TaxAmount")
+    )
+  ).toEqual(Array(6).fill("0.01"));
+}, 60_000);
+
+it("keeps the posted one-fil allowance on the zero-rated line after quantity precision loss", async () => {
+  const result = await prepareEInvoiceSubmission({
+    invoice: {
+      ...invoice,
+      discountType: "amount",
+      discountValue: 0.01,
+      discountAmount: 0.01,
+      subtotal: 2_000_000,
+      vatAmount: 50_000,
+      total: 2_050_000,
+    },
+    lines: [0, 0.01].map((share) => ({
+      ...standard.lines[1],
+      quantity: Math.fround((1_000_000 + share) / 100),
+      unitPrice: 100,
+      vatRate: share ? 0 : 0.05,
+      vatSupplyType: share ? "zero_rated" : "standard_rated",
+      documentDiscountAmount: share,
+      netAmount: 1_000_000,
+    })),
+    company: fixtureCompany,
+    ctx: { customer: standard.customer, options: standard.opts },
+    now: new Date("2027-01-15T12:00:00Z"),
+  });
+  expect(result).toMatchObject({ ok: true, validation: { valid: true } });
+  if (!result.ok) return;
+  const root = parseXml(result.xml).documentElement;
+  expect(
+    children(root, "cac:InvoiceLine").map((row) => textAt(row, "cbc:LineExtensionAmount"))
+  ).toEqual(["1000000.00", "1000000.01"]);
+  expect(children(root, "cac:AllowanceCharge")).toHaveLength(1);
+  expect(textAt(root, "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")).toBe("Z");
+  expect(textAt(root, "cac:AllowanceCharge/cbc:Amount")).toBe("0.01");
+}, 60_000);
+
 it("expresses both UAE line extension amounts in AED on a USD tax invoice", () => {
   // PINT AE BTAE-08 and BTAE-10 are denominated in AED, even when the invoice is in USD.
   const foreign = PINT_AE_FIXTURES.find((fixture) => fixture.name === "foreign currency")!;

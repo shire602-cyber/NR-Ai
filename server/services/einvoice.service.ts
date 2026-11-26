@@ -260,14 +260,15 @@ export function computeEInvoiceAmounts(invoice: InvoiceLike, lines: InvoiceLine[
   const weights = estimatedGross.map((gross, i) =>
     Math.max(0, gross.toNumber() - lineDiscounts[i])
   );
-  const shares =
-    legacy?.lines.map((line) => line.documentDiscountFils) ??
-    (documentDiscountFils > 0 && lines.length
-      ? allocate(
-          documentDiscountFils,
-          weights.some((weight) => weight > 0) ? weights : weights.map(() => 1)
-        )
-      : lines.map(() => 0));
+  const shares = lines.every((line) => line.documentDiscountAmount != null)
+    ? lines.map((line) => Math.abs(toFils(line.documentDiscountAmount ?? 0)))
+    : (legacy?.lines.map((line) => line.documentDiscountFils) ??
+      (documentDiscountFils > 0 && lines.length
+        ? allocate(
+            documentDiscountFils,
+            weights.some((weight) => weight > 0) ? weights : weights.map(() => 1)
+          )
+        : lines.map(() => 0)));
   const totals = sumSalesLines(
     stored.map((amount, i) => {
       if (!amount) return legacy!.lines[i];
@@ -334,8 +335,26 @@ export function taxBreakdown(computed: ComputedEInvoiceLine[]) {
   }
   return [...groups.values()].map((g) => ({
     ...g,
+    // PINT AE validates the category total against the category taxable base.
+    // When the posted line VAT is outside its two-fil tolerance, carry the
+    // difference in PayableRoundingAmount and retain the VAT on each line.
+    taxFils: categoryVatFils(g),
     reasonCode: classifySupplyForCategory(g.category).exemptionReasonCode ?? null,
   }));
+}
+
+function categoryVatFils(group: {
+  category: UblCategory;
+  rate: number;
+  taxableFils: number;
+  taxFils: number;
+}) {
+  if (group.category !== "S") return group.taxFils;
+  const calculated = new Decimal(group.taxableFils)
+    .times(group.rate)
+    .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+    .toNumber();
+  return Math.abs(group.taxFils - calculated) > 2 ? calculated : group.taxFils;
 }
 
 function classifySupplyForCategory(category: UblCategory): SupplyClassification {
@@ -524,6 +543,8 @@ export function generateEInvoiceXML(
   const payableFils = totals.totalFils;
   const subtotalFils = breakdown.reduce((s, g) => s + g.taxableFils, 0);
   const vatFils = breakdown.reduce((s, g) => s + g.taxFils, 0);
+  const taxInclusiveFils = subtotalFils + vatFils;
+  const payableRoundingFils = payableFils - taxInclusiveFils;
   const lineExtTotal = computed.reduce((s, l) => s + l.lineExtensionFils, 0);
   const docAllowanceFils = breakdown.reduce((s, g) => s + g.allowanceFils, 0);
 
@@ -730,9 +751,11 @@ export function generateEInvoiceXML(
     null,
     amountEl("cbc:LineExtensionAmount", lineExtTotal, currency),
     amountEl("cbc:TaxExclusiveAmount", subtotalFils, currency),
-    amountEl("cbc:TaxInclusiveAmount", payableFils, currency),
+    amountEl("cbc:TaxInclusiveAmount", taxInclusiveFils, currency),
     docAllowanceFils > 0 && amountEl("cbc:AllowanceTotalAmount", docAllowanceFils, currency),
     opts.paidAtIssue && amountEl("cbc:PrepaidAmount", payableFils, currency),
+    payableRoundingFils !== 0 &&
+      el("cbc:PayableRoundingAmount", { currencyID: currency }, fromFils(payableRoundingFils)),
     amountEl("cbc:PayableAmount", opts.paidAtIssue ? 0 : payableFils, currency)
   );
   const paymentTerms = termsText && el("cac:PaymentTerms", null, el("cbc:Note", null, termsText));
@@ -869,6 +892,35 @@ export function frozenEInvoiceLineCurrencyIssue(xml: string): string | null {
     // Unparseable frozen XML must stop the queued job (schema invalid), never throw out of the
     // claim transaction and leave the job due forever.
     return "EINVOICE_SCHEMA_INVALID";
+  }
+}
+
+/** Compare a frozen document with the amounts a fresh export would report. */
+export function frozenEInvoiceAmountsMatch(
+  xml: string,
+  invoice: Invoice,
+  lines: InvoiceLine[]
+): boolean {
+  try {
+    const root = parseXml(xml).documentElement;
+    const currency = (invoice.currency || "AED").toUpperCase();
+    const vat = all(root, "cac:TaxTotal/cbc:TaxAmount").find(
+      (amount) => attr(amount, "currencyID") === currency
+    );
+    const monetary = first(root, "cac:LegalMonetaryTotal");
+    if (!monetary) return false;
+    const payable = tryToFils(textAt(monetary, "cbc:PayableAmount"));
+    const prepaid = tryToFils(textAt(monetary, "cbc:PrepaidAmount")) ?? 0;
+    const expectedVat = sumFils(
+      taxBreakdown(computeEInvoiceAmounts(invoice, lines).lines).map((group) => group.taxFils)
+    );
+    return (
+      payable !== null &&
+      payable + prepaid === Math.abs(toFils(invoice.total)) &&
+      tryToFils(text(vat)) === expectedVat
+    );
+  } catch {
+    return false;
   }
 }
 

@@ -174,6 +174,7 @@ export function lineRow(invoiceId: string, r: PreparedSalesLine) {
     discountType: r.discountType,
     discountValue: r.discountValue,
     discountAmount: r.discountAmount,
+    documentDiscountAmount: r.documentDiscountAmount,
     netAmount: r.netAmount,
     productId: r.productId,
     costCenterId: r.costCenterId,

@@ -81,26 +81,122 @@ async function selectComplyance(companyId: string) {
 
 /** Rewrite a queued snapshot to the earlier shape: line amounts in the document currency. */
 async function freezePreUpgradeSnapshot(invoiceId: string) {
-  const { sha256Hex } = await import("../../server/services/einvoice/store");
   const current = (await storedDocument(invoiceId)).einvoice_xml as string;
   const legacy = current.replace(
     /<cac:ItemPriceExtension>[\s\S]*?<\/cac:ItemPriceExtension>/g,
     (block) => block.replaceAll('currencyID="AED"', 'currencyID="USD"')
   );
   expect(legacy).not.toBe(current);
-  await h.sql("UPDATE invoices SET einvoice_xml = $1, einvoice_hash = $2 WHERE id = $3", [
-    legacy,
-    sha256Hex(legacy),
-    invoiceId,
-  ]);
-  await h.sql("UPDATE einvoice_documents SET xml_hash = $1 WHERE invoice_id = $2", [
-    sha256Hex(legacy),
-    invoiceId,
-  ]);
+  await freezeSnapshot(invoiceId, legacy);
   return legacy;
 }
 
+async function freezeSnapshot(invoiceId: string, xml: string) {
+  const { sha256Hex } = await import("../../server/services/einvoice/store");
+  const hash = sha256Hex(xml);
+  await h.sql("UPDATE invoices SET einvoice_xml = $1, einvoice_hash = $2 WHERE id = $3", [
+    xml,
+    hash,
+    invoiceId,
+  ]);
+  await h.sql("UPDATE einvoice_documents SET xml_hash = $1 WHERE invoice_id = $2", [
+    hash,
+    invoiceId,
+  ]);
+}
+
 describe("Durable UAE e-invoice submission queue", () => {
+  it("[PR174] stores the document allowance before quantity precision is lost", async () => {
+    const args = await readyInvoice({
+      discountType: "amount",
+      discountValue: 0.01,
+      lines: [
+        { description: "Consulting", quantity: 10_000, unitPrice: 100, vatRate: 5 },
+        {
+          description: "Equipment",
+          quantity: 10_000.0001,
+          unitPrice: 100,
+          vatRate: 0,
+          vatSupplyType: "zero_rated",
+        },
+      ],
+    });
+    const rows = await h.sql(
+      `SELECT quantity, document_discount_amount, net_amount FROM invoice_lines
+       WHERE invoice_id = $1 ORDER BY description`,
+      [args.invoice.id]
+    );
+    expect(
+      rows.map((row) => [
+        Number(row.quantity),
+        Number(row.document_discount_amount),
+        Number(row.net_amount),
+      ])
+    ).toEqual([
+      [10_000, 0, 1_000_000],
+      [10_000, 0.01, 1_000_000],
+    ]);
+
+    const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+      await import("../../server/services/einvoice/workflow");
+    const now = new Date();
+    const provider = fakeProvider();
+    const queued = await enqueueEInvoiceSubmission({ ...args, provider, now });
+    expect(queued.ok, JSON.stringify(queued)).toBe(true);
+    const { parseXml, textAt } = await import("../../server/services/einvoice/dom");
+    const xml = (await storedDocument(args.invoice.id)).einvoice_xml as string;
+    expect(
+      textAt(parseXml(xml).documentElement, "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
+    ).toBe("Z");
+    expect(await runEInvoiceRetries(now, () => provider)).toEqual({ attempted: 1, submitted: 1 });
+  });
+
+  it.each([false, true])(
+    "[PR174] reconciles stale AED totals before first dispatch (attempted: %s)",
+    async (attempted) => {
+      const args = await readyInvoice({
+        lines: Array.from({ length: 2 }, () => ({
+          description: "Consulting",
+          quantity: 1,
+          unitPrice: 0.1,
+          vatRate: 5,
+        })),
+      });
+      expect(args.invoice).toMatchObject({ vatAmount: 0.02, total: 0.22 });
+      const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+        await import("../../server/services/einvoice/workflow");
+      const sent: string[] = [];
+      const provider = fakeProvider({
+        submit: async ({ uuid, xml }) => {
+          sent.push(xml);
+          return { providerMessageId: uuid, status: "submitted" };
+        },
+      });
+      const now = new Date();
+      expect((await enqueueEInvoiceSubmission({ ...args, provider, now })).ok).toBe(true);
+      const current = await storedDocument(args.invoice.id);
+      const original = current.einvoice_xml as string;
+      const stale = original.replaceAll(">0.22<", ">0.21<").replaceAll(">0.02<", ">0.01<");
+      expect(stale).not.toBe(original);
+      await freezeSnapshot(args.invoice.id, stale);
+      if (attempted) {
+        await h.sql(
+          `UPDATE einvoice_documents SET attempts = 1,
+           validation = jsonb_set(validation::jsonb, '{submission,providerAttempted}', 'true')
+         WHERE invoice_id = $1`,
+          [args.invoice.id]
+        );
+      }
+      expect(await runEInvoiceRetries(now, () => provider)).toEqual({ attempted: 1, submitted: 1 });
+      expect(sent).toEqual([attempted ? stale : original]);
+      expect(await storedDocument(args.invoice.id)).toMatchObject({
+        einvoice_uuid: current.einvoice_uuid,
+        einvoice_xml: sent[0],
+        attempts: attempted ? 2 : 1,
+      });
+    }
+  );
+
   it("[PR174] stops a never-attempted pre-upgrade FX snapshot and sends a regenerated one", async () => {
     const args = await readyInvoice({ currency: "USD", exchangeRate: 3.6725 });
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =

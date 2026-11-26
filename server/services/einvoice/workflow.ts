@@ -65,7 +65,11 @@ import {
 } from "../einvoice-status";
 import { loadEInvoiceContext } from "./context";
 import { invoiceReportingDeadline, invoiceReportingRequired } from "./reporting";
-import { frozenEInvoiceDispatchIssue, frozenEInvoiceLineCurrencyIssue } from "../einvoice.service";
+import {
+  frozenEInvoiceAmountsMatch,
+  frozenEInvoiceDispatchIssue,
+  frozenEInvoiceLineCurrencyIssue,
+} from "../einvoice.service";
 import { PEPPOL_SCHEME_UAE_TIN } from "./pint-ae-codes";
 import {
   archiveEInvoiceXml,
@@ -704,7 +708,7 @@ async function claimQueuedSubmission(
       return null;
     }
     const ambiguous = !!doc.submitClaimedAt || AMBIGUOUS_CODES.has(doc.lastErrorCode ?? "");
-    const built = frozenEInvoice(invoice, doc);
+    let built = frozenEInvoice(invoice, doc);
     if (!built) {
       await stopQueuedSubmission(tx, invoice, "EINVOICE_SCHEMA_INVALID", now, ambiguous);
       return null;
@@ -713,16 +717,53 @@ async function claimQueuedSubmission(
       await stopQueuedSubmission(tx, invoice, unissuedInvoiceCode(invoice), now);
       return null;
     }
-    // Only a snapshot no provider has seen may be replaced. Submitting again rebuilds it.
+    // Only a snapshot no provider has seen may be replaced.
     // An authorized correction or definitive-refusal retry is enqueued with providerAttempted
     // copied from its predecessor, but the new revision itself has not been sent: enqueue sets
     // verifiedEmailRequired only for those, and attempts stays 0 until this first claim.
     const initialVerifiedRevision = metadata.verifiedEmailRequired === true && doc.attempts === 0;
+    let rebuilt = false;
     if (!ambiguous && (!submissionTriedProvider(doc) || initialVerifiedRevision)) {
-      const outdated = frozenEInvoiceLineCurrencyIssue(built.xml);
-      if (outdated) {
-        await stopQueuedSubmission(tx, invoice, outdated, now);
-        return null;
+      const lines = await tx
+        .select()
+        .from(invoiceLines)
+        .where(eq(invoiceLines.invoiceId, invoice.id));
+      if (frozenEInvoiceAmountsMatch(built.xml, invoice, lines)) {
+        const outdated = frozenEInvoiceLineCurrencyIssue(built.xml);
+        if (outdated) {
+          await stopQueuedSubmission(tx, invoice, outdated, now);
+          return null;
+        }
+      } else {
+        const [company] = await tx
+          .select()
+          .from(companies)
+          .where(eq(companies.id, invoice.companyId));
+        if (!company || company.deletedAt) {
+          await stopQueuedSubmission(tx, invoice, "EINVOICE_PROVIDER_NOT_CONFIGURED", now);
+          return null;
+        }
+        const draft = { ...invoice, einvoiceStatus: "generated" as const, einvoiceXml: null };
+        const ctx = await loadEInvoiceContext(draft, company, lines, tx);
+        const replacement = await prepareEInvoiceSubmission({
+          invoice: draft,
+          lines,
+          company,
+          ctx,
+          now,
+        });
+        if (!replacement.ok) {
+          await stopQueuedSubmission(tx, invoice, replacement.code, now);
+          return null;
+        }
+        built = replacement;
+        rebuilt = true;
+        await updateInvoiceInTransaction(tx, invoice, {
+          einvoiceStatus: "queued",
+          einvoiceXml: built.xml,
+          einvoiceHash: built.hash,
+          einvoiceUuid: built.uuid,
+        });
       }
     }
 
@@ -739,19 +780,32 @@ async function claimQueuedSubmission(
         document: {
           attempts: attempt,
           submitClaimedAt: now,
+          ...(rebuilt
+            ? {
+                uuid: built.uuid,
+                xmlHash: built.hash,
+                documentType: built.documentType,
+                validatedAt: now,
+              }
+            : {}),
           // A correction queued before this field was introduced still freezes the candidate
           // in the claim transaction, which commits before any provider request.
-          ...(metadata.correctionOf && !metadata.correctionCandidate
+          ...(rebuilt || (metadata.correctionOf && !metadata.correctionCandidate)
             ? {
                 validation: {
-                  ...documentValidation(doc),
+                  ...built.validation,
                   submission: {
                     ...documentSubmissionSnapshot(doc),
-                    correctionCandidate: correctionRevision(
-                      built,
-                      recordedReportingRequired(doc),
-                      doc.reportBy
-                    ),
+                    ...(rebuilt ? { documentCurrencyLines: built.documentCurrencyLines } : {}),
+                    ...(metadata.correctionOf
+                      ? {
+                          correctionCandidate: correctionRevision(
+                            built,
+                            recordedReportingRequired(doc),
+                            doc.reportBy
+                          ),
+                        }
+                      : {}),
                   },
                 },
               }
