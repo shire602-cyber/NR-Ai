@@ -518,7 +518,14 @@ export function registerBillPayRoutes(app: Express) {
             undefined,
             "Void the bill's payments first"
           );
-        const reversals = await reverseBillJournal(tx, locked, actor.id, { reason });
+        // Lock old movements' products and the new lines' products together, before the reversal.
+        const reversals = await reverseBillJournal(tx, locked, actor.id, {
+          reason,
+          revisionProductIds:
+            prepared.lines
+              ?.map((l) => l.product_id)
+              .filter((id): id is string => typeof id === "string") ?? null,
+        });
         const updated = await applyBillRevision(tx, bill.id, prepared);
         const lines = await txRows<{
           description: string;

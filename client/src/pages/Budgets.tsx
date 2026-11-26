@@ -83,11 +83,13 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslation, translateNow } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { budgetCategoryLabel } from "@/lib/budget-categories";
+import { budgetScopeChange, type BudgetScopeChange } from "@/lib/budget-scope";
+import { BudgetScopeChangeDialog } from "@/components/budgets/BudgetScopeChangeDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import { Money } from "@/components/ui/money";
@@ -279,10 +281,92 @@ function isoDay(v: string | null | undefined): string {
   return calendarDayKey(v) || String(v).slice(0, 10);
 }
 
+/** Stable empty values: a missing read never gets a fresh `[]` on every render. */
+const NO_PLANS: BudgetPlan[] = [];
+const NO_LINES: BudgetLine[] = [];
+
+type ReadView = "loading" | "paused" | "error" | "ready";
+
+/** A paused read replaces the empty state, while cached rows can stay visible. */
+function readView(
+  q: { data: unknown; isLoadingError: boolean; fetchStatus: string },
+  hasRows: boolean
+): ReadView {
+  if (q.fetchStatus === "paused" && !hasRows) return "paused";
+  if (q.data !== undefined) return "ready";
+  if (q.isLoadingError) return "error";
+  return "loading";
+}
+
+/** Shows the read status above cached rows or in place of the empty state. */
+function ReadStatus({
+  view,
+  errorText,
+  onRetry,
+  testId,
+  refresh,
+}: {
+  view: ReadView;
+  refresh?: { fetchStatus: string; isRefetchError: boolean };
+  errorText: string;
+  onRetry: () => void;
+  testId: string;
+}) {
+  const { t } = useTranslation();
+  if (view === "ready") {
+    const paused = refresh?.fetchStatus === "paused";
+    return paused || refresh?.isRefetchError ? (
+      <RefreshNotice paused={paused} onRetry={onRetry} />
+    ) : null;
+  }
+  if (view === "error") {
+    return (
+      <div
+        className="flex flex-col items-center gap-3 py-8 text-center"
+        role="alert"
+        data-testid={testId}
+      >
+        <p className="text-sm text-muted-foreground">{errorText}</p>
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          {t.tryAgain}
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="py-8 text-center text-muted-foreground"
+      role="status"
+      data-testid={`${testId}-${view}`}
+    >
+      {view === "paused" ? t["budgets.readPaused"] : t.loading}
+    </div>
+  );
+}
+
+/** Shown above cached rows while a refresh is paused or has failed. */
+function RefreshNotice({ paused, onRetry }: { paused: boolean; onRetry: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted px-3 py-2 text-sm text-foreground"
+      role="status"
+      data-testid={paused ? "budgets-refresh-paused" : "budgets-refresh-failed"}
+    >
+      <span>{paused ? t["budgets.readPaused"] : t["budgets.refreshFailed"]}</span>
+      {!paused && (
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          {t.tryAgain}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function Budgets() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { company, companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { company, companyId, companyListState, retryCompanyList } = useDefaultCompany();
   const fyStartMonth = (company as { fiscalYearStartMonth?: number } | null | undefined)
     ?.fiscalYearStartMonth;
 
@@ -294,25 +378,35 @@ export default function Budgets() {
   const [editingLine, setEditingLine] = useState<BudgetLine | null>(null);
   const [budgetToDelete, setBudgetToDelete] = useState<string | null>(null);
   const [lineToDelete, setLineToDelete] = useState<string | null>(null);
+  const [scopeChange, setScopeChange] = useState<BudgetScopeChange | null>(null);
   // E2 (J4-r2): a viewer is not offered writes the server refuses (403).
   const { gate } = useCompanyPermission();
 
   // ─── Queries ────────────────────────────────────────────
 
-  const { data: budgetPlans = [], isLoading: isLoadingBudgets } = useQuery<BudgetPlan[]>({
+  // The default query function forwards react-query's AbortSignal to fetch. `data` is kept
+  // undefined until a response arrives so "not loaded" is never read as "no rows".
+  const budgetsQuery = useQuery<BudgetPlan[]>({
     queryKey: [`/api/companies/${companyId}/budget-plans`],
     enabled: !!companyId,
   });
+  const budgetPlans = budgetsQuery.data ?? NO_PLANS;
+  const budgetsView = readView(budgetsQuery, budgetPlans.length > 0);
+  const refetchBudgets = budgetsQuery.refetch;
 
-  const { data: budgetLines = [], isLoading: isLoadingLines } = useQuery<BudgetLine[]>({
+  const linesQuery = useQuery<BudgetLine[]>({
     queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
     enabled: !!selectedBudget?.id,
   });
+  const budgetLines = linesQuery.data ?? NO_LINES;
+  const linesView = readView(linesQuery, budgetLines.length > 0);
 
-  const { data: varianceData, isLoading: isLoadingVariance } = useQuery<VarianceData>({
+  const varianceQuery = useQuery<VarianceData>({
     queryKey: [`/api/budget-plans/${selectedBudget?.id}/variance`],
     enabled: !!selectedBudget?.id && activeTab === "variance",
   });
+  const varianceData = varianceQuery.data;
+  const varianceView = readView(varianceQuery, (varianceData?.varianceLines.length ?? 0) > 0);
 
   // E2 (J3-r2): every line budgets one P&L account (not a control account), so actuals come
   // from the ledger and income is never added to expenses.
@@ -380,7 +474,7 @@ export default function Budgets() {
     mutationFn: (data: BudgetFormData) =>
       apiRequest("POST", `/api/companies/${companyId}/budget-plans`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
       toast({
         title: translateNow("toasts.budgetCreated"),
         description: translateNow("toasts.theBudgetPlanHasBeenCreatedSuccessfully"),
@@ -401,7 +495,7 @@ export default function Budgets() {
     mutationFn: ({ id, data }: { id: string; data: Partial<BudgetFormData> }) =>
       apiRequest("PATCH", `/api/budget-plans/${id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
       toast({
         title: translateNow("toasts.budgetUpdated"),
         description: translateNow("toasts.theBudgetPlanHasBeenUpdated"),
@@ -422,7 +516,7 @@ export default function Budgets() {
   const deleteBudgetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/budget-plans/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
       toast({
         title: translateNow("toasts.budgetDeleted"),
         description: translateNow("toasts.theBudgetPlanHasBeenDeleted"),
@@ -441,7 +535,7 @@ export default function Budgets() {
   const approveBudgetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/approve`, {}),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
       toast({
         title: translateNow("toasts.budgetApproved"),
         description: translateNow("toasts.theBudgetHasBeenApproved"),
@@ -456,21 +550,43 @@ export default function Budgets() {
     },
   });
 
-  const refreshBudgets = () =>
-    queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+  const refreshBudgets = () => refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
+
+  const toastNewVersionCreated = () =>
+    toast({
+      title: tr(locale, "New draft version created", "تم إنشاء نسخة مسودة جديدة"),
+      description: tr(
+        locale,
+        "Edit the draft, then have a different approver approve it.",
+        "عدّل المسودة ثم اطلب اعتمادها من معتمد آخر."
+      ),
+    });
+
+  const toastBudgetCopied = () =>
+    toast({
+      title: tr(locale, "Budget copied", "تم نسخ الموازنة"),
+      description: tr(
+        locale,
+        "A draft for the next year was created.",
+        "تم إنشاء مسودة للسنة التالية."
+      ),
+    });
+
+  /** Success is held back until the user acknowledges a changed cost-centre scope. */
+  const acknowledgeScopeChange = () => {
+    const action = scopeChange?.action;
+    setScopeChange(null);
+    if (action === "copy") toastBudgetCopied();
+    else if (action === "newVersion") toastNewVersionCreated();
+  };
 
   const newVersionMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/new-version`, {}),
-    onSuccess: () => {
+    onSuccess: (result: unknown) => {
       refreshBudgets();
-      toast({
-        title: tr(locale, "New draft version created", "تم إنشاء نسخة مسودة جديدة"),
-        description: tr(
-          locale,
-          "Edit the draft, then have a different approver approve it.",
-          "عدّل المسودة ثم اطلب اعتمادها من معتمد آخر."
-        ),
-      });
+      const change = budgetScopeChange("newVersion", result);
+      if (change) setScopeChange(change);
+      else toastNewVersionCreated();
     },
     onError: (error: Error) => {
       toast({
@@ -484,16 +600,11 @@ export default function Budgets() {
   const copyBudgetMutation = useMutation({
     mutationFn: ({ id, fiscalYear }: { id: string; fiscalYear: number }) =>
       apiRequest("POST", `/api/budget-plans/${id}/copy`, { fiscalYear }),
-    onSuccess: () => {
+    onSuccess: (result: unknown) => {
       refreshBudgets();
-      toast({
-        title: tr(locale, "Budget copied", "تم نسخ الموازنة"),
-        description: tr(
-          locale,
-          "A draft for the next year was created.",
-          "تم إنشاء مسودة للسنة التالية."
-        ),
-      });
+      const change = budgetScopeChange("copy", result);
+      if (change) setScopeChange(change);
+      else toastBudgetCopied();
     },
     onError: (error: Error) => {
       toast({
@@ -508,9 +619,7 @@ export default function Budgets() {
     mutationFn: ({ id, csv }: { id: string; csv: string }) =>
       apiRequest("POST", `/api/budget-plans/${id}/import`, { csv }),
     onSuccess: (result: { imported: number }) => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
-      });
+      refreshAfterWrite([`/api/budget-plans/${selectedBudget?.id}/lines`]);
       refreshBudgets();
       toast({
         title: tr(locale, "Import complete", "اكتمل الاستيراد"),
@@ -561,10 +670,8 @@ export default function Budgets() {
     mutationFn: (data: BudgetLineFormData) =>
       apiRequest("POST", `/api/budget-plans/${selectedBudget?.id}/lines`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
-      });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshAfterWrite([`/api/budget-plans/${selectedBudget?.id}/lines`]);
+      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
       toast({
         title: translateNow("toasts.lineAdded"),
         description: translateNow("toasts.budgetLineHasBeenAdded"),
@@ -586,10 +693,8 @@ export default function Budgets() {
     mutationFn: ({ id, data }: { id: string; data: Partial<BudgetLineFormData> }) =>
       apiRequest("PATCH", `/api/budget-lines/${id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
-      });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshAfterWrite([`/api/budget-plans/${selectedBudget?.id}/lines`]);
+      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
       toast({
         title: translateNow("toasts.lineUpdated"),
         description: translateNow("toasts.budgetLineHasBeenUpdated"),
@@ -610,10 +715,8 @@ export default function Budgets() {
   const deleteLineMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/budget-lines/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
-      });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshAfterWrite([`/api/budget-plans/${selectedBudget?.id}/lines`]);
+      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
       toast({
         title: translateNow("toasts.lineDeleted"),
         description: translateNow("toasts.budgetLineHasBeenRemoved"),
@@ -791,25 +894,40 @@ export default function Budgets() {
 
   // ─── Loading State ─────────────────────────────────────
 
-  if (isLoadingCompany) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">{t.loading || "Loading..."}</div>
-      </div>
-    );
-  }
-
+  // Only a successful empty company list may ask the user to create a company; a pending,
+  // paused or failed read says so instead.
   if (!companyId) {
+    if (companyListState === "empty") {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-muted-foreground">
+            <T k="pages.pleaseCreateACompanyFirst" />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">
-          <T k="pages.pleaseCreateACompanyFirst" />
-        </div>
+        <ReadStatus
+          view={
+            companyListState === "error"
+              ? "error"
+              : companyListState === "waiting"
+                ? "paused"
+                : "loading"
+          }
+          errorText={t["budgets.companyLoadError"]}
+          onRetry={retryCompanyList}
+          testId="budgets-company-state"
+        />
       </div>
     );
   }
 
   // ─── Render ─────────────────────────────────────────────
+
+  // One copy / new-version at a time: a second click would create a second draft.
+  const copyOrVersionPending = copyBudgetMutation.isPending || newVersionMutation.isPending;
 
   /** Row actions shared by the table and the phone cards. */
   const budgetActions = (budget: BudgetPlan) => (
@@ -818,7 +936,10 @@ export default function Budgets() {
         <>
           {budget.status !== "draft" && (
             <DropdownMenuItem
-              onSelect={() => newVersionMutation.mutate(budget.id)}
+              disabled={copyOrVersionPending}
+              onSelect={() => {
+                if (!copyOrVersionPending) newVersionMutation.mutate(budget.id);
+              }}
               data-testid={`button-new-version-${budget.id}`}
             >
               <Plus aria-hidden />
@@ -826,12 +947,14 @@ export default function Budgets() {
             </DropdownMenuItem>
           )}
           <DropdownMenuItem
-            onSelect={() =>
-              copyBudgetMutation.mutate({
-                id: budget.id,
-                fiscalYear: budget.fiscal_year + 1,
-              })
-            }
+            disabled={copyOrVersionPending}
+            onSelect={() => {
+              if (!copyOrVersionPending)
+                copyBudgetMutation.mutate({
+                  id: budget.id,
+                  fiscalYear: budget.fiscal_year + 1,
+                });
+            }}
           >
             <Copy aria-hidden />
             {tr(locale, "Copy to next year", "نسخ إلى السنة التالية")}
@@ -881,6 +1004,11 @@ export default function Budgets() {
 
   return (
     <div className="space-y-6">
+      <BudgetScopeChangeDialog
+        change={scopeChange}
+        locale={locale}
+        onAcknowledge={acknowledgeScopeChange}
+      />
       {selectedBudget && (
         <Button
           variant="ghost"
@@ -941,19 +1069,22 @@ export default function Budgets() {
               <CardTitle>
                 <T k="pages.budgetPlans" />
               </CardTitle>
-              <CardDescription>
-                {budgetPlans.length}{" "}
-                {budgetPlans.length === 1
-                  ? tr(locale, "budget plan", "خطة موازنة")
-                  : tr(locale, "budget plans", "خطط موازنة")}
-              </CardDescription>
+              {/* The count is shown only once it is known (never "0" while loading or failed). */}
+              {budgetsView === "ready" && (
+                <CardDescription data-testid="budgets-count">
+                  {formatMessage(t["budgets.planCount"], { count: budgetPlans.length })}
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent>
-              {isLoadingBudgets ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {t.loading || "Loading..."}
-                </div>
-              ) : budgetPlans.length === 0 ? (
+              <ReadStatus
+                view={budgetsView}
+                refresh={budgetsQuery}
+                errorText={t["budgets.listLoadError"]}
+                onRetry={() => void refetchBudgets()}
+                testId="budgets-load-error"
+              />
+              {budgetsView !== "ready" ? null : budgetPlans.length === 0 ? (
                 <EmptyState
                   icon={PiggyBank}
                   title={t["pages.noBudgetPlansYetCreateYourFirstBudgetToGetStarte"]}
@@ -1125,11 +1256,14 @@ export default function Budgets() {
                 </div>
               </CardHeader>
               <CardContent>
-                {isLoadingLines ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    {t.loading || "Loading..."}
-                  </div>
-                ) : budgetLines.length === 0 ? (
+                <ReadStatus
+                  view={linesView}
+                  refresh={linesQuery}
+                  errorText={t["budgets.linesLoadError"]}
+                  onRetry={() => void linesQuery.refetch()}
+                  testId="budget-lines-state"
+                />
+                {linesView !== "ready" ? null : budgetLines.length === 0 ? (
                   <EmptyState
                     size="sm"
                     title={t["pages.noBudgetLinesYetAddCategoriesAndMonthlyAllocatio"]}
@@ -1256,11 +1390,15 @@ export default function Budgets() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {isLoadingVariance ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    {t.loading || "Loading..."}
-                  </div>
-                ) : !varianceData || varianceData.varianceLines.length === 0 ? (
+                <ReadStatus
+                  view={varianceView}
+                  refresh={varianceQuery}
+                  errorText={t["budgets.varianceLoadError"]}
+                  onRetry={() => void varianceQuery.refetch()}
+                  testId="budget-variance-state"
+                />
+                {varianceView !== "ready" ? null : !varianceData ||
+                  varianceData.varianceLines.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     {t["budgets.noVarianceDataAvailableAdd"]}
                   </div>
