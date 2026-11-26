@@ -904,21 +904,61 @@ export function frozenEInvoiceAmountsMatch(
   try {
     const root = parseXml(xml).documentElement;
     const currency = (invoice.currency || "AED").toUpperCase();
-    const vat = all(root, "cac:TaxTotal/cbc:TaxAmount").find(
-      (amount) => attr(amount, "currencyID") === currency
+    const taxTotal = all(root, "cac:TaxTotal").find(
+      (total) => attr(first(total, "cbc:TaxAmount"), "currencyID") === currency
     );
     const monetary = first(root, "cac:LegalMonetaryTotal");
-    if (!monetary) return false;
+    if (!taxTotal || !monetary) return false;
     const payable = tryToFils(textAt(monetary, "cbc:PayableAmount"));
     const prepaid = tryToFils(textAt(monetary, "cbc:PrepaidAmount")) ?? 0;
-    const expectedVat = sumFils(
-      taxBreakdown(computeEInvoiceAmounts(invoice, lines).lines).map((group) => group.taxFils)
+    const { lines: expectedLines } = computeEInvoiceAmounts(invoice, lines);
+    const breakdown = taxBreakdown(expectedLines);
+    if (
+      payable === null ||
+      payable + prepaid !== Math.abs(toFils(invoice.total)) ||
+      tryToFils(textAt(taxTotal, "cbc:TaxAmount")) !== sumFils(breakdown.map((g) => g.taxFils))
+    ) {
+      return false;
+    }
+
+    const lineTag = root.localName === "CreditNote" ? "cac:CreditNoteLine" : "cac:InvoiceLine";
+    const xmlLines = all(root, lineTag);
+    if (
+      xmlLines.length !== expectedLines.length ||
+      xmlLines.some((line, i) => {
+        const extension = first(line, "cbc:LineExtensionAmount");
+        return (
+          textAt(line, "cbc:ID") !== String(i + 1) ||
+          attr(extension, "currencyID") !== currency ||
+          tryToFils(text(extension)) !== expectedLines[i].lineExtensionFils
+        );
+      })
+    ) {
+      return false;
+    }
+
+    const expectedGroups = new Map(
+      breakdown.map((g) => [`${g.category}:${Number((g.rate * 100).toFixed(2))}`, g])
     );
-    return (
-      payable !== null &&
-      payable + prepaid === Math.abs(toFils(invoice.total)) &&
-      tryToFils(text(vat)) === expectedVat
-    );
+    for (const subtotal of all(taxTotal, "cac:TaxSubtotal")) {
+      const category = textAt(subtotal, "cac:TaxCategory/cbc:ID");
+      const percent = Number(textAt(subtotal, "cac:TaxCategory/cbc:Percent") ?? 0);
+      const key = `${category}:${percent}`;
+      const expected = expectedGroups.get(key);
+      const taxable = first(subtotal, "cbc:TaxableAmount");
+      const vat = first(subtotal, "cbc:TaxAmount");
+      if (
+        !expected ||
+        attr(taxable, "currencyID") !== currency ||
+        tryToFils(text(taxable)) !== expected.taxableFils ||
+        attr(vat, "currencyID") !== currency ||
+        tryToFils(text(vat)) !== expected.taxFils
+      ) {
+        return false;
+      }
+      expectedGroups.delete(key);
+    }
+    return expectedGroups.size === 0;
   } catch {
     return false;
   }

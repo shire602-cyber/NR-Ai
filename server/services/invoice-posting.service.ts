@@ -63,7 +63,9 @@ import { defaultChartOfAccounts } from "../defaultChartOfAccounts";
 import { allocateInvoiceNumber, type InvoiceDocType } from "./invoice-numbering.service";
 import {
   computeSalesDocument,
+  readStoredInvoiceLineAmounts,
   storedLineToTotalsInput,
+  sumSalesLines,
   type SalesDocumentTotals,
 } from "./document-totals.service";
 import { invoiceMachine, settlementStatus } from "./invoice-state-machine";
@@ -317,20 +319,32 @@ export function totalsForStoredDocument(
   >,
   lines: InvoiceLine[]
 ): SalesDocumentTotals {
-  const totals = computeSalesDocument(
-    lines.map((l) =>
-      storedLineToTotalsInput({
-        ...l,
-        quantity: Math.abs(Number(l.quantity)),
-        unitPrice: Math.abs(Number(l.unitPrice)),
-      })
-    ),
-    {
-      discountType: invoice.discountType,
-      discountValue: invoice.discountValue,
-      reverseCharge: invoice.reverseCharge,
-    }
-  );
+  const stored = readStoredInvoiceLineAmounts(invoice, lines).map((amount, i) => {
+    const line = lines[i];
+    if (!amount || line.documentDiscountAmount == null) return null;
+    const lineDiscountFils = Math.abs(toFils(line.discountAmount));
+    const documentDiscountFils = Math.abs(toFils(line.documentDiscountAmount));
+    const priceFils = amount.netFils + (line.marginScheme ? amount.vatFils : 0);
+    return {
+      ...amount,
+      grossFils: priceFils + lineDiscountFils + documentDiscountFils,
+      lineDiscountFils,
+      documentDiscountFils,
+    };
+  });
+  const legacy = stored.some((line) => line === null)
+    ? computeSalesDocument(
+        lines.map((line) =>
+          storedLineToTotalsInput({
+            ...line,
+            quantity: Math.abs(Number(line.quantity)),
+            unitPrice: Math.abs(Number(line.unitPrice)),
+          })
+        ),
+        invoice
+      )
+    : null;
+  const totals = sumSalesLines(stored.map((line, i) => line ?? legacy!.lines[i]));
   // Use the tax printed on the document, including on invoices issued under the earlier
   // rounding method and credits that clear the exact VAT remaining after partial credits.
   const vatFils = toFils(Math.abs(Number(invoice.vatAmount)), { rounding: "halfUp" });

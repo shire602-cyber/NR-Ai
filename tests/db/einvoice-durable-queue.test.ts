@@ -136,6 +136,21 @@ describe("Durable UAE e-invoice submission queue", () => {
       [10_000, 0, 1_000_000],
       [10_000, 0.01, 1_000_000],
     ]);
+    expect(args.invoice.total).toBe(2_050_000);
+    const journal = await h.sql(
+      `SELECT a.code, jl.debit, jl.credit FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.entry_id
+       JOIN accounts a ON a.id = jl.account_id
+       WHERE je.company_id = $1 AND je.source = 'invoice' AND je.source_id = $2
+         AND je.status = 'posted'`,
+      [args.company.id, args.invoice.id]
+    );
+    expect(
+      journal.filter((line) => line.code === "1040").map((line) => Number(line.debit))
+    ).toEqual([args.invoice.total]);
+    expect(
+      journal.filter((line) => line.code === "4060").map((line) => Number(line.credit))
+    ).toEqual([1_000_000]);
 
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
       await import("../../server/services/einvoice/workflow");
@@ -143,13 +158,90 @@ describe("Durable UAE e-invoice submission queue", () => {
     const provider = fakeProvider();
     const queued = await enqueueEInvoiceSubmission({ ...args, provider, now });
     expect(queued.ok, JSON.stringify(queued)).toBe(true);
-    const { parseXml, textAt } = await import("../../server/services/einvoice/dom");
+    const { all, parseXml, textAt } = await import("../../server/services/einvoice/dom");
     const xml = (await storedDocument(args.invoice.id)).einvoice_xml as string;
     expect(
-      textAt(parseXml(xml).documentElement, "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")
-    ).toBe("Z");
+      all(parseXml(xml).documentElement, "cac:AllowanceCharge").map((allowance) => [
+        textAt(allowance, "cac:TaxCategory/cbc:ID"),
+        textAt(allowance, "cbc:Amount"),
+      ])
+    ).toEqual([["Z", "0.01"]]);
     expect(await runEInvoiceRetries(now, () => provider)).toEqual({ attempted: 1, submitted: 1 });
   });
+
+  it.each([
+    { staleField: "LineExtensionAmount", attempted: false },
+    { staleField: "TaxableAmount", attempted: false },
+    { staleField: "TaxAmount", attempted: false },
+    { staleField: "TaxableAmount", attempted: true },
+  ])(
+    "[PR174] handles stale $staleField with matching headers (attempted: $attempted)",
+    async ({ staleField, attempted }) => {
+      const args = await readyInvoice({
+        lines: [
+          { description: "Consulting", quantity: 1, unitPrice: 100, vatRate: 5 },
+          {
+            description: "Equipment",
+            quantity: 1,
+            unitPrice: 200,
+            vatRate: 0,
+            vatSupplyType: "zero_rated",
+          },
+        ],
+      });
+      const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+        await import("../../server/services/einvoice/workflow");
+      const { all, parseXml, textAt } = await import("../../server/services/einvoice/dom");
+      const sent: string[] = [];
+      const provider = fakeProvider({
+        submit: async ({ uuid, xml }) => {
+          sent.push(xml);
+          return { providerMessageId: uuid, status: "submitted" };
+        },
+      });
+      const now = new Date();
+      expect((await enqueueEInvoiceSubmission({ ...args, provider, now })).ok).toBe(true);
+      const current = await storedDocument(args.invoice.id);
+      const original = current.einvoice_xml as string;
+      const changeAmounts = (xml: string, from: string, to: string) =>
+        xml.replace(
+          `<cbc:${staleField} currencyID="AED">${from}<`,
+          `<cbc:${staleField} currencyID="AED">${to}<`
+        );
+      const stale =
+        staleField === "TaxAmount"
+          ? original.replace(/<cac:TaxSubtotal>[\s\S]*?<\/cac:TaxSubtotal>/g, (subtotal) =>
+              changeAmounts(changeAmounts(subtotal, "5.00", "4.99"), "0.00", "0.01")
+            )
+          : changeAmounts(changeAmounts(original, "100.00", "100.01"), "200.00", "199.99");
+      expect(stale).not.toBe(original);
+      const root = parseXml(stale).documentElement;
+      expect(textAt(root, "cac:TaxTotal/cbc:TaxAmount")).toBe("5.00");
+      expect(textAt(root, "cac:LegalMonetaryTotal/cbc:PayableAmount")).toBe("305.00");
+      const path =
+        staleField === "LineExtensionAmount" ? "cac:InvoiceLine" : "cac:TaxTotal/cac:TaxSubtotal";
+      expect(all(root, path).map((node) => textAt(node, `cbc:${staleField}`))).toEqual(
+        staleField === "TaxAmount" ? ["4.99", "0.01"] : ["100.01", "199.99"]
+      );
+      await freezeSnapshot(args.invoice.id, stale);
+      if (attempted) {
+        await h.sql(
+          `UPDATE einvoice_documents SET attempts = 1,
+          validation = jsonb_set(validation::jsonb, '{submission,providerAttempted}', 'true')
+         WHERE invoice_id = $1`,
+          [args.invoice.id]
+        );
+      }
+
+      expect(await runEInvoiceRetries(now, () => provider)).toEqual({ attempted: 1, submitted: 1 });
+      expect(sent).toEqual([attempted ? stale : original]);
+      expect(await storedDocument(args.invoice.id)).toMatchObject({
+        einvoice_uuid: current.einvoice_uuid,
+        einvoice_xml: sent[0],
+        attempts: attempted ? 2 : 1,
+      });
+    }
+  );
 
   it.each([false, true])(
     "[PR174] reconciles stale AED totals before first dispatch (attempted: %s)",

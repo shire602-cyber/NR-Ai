@@ -43,25 +43,41 @@ describe("buildEInvoiceDocument", () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.xml).toContain("<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>");
   });
-  it("rebuilds an unsent stored document with stale VAT and preserves its UUID", () => {
-    const invoice = baseInvoice();
-    const generated = buildEInvoiceDocument(invoice, lines, company, ctx);
-    expect(generated.ok).toBe(true);
-    if (!generated.ok) return;
-    const stale = generated.xml.replaceAll(">50.00<", ">49.99<");
-    const saved = {
-      ...invoice,
-      einvoiceXml: stale,
-      einvoiceHash: "previous-hash",
-      einvoiceUuid: generated.uuid,
-    };
-    expect(buildEInvoiceDocument(saved, lines, company, ctx)).toEqual(generated);
-    expect(buildEInvoiceDocument(saved, lines, company, ctx, true)).toMatchObject({
-      ok: true,
-      xml: stale,
-      hash: "previous-hash",
-    });
-  });
+  it.each([
+    { field: "VAT", oldValue: ">50.00<", newValue: ">49.99<" },
+    {
+      field: "taxable base",
+      oldValue: ">1000.00</cbc:TaxableAmount>",
+      newValue: ">1000.01</cbc:TaxableAmount>",
+    },
+    {
+      field: "line extension",
+      oldValue: ">1000.00</cbc:LineExtensionAmount>",
+      newValue: ">999.99</cbc:LineExtensionAmount>",
+    },
+  ])(
+    "rebuilds an unsent stored document with stale $field and preserves its UUID",
+    ({ oldValue, newValue }) => {
+      const invoice = baseInvoice();
+      const generated = buildEInvoiceDocument(invoice, lines, company, ctx);
+      expect(generated.ok).toBe(true);
+      if (!generated.ok) return;
+      const stale = generated.xml.replaceAll(oldValue, newValue);
+      expect(stale).not.toBe(generated.xml);
+      const saved = {
+        ...invoice,
+        einvoiceXml: stale,
+        einvoiceHash: "previous-hash",
+        einvoiceUuid: generated.uuid,
+      };
+      expect(buildEInvoiceDocument(saved, lines, company, ctx)).toEqual(generated);
+      expect(buildEInvoiceDocument(saved, lines, company, ctx, true)).toMatchObject({
+        ok: true,
+        xml: stale,
+        hash: "previous-hash",
+      });
+    }
+  );
   it("returns issues for an invalid invoice (missing supplier TRN)", () => {
     const r = buildEInvoiceDocument(baseInvoice(), lines, { ...company, trnVatNumber: null });
     expect(r.ok).toBe(false);
