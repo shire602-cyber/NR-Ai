@@ -3,6 +3,7 @@
   "common.cancel": "Cancel",
   "common.close": "Close",
   "common.loading": "Loading…",
+  "common.refreshFailed": "Couldn't refresh. Showing the last loaded information.",
   "common.save": "Save",
   "common.noPermission": "Your role does not allow this action.",
   "common.noAccessTitle": "You don't have access",
