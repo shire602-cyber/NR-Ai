@@ -511,6 +511,7 @@
   "journal.memo.doc.reversalBill": "Reversal Bill {ref}",
   "journal.memo.doc.reversalInvoice": "Reversal Invoice {ref}",
   "journal.memo.doc.reversalCreditNote": "Reversal Credit note {ref}",
+  "journal.memo.doc.reversalDebitNote": "Reversal Debit note {ref}",
   "journal.memo.doc.stocktake": "Stocktake",
   "journal.memo.doc.stockPurchase": "Stock purchase",
   "journal.memo.doc.stockSale": "Stock sale",
