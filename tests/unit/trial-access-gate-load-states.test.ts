@@ -12,6 +12,7 @@ import {
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TrialAccessGate } from "../../client/src/components/billing/TrialAccessGate";
 import Subscription from "../../client/src/pages/Subscription";
+import { useCompanySubscription } from "../../client/src/hooks/useSubscription";
 import { loadLocale } from "../../client/src/lib/i18n";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -36,7 +37,7 @@ vi.mock("../../client/src/components/layout/SettingsLayout", () => ({
 
 type Endpoint = "subscription" | "usage" | "documents";
 const status: Record<Endpoint, number> = { subscription: 200, usage: 200, documents: 200 };
-const bodies: Record<Endpoint, unknown> = {
+const bodies = {
   subscription: {
     subscription: { planId: "starter", status: "active", billingCycle: "monthly" },
     entitlement: { state: "active", planId: "starter", features: null },
@@ -226,9 +227,15 @@ describe("PR156 plan load states", () => {
     }
   });
 
-  it.each(["subscription", "usage", "documents"] as const)(
-    "PR156-3: a failed %s refresh keeps the cached values and Retry reloads only that query",
-    async (endpoint) => {
+  it.each([
+    ["subscription", 503],
+    ["usage", 503],
+    ["documents", 503],
+    ["subscription", 404],
+    ["usage", 404],
+  ] as const)(
+    "PR156-3: a %s refresh returning %i keeps the cached values and Retry reloads only that query",
+    async (endpoint, errorStatus) => {
       const view = await mount(billingPage());
       const cached = () => {
         expect(view.find("card-current-plan")?.dataset.planState).toBe("active");
@@ -238,7 +245,7 @@ describe("PR156 plan load states", () => {
       try {
         await view.settle(cached);
 
-        status[endpoint] = 503;
+        status[endpoint] = errorStatus;
         await act(async () => {
           await view.client.refetchQueries({
             queryKey: ["/api/companies", "company", "billing", endpoint],
@@ -270,18 +277,135 @@ describe("PR156 plan load states", () => {
     }
   });
 
-  it("PR156-3: a missing usage response shows no meters rather than zeros", async () => {
+  it("PR156: a first subscription 404 shows billing unavailable and offers retry", async () => {
+    status.subscription = 404;
+    const view = await mount(gate());
+    try {
+      await view.settle(() => {
+        expect(view.find("subscription-load-error")?.textContent).toContain(
+          "Billing information is unavailable"
+        );
+        expect(view.find("workspace")).toBeNull();
+        expect(view.container.textContent).not.toContain("No plan");
+      });
+
+      status.subscription = 200;
+      await click(view.find("subscription-load-error")!.querySelector("button")!);
+      await view.settle(() => expect(view.find("workspace")).not.toBeNull());
+    } finally {
+      view.unmount();
+    }
+  });
+
+  it("PR156: a first usage 404 shows billing unavailable with no meters until retry succeeds", async () => {
     status.usage = 404;
     const view = await mount(billingPage());
     try {
       await view.settle(() => {
         expect(view.find("card-current-plan")).not.toBeNull();
-        expect(view.find("card-usage")).toBeNull();
+        expect(view.find("usage-load-error")?.textContent).toContain(
+          "Billing information is unavailable"
+        );
       });
       expect(view.find("usage-invoices")).toBeNull();
+
+      status.usage = 200;
+      await click(view.find("usage-load-error")!.querySelector("button")!);
+      await view.settle(() => expect(view.find("usage-invoices")?.textContent).toContain("3 / 10"));
     } finally {
       view.unmount();
     }
+  });
+
+  it("PR156: a missing billing endpoint leaves other workspace routes open", async () => {
+    function Workspace() {
+      useCompanySubscription();
+      return workspace();
+    }
+
+    window.history.pushState({}, "", "/dashboard");
+    status.subscription = 404;
+    const view = await mount(
+      createElement(TrialAccessGate, { children: createElement(Workspace) })
+    );
+    try {
+      await view.settle(() => expect(view.find("workspace")).not.toBeNull());
+      expect(requested()).toEqual(["subscription"]);
+    } finally {
+      view.unmount();
+    }
+  });
+
+  it("PR156: a successful plan change replaces the pending usage read with updated limits", async () => {
+    let finishFirstUsage!: (response: Response) => void;
+    const firstUsage = new Promise<Response>((resolve) => {
+      finishFirstUsage = resolve;
+    });
+    let firstUsageSignal: AbortSignal | null | undefined;
+    let usageReads = 0;
+    let changedPlan = false;
+    const fetchBilling = fetchMock.getMockImplementation()!;
+
+    await fetchMock.withImplementation(
+      async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/api/csrf-token")) return Response.json({ csrfToken: "token" });
+        if (url.endsWith("/billing/change-plan") && init?.method === "POST") {
+          changedPlan = true;
+          return Response.json({});
+        }
+        if (url.endsWith("/billing/subscription")) {
+          const planId = changedPlan ? "professional" : "starter";
+          return Response.json({
+            ...bodies.subscription,
+            subscription: {
+              ...bodies.subscription.subscription,
+              planId,
+              stripeSubscriptionId: "sub_existing",
+            },
+            entitlement: { ...bodies.subscription.entitlement, planId },
+          });
+        }
+        if (url.endsWith("/billing/usage")) {
+          usageReads += 1;
+          if (usageReads === 1) {
+            firstUsageSignal = init?.signal;
+            return firstUsage;
+          }
+          return Response.json({
+            ...bodies.usage,
+            plan: "professional",
+            usage: { ...bodies.usage.usage, invoices: { used: 3, limit: 50 } },
+          });
+        }
+        return fetchBilling(input, init);
+      },
+      async () => {
+        const view = await mount(billingPage());
+        try {
+          await view.settle(() => {
+            expect(view.find("plan-upgrade-professional")).not.toBeNull();
+            expect(firstUsageSignal?.aborted).toBe(false);
+          });
+          expect(view.find("usage-invoices")).toBeNull();
+
+          await click(view.find("plan-upgrade-professional")!);
+          await view.settle(() => {
+            expect(changedPlan).toBe(true);
+            expect(firstUsageSignal?.aborted).toBe(true);
+            expect(usageReads).toBe(2);
+            expect(view.find("usage-invoices")?.textContent).toContain("3 / 50");
+          });
+
+          // Simulate the original response arriving late even after its signal was aborted.
+          await act(async () => finishFirstUsage(Response.json(bodies.usage)));
+          expect(view.find("usage-invoices")?.textContent).toContain("3 / 50");
+        } finally {
+          finishFirstUsage(Response.json(bodies.usage));
+          view.unmount();
+        }
+      }
+    );
   });
 
   it("PR156-4: the linked plan gets focus once a retry recovers the page", async () => {

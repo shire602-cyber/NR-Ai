@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "../lib/queryClient";
+import { ApiError, apiRequest } from "../lib/queryClient";
 import { useDefaultCompany } from "./useDefaultCompany";
 import type { TrialState } from "@shared/trial";
 import {
@@ -77,20 +77,17 @@ interface UsageData {
 export function useCompanySubscription(watchTrial = false, enabled = true) {
   const { companyId } = useDefaultCompany();
 
-  return useQuery<SubscriptionData | null>({
+  return useQuery<SubscriptionData>({
     queryKey: ["/api/companies", companyId, "billing", "subscription"],
-    // 404 = billing module not deployed in this environment; resolve null
-    // instead of erroring so the UI fails open without retry noise.
     queryFn: ({ signal }) =>
       apiRequest("GET", `/api/companies/${companyId}/billing/subscription`, undefined, undefined, {
         signal,
-      }).catch((err: any) => {
-        if (err?.status === 404) return null;
-        throw err;
       }),
     enabled: enabled && !!companyId,
     staleTime: 30000,
-    retry: 1,
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 1,
+    // The gate can mount more observers after a 404. They share its failed result.
+    retryOnMount: false,
     refetchInterval: watchTrial
       ? ({ state: { data } }) => {
           if (!data?.enforcement) return false;
@@ -110,7 +107,6 @@ export function useSubscription() {
   const {
     data: subData,
     isLoading: subLoading,
-    isError: subError,
     error: subQueryError,
     isLoadingError: subLoadingError,
     isRefetchError: subRefetchError,
@@ -126,14 +122,11 @@ export function useSubscription() {
     isRefetchError: usageRefetchError,
     fetchStatus: usageFetchStatus,
     refetch: refetchUsage,
-  } = useQuery<UsageData | null>({
+  } = useQuery<UsageData>({
     queryKey: ["/api/companies", companyId, "billing", "usage"],
     queryFn: ({ signal }) =>
       apiRequest("GET", `/api/companies/${companyId}/billing/usage`, undefined, undefined, {
         signal,
-      }).catch((err: any) => {
-        if (err?.status === 404) return null;
-        throw err;
       }),
     enabled: !!companyId,
     staleTime: 30000,
@@ -141,7 +134,7 @@ export function useSubscription() {
 
   // No billing module (endpoint missing/erroring) or enforcement off means the client locks
   // nothing: the UI must never block what the API serves.
-  const billingUnavailable = (subError || subData === null) && !subData;
+  const billingUnavailable = subLoadingError;
   const enforcementOff = subData ? subData.enforcement !== true : false;
   const gatesOpen = billingUnavailable || enforcementOff;
   const entitlement = subData?.entitlement ?? null;
@@ -191,10 +184,10 @@ export function useSubscription() {
     isLoading: subLoading || usageLoading,
     /** The plan's own first fetch is in flight (usage has its own state below). */
     planLoading: subLoading,
-    /** The first load failed (a missing billing module resolves to null instead). Paused wins. */
+    /** The first load failed. Paused wins. */
     loadError: subLoadingError && !isPaused ? subQueryError : null,
     isPaused,
-    /** A refresh failed; the cached plan (possibly null) is still in use. */
+    /** A refresh failed and the cached plan is still in use. */
     refreshError: subRefetchError ? subQueryError : null,
     retryLoad: () => {
       void refetchSubscription();

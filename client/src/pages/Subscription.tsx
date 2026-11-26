@@ -338,7 +338,7 @@ export default function Subscription() {
   const paidPlan: PaidPlanId | null = planState === "active" ? (entitlement?.planId ?? null) : null;
 
   const planMutation = useMutation({
-    mutationFn: (planId: string) => {
+    mutationFn: ({ planId, companyId }: { planId: PaidPlanId; companyId: string | undefined }) => {
       if (!companyId) throw new Error("No company selected");
       if (hasStripeSubscription) {
         return apiRequest("POST", `/api/companies/${companyId}/billing/change-plan`, {
@@ -351,14 +351,14 @@ export default function Subscription() {
         billingCycle,
       });
     },
-    onSuccess: (data: { url?: string }) => {
+    onSuccess: async (data: { url?: string }, { companyId }) => {
       if (data.url) {
         window.location.href = data.url;
         return;
       }
-      return queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "billing"],
-      });
+      const queryKey = ["/api/companies", companyId, "billing"];
+      await queryClient.cancelQueries({ queryKey });
+      await queryClient.invalidateQueries({ queryKey });
     },
     onError: (error: Error) => {
       const unavailable = error instanceof ApiError && error.status === 503;
@@ -815,7 +815,7 @@ export default function Subscription() {
                 <Button
                   className="h-10 w-full"
                   variant={plan.featured ? "default" : "outline"}
-                  onClick={() => planMutation.mutate(plan.id)}
+                  onClick={() => planMutation.mutate({ planId: plan.id, companyId })}
                   disabled={planMutation.isPending || !canManageBilling}
                   title={!canManageBilling ? t["common.noPermission"] : undefined}
                   data-testid={`plan-upgrade-${plan.id}`}

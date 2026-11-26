@@ -13,6 +13,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSessionActions } from "@/hooks/useSessionActions";
 import { useCompanySubscription } from "@/hooks/useSubscription";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { ApiError } from "@/lib/queryClient";
 import { planPhraseKey } from "@/lib/plan-state";
 import { PLAN_LIMIT_EVENT, type PlanLimitDetail } from "@/lib/plan-limit";
 import { TrialReadOnlyContext } from "@/lib/trial-access";
@@ -90,8 +91,7 @@ export function TrialAccessGate({
   if (isVatFiling && !companyId && error) return workspace();
   // A failed refresh of the company list keeps the cached selection, so it does not close the gate.
   const companyFailed = !!error && !companyId;
-  // A missing billing endpoint resolves to null. An unresolved subscription has no data yet.
-  // The workspace stays closed; Billing (and any route while offline) says why and retries the query.
+  // Billing (and any route while offline) explains an unresolved subscription and retries the query.
   if (!companyFailed && companyId && data === undefined && (offline || (onBilling && billing))) {
     const state = {
       error: !offline && isLoadingError ? subscriptionError : null,
@@ -103,6 +103,16 @@ export function TrialAccessGate({
         {onBilling ? <BillingUnloaded {...state} /> : <PlanLoadState {...state} />}
       </TrialRecoveryLayout>
     );
+  }
+  // Workspaces in environments without billing can still open their other pages.
+  if (
+    !companyFailed &&
+    !onBilling &&
+    isLoadingError &&
+    subscriptionError instanceof ApiError &&
+    subscriptionError.status === 404
+  ) {
+    return workspace();
   }
   if (companyFailed || (companyId && data === undefined)) {
     return (

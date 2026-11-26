@@ -1,9 +1,11 @@
 import { Loader2 } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import { useTranslation } from "@/lib/i18n";
+import { classifyLoadError } from "@/lib/loadError";
 
 /**
  * What stands in for the plan while it is unknown: the load error, the offline state (only when the
@@ -22,6 +24,16 @@ export function PlanLoadState({
 }) {
   const { t } = useTranslation();
   if (error) {
+    if (classifyLoadError(error) === "notFound") {
+      return (
+        <ErrorState
+          title={t["pages.subscriptionBillingUnavailable"]}
+          description={t["pages.subscriptionBillingUnavailableHelp"]}
+          onRetry={onRetry}
+          testId={`${testId}-load-error`}
+        />
+      );
+    }
     return <LoadErrorState error={error} onRetry={onRetry} testId={`${testId}-load-error`} />;
   }
   if (!online) {
