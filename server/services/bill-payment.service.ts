@@ -2163,3 +2163,99 @@ export function registerBillServices(): void {
     });
   }
 }
+
+/**
+ * Void a vendor debit note (mirror of voidCreditNote). One ledger transaction: lock the note,
+ * refuse while any of it is applied to a bill, mirror-reverse its journal (the kernel enforces
+ * VAT_PERIOD_FILED and period locks), put returned stock back, set status 'void' and audit.
+ * Idempotent: an already-void note is returned unchanged.
+ */
+export async function voidDebitNote(args: {
+  companyId: string;
+  debitNoteId: string;
+  actorId: string;
+  reason: string;
+  req?: Request;
+}) {
+  const { companyId } = args;
+  return withLedgerTx(async (tx) => {
+    // Company-scoped lock: another tenant's note is simply not found (404).
+    const noteRows = await txRows<Record<string, string>>(
+      tx,
+      `SELECT * FROM vendor_debit_notes WHERE id = $1 AND company_id = $2 FOR UPDATE`,
+      [args.debitNoteId, companyId]
+    );
+    const note = noteRows[0];
+    if (!note) throw new DomainError("DEBIT_NOTE_NOT_FOUND", 404);
+    if (note.status === "void") return { debitNote: note, alreadyVoid: true };
+    const active = await txRows<{ n: string }>(
+      tx,
+      `SELECT count(*)::text AS n FROM bill_payments
+        WHERE kind = 'vendor_credit' AND status = 'active' AND source_document_id = $1`,
+      [note.id]
+    );
+    if (Number(active[0]?.n ?? 0) > 0 || filsOf(note.amount_applied) > 0) {
+      throw new DomainError(
+        "DEBIT_NOTE_APPLIED",
+        409,
+        { applied: note.amount_applied },
+        "This debit note has been applied to a bill. Void those applications first."
+      );
+    }
+    // A debit note that re-costed a capitalised asset cannot be voided blindly (the asset cost
+    // would stay reduced); refuse instead of leaving the register out of step with the ledger.
+    const recosted = await txRows<{ n: string }>(
+      tx,
+      `SELECT count(*)::text AS n
+         FROM journal_entries je
+         JOIN journal_lines jl ON jl.entry_id = je.id AND jl.credit > 0
+         JOIN fixed_assets fa ON fa.cost_account_id = jl.account_id
+                             AND fa.company_id = je.company_id AND fa.source_bill_id = $3
+        WHERE je.company_id = $1 AND je.source = 'vendor_debit_note' AND je.source_id = $2
+          AND je.reversed_by_entry_id IS NULL`,
+      [companyId, note.id, note.bill_id]
+    );
+    if (note.bill_id && Number(recosted[0]?.n ?? 0) > 0) {
+      throw new DomainError(
+        "DEBIT_NOTE_ASSET_RECOSTED",
+        409,
+        undefined,
+        "This debit note re-costed a fixed asset; adjust the asset before voiding it"
+      );
+    }
+    await reverseBySource(
+      companyId,
+      "vendor_debit_note",
+      note.id,
+      { void: true, reason: args.reason, source: "vendor_debit_note_void", sourceId: note.id },
+      { actorId: args.actorId, tx }
+    );
+    if (has("inventory.onDebitNoteVoided")) {
+      await resolve<(tx: LedgerTx, a: Record<string, unknown>) => Promise<unknown>>(
+        "inventory.onDebitNoteVoided"
+      )(tx, {
+        companyId,
+        debitNoteId: note.id,
+        number: note.debit_note_number,
+        userId: args.actorId,
+      });
+    }
+    const upd = await txRows<Record<string, string>>(
+      tx,
+      `UPDATE vendor_debit_notes SET status = 'void' WHERE id = $1 AND company_id = $2 RETURNING *`,
+      [note.id, companyId]
+    );
+    await recordAudit({
+      userId: args.actorId,
+      companyId,
+      action: "debit_note.void",
+      entityType: "vendor_debit_note",
+      entityId: note.id,
+      before: note,
+      after: { ...upd[0], voidReason: args.reason },
+      req: args.req,
+      tx,
+    });
+    return { debitNote: upd[0], alreadyVoid: false };
+  });
+}

@@ -151,6 +151,7 @@ export const JOURNAL_DOC_TEMPLATES = {
   reversalBill: "Reversal Bill {ref}",
   reversalInvoice: "Reversal Invoice {ref}",
   reversalCreditNote: "Reversal Credit note {ref}",
+  reversalDebitNote: "Reversal Debit note {ref}",
   stocktake: "Stocktake",
   stockPurchase: "Stock purchase",
   stockSale: "Stock sale",

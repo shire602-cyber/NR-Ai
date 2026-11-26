@@ -221,6 +221,7 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   // A4 (M1): a customer deposit posts Dr bank / Cr 2050 / Cr 2020 VAT on receipt.
   r("POST", "companies/*/customer-deposits", "ledger.post"),
   r("POST", "companies/*/debit-notes/*/apply", "ledger.post"),
+  r("POST", "companies/*/debit-notes/*/void", "ledger.post"),
   r("POST", "companies/*/fx-revaluations/*/undo", "ledger.post"),
   r("POST", "receipts/*/post", "ledger.post"),
   r("POST", "companies/*/bills/backfill-gl", "ledger.post"),

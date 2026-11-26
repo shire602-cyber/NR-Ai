@@ -1093,5 +1093,7 @@
   "serverErrors.FIRM_MEMBER_INELIGIBLE": "لا يمكن لحسابات بوابة العملاء الانضمام إلى المكتب.",
   "serverErrors.LAST_FIRM_OWNER": "يجب أن يكون للمكتب مالك واحد على الأقل. عيّن مالكًا آخر أولًا.",
   "serverErrors.TRANSACTION_CONFLICT": "تعارض تحديث آخر مع هذه العملية. أعد تحميل الصفحة وحاول مرة أخرى.",
-  "serverErrors.UNRESOLVED_FIRM_ACCESS": "يجب أن يراجع مالك الشركة صلاحية الوصول المتبقية قبل إتمام تغيير الصلاحيات."
+  "serverErrors.UNRESOLVED_FIRM_ACCESS": "يجب أن يراجع مالك الشركة صلاحية الوصول المتبقية قبل إتمام تغيير الصلاحيات.",
+  "serverErrors.DEBIT_NOTE_APPLIED": "تم تطبيق هذا الإشعار المدين على فاتورة مورد. اعكس هذه التطبيقات قبل إبطاله.",
+  "serverErrors.DEBIT_NOTE_ASSET_RECOSTED": "خفّض هذا الإشعار المدين تكلفة أصل ثابت. عدّل الأصل قبل إبطال الإشعار."
 }
