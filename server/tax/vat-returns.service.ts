@@ -7,7 +7,6 @@
  */
 import { todayDubai } from "@shared/accounting-date";
 import { and, desc, eq, getTableColumns, ne, sql } from "drizzle-orm";
-import { db } from "../db";
 import { DomainError } from "../errors";
 import { vatReturns, type VatReturn } from "../../shared/schema";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
