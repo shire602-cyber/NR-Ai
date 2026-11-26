@@ -141,8 +141,18 @@ describe("Error Handler Middleware", () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "DUPLICATE_VALUE" }));
     });
 
-    it("logs the pg constraint, table and detail server-side only, never in the response", () => {
-      const req = createMockReq({ id: "req-1" } as Partial<Request>);
+    it("logs PostgreSQL metadata with a sanitized route and redacts sensitive values", () => {
+      const invitationToken = "a1".repeat(32);
+      const querySecret = "private-query-secret";
+      const route = "/api/portal-invitations/:legacyToken/record";
+      const originalUrl = `/api/portal-invitations/${invitationToken}/record?key=${querySecret}`;
+      const req = createMockReq({
+        id: "req-1",
+        method: "POST",
+        route: { path: route },
+        url: originalUrl,
+        originalUrl,
+      });
       const res = createMockRes();
       const next = vi.fn() as NextFunction;
       const pgError = Object.assign(new Error("duplicate key"), {
@@ -162,14 +172,26 @@ describe("Error Handler Middleware", () => {
           pgCode: "23505",
           constraint: "uniq_audit_logs_chain_seq",
           table: "audit_logs",
-          detail: "Key (chain_key, seq)=(abc, 7) already exists.",
+          route,
         }),
         expect.any(String)
       );
       expect(res.status).toHaveBeenCalledWith(409);
-      const body = JSON.stringify((res.json as ReturnType<typeof vi.fn>).mock.calls[0][0]);
-      expect(body).toContain("DUPLICATE_VALUE");
-      expect(body).not.toMatch(/constraint|uniq_audit|audit_logs|detail|Key \(/i);
+      expect(res.json).toHaveBeenCalledWith({
+        code: "DUPLICATE_VALUE",
+        message: "A record with this value already exists",
+        requestId: "req-1",
+      });
+      for (const output of [
+        JSON.stringify(logWarn.mock.calls),
+        JSON.stringify(vi.mocked(res.json).mock.calls),
+      ]) {
+        expect(output).not.toMatch(/"(?:detail|originalUrl)"\s*:/);
+        expect(output).not.toContain(pgError.detail);
+        expect(output).not.toContain(querySecret);
+        expect(output).not.toContain(invitationToken);
+        expect(output).not.toContain(originalUrl);
+      }
     });
 
     it("maps a Drizzle-wrapped 22P02 (code in cause chain) to 400", () => {
