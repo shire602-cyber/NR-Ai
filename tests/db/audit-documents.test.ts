@@ -132,4 +132,115 @@ it("[PR174] converts an AED-ledger sale at the earlier supply date's rate", asyn
     ["AED", "200.00"],
   ]);
   expect(Number(text(first(root, "cac:TaxExchangeRate/cbc:CalculationRate")))).toBe(4);
+
+  // A full credit dated today (journal rate 4.2) still exports the original supply's rate of 4,
+  // so the credited VAT equals the sale's AED 200 exactly. The ledger keeps rate 4.2.
+  const credit = await seller.as.post(`${api}/invoices/${invoice.body.id}/credit-note`, {
+    date: day(0),
+  });
+  expect(credit.status, credit.text).toBe(201);
+  expect(Number(credit.body.exchangeRate)).toBe(4.2);
+  const creditPath = `/api/invoices/${credit.body.id}`;
+  // The rate table changes after the sale was exported: the credit must still follow the rate
+  // the original's XML recorded, not a fresh lookup (which would now be double).
+  await h.sql("UPDATE exchange_rates SET rate = rate * 2 WHERE company_id = $1", [
+    seller.company.id,
+  ]);
+  const creditPreflight = await seller.as.get(`${creditPath}/einvoice/validate`);
+  expect(creditPreflight.status, creditPreflight.text).toBe(200);
+  expect(creditPreflight.body.applicable).toBe(true);
+  expect(creditPreflight.body.valid, creditPreflight.text).toBe(true);
+  expect(creditPreflight.body.taxExchangeRate).toEqual({ rate: "4", source: "original_xml" });
+  const creditGenerated = await seller.as.post(`${creditPath}/generate-einvoice`, {});
+  expect(creditGenerated.status, creditGenerated.text).toBe(200);
+  const creditDownload = await seller.as.get(`${creditPath}/einvoice-xml`);
+  expect(creditDownload.status, creditDownload.text).toBe(200);
+  const creditRoot = parseXml(creditDownload.text).documentElement;
+  expect(
+    all(creditRoot, "cac:TaxTotal/cbc:TaxAmount").map((amount) => [
+      attr(amount, "currencyID"),
+      text(amount),
+    ])
+  ).toEqual([
+    ["EUR", "50.00"],
+    ["AED", "200.00"],
+  ]);
+  expect(Number(text(first(creditRoot, "cac:TaxExchangeRate/cbc:CalculationRate")))).toBe(4);
+  // The booked journal keeps its own rate: output VAT reversed is 50 EUR x 4.2 = AED 210, while the
+  // e-invoice states AED 200 (the sale's exported rate). The two are different by design.
+  const journalVat = await h.sql(
+    `SELECT COALESCE(SUM(jl.debit - jl.credit), 0)::float8 AS vat
+       FROM journal_entries je
+       JOIN journal_lines jl ON jl.entry_id = je.id
+       JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id AND a.is_vat_account
+      WHERE je.company_id = $1 AND je.source = 'invoice' AND je.source_id = $2
+        AND je.status = 'posted'`,
+    [seller.company.id, credit.body.id]
+  );
+  expect(Math.abs(journalVat[0].vat)).toBeCloseTo(210, 2);
+});
+
+it("[PR174] exports an AED-ledger foreign invoice at its stored manual rate when no rate table entry exists", async () => {
+  const seller = await h.createTenant({
+    companyColumns: {
+      trn_vat_number: "100123456700003",
+      legal_name: "Dirham Trading LLC",
+      address_street: "Office 12, Sheikh Zayed Road",
+      address_city: "Dubai",
+      address_country: "AE",
+      emirate: "dubai",
+      trade_licence_no: "CN-1234567",
+      trade_licence_authority: "Dubai Department of Economy and Tourism",
+    },
+  });
+  const api = `/api/companies/${seller.company.id}`;
+  const date = new Date().toISOString().slice(0, 10);
+  const contact = await seller.as.post(`${api}/customer-contacts`, {
+    name: "Gulf Trading LLC",
+    trnNumber: "100765432100003",
+    address: "Building 7, Internet City",
+    city: "Dubai",
+    emirate: "dubai",
+    country: "AE",
+  });
+  expect(contact.status, contact.text).toBeLessThan(300);
+  const invoice = await seller.as.post(`${api}/invoices`, {
+    customerName: contact.body.name,
+    customerTrn: "100765432100003",
+    contactId: contact.body.id,
+    date,
+    paymentTerms: "net30",
+    currency: "CHF",
+    exchangeRate: 4.5,
+    lines: [{ description: "Supplies", quantity: 1, unitPrice: 1000, vatRate: 5 }],
+  });
+  expect(invoice.status, invoice.text).toBe(200);
+  // The rate table is empty for CHF, so the row's own manual rate is the document-to-AED rate.
+  const rows = await h.sql("SELECT count(*)::int AS n FROM exchange_rates WHERE company_id = $1", [
+    seller.company.id,
+  ]);
+  expect(rows[0].n).toBe(0);
+  const path = `/api/invoices/${invoice.body.id}`;
+  const issued = await seller.as.patch(`${path}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+  const preflight = await seller.as.get(`${path}/einvoice/validate`);
+  expect(preflight.status, preflight.text).toBe(200);
+  expect(JSON.stringify(preflight.body)).not.toContain("EINVOICE_EXCHANGE_RATE_INVALID");
+  expect(preflight.body.applicable).toBe(true);
+  expect(preflight.body.valid, preflight.text).toBe(true);
+  expect(preflight.body.taxExchangeRate).toEqual({ rate: "4.5", source: "stored_manual" });
+  const generated = await seller.as.post(`${path}/generate-einvoice`, {});
+  expect(generated.status, generated.text).toBe(200);
+  const download = await seller.as.get(`${path}/einvoice-xml`);
+  const root = parseXml(download.text).documentElement;
+  expect(Number(text(first(root, "cac:TaxExchangeRate/cbc:CalculationRate")))).toBe(4.5);
+  expect(
+    all(root, "cac:TaxTotal/cbc:TaxAmount").map((amount) => [
+      attr(amount, "currencyID"),
+      text(amount),
+    ])
+  ).toEqual([
+    ["CHF", "50.00"],
+    ["AED", "225.00"],
+  ]);
 });

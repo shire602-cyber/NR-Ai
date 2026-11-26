@@ -107,6 +107,11 @@ export interface EInvoiceOptions {
   issueTime?: string;
   /** Conversion from the document currency into AED (tax-point dated for a non-AED ledger). */
   taxExchangeRate?: string | null;
+  /**
+   * Where taxExchangeRate came from: the tax-point rate table, the original's exported XML, the
+   * original's own tax point, or the stored manual rate.
+   */
+  taxExchangeRateSource?: "tax_point" | "original_xml" | "original_supply" | "stored_manual";
   originalInvoice?: { number: string; date: Date | string } | null;
   creditNoteReasonCode?: CreditNoteReasonCode | null;
   paymentMeansCode?: PaymentMeansCode | null;

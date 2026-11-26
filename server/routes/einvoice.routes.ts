@@ -371,6 +371,7 @@ export function registerEInvoiceRoutes(app: Express) {
           issues: [],
           document: null,
           stored: null,
+          taxExchangeRate: null,
         });
       const issues: Array<{
         field: string;
@@ -408,6 +409,13 @@ export function registerEInvoiceRoutes(app: Express) {
         issues,
         document,
         stored,
+        // The document-to-AED rate the XML will carry and where it came from (null for AED).
+        taxExchangeRate: ctx.options?.taxExchangeRate
+          ? {
+              rate: ctx.options.taxExchangeRate,
+              source: ctx.options.taxExchangeRateSource ?? null,
+            }
+          : null,
       });
     })
   );

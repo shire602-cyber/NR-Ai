@@ -34,11 +34,54 @@ failures in pre-existing cases, including the old Arabic email's English input,
 the old VAT fixture without a reference, stale scheduler mocks, and old adapter
 request mocks. The audit's added cases were evaluated separately.
 
+## PINT AE tax exchange rate (PR #174 review 3)
+
+`server/services/einvoice/context.ts` is the single source of the document-to-AED rate for
+preflight, generation and enqueue (all call `loadEInvoiceContext`); it also reports where the rate
+came from in `options.taxExchangeRateSource`.
+
+- A sale uses the rate at its own sales tax point. A credit note linked to a same-currency original
+  reuses the rate the **original actually exported**: `cac:TaxExchangeRate/cbc:CalculationRate` in
+  the original's persisted PINT AE XML, accepted only when it is currency into AED and positive
+  (`taxExchangeRateSource: original_xml`). Only when the original has no usable recorded rate is
+  its own tax point resolved again (`original_supply`). The credit's date and journal rate are
+  never used, so a rate-table change after the sale cannot make the credit drift. Example: an
+  AED-ledger EUR sale booked at 4.2 with supply-date rate 4 exports EUR 50 VAT as AED 200; after
+  the rate table changes, a full credit still exports AED 200 while its journal reverses AED 210
+  (`tests/db/audit-documents.test.ts`).
+- Retry safeguards are unchanged: attempted or queued requests replay their frozen XML (the
+  snapshot carries no rate); this lookup applies only to a fresh generation or regeneration.
+- With no rate-table entry the row's stored positive manual rate is used (`stored_manual`). On an
+  AED ledger it is document-to-AED. On a non-AED ledger it is document-to-base, so it is accepted
+  only multiplied by a valid tax-point base-to-AED bridge. `GET /api/invoices/:id/einvoice/validate`
+  returns `taxExchangeRate: { rate, source }` (null for an AED document) so the source is observable.
+- Relationship to `server/tax/vat-engine.ts`: at line 695 `computeVat201` converts a sales document
+  at `invoice.exchangeRate` (the booked rate), and for foreign-currency credit notes it uses the
+  actually posted VAT remainder from the `creditNoteReversal` journal. This change does not alter
+  that engine. The e-invoice export rate and the VAT 201 figure can therefore differ (e.g. credit:
+  ledger/VAT 201 AED 210 vs XML AED 200); reconciling them is left to the owner of the engine
+  (**Needs Claude/#169**).
+
+`generalLedger` (`server/reporting/statements.ts`) now reads company, accounts, totals and the capped
+detail lines in one repeatable-read, read-only transaction. In the same file, the budget comparison
+now clips its date range to the plan's dates before counting overlapping monthly allocations.
+`server/services/report-render/statements.ts` adds separate bilingual (English/Arabic) ledger
+truncation notes for the PDF renderer cap and the source ledger cap. Local PostgreSQL returned
+`ECONNREFUSED`, and both audit suites initially timed out in PGlite. A single-worker retry passed
+six tests across `audit-documents` and `audit-reports`. The concurrent-post test requires real
+PostgreSQL and remains pending in CI.
+
+## Re-evaluation of the removed tests
+
+All six removed cases remain open and are listed below as **Needs Claude/#169**. The cash-flow case
+was retested with a report-only fix. The original fixture's bill approval returned HTTP 500 before
+the classifier ran, so the case and its candidate fix were removed from the worktree diff.
+
 ## Open findings not landed (tests removed from this PR)
 
 Actual values are from
 [CI run 45803439941, job 139852352109](https://github.com/shire602-cyber/NR-Ai/actions/runs/45803439941/job/139852352109).
-Each needs a posting, VAT or reporting-rule change outside this PR, so all are **Needs Claude/#169**
+No passing small fix was verified for any of them, so all are **Needs Claude/#169**
 (owner-level change; check for file overlap before editing). The original cases are in #83;
 `:N` after a case is the line of its assertion in the original test file.
 
