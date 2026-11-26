@@ -9,6 +9,7 @@
  * With no live/sandbox provider nothing is offered: paymentsAvailability() reports
  * requires_external and the UI shows no Pay button.
  */
+import { todayDubai } from "@shared/accounting-date";
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import crypto from "crypto";
 import { and, desc, eq, gt, inArray } from "drizzle-orm";
@@ -633,7 +634,7 @@ async function applyPaidEvent(
       const { entry } = await postJournal(
         {
           companyId: link.companyId,
-          date: new Date().toISOString().slice(0, 10),
+          date: todayDubai(),
           ...journalMemo("gatewayFee", { provider: event.provider, link: link.id }),
           status: "posted",
           source: "payment_gateway_fee",

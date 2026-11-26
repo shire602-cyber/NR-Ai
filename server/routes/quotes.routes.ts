@@ -59,6 +59,7 @@ import {
 } from "../services/invoice-lifecycle";
 import { assertPlaceOfSupply, resolveCustomerHeader } from "../services/invoice-posting.service";
 import { assertPeriodNotLocked, lockPeriodPolicy } from "../services/period-lock.service";
+import { todayDubai } from "@shared/accounting-date";
 import { documentCurrency, loadBaseCurrency } from "../ledger";
 import { transitionQuote, type QuoteStatus } from "../services/quote-state.service";
 import { fromFils, mulRate, toFils } from "../../shared/money";
@@ -363,7 +364,7 @@ export function registerQuoteRoutes(app: Express) {
       const userId = userOf(req);
       const quote = await quoteForUser(userId, req.params.id);
       const body = validated<ConvertQuoteInput>(req);
-      const dateIso = body.date ?? new Date().toISOString().slice(0, 10);
+      const dateIso = body.date ?? todayDubai();
       const currency = documentCurrency(quote.currency, await loadBaseCurrency(quote.companyId));
       // Outside the transaction (may read the pool): rate and terms.
       const rate = await resolveDocumentRate(quote.companyId, currency, dateIso, null);

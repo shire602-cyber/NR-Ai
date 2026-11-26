@@ -62,3 +62,8 @@ export function toAccountingDate(
     convertedFromInstant: true,
   };
 }
+
+/** Current business date in the accounting time zone (Asia/Dubai). */
+export function todayDubai(timeZone: string = DEFAULT_ACCOUNTING_TIME_ZONE): string {
+  return toAccountingDate(new Date(), timeZone)!.businessDate;
+}

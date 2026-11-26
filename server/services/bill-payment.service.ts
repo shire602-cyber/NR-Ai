@@ -12,6 +12,7 @@
  *   "bills.createDraftFromInbound" → createDraftFromInbound
  */
 import { journalLine, journalMemo } from "@shared/journal-memo";
+import { todayDubai } from "@shared/accounting-date";
 import type { Request } from "express";
 import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
@@ -1273,7 +1274,7 @@ export async function applyPrepayment(args: {
   const ap = await requireApAccount(companyId);
   const advances = await ensureAccountByCode(companyId, VENDOR_ADVANCES_CODE);
   const fx = await fxAccounts(companyId);
-  const date = input.date ?? new Date().toISOString().slice(0, 10);
+  const date = input.date ?? todayDubai();
   return withLedgerTx(async (tx) => {
     const preRows = await txRows<Record<string, string>>(
       tx,
@@ -1747,7 +1748,7 @@ export async function applyDebitNote(args: {
 }) {
   const { companyId, input } = args;
   const ap = await requireApAccount(companyId);
-  const date = input.date ?? new Date().toISOString().slice(0, 10);
+  const date = input.date ?? todayDubai();
   return withLedgerTx(async (tx) => {
     const noteRows = await txRows<Record<string, string>>(
       tx,
@@ -2060,7 +2061,7 @@ export async function runRecurringBill(
   }
 }
 
-export async function runDueRecurringBills(today = new Date().toISOString().slice(0, 10)) {
+export async function runDueRecurringBills(today = todayDubai()) {
   const due = await pool.query(
     `SELECT id, company_id FROM recurring_bills WHERE is_active = true AND next_run_on <= $1::date ORDER BY next_run_on LIMIT 500`,
     [today]
