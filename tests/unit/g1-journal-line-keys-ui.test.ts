@@ -6,12 +6,15 @@
  * "partly paid" in both chips and calls the preview "Document" (not "Live preview").
  */
 import { act, createElement } from "react";
+import { onlineManager } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   COMPANY_ID,
+  apiCalls,
   buttonByText,
   byTestId,
   click,
+  flush,
   flushUntil,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
@@ -24,7 +27,18 @@ import {
 } from "./helpers/form-harness";
 import { loadLocale, useI18n } from "../../client/src/lib/i18n";
 
-vi.mock("../../client/src/lib/queryClient", () => formHarnessQueryClientMock());
+// The harness stubs, but the real singleton client and the real refreshAfterWrite, so the page and
+// the helper share one client (given the harness's defaults: no retry, fixture query function).
+vi.mock("../../client/src/lib/queryClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../client/src/lib/queryClient")>();
+  const harness = formHarnessQueryClientMock();
+  actual.queryClient.setDefaultOptions(harness.queryClient.getDefaultOptions());
+  return {
+    ...harness,
+    queryClient: actual.queryClient,
+    refreshAfterWrite: actual.refreshAfterWrite,
+  };
+});
 vi.mock("../../client/src/hooks/useDefaultCompany", () => formHarnessCompanyMock());
 vi.mock("../../client/src/hooks/useSubscription", () => ({
   useSubscription: () => ({
@@ -124,6 +138,7 @@ beforeEach(() => {
   useI18n.setState({ locale: "ar" });
 });
 afterEach(async () => {
+  onlineManager.setOnline(true);
   await unmountPage();
   useI18n.setState({ locale: "en" });
   vi.unstubAllGlobals();
@@ -406,8 +421,8 @@ describe("account ledger states", () => {
     }
   );
 
-  it("never matches a whitespace-only search, even where the text has repeated spaces", async () => {
-    // The endpoint matches literally; with no search parameter it returns the spaced row.
+  it("treats a whitespace-only search as no filter and still sends a typed search literally", async () => {
+    // The endpoint matches literally; with no search parameter it returns every row.
     const spaced = entry({ id: "s1", description: "Office   rent", memo: null, memoKey: null });
     const fetchLedger = await load((params) => {
       const search = params.get("search") ?? "";
@@ -419,42 +434,168 @@ describe("account ledger states", () => {
         openingBalance: 500,
         totalCredit: 2000,
         closingBalance: 2500,
-        totalCount: matches ? 30 : 0,
+        totalCount: matches ? 1 : 0,
       });
     });
     await flushUntil(() => !!byTestId("row-entry-s1"));
-    const input = byTestId("input-search-ledger");
+    const input = byTestId("input-search-ledger") as HTMLInputElement;
     await type(input, "   ");
-    await flushUntil(() => !!byTestId("empty-ledger-no-match"));
-    // The blank term is not sent, so the endpoint still returns its row; the page hides it.
-    const blankUrl = new URL(fetchLedger.mock.calls[1][0], window.location.origin);
-    expect(blankUrl.searchParams.has("search")).toBe(false);
-    expect(byTestId("row-entry-s1")).toBeNull();
-    expect(byTestId("button-next-page")).toBeNull();
-    expect(byTestId("ledger-live")?.textContent).toBe("لا توجد قيود مطابقة");
-    // Opening carries to closing; the matched debit and credit totals are gone.
+    await flushUntil(() => input.value === "   ");
+    // Same query as the empty search: no new request, no filter state, the server's balances.
+    expect(fetchLedger).toHaveBeenCalledTimes(1);
+    const firstUrl = new URL(fetchLedger.mock.calls[0][0], window.location.origin);
+    expect(firstUrl.searchParams.has("search")).toBe(false);
+    expect(byTestId("row-entry-s1")).toBeTruthy();
+    expect(byTestId("empty-ledger-no-match")).toBeNull();
+    expect(byTestId("button-clear-ledger-filters")).toBeNull();
+    expect(byTestId("ledger-live")?.textContent).toBe("");
     expect(summary().map((card) => card?.match(/\d[\d,]*\.\d\d/)?.[0])).toEqual([
       "500.00",
       "0.00",
-      "0.00",
-      "500.00",
+      "2,000.00",
+      "2,500.00",
     ]);
-
-    // The cached response is left as the endpoint sent it.
-    const cached = (await queryClient())
+    const keys = (await queryClient())
       .getQueryCache()
       .getAll()
-      .find((q) => (q.queryKey[3] as { searchQuery: string }).searchQuery === "   ");
-    expect(cached?.state.data).toMatchObject({ totalCount: 30, closingBalance: 2500 });
-    expect((cached?.state.data as typeof LEDGER).entries.map((row) => row.id)).toEqual(["s1"]);
-    expect(fetchLedger).toHaveBeenCalledTimes(2);
+      .map((q) => (q.queryKey[3] as { searchQuery: string }).searchQuery);
+    expect(keys).toEqual([""]);
 
     await type(input, "Office   rent");
+    await flushUntil(() => fetchLedger.mock.calls.length === 2);
     await flushUntil(() => !!byTestId("row-entry-s1"));
+    const spacedUrl = new URL(fetchLedger.mock.calls[1][0], window.location.origin);
+    expect(spacedUrl.searchParams.get("search")).toBe("Office   rent");
+
+    // A real zero-row answer (count zero) is the only thing that shows the no-match panel.
+    await type(input, "zzz");
+    await flushUntil(() => !!byTestId("empty-ledger-no-match"));
+    expect(byTestId("ledger-live")?.textContent).toBe("لا توجد قيود مطابقة");
+  });
+
+  it("moves to the last valid page when a page past the end returns no rows but a count", async () => {
+    // 30 rows: page 1 has 25, page 2 has 5. The server later holds only 12, so page 2 is empty.
+    let shrunk = false;
+    const fetchLedger = await load((params) => {
+      const offset = Number(params.get("offset"));
+      if (!shrunk) return Response.json({ ...LEDGER, totalCount: 30 });
+      return Response.json({
+        ...LEDGER,
+        // The fallback page answers with fresh rows that the earlier answers did not have.
+        entries: offset === 0 ? [entry({ id: "fresh1" })] : [],
+        totalCount: 12,
+      });
+    });
+    await flushUntil(() => !!byTestId("row-entry-l1"));
+    // An active search, so a wrong "no match" announcement would show here.
+    await type(byTestId("input-search-ledger"), "INV");
+    await flushUntil(() => !!byTestId("button-next-page"));
+    await click(byTestId("button-next-page"));
+    await flushUntil(() => !!byTestId("button-next-page")?.matches(":disabled"));
+
+    const region = byTestId("ledger-live")!;
+    const announced: string[] = [];
+    const observer = new MutationObserver(() => announced.push(region.textContent ?? ""));
+    observer.observe(region, { childList: true, characterData: true, subtree: true });
+
+    shrunk = true;
+    const client = await queryClient();
+    await act(async () => {
+      void client.invalidateQueries({ queryKey: ["/api/accounts", ACCOUNT_ID, "ledger"] });
+    });
+    // 12 rows is one page: the footer goes and the page falls back to page 1 with fresh rows.
+    await flushUntil(() => !byTestId("button-next-page") && !!byTestId("row-entry-fresh1"));
+    observer.disconnect();
+    const offsets = fetchLedger.mock.calls.map((call) =>
+      new URL(call[0], window.location.origin).searchParams.get("offset")
+    );
+    const empty = offsets.lastIndexOf("25");
+    expect(empty).toBeGreaterThan(-1);
+    expect(offsets.slice(empty + 1)).toContain("0");
+    // Never presented as an empty or no-match ledger on the way.
+    expect(announced.filter(Boolean)).toEqual([]);
+    expect(byTestId("empty-state")).toBeNull();
     expect(byTestId("empty-ledger-no-match")).toBeNull();
     expect(byTestId("ledger-live")?.textContent).toBe("");
-    const spacedUrl = new URL(fetchLedger.mock.calls[2][0], window.location.origin);
-    expect(spacedUrl.searchParams.get("search")).toBe("Office   rent");
+    expect(byTestId("row-entry-l1")).toBeNull();
+  });
+
+  it("shows the paused state instead of an empty ledger while offline, then loads on reconnect", async () => {
+    onlineManager.setOnline(false);
+    const fetchLedger = await load(() => Response.json(LEDGER));
+    await flushUntil(() => !!byTestId("ledger-paused"));
+    expect(byTestId("ledger-paused")!.textContent).toContain("بانتظار الاتصال");
+    expect(byTestId("ledger-paused")!.textContent).not.toMatch(/[A-Za-z]{3,}/);
+    expect(byTestId("empty-state")).toBeNull();
+    expect(byTestId("empty-ledger-no-match")).toBeNull();
+    expect(byTestId("error-ledger")).toBeNull();
+    expect(fetchLedger).not.toHaveBeenCalled();
+
+    await act(async () => onlineManager.setOnline(true));
+    await flushUntil(() => !!byTestId("row-entry-l1"));
+    expect(byTestId("ledger-paused")).toBeNull();
+    expect(fetchLedger).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the cached rows and totals visible while a refresh is paused", async () => {
+    await load(() => Response.json(LEDGER));
+    await flushUntil(() => !!byTestId("row-entry-l1"));
+    const before = summary();
+
+    onlineManager.setOnline(false);
+    const client = await queryClient();
+    await act(async () => {
+      void client.invalidateQueries({ queryKey: ["/api/accounts", ACCOUNT_ID, "ledger"] });
+    });
+    await flushUntil(() => !!byTestId("warning-ledger-paused"));
+    expect(byTestId("warning-ledger-paused")!.textContent).toContain("أنت غير متصل");
+    expect(byTestId("ledger-paused")).toBeNull();
+    expect(byTestId("row-entry-l4")).toBeTruthy();
+    expect(summary()).toEqual(before);
+
+    await act(async () => onlineManager.setOnline(true));
+    await flushUntil(() => !byTestId("warning-ledger-paused"));
+    expect(byTestId("row-entry-l4")).toBeTruthy();
+  });
+
+  it("a reversal cancels an older in-flight read of a never-cached page, so its rows do not land afterwards", async () => {
+    // The real refreshAfterWrite runs against the one shared client. Page 2 has no cache entry, so
+    // only the cancel (not a plain invalidate of cached data) keeps the stale answer out.
+    const reversed = () => apiCalls("POST").length > 0;
+    let releaseStale: (() => void) | undefined;
+    let page2Calls = 0;
+    const fetchLedger = await load((params) => {
+      if (params.get("offset") === "0") return Response.json({ ...LEDGER, totalCount: 30 });
+      page2Calls += 1;
+      if (page2Calls === 1) {
+        // Began before the reversal; answers after it, with the old rows.
+        return new Promise<Response>((resolve) => {
+          releaseStale = () =>
+            resolve(Response.json({ ...LEDGER, entries: [entry({ id: "old2" })], totalCount: 30 }));
+        });
+      }
+      return Response.json({
+        ...LEDGER,
+        entries: [entry({ id: reversed() ? "new2" : "old2" })],
+        totalCount: 30,
+      });
+    });
+    await flushUntil(() => !!byTestId("row-entry-l1"));
+
+    // Open the reversal dialog on page 1, then move to page 2 (a first, uncached read).
+    await click(byTestId("button-reverse-l1"));
+    await click(byTestId("button-next-page"));
+    await flushUntil(() => !!releaseStale);
+
+    await click(byTestId("button-confirm-reversal"));
+    await flushUntil(() => !!byTestId("row-entry-new2"));
+    expect(apiCalls("POST")[0].url).toBe(`/api/journal/${ENTRY_ID}/reverse`);
+
+    await act(async () => releaseStale!());
+    await flush();
+    expect(byTestId("row-entry-old2")).toBeNull();
+    expect(byTestId("row-entry-new2")).toBeTruthy();
+    expect(fetchLedger.mock.calls.length).toBeGreaterThanOrEqual(3);
   });
 
   it("forwards the query's AbortSignal to fetch, so a superseded search is aborted", async () => {
