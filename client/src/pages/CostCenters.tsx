@@ -1,17 +1,7 @@
 import { T } from "@/components/layout/T";
-import {
-  FormActions,
-  FormErrorSummary,
-  FormGrid,
-  FormSection,
-  formSpanFull,
-} from "@/components/ui/form-layout";
 import { PageHeader } from "@/components/ui/page-header";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@/lib/zod-resolver";
-import { z } from "zod";
 import {
   Plus,
   Edit,
@@ -27,7 +17,6 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import {
   Table,
@@ -37,29 +26,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Switch } from "@/components/ui/switch";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
@@ -81,20 +47,14 @@ import {
   filterCostCenters,
 } from "@/lib/cost-center-view";
 import { exportToExcel, prepareCostCenterProfitabilityForExport } from "@/lib/export";
+import type { CostCenter, CostCenterFormData } from "@/components/CostCenterFormDialog";
+
+// The create/edit form (react-hook-form, zod, select, switch) loads on the first open.
+const CostCenterFormDialog = lazy(() =>
+  import("@/components/CostCenterFormDialog").then((m) => ({ default: m.CostCenterFormDialog }))
+);
 
 // ─── Types ───────────────────────────────────────────────
-
-interface CostCenter {
-  id: string;
-  companyId: string;
-  code: string;
-  name: string;
-  nameAr?: string | null;
-  type?: "cost_centre" | "project" | "job";
-  description?: string | null;
-  parentId?: string | null;
-  isActive: boolean;
-}
 
 interface CostCenterReport {
   totalIncome: number;
@@ -132,20 +92,6 @@ interface CostCenterProfitabilityReport {
   };
 }
 
-// ─── Schemas ─────────────────────────────────────────────
-
-const costCenterFormSchema = z.object({
-  code: z.string().min(1, "forms.errors.codeRequired"),
-  name: z.string().min(1, "forms.errors.nameRequired"),
-  nameAr: z.string().optional().nullable(),
-  type: z.enum(["cost_centre", "project", "job"]).default("cost_centre"),
-  description: z.string().optional(),
-  parentId: z.string().optional().nullable(),
-  isActive: z.boolean().default(true),
-});
-
-type CostCenterFormData = z.infer<typeof costCenterFormSchema>;
-
 // ─── Component ───────────────────────────────────────────
 
 /** The default API loader, with the query's abort signal carried to `fetch`. */
@@ -160,6 +106,7 @@ export default function CostCenters() {
   const { canAccess, getRequiredTier } = useSubscription();
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogMounted, setDialogMounted] = useState(false);
   const [editingCostCenter, setEditingCostCenter] = useState<CostCenter | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<string | null>(null);
@@ -194,21 +141,6 @@ export default function CostCenters() {
   const profitabilityState = costCenterLoadState(profitabilityQuery);
   const reportState = costCenterLoadState(reportQuery);
 
-  // ─── Form ─────────────────────────────────────────────
-
-  const form = useForm<CostCenterFormData>({
-    resolver: zodResolver(costCenterFormSchema),
-    defaultValues: {
-      code: "",
-      name: "",
-      nameAr: "",
-      type: "cost_centre",
-      description: "",
-      parentId: null,
-      isActive: true,
-    },
-  });
-
   // ─── Mutations ────────────────────────────────────────
 
   // Cancel first: invalidating alone reuses a still-running first load, whose pre-write response
@@ -232,7 +164,6 @@ export default function CostCenters() {
         description: translateNow("toasts.costCenterHasBeenAddedSuccessfully"),
       });
       setDialogOpen(false);
-      form.reset();
     },
     onError: (error: Error) => {
       toast({
@@ -257,7 +188,6 @@ export default function CostCenters() {
       });
       setDialogOpen(false);
       setEditingCostCenter(null);
-      form.reset();
     },
     onError: (error: Error) => {
       toast({
@@ -291,31 +221,9 @@ export default function CostCenters() {
 
   // ─── Handlers ─────────────────────────────────────────
 
-  const handleOpenCreateDialog = () => {
-    setEditingCostCenter(null);
-    form.reset({
-      code: "",
-      name: "",
-      nameAr: "",
-      type: "cost_centre",
-      description: "",
-      parentId: null,
-      isActive: true,
-    });
-    setDialogOpen(true);
-  };
-
-  const handleOpenEditDialog = (costCenter: CostCenter) => {
+  const openDialog = (costCenter: CostCenter | null) => {
     setEditingCostCenter(costCenter);
-    form.reset({
-      code: costCenter.code,
-      name: costCenter.name,
-      nameAr: costCenter.nameAr || "",
-      type: costCenter.type ?? "cost_centre",
-      description: costCenter.description || "",
-      parentId: costCenter.parentId || null,
-      isActive: costCenter.isActive,
-    });
+    setDialogMounted(true);
     setDialogOpen(true);
   };
 
@@ -364,11 +272,6 @@ export default function CostCenters() {
     return parent ? costCenterDisplayName(parent, locale) : "-";
   };
 
-  const getAvailableParents = (): CostCenter[] => {
-    if (!editingCostCenter) return costCenters;
-    return costCenters.filter((cc) => cc.id !== editingCostCenter.id);
-  };
-
   const filteredCostCenters = filterCostCenters(costCenters, searchQuery);
 
   const activeCount = costCenters.filter((cc) => cc.isActive).length;
@@ -379,14 +282,14 @@ export default function CostCenters() {
   // Without a report, no period is known: do not claim "all posted periods".
   const profitabilityPeriodLabel = profitabilityReport
     ? costCenterPeriodLabel(profitabilityReport.periodStart, profitabilityReport.periodEnd, {
-        beginning: t["screens.ccPeriodBeginning"],
-        today: t["screens.ccPeriodToday"],
-        range: t["screens.ccPeriodRange"],
+        beginning: t["costCenters.ccPeriodBeginning"],
+        today: t["costCenters.ccPeriodToday"],
+        range: t["costCenters.ccPeriodRange"],
         allPeriods: t["costCenters.allPostedPeriods"],
       })
     : profitabilityState === "error"
-      ? t["screens.ccPeriodUnavailable"]
-      : t["screens.ccPeriodUnknown"];
+      ? t["costCenters.ccPeriodUnavailable"]
+      : t["costCenters.ccPeriodUnknown"];
 
   if (!canAccess("costCenters")) {
     return <UpgradePrompt feature="costCenters" requiredTier={getRequiredTier("costCenters")} />;
@@ -410,9 +313,9 @@ export default function CostCenters() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow={t["screens.ccEyebrow"]}
-        title={t["screens.costCenters"]}
-        description={t["screens.costCentersDescription"]}
+        eyebrow={t["costCenters.ccEyebrow"]}
+        title={t["costCenters.costCenters"]}
+        description={t["costCenters.costCentersDescription"]}
         backHref="/reports"
         backLabel={locale === "ar" ? "العودة إلى التقارير" : t["reportCenter.backToReports"]}
         actions={
@@ -425,7 +328,7 @@ export default function CostCenters() {
               <Download aria-hidden />
               <T k="pages.export" />
             </Button>
-            <Button onClick={handleOpenCreateDialog}>
+            <Button onClick={() => openDialog(null)}>
               <Plus aria-hidden />
               <T k="pageLabels.addCostCenter" />
             </Button>
@@ -443,7 +346,7 @@ export default function CostCenters() {
                 <T k="pageLabels.costCenterPAndL" />
               </h2>
               <p className="mt-1 text-small text-muted-foreground">
-                {formatMessage(t["screens.costCenterPlBasis"], {
+                {formatMessage(t["costCenters.costCenterPlBasis"], {
                   period: profitabilityPeriodLabel,
                 })}
               </p>
@@ -493,8 +396,8 @@ export default function CostCenters() {
             <CostCenterLoadNotice
               state={profitabilityState}
               hasData={!!profitabilityReport}
-              errorTitle={t["screens.ccPlError"]}
-              errorBody={t["screens.ccLoadErrorBody"]}
+              errorTitle={t["costCenters.ccPlError"]}
+              errorBody={t["costCenters.ccLoadErrorBody"]}
               onRetry={() => void profitabilityQuery.refetch()}
               testId="cost-center-pl-notice"
             />
@@ -526,8 +429,8 @@ export default function CostCenters() {
                     <TableHead data-numeric="">
                       <T k="pages.netIncome" />
                     </TableHead>
-                    <TableHead data-numeric="">{t["screens.ccRollup"]}</TableHead>
-                    <TableHead data-numeric="">{t["screens.ccLines"]}</TableHead>
+                    <TableHead data-numeric="">{t["costCenters.ccRollup"]}</TableHead>
+                    <TableHead data-numeric="">{t["costCenters.ccLines"]}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -551,7 +454,7 @@ export default function CostCenters() {
                       >
                         <span dir="auto">
                           {row.isUnallocated
-                            ? t["screens.ccUnallocated"]
+                            ? t["costCenters.ccUnallocated"]
                             : locale === "ar" && row.nameAr
                               ? row.nameAr
                               : row.name}
@@ -559,8 +462,8 @@ export default function CostCenters() {
                         {row.type && row.type !== "cost_centre" && !row.isUnallocated && (
                           <Badge variant="outline" className="ms-2">
                             {row.type === "project"
-                              ? t["screens.ccTypeProject"]
-                              : t["screens.ccTypeJob"]}
+                              ? t["costCenters.ccTypeProject"]
+                              : t["costCenters.ccTypeJob"]}
                           </Badge>
                         )}
                       </TableCell>
@@ -609,11 +512,11 @@ export default function CostCenters() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 id="cc-register-title" className="text-h2 text-foreground">
-              {t["screens.costCenterRegister"]}
+              {t["costCenters.costCenterRegister"]}
             </h2>
             {registerData && (
               <p className="mt-1 text-small text-muted-foreground" data-testid="cost-center-counts">
-                {formatMessage(t["screens.costCenterCounts"], {
+                {formatMessage(t["costCenters.costCenterCounts"], {
                   total: costCenters.length,
                   active: activeCount,
                   inactive: inactiveCount,
@@ -627,8 +530,8 @@ export default function CostCenters() {
               aria-hidden
             />
             <Input
-              placeholder={t["screens.searchCostCenters"]}
-              aria-label={t["screens.searchCostCenters"]}
+              placeholder={t["costCenters.searchCostCenters"]}
+              aria-label={t["costCenters.searchCostCenters"]}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-9 ps-9"
@@ -639,8 +542,8 @@ export default function CostCenters() {
           <CostCenterLoadNotice
             state={registerState}
             hasData={!!registerData}
-            errorTitle={t["screens.ccRegisterError"]}
-            errorBody={t["screens.ccLoadErrorBody"]}
+            errorTitle={t["costCenters.ccRegisterError"]}
+            errorBody={t["costCenters.ccLoadErrorBody"]}
             onRetry={() => void registerQuery.refetch()}
             testId="cost-center-register-notice"
           />
@@ -650,12 +553,14 @@ export default function CostCenters() {
               compact
               icon={Building2}
               title={
-                searchQuery.trim() ? t["screens.noCostCenterMatch"] : t["screens.noCostCenters"]
+                searchQuery.trim()
+                  ? t["costCenters.noCostCenterMatch"]
+                  : t["costCenters.noCostCenters"]
               }
               action={
                 searchQuery.trim()
                   ? undefined
-                  : { label: t["pageLabels.addCostCenter"], onClick: handleOpenCreateDialog }
+                  : { label: t["pageLabels.addCostCenter"], onClick: () => openDialog(null) }
               }
             />
           )}
@@ -722,7 +627,7 @@ export default function CostCenters() {
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
                             onSelect={() => {
-                              if (window.confirm(t["screens.confirmDeleteCostCenter"])) {
+                              if (window.confirm(t["costCenters.confirmDeleteCostCenter"])) {
                                 deleteMutation.mutate(center.id);
                               }
                             }}
@@ -735,7 +640,7 @@ export default function CostCenters() {
                         <RowActionButton
                           label={t.edit}
                           icon={Edit}
-                          onClick={() => handleOpenEditDialog(center)}
+                          onClick={() => openDialog(center)}
                         />
                       </RowActions>
                     </TableCell>
@@ -763,8 +668,8 @@ export default function CostCenters() {
           <CostCenterLoadNotice
             state={reportState}
             hasData={!!report}
-            errorTitle={t["screens.ccReportError"]}
-            errorBody={t["screens.ccLoadErrorBody"]}
+            errorTitle={t["costCenters.ccReportError"]}
+            errorBody={t["costCenters.ccLoadErrorBody"]}
             onRetry={() => void reportQuery.refetch()}
             testId="cost-center-report-notice"
             className="px-0"
@@ -803,181 +708,18 @@ export default function CostCenters() {
         </SectionCard>
       )}
 
-      {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent size="md" data-testid="dialog-cost-center-form">
-          <DialogHeader>
-            <DialogTitle>
-              {editingCostCenter ? t["screens.editCostCenter"] : t["pageLabels.addCostCenter"]}
-            </DialogTitle>
-            <DialogDescription>
-              {editingCostCenter
-                ? t["screens.costCenterDialogEditDesc"]
-                : t["screens.costCenterDialogNewDesc"]}
-            </DialogDescription>
-          </DialogHeader>
-
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit)} noValidate className="space-y-6">
-              <FormErrorSummary />
-              <FormSection title={t["forms.section.costCenter"]}>
-                <FormGrid>
-                  <FormField
-                    control={form.control}
-                    name="code"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel required>{t["screens.ccCode"]}</FormLabel>
-                        <FormControl>
-                          <Input ltr placeholder="CC-001" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel required>{t["screens.ccName"]}</FormLabel>
-                        <FormControl>
-                          <Input dir="auto" placeholder={t["screens.cc2Marketing"]} {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="nameAr"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t["screens.ccNameAr"]}</FormLabel>
-                        <FormControl>
-                          <Input dir="rtl" {...field} value={field.value ?? ""} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="type"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t["screens.ccType"]}</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value ?? "cost_centre"}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="cost_centre">
-                              {t["screens.ccTypeCostCentre"]}
-                            </SelectItem>
-                            <SelectItem value="project">{t["screens.ccTypeProject"]}</SelectItem>
-                            <SelectItem value="job">{t["screens.ccTypeJob"]}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="parentId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          <T k="pageLabels.parentCostCenter" />
-                        </FormLabel>
-                        <Select
-                          onValueChange={(value) =>
-                            field.onChange(value === "_none" ? null : value)
-                          }
-                          value={field.value || "_none"}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={t["screens.cc2NoneTopLevel"]} />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="_none">{t["screens.cc2NoneTopLevel"]}</SelectItem>
-                            {getAvailableParents().map((parent) => (
-                              <SelectItem key={parent.id} value={parent.id}>
-                                {parent.code} — {costCenterDisplayName(parent, locale)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="description"
-                    render={({ field }) => (
-                      <FormItem className={formSpanFull}>
-                        <FormLabel>
-                          <T k="pages.description" />
-                        </FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder={t["screens.cc2OptionalDescriptionForThisCostCenter"]}
-                            rows={2}
-                            {...field}
-                            value={field.value || ""}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="isActive"
-                    render={({ field }) => (
-                      <FormItem className="sm:col-span-full flex items-center justify-between gap-4 space-y-0 rounded-lg bg-surface-sunken/60 p-4">
-                        <div className="space-y-0.5">
-                          <FormLabel>
-                            <T k="pages.active" />
-                          </FormLabel>
-                          <p className="text-caption text-muted-foreground">
-                            <T k="pageLabels.inactiveCostCentersCannotReceiveNewTransactions" />
-                          </p>
-                        </div>
-                        <FormControl>
-                          <Switch checked={field.value} onCheckedChange={field.onChange} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </FormGrid>
-              </FormSection>
-
-              <FormActions sticky>
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                  <T k="pages.cancel" />
-                </Button>
-                <Button
-                  type="submit"
-                  className="sm:min-w-32"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  {createMutation.isPending || updateMutation.isPending
-                    ? t["forms.saving"]
-                    : editingCostCenter
-                      ? t["forms.costCenter.update"]
-                      : t["pageLabels.addCostCenter"]}
-                </Button>
-              </FormActions>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
+      {dialogMounted && (
+        <Suspense fallback={null}>
+          <CostCenterFormDialog
+            open={dialogOpen}
+            onOpenChange={setDialogOpen}
+            editing={editingCostCenter}
+            parents={costCenters}
+            pending={createMutation.isPending || updateMutation.isPending}
+            onSubmit={handleSubmit}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

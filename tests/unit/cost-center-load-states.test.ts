@@ -125,8 +125,8 @@ describe("cost centers load states", () => {
     expect(state("cost-center-pl-notice")).toBe("pending");
     expect(byId("cost-center-counts")).toBeNull();
     expect(text("cost-center-stat-income")).not.toContain("0.00");
-    expect(container.textContent).toContain(t.en["screens.ccPeriodUnknown"]);
-    expect(container.textContent).not.toContain(t.en["screens.noCostCenters"]);
+    expect(container.textContent).toContain(t.en["costCenters.ccPeriodUnknown"]);
+    expect(container.textContent).not.toContain(t.en["costCenters.noCostCenters"]);
   });
 
   it("a first load paused before any response says paused, not empty", async () => {
@@ -134,11 +134,11 @@ describe("cost centers load states", () => {
     render();
     await until(() => expect(state("cost-center-register-notice")).toBe("paused"));
     expect(state("cost-center-pl-notice")).toBe("paused");
-    expect(text("cost-center-register-notice")).toContain(t.en["screens.ccLoadPaused"]);
-    expect(text("cost-center-pl-notice")).toContain(t.en["screens.ccLoadPaused"]);
+    expect(text("cost-center-register-notice")).toContain(t.en["costCenters.ccLoadPaused"]);
+    expect(text("cost-center-pl-notice")).toContain(t.en["costCenters.ccLoadPaused"]);
     expect(byId("cost-center-stat-income")).toBeNull();
     expect(byId("cost-center-counts")).toBeNull();
-    expect(container.textContent).not.toContain(t.en["screens.noCostCenters"]);
+    expect(container.textContent).not.toContain(t.en["costCenters.noCostCenters"]);
   });
 
   it("shows a retry in progress, then a paused retry", async () => {
@@ -167,9 +167,9 @@ describe("cost centers load states", () => {
     };
     render();
     await until(() => expect(retryButton("cost-center-register-notice")).toBeTruthy());
-    expect(text("cost-center-register-notice")).toContain(t.en["screens.ccRegisterError"]);
+    expect(text("cost-center-register-notice")).toContain(t.en["costCenters.ccRegisterError"]);
     expect(byId("cost-center-counts")).toBeNull();
-    expect(container.textContent).not.toContain(t.en["screens.noCostCenters"]);
+    expect(container.textContent).not.toContain(t.en["costCenters.noCostCenters"]);
 
     handlers[REGISTER] = never;
     click(retryButton("cost-center-register-notice"));
@@ -189,9 +189,9 @@ describe("cost centers load states", () => {
       expect(retryButton("cost-center-pl-notice")).toBeTruthy();
       expect(text("cost-center-register")).toContain("Sales team");
     });
-    expect(text("cost-center-pl-notice")).toContain(t.en["screens.ccPlError"]);
-    expect(text("cost-center-pl-notice")).toContain(t.en["screens.ccLoadErrorBody"]);
-    expect(container.textContent).toContain(t.en["screens.ccPeriodUnavailable"]);
+    expect(text("cost-center-pl-notice")).toContain(t.en["costCenters.ccPlError"]);
+    expect(text("cost-center-pl-notice")).toContain(t.en["costCenters.ccLoadErrorBody"]);
+    expect(container.textContent).toContain(t.en["costCenters.ccPeriodUnavailable"]);
     expect(byId("cost-center-stat-income")).toBeNull();
 
     handlers[PROFITABILITY] = () => json(profitability);
@@ -205,7 +205,7 @@ describe("cost centers load states", () => {
     onlineManager.setOnline(false);
     render(false, 60_000, () => client.setQueryData([REGISTER], [center]));
     await until(() =>
-      expect(text("cost-center-pl-notice")).toContain(t.en["screens.ccLoadPaused"])
+      expect(text("cost-center-pl-notice")).toContain(t.en["costCenters.ccLoadPaused"])
     );
     expect(state("cost-center-pl-notice")).toBe("paused");
     expect(text("cost-center-register")).toContain("Sales team");
@@ -252,7 +252,7 @@ describe("cost centers load states", () => {
   it("a successful empty list shows the empty state and real zero counts, and no P&L", async () => {
     handlers[REGISTER] = () => json([]);
     render();
-    await until(() => expect(container.textContent).toContain(t.en["screens.noCostCenters"]));
+    await until(() => expect(container.textContent).toContain(t.en["costCenters.noCostCenters"]));
     expect(text("cost-center-counts")).toContain("0 cost centers");
     expect(byId("cost-center-pl")).toBeNull();
   });

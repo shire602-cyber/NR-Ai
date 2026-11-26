@@ -43,11 +43,11 @@ export function CostCenterLoadNotice({
   }
 
   const message = {
-    pending: t["screens.ccLoading"],
-    paused: t["screens.ccLoadPaused"],
-    retrying: t["screens.ccRetrying"],
-    pausedRetry: t["screens.ccRetryPaused"],
-    refreshError: t["screens.ccRefreshFailed"],
+    pending: t["costCenters.ccLoading"],
+    paused: t["costCenters.ccLoadPaused"],
+    retrying: t["costCenters.ccRetrying"],
+    pausedRetry: t["costCenters.ccRetryPaused"],
+    refreshError: t["costCenters.ccRefreshFailed"],
   }[state];
 
   return (
@@ -62,7 +62,7 @@ export function CostCenterLoadNotice({
     >
       <p>
         {message}
-        {hasData && <> {t["screens.ccShowingLastLoaded"]}</>}
+        {hasData && <> {t["costCenters.ccShowingLastLoaded"]}</>}
       </p>
       {state === "refreshError" && (
         <Button type="button" variant="outline" size="sm" onClick={onRetry}>
