@@ -261,6 +261,8 @@ const formatSupport =
 const supportAction =
   /^(?:(?:we |you |it )?(?:can )?(?:also )?(?:accept|support|allow|upload|import)\w*\s+(?:also\s+)?|(?:و|كما\s+)?(?:نقبل|ندعم|يقبل|يدعم|يمكنك (?:رفع|استيراد)|تقبل|تدعم|يتم قبول)\s+(?:[اأ]يضا\s+)?(?:ملفات |صيغة )?)$/iu;
 const formatObject = /^(?: (?:files?|formats?))?(?: too| as well| [اأ]يضا)?$/iu;
+const uploadWithFormat =
+  /^(?:we |you |it )?(?:can )?(?:also )?(?:upload|import) (?:them|it) (?:as|in) $/i;
 const csvFormat = /\bcsv\b/i;
 const bankMention = /\bbank|بنك|مصرف/iu;
 const statementMention = /\bstatements?\b|كشف/iu;
@@ -287,7 +289,7 @@ function competingBankFormats(
     const before = format ? clause.slice(0, format.index) : "";
     const after = format ? clause.slice(format.index + format[0].length) : "";
     const continuesFormatClaim =
-      (supportAction.test(before) && formatObject.test(after)) ||
+      ((supportAction.test(before) || uploadWithFormat.test(before)) && formatObject.test(after)) ||
       (formatSubject.test(before) && formatSupport.test(after));
     inBankImport =
       isBankImport(clause) || (inBankImport && format !== null && continuesFormatClaim);
@@ -464,6 +466,7 @@ describe("launch copy guard regressions", () => {
       "Bank reconciliation supports CSV formats from Emirates NBD. Report packs from Excel go in Document Vault.",
       "وتدعم التسوية البنكية صيغ CSV من بنك الإمارات. أما حزم التقارير من Excel فتحفظ في خزنة المستندات.",
       "Upload bank statements as CSV. Excel is also accepted in Document Vault.",
+      "Upload bank statements as CSV. You can also upload report packs as Excel in Document Vault.",
     ];
     for (const value of good) {
       expect(bankImportProblems(value), value).toEqual([]);
@@ -479,6 +482,7 @@ describe("launch copy guard regressions", () => {
       "Upload bank statements as CSV. Excel is also accepted.",
       "Upload bank statements as CSV. Excel is accepted for this import.",
       "Upload bank statements as CSV. We also accept Excel files.",
+      "Upload bank statements as CSV. You can also upload them as Excel.",
       "CSV statement import. Excel files are supported too.",
       "ارفع كشف حساب بنكي بصيغة CSV. ملفات إكسل مقبولة أيضًا.",
       "ارفع كشف حساب بنكي بصيغة CSV. كما نقبل ملفات Excel.",
@@ -528,6 +532,12 @@ describe("launch copy guard regressions", () => {
     for (const [value, locale] of rejected) {
       expect(trialViolations(value, locale), value).not.toEqual([]);
     }
+    expect(
+      trialViolations(
+        "Start a 14-day Enterprise trial. No card needed. To activate it, you must enter your card details.",
+        "en"
+      )
+    ).toEqual(["requires a card"]);
   });
 });
 
@@ -555,7 +565,7 @@ const wording = {
     trial: /\btrial\b|\b(?:free|at no cost) for 14 days\b|\b14 days (?:free|at no cost)\b/i,
     comparisonOffer: /^yes,?\s+14 days of enterprise(?:,|$)/i,
     cardRequired:
-      /\b(?:cards?(?: details)? (?:is |are )?(?:required|needed|mandatory)|(?:require[sd]?|needing|needs?|must (?:have|enter|add|provide|use)|pay (?:by|with)) (?:an? )?(?:(?:credit|debit|payment) )?cards?)\b/i,
+      /\b(?:cards?(?: details)? (?:is |are )?(?:required|needed|mandatory)|(?:require[sd]?|needing|needs?|must (?:have|enter|add|provide|use)|pay (?:by|with)) (?:(?:an?|the|your) )?(?:(?:credit|debit|payment) )?cards?)\b/i,
     negation:
       /\b(?:no longer|not (?:be )?(?:available|offered|included|possible)|unavailable|isn'?t|aren'?t|cannot|can'?t|ended|expired|discontinued|withdrawn)\b/i,
   },
