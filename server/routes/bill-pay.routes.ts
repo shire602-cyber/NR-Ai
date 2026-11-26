@@ -648,13 +648,21 @@ export function registerBillPayRoutes(app: Express) {
             "This bill was posted to the ledger; void it instead of deleting it"
           );
         }
-        // FTA 5-year retention: use bill_date (document date), not created_at.
-        // The generated retention_expires_at column uses created_at; we override
-        // here so the guard reflects when the document was issued, not entered.
-        assertRetentionExpired(
-          { createdAt: bill.bill_date as string },
-          "Vendor bill"
-        );
+        // FTA 5-year retention (Cabinet Decision 74/2023 Article 3): the
+        // 5-year clock runs from the relevant tax period.  We use the LATER
+        // of bill_date (document date) and created_at (system entry date) so
+        // a recently entered bill with a backdated document date cannot bypass
+        // the guard.  A shared tax-period-expiry helper will refine this once
+        // available; until then the conservative guard protects all recent bills.
+        const billDate = bill.bill_date as string | undefined;
+        const createdAt = bill.created_at as string | undefined;
+        const guardDate =
+          billDate && createdAt
+            ? billDate > createdAt
+              ? billDate
+              : createdAt
+            : billDate ?? createdAt ?? "";
+        assertRetentionExpired({ createdAt: guardDate }, "Vendor bill");
       }
       await pool.query("DELETE FROM vendor_bills WHERE id = $1 AND company_id = $2", [
         bill.id,
