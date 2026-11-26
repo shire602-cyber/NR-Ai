@@ -6,13 +6,17 @@
 // POST /api/companies/:companyId/einvoice/partner/revoke      owner/CFO switches e-invoicing off
 
 import type { Express, Request, Response } from "express";
-import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { recordAudit } from "../services/audit.service";
 import {
-  APPOINTMENT_ROLES,
+  assertScopedCompanyPermission,
+  requireScopedCompanyPermission,
+} from "../middleware/companyRolePolicy";
+import { strictBody } from "../http/strict-body";
+import { recordAudit } from "../services/audit.service";
+import { z } from "zod";
+import {
   acceptPartnerTerms,
   activeEInvoicePartner,
   appointmentState,
@@ -22,6 +26,7 @@ import {
 } from "../services/einvoice-appointment.service";
 import type { EInvoiceAspAppointment } from "../../shared/schema";
 
+// Shared validators — used by strictBody middleware.
 const acceptSchema = z.object({ termsVersion: z.string().min(1), accepted: z.literal(true) });
 const confirmSchema = z.object({ confirmed: z.literal(true) });
 
@@ -36,41 +41,18 @@ function serialize(appointment: EInvoiceAspAppointment | null) {
   };
 }
 
-/** 403 unless the user can open the company; with `manage`, also requires owner/CFO. */
-async function checkAccess(
-  req: Request,
-  res: Response,
-  companyId: string,
-  manage: boolean
-): Promise<boolean> {
-  const { id: userId, firmRole } = req.user!;
-  if (!(await storage.hasCompanyAccess(userId, companyId, firmRole))) {
-    res.status(403).json({ message: "Access denied" });
-    return false;
-  }
-  if (!manage) return true;
-  // Consent binds the client company to a third-party contract, so it must come
-  // from the company's own owner or CFO — not firm staff or platform admins.
-  const members = await storage.getCompanyUsersByCompanyId(companyId);
-  const role = members.find((m) => m.userId === userId)?.role;
-  if (!role || !APPOINTMENT_ROLES.has(role)) {
-    res.status(403).json({
-      message: "Only the company owner or CFO can set up e-invoicing.",
-      code: "EINVOICE_APPOINTMENT_ROLE",
-    });
-    return false;
-  }
-  return true;
-}
-
 export function registerEInvoicePartnerRoutes(app: Express) {
+  // Read: any authenticated user who can access the company.
   app.get(
     "/api/companies/:companyId/einvoice/partner",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      if (!(await checkAccess(req, res, companyId, false))) return;
+      // 404 (not 403) for another tenant's company — platform rule.
+      if (!(await storage.hasCompanyAccess(req.user!.id, companyId, req.user!.firmRole))) {
+        return res.status(404).json({ message: "Company not found" });
+      }
       const partner = activeEInvoicePartner();
       const appointment = await getAppointment(companyId, partner.provider);
       res.json({
@@ -81,17 +63,15 @@ export function registerEInvoicePartnerRoutes(app: Express) {
     })
   );
 
+  // Write: requires settings.company (owner + admin; former CFOs mapped to admin by 0092).
   app.post(
     "/api/companies/:companyId/einvoice/partner/accept-terms",
     authMiddleware,
     requireCustomer,
+    strictBody(acceptSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      if (!(await checkAccess(req, res, companyId, true))) return;
-      const parsed = acceptSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Tick the box to accept the partner's terms." });
-      }
+      await assertScopedCompanyPermission(req.user, companyId, "settings.company");
       const partner = activeEInvoicePartner();
       if (!partner.requiresAppointment) {
         return res.status(409).json({
@@ -106,7 +86,7 @@ export function registerEInvoicePartnerRoutes(app: Express) {
         });
       }
       // Guard against accepting a version the user never saw.
-      if (parsed.data.termsVersion !== partner.termsVersion) {
+      if (req.body.termsVersion !== partner.termsVersion) {
         return res.status(409).json({
           message: "The partner's terms changed while you were reading. Reload and review them.",
           code: "EINVOICE_TERMS_VERSION_MISMATCH",
@@ -138,14 +118,10 @@ export function registerEInvoicePartnerRoutes(app: Express) {
     "/api/companies/:companyId/einvoice/partner/confirm-emaratax",
     authMiddleware,
     requireCustomer,
+    strictBody(confirmSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      if (!(await checkAccess(req, res, companyId, true))) return;
-      if (!confirmSchema.safeParse(req.body).success) {
-        return res
-          .status(400)
-          .json({ message: "Confirm that you appointed the partner in EmaraTax." });
-      }
+      await assertScopedCompanyPermission(req.user, companyId, "settings.company");
       const partner = activeEInvoicePartner();
       const existing = await getAppointment(companyId, partner.provider);
       const state = appointmentState(existing, partner);
@@ -162,12 +138,20 @@ export function registerEInvoicePartnerRoutes(app: Express) {
         provider: partner.provider,
         userId,
       });
+      if (!appointment) {
+        // A concurrent revocation committed between the state check and the write.
+        return res.status(409).json({
+          message: "E-invoicing was switched off for this company. Set it up again first.",
+          code: "EINVOICE_APPOINTMENT_REQUIRED",
+          state: "revoked",
+        });
+      }
       await recordAudit({
         userId,
         companyId,
         action: "einvoice.partner_emaratax_confirmed",
         entityType: "einvoice_asp_appointment",
-        entityId: appointment?.id,
+        entityId: appointment.id,
         after: { provider: partner.provider },
         req,
       });
@@ -182,9 +166,9 @@ export function registerEInvoicePartnerRoutes(app: Express) {
     "/api/companies/:companyId/einvoice/partner/revoke",
     authMiddleware,
     requireCustomer,
+    requireScopedCompanyPermission("settings.company"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      if (!(await checkAccess(req, res, companyId, true))) return;
       const partner = activeEInvoicePartner();
       const userId = req.user!.id;
       const appointment = await revokeAppointment({

@@ -8,7 +8,7 @@
 //   2. an owner/CFO confirmed they appointed that partner in EmaraTax.
 // The gate below is pure so it can be tested without a database.
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { einvoiceAspAppointments, type EInvoiceAspAppointment } from "../../shared/schema";
 
@@ -117,8 +117,9 @@ export async function acceptPartnerTerms(args: {
   userId: string;
 }): Promise<EInvoiceAspAppointment> {
   const now = new Date();
-  const existing = await getAppointment(args.companyId, args.partner.provider);
-  const reappointing = Boolean(existing?.revokedAt);
+  // The EmaraTax confirmation is cleared atomically when the row's current
+  // revokedAt is non-null at write time (not at the earlier read time),
+  // closing the TOCTOU window where a concurrent revocation could be lost.
   const [row] = await db
     .insert(einvoiceAspAppointments)
     .values({
@@ -136,8 +137,10 @@ export async function acceptPartnerTerms(args: {
         termsAcceptedBy: args.userId,
         revokedAt: null,
         revokedBy: null,
-        // After a revocation the client must re-appoint in EmaraTax.
-        ...(reappointing ? { emarataxConfirmedAt: null, emarataxConfirmedBy: null } : {}),
+        // After a revocation the client must re-appoint in EmaraTax. Evaluate
+        // revokedAt at write time so a concurrent revocation is not silently cleared.
+        emarataxConfirmedAt: sql`CASE WHEN ${einvoiceAspAppointments.revokedAt} IS NOT NULL THEN NULL ELSE ${einvoiceAspAppointments.emarataxConfirmedAt} END`,
+        emarataxConfirmedBy: sql`CASE WHEN ${einvoiceAspAppointments.revokedAt} IS NOT NULL THEN NULL ELSE ${einvoiceAspAppointments.emarataxConfirmedBy} END`,
         updatedAt: now,
       },
     })
@@ -151,13 +154,17 @@ export async function confirmEmaraTaxAppointment(args: {
   userId: string;
 }): Promise<EInvoiceAspAppointment | null> {
   const now = new Date();
+  // Add revokedAt IS NULL so a concurrent revocation committed between the route's
+  // state check and this write causes the update to match no rows (returns null),
+  // which the caller surfaces as a 409 instead of silently confirming a revoked appointment.
   const [row] = await db
     .update(einvoiceAspAppointments)
     .set({ emarataxConfirmedAt: now, emarataxConfirmedBy: args.userId, updatedAt: now })
     .where(
       and(
         eq(einvoiceAspAppointments.companyId, args.companyId),
-        eq(einvoiceAspAppointments.provider, args.provider)
+        eq(einvoiceAspAppointments.provider, args.provider),
+        isNull(einvoiceAspAppointments.revokedAt)
       )
     )
     .returning();

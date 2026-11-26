@@ -145,6 +145,8 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("POST", "companies/*/einvoicing/complyance/connect", "settings.company"),
   r("POST", "companies/*/einvoicing/complyance/sync", "settings.company"),
   r("MUT", "companies/*/einvoicing/partner/**", "settings.company"),
+  // Appointment flow uses the /einvoice/ prefix (without the extra 'i').
+  r("MUT", "companies/*/einvoice/partner/**", "settings.company"),
   r("*", "companies/*/einvoicing/approver-links/**", "settings.company"),
   r("POST", "companies/*/einvoicing/tax-ready/shown", "documents.write"),
   // WQ7: automation switches, document numbering, approval rules and the setup wizard's
