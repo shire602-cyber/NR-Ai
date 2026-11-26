@@ -337,6 +337,40 @@ Dataset seeded: 50 approved AED bills, vendor "Perf Vendor", bill numbers PF-MWX
 Samples aging (ms): 536.7, 251.3, 239.7, 256.1, 240.0, 237.6, 240.0, 240.8, 233.4, 237.1, 231.9, 245.5, 313.2, 304.4, 295.4, 265.7, 274.4, 247.2, 248.6, 237.5
 Samples health/live (ms): 201.8, 210.7, 201.6, 218.9, 218.5, 200.4, 208.0, 236.0, 206.6, 214.8, 199.7, 1393.6, 226.5, 234.6, 206.5, 209.1, 201.5, 210.7, 211.0, 205.8
 
+## F02 effective returns
+
+Run (UTC): 2026-11-26T14:15:30.021Z; staging commit 9e5fa7264c41d1c4e4d6b64527eae6e519e3e1a8; company 15943f48-7ab9-4a57-af69-552d24a4d8cb; period 2026-01-01..2026-03-31; manual references TEST-REF-0001/0002 (no FTA transmission, no settlement).
+
+| Item | Expected | Observed | Result |
+|---|---|---|---|
+| seed: issue AED 10,000 + 5% invoice dated 2026-02-10 | 200 / 200 | 200 / 200  | PASS |
+| 1. generate return Q1 2026 | 201 | 201 box1/box14= payable 500; status draft | PASS |
+| 1. submit original with TEST-REF-0001 | 200, status submitted/filed, transmittedByMuhasib=false | 200 status=filed transmitted=false channel=manual-emaratax  | PASS |
+| 2. issue credit note AED 1,000 + 5% dated 2026-02-20 (Q1) | 201 | 409 {"message":"The VAT return for 2026-01-01 to 2026-03-31 has been filed, so this VAT period is closed. Date the document on or after 2026-04-01: a net tax difference of up to AED 10,000 is corrected in that period's return (Executive Regulation Art. 70). Above AED 10,000, open a voluntary disclosure (amend the filed return) f | FAIL |
+
+Records: invoice 9f19cbec-f94c-457a-9794-713d59261cae (INV-2026-00019); vat return original 8b9238d8-77ea-4528-9119-a829479486d9
+
+- Q1 2026 returns before the run: 0
+- period-lock before: {"lockThroughDate":null,"fiscalYearStartMonth":1,"currentFiscalYearStart":"2026-01-01","locks":[],"fiscalYears":[]}
+- original draft boxes: {"box1aAbuDhabiAmount":0,"box1aAbuDhabiVat":0,"box1aAbuDhabiAdj":0,"box1bDubaiAmount":10000,"box1bDubaiVat":500,"box1bDubaiAdj":0,"box1cSharjahAmount":0,"box1cSharjahVat":0,"box1cSharjahAdj":0,"box1dAjmanAmount":0,"box1dAjmanVat":0,"box1dAjmanAdj":0,"box1eUmmAlQuwainAmount":0,"box1eUmmAlQuwainVat":0,"box1eUmmAlQuwainAdj":0,"box1fRasAlKhaimahAmount":0,"box1fRasAlKhaimahVat":0,"box1fRasAlKhaimahAdj":0,"box1gFujairahAmount":0,"box1gFujairahVat":0,"box1gFujairahAdj":0,"box8TotalAmount":10000,"box8TotalVat":500,"box8TotalAdj":0,"box10ReverseChargeAmount":0,"box10ReverseChargeVat":0,"box11TotalAmount":0,"box11TotalVat":0,"box11TotalAdj":0,"box12TotalDueTax":500,"box13RecoverableTax":0,"box14PayableTax":500,"box1SalesStandard":10000,"box8TotalInputTax":0}
+- period-lock after submitting original: {"lockThroughDate":null,"fiscalYearStartMonth":1,"currentFiscalYearStart":"2026-01-01","locks":[],"fiscalYears":[]}
+- credit note body: {"message":"The VAT return for 2026-01-01 to 2026-03-31 has been filed, so this VAT period is closed. Date the document on or after 2026-04-01: a net tax difference of up to AED 10,000 is corrected in that period's return (Executive Regulation Art. 70). Above AED 10,000, open a voluntary disclosure (amend the filed return) first; the period re-open
+
+## F02 effective returns
+
+Run (UTC): 2026-11-26T14:16:15.429Z; staging commit 9e5fa7264c41d1c4e4d6b64527eae6e519e3e1a8; company 15943f48-7ab9-4a57-af69-552d24a4d8cb; period 2026-01-01..2026-03-31; manual references TEST-REF-0001/0002 (no FTA transmission, no settlement).
+
+First attempt (staging-f02.mjs): issued AED 10,000 + 5% invoice dated 2026-02-10 (INV, VAT 500), generated and submitted the return as TEST-REF-0001 (status filed, transmittedByMuhasib=false, channel manual-emaratax); the credit note dated 2026-02-20 was then refused 409 (filed VAT period closed; see rows below). The rerun amends first, as the refusal message prescribes.
+
+| Item | Expected | Observed | Result |
+|---|---|---|---|
+| resume: original Q1 return filed in the earlier run (TEST-REF-0001) | status filed, ref TEST-REF-0001 | 8b9238d8-77ea-4528-9119-a829479486d9 filed TEST-REF-0001 payable 500 | PASS |
+| 2. amend filed original (reason 'staging F02 check') | 201, draft referencing original (amendsReturnId) | 409 status=undefined amendsReturnId=undefined payable=undefined {"message":"A record with this value already exists","code":"DUPLICATE_VALUE","requestId":"90e6578b-3af0-4791-af4b-6d0229f36b47"} | FAIL |
+| run | no error | Cannot read properties of undefined (reading 'slice') | FAIL |
+
+Records: vat return original 8b9238d8-77ea-4528-9119-a829479486d9; invoice 9f19cbec-f94c-457a-9794-713d59261cae (INV-2026-00019); vat return amendment undefined
+
+
 ## Public site sweep (council, browser pane, 2026-11-26 ~13:45 UTC)
 
 All 88 sitemap URLs (`/en/*` and `/ar/*`) rendered in the SPA and scanned for: ZATCA, Saudi (EN/AR), A-Cube, Complyance, OFX, QIF, MT940, "PDF statement", AED 49/149/299. **0 hits.**
@@ -348,5 +382,5 @@ Headers on `/en` (commit 448dcac1): HSTS 1 year + includeSubDomains, nonce CSP, 
 - S05 wording: a blank-amount row is reported in `parseErrors` ("Row N: Missing amount"); explicit zero-value rows count in `skippedRows`. Both are visible to the caller, which is the S05 fix; the register wording is corrected accordingly.
 - Screenshots (43 PNG, demo tenant) are kept outside the repo in the session scratchpad `ui-shots/`.
 - F06 does not discriminate UTC from Dubai at 13:41 UTC (same calendar date). A run between 20:00 and 24:00 UTC is needed to prove the undated default uses the Dubai date on staging.
-- F02 needs a submitted/filed return, which crosses the FTA submission boundary; not verifiable on staging.
+- F02: submit never transmits (records a manual EmaraTax reference), so it is testable on staging; see "F02 effective returns" above for the result.
 - Demo tenant data left on staging: invoices INV-2026-00001..~00027, credit notes, payments, customer credits, one USD→AED 3.6725 rate, fixture TRN 100000000000003 on the demo company; Feb 2026 lock removed after the F06 check.
