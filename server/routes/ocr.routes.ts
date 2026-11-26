@@ -39,6 +39,7 @@ import { sanityCheckReceipt } from "../services/ai/structured-output";
 import { assertAiQuota, type AiContext } from "../services/ai/usage-meter";
 import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
 import { errorCode, errorMessage, errorProperty } from "../errors";
+import { todayDubai } from "@shared/accounting-date";
 
 const log = createLogger("ocr");
 
@@ -584,7 +585,7 @@ function buildResult(
       ? aiResult.category
       : "Other";
 
-  let parsedDate = new Date().toISOString().split("T")[0];
+  let parsedDate = todayDubai();
   if (typeof aiResult.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(aiResult.date)) {
     parsedDate = aiResult.date;
   }

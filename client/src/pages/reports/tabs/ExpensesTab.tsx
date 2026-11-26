@@ -26,6 +26,7 @@ import { formatDateRange } from "@/lib/format-date";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
+import { SecondaryQueryError } from "../ReportQueryNotice";
 
 export default function ExpensesTab() {
   const { t } = useTranslation();
@@ -37,9 +38,13 @@ export default function ExpensesTab() {
     hasFocusedReportSelection,
     locale,
     reportSectionClass,
+    secondaryLoadErrors,
   } = useReportsPageContext();
   return (
     <>
+      <SecondaryQueryError error={secondaryLoadErrors.receipts} testId="expenses-tab-receipts-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.expenseClaims} testId="expenses-tab-expense-claims-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.expenseClaimSummary} testId="expenses-tab-claim-summary-error" />
       <div
         className={reportSectionClass(
           ["expenses-vendor", "expenses-category"],

@@ -521,6 +521,7 @@ async function stageReleaseSchema(database) {
     "0155_cash_sale_buyer_and_checkout_reservation",
     "0156_request_throttle_buckets",
     "0157_preserve_period_locks_and_repair_cash_sale_numbering",
+    "0158_s4_einvoice_asp_appointments",
   ]) {
     psql(database, readFileSync(path.join(migrationsFolder, tag + ".sql"), "utf8"));
   }
