@@ -1,8 +1,11 @@
 // @ts-expect-error - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
+import Decimal from "decimal.js";
 import { loadCompanyLogo } from "./pdf-logo";
+import { mulRate, toFils } from "../../shared/money";
 import { calendarParts } from "../../shared/uae-date";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
+import { classifySupply } from "../../shared/vat-classification";
 import { renderInvoiceShareQrPng } from "./einvoice-qr.service";
 import {
   isArabic,
@@ -175,40 +178,57 @@ export function computeInvoicePdfTotals(
   };
 }
 
-
 type PdfLineAmount = { net: number; vat: number; total: number; rate: number };
 
-/**
- * Line net, VAT and gross from the same engine that priced the stored invoice,
- * including VAT on a profit-margin scheme line (tax fraction of the margin, not
- * of the full net selling price).
- */
 function computePdfLineAmounts(invoice: Invoice, lines: InvoiceLine[]): PdfLineAmount[] {
-  const totals = computeSalesDocument(
-    lines.map((l) =>
-      storedLineToTotalsInput({
-        quantity: Math.abs(Number(l.quantity)),
-        unitPrice: Math.abs(Number(l.unitPrice)),
-        vatRate: l.vatRate,
-        vatSupplyType: l.vatSupplyType,
-        marginScheme: l.marginScheme,
-        marginPurchaseCost: l.marginPurchaseCost,
-        discountType: (l as InvoiceLine & { discountType?: string | null }).discountType ?? null,
-        discountValue: (l as InvoiceLine & { discountValue?: number | null }).discountValue ?? null,
-      })
-    ),
-    {
-      discountType: invoice.discountType ?? null,
-      discountValue: invoice.discountValue ?? null,
-      reverseCharge: invoice.reverseCharge ?? null,
-    }
-  );
-  return totals.lines.map((t) => ({
-    net: t.netFils / 100,
-    vat: t.vatFils / 100,
-    total: (t.netFils + t.vatFils) / 100,
-    rate: t.vatRate,
-  }));
+  const { discountType, discountValue, reverseCharge } = invoice;
+  // Stored net already includes both discounts. The real quantity may have lost precision.
+  const storedAmounts = lines.map((line) => {
+    if (line.marginScheme || line.netAmount == null) return null;
+    const netFils = Math.abs(toFils(line.netAmount));
+    const { chargedVatRate: vatRate } = classifySupply({
+      supplyType: line.vatSupplyType,
+      vatRate: line.vatRate,
+      reverseCharge,
+    });
+    return { netFils, vatFils: vatRate ? mulRate(netFils, vatRate) : 0, vatRate };
+  });
+
+  // Margin VAT and legacy lines without a stored net need the sales engine. Keep all
+  // lines in the allocation, using the posted line discount for ordinary stored lines.
+  const computed = storedAmounts.some((amount) => amount === null)
+    ? computeSalesDocument(
+        lines.map((line, i) => {
+          const quantity = Math.abs(Number(line.quantity));
+          const unitPrice = Math.abs(Number(line.unitPrice));
+          const stored = storedAmounts[i];
+          if (!stored) return storedLineToTotalsInput({ ...line, quantity, unitPrice });
+
+          const afterLineDiscount =
+            discountType && discountValue
+              ? toFils(new Decimal(quantity).times(unitPrice).toFixed(), { rounding: "halfUp" }) -
+                Math.abs(toFils(line.discountAmount ?? 0))
+              : stored.netFils;
+          return {
+            quantity: 1,
+            unitPriceFils: Math.max(stored.netFils, afterLineDiscount),
+            vatRate: line.vatRate,
+            vatSupplyType: line.vatSupplyType,
+          };
+        }),
+        { discountType, discountValue, reverseCharge }
+      ).lines
+    : [];
+
+  return storedAmounts.map((stored, i) => {
+    const { netFils, vatFils, vatRate } = stored ?? computed[i];
+    return {
+      net: netFils / 100,
+      vat: vatFils / 100,
+      total: (netFils + vatFils) / 100,
+      rate: vatRate,
+    };
+  });
 }
 
 async function generateStandardInvoicePDF(
