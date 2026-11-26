@@ -35,6 +35,7 @@ export default function ImportReview({
   const errors = useMemo(() => job.issues.filter((i) => i.level === "error"), [job]);
   const warnings = useMemo(() => job.issues.filter((i) => i.level === "warning"), [job]);
   const columns = job.rows[0] ? Object.keys(job.rows[0]) : [];
+  const detectedRows = Number(job.summary.detectedRows) || 0;
 
   return (
     <Card>
@@ -80,12 +81,19 @@ export default function ImportReview({
             </Table>
           </div>
         )}
-        <IssueList title={t["importWizard.errors"]} issues={errors} tone="error" locale={locale} />
+        <IssueList
+          title={t["importWizard.errors"]}
+          issues={errors}
+          tone="error"
+          locale={locale}
+          detectedRows={detectedRows}
+        />
         <IssueList
           title={t["importWizard.warnings"]}
           issues={warnings}
           tone="warning"
           locale={locale}
+          detectedRows={detectedRows}
         />
         {hasNoData(job) && (
           <p
@@ -152,11 +160,13 @@ function IssueList({
   issues,
   tone,
   locale,
+  detectedRows,
 }: {
   title: string;
   issues: Issue[];
   tone: "error" | "warning";
   locale: Locale;
+  detectedRows: number;
 }) {
   const { t } = useTranslation();
   if (!issues.length) return null;
@@ -176,7 +186,7 @@ function IssueList({
             />
             <span>
               {i.row ? `#${i.row} · ` : ""}
-              {issueText(i, locale, t)}
+              {issueText(i, locale, t, detectedRows)}
             </span>
           </li>
         ))}

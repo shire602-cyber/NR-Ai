@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { onlineManager, QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearAuthHint, setAuthHint } from "../../client/src/lib/authHint";
 // Static so that loading the page's module graph does not count against a test's timeout.
@@ -45,6 +45,7 @@ let companies: Array<{ id: string; name: string }>;
 let companiesReply: () => Response | Promise<Response>;
 let history: () => Response;
 let preview: () => Promise<Response>;
+let validate: () => Response;
 let historySignals: Array<AbortSignal | null | undefined>;
 const toasts = vi.fn();
 
@@ -71,6 +72,7 @@ beforeEach(() => {
   companiesReply = () => json(companies);
   history = () => json([]);
   preview = async () => json(baseJob, 201);
+  validate = () => json({ ...baseJob, status: "validated" });
   historySignals = [];
   vi.stubGlobal(
     "fetch",
@@ -79,6 +81,7 @@ beforeEach(() => {
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
       if (/\/api\/companies$/.test(url)) return companiesReply();
       if (url.endsWith("/imports/preview")) return preview();
+      if (url.endsWith("/imports/j1/validate")) return validate();
       if (url.endsWith("/imports")) {
         historySignals.push(init?.signal);
         return history();
@@ -98,6 +101,7 @@ afterEach(async () => {
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
   onlineManager.setOnline(true);
+  focusManager.setFocused(undefined);
   useI18n.getState().setLocale("en");
 });
 
@@ -260,15 +264,54 @@ describe("import history states", () => {
     expect(historySignals).toHaveLength(0);
   });
 
-  it("shows offline, not empty, while the first load is paused", async () => {
+  it("stays a neutral paused notice, not empty, before and after the connection returns unfocused", async () => {
     const client = await mount();
     await act(async () => {
+      focusManager.setFocused(false);
       onlineManager.setOnline(false);
       void client.resetQueries({ queryKey: HISTORY_KEY });
     });
     await settle();
-    expect(q("text-import-history-offline")).not.toBeNull();
-    expect(q("text-import-history-empty")).toBeNull();
+    const expectNeutral = () => {
+      const notice = q("text-import-history-paused")!.textContent!;
+      expect(notice).toContain("paused");
+      expect(notice).not.toMatch(/connection|offline/i);
+      expect(q("text-import-history-empty")).toBeNull();
+    };
+    expectNeutral();
+    await act(async () => onlineManager.setOnline(true));
+    await settle();
+    expectNeutral();
+  });
+
+  it("shows a neutral paused notice above cached rows while a refresh is paused", async () => {
+    history = () => json([{ ...baseJob, fileName: "kept.csv" }]);
+    const client = await mount();
+    await act(async () => {
+      onlineManager.setOnline(false);
+      void client.refetchQueries({ queryKey: HISTORY_KEY });
+    });
+    await settle();
+    expect(q("text-import-history-pausedcached")!.textContent).toContain("paused");
+    expect(q("text-import-history-pausedcached")!.textContent).not.toMatch(/connection|offline/i);
+    expect(q("text-import-history-paused")).toBeNull();
+    expect(document.body.textContent).toContain("kept.csv");
+  });
+
+  it("a failed company lookup is an alert, not 'select a company'", async () => {
+    // 403, not 5xx: the default query retries a 5xx with a delay that outlasts the test.
+    companiesReply = () => json({ message: "boom" }, 403);
+    await mount();
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(q("text-import-history-companieserror")?.getAttribute("role")).toBe("alert");
+    });
+    expect(q("text-import-history-companieserror")!.textContent).toContain(
+      "Could not load your companies"
+    );
+    expect(q("text-import-history-nocompany")).toBeNull();
+    expect(q("text-import-history-loading")).toBeNull();
+    expect(historySignals).toHaveLength(0);
   });
 
   it("retries a failed load in place and keeps the file and preview", async () => {
@@ -318,6 +361,8 @@ describe("recovery guidance and Arabic issues", () => {
   it("NO_ROWS gives the no-data guidance", async () => {
     await review({ ...empty, issues: [error("NO_ROWS", "The file has no data rows")] });
     expect(q("text-import-no-rows")).not.toBeNull();
+    // A genuinely empty file (no detected rows) keeps the server text on the issue row.
+    expect(issueRow()).toContain("The file has no data rows");
   });
 
   it("a missing column with data present is not reported as no data", async () => {
@@ -337,6 +382,9 @@ describe("recovery guidance and Arabic issues", () => {
       issues: [error("NO_ROWS", "The file has no data rows")],
     });
     expect(q("text-import-no-rows")).toBeNull();
+    expect(issueRow()).toContain("No rows in the file can be imported");
+    expect(issueRow()).not.toContain("The file has no data rows");
+    expect(next).toContain("The file has data");
     expect(next).toContain("none of its rows can be imported");
   });
 
@@ -377,6 +425,61 @@ describe("recovery guidance and Arabic issues", () => {
     const row = issueRow();
     expect(row).toContain("SOMETHING_NEW");
     expect(row).not.toContain("server text");
+  });
+});
+
+describe("preview settings invalidate a held review", () => {
+  const changeCutOver = async () => {
+    await act(async () => (document.getElementById("cut-over") as HTMLButtonElement).click());
+    // react-day-picker v8 (as in d5b-form-payloads.test.ts): day buttons are button[name=day].
+    const day = [...document.querySelectorAll<HTMLButtonElement>('button[name="day"]')].find(
+      (b) => b.textContent?.trim() === "15" && !b.className.includes("day_outside")
+    )!;
+    await act(async () => day.click());
+  };
+  // Radix Select from the keyboard (as tests/unit/helpers/form-harness.ts pickOption).
+  const changeMode = async () => {
+    const trigger = q("select-import-mode")!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+      );
+    });
+    await settle();
+    const option = [...document.querySelectorAll('[role="option"]')].find((o) =>
+      (o.textContent ?? "").includes("Carry A/R and A/P by importing open invoices")
+    )!;
+    await act(async () => (option as HTMLElement).click());
+  };
+
+  it.each([
+    ["cut-over date", changeCutOver],
+    ["A/R and A/P mode", changeMode],
+  ])("a changed %s drops a validated trial balance but keeps the file", async (_name, change) => {
+    window.history.pushState({}, "", "/import?kind=trial_balance&cutover=2026-01-31");
+    const validated = { ...baseJob, kind: "trial_balance", status: "validated" };
+    preview = async () => json({ ...validated, status: "previewed" }, 201);
+    validate = () => json(validated);
+    await mount();
+    await choose();
+    await clickPreview();
+    expect((q("button-import-commit") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => (q("button-import-validate") as HTMLButtonElement).click());
+    await settle();
+    expect((q("button-import-commit") as HTMLButtonElement).disabled).toBe(false);
+
+    await change();
+    await settle();
+
+    expect(q("button-import-validate")).toBeNull();
+    expect(q("button-import-commit")).toBeNull();
+    expect(q("file-drop")!.textContent).toContain("x.csv");
+    expect((q("button-import-preview") as HTMLButtonElement).disabled).toBe(false);
+
+    preview = async () => json({ ...validated, status: "previewed" }, 201);
+    await clickPreview();
+    expect(q("text-import-next-validate")).not.toBeNull();
+    expect((q("button-import-commit") as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

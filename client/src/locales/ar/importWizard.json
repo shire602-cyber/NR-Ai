@@ -1,8 +1,9 @@
 {
   "importWizard.historyLoading": "جارٍ تحميل سجل الاستيراد...",
   "importWizard.historyNoCompany": "اختر شركة لعرض سجل الاستيراد الخاص بها.",
-  "importWizard.historyOffline": "أنت غير متصل. سيُحمَّل سجل الاستيراد عند عودة الاتصال.",
-  "importWizard.historyOfflineCached": "أنت غير متصل. يُعرض آخر سجل استيراد تم تحميله.",
+  "importWizard.historyCompaniesError": "تعذر تحميل شركاتك، لذا سجل الاستيراد غير متاح. أعد تحميل الصفحة للمحاولة مرة أخرى.",
+  "importWizard.historyPaused": "تحميل سجل الاستيراد متوقف مؤقتًا.",
+  "importWizard.historyPausedCached": "تحديث سجل الاستيراد متوقف مؤقتًا. يُعرض آخر سجل استيراد تم تحميله.",
   "importWizard.historyError": "تعذر تحميل سجل الاستيراد.",
   "importWizard.historyStale": "تعذر تحديث سجل الاستيراد. تُعرض آخر قائمة تم تحميلها.",
   "importWizard.historyRetry": "حاول مرة أخرى",

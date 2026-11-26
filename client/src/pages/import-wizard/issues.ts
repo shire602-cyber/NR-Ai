@@ -85,9 +85,14 @@ const isolate = (value: string) => `⁨${value}⁩`;
 /**
  * English shows the server's message. Arabic uses the catalog; an unknown code, or a message that
  * no longer yields an expected detail, falls back to a sentence naming the code.
+ * A NO_ROWS issue on a file with detected data rows (`detectedRows` > 0) uses the catalog copy in
+ * both locales, since the server's "no data rows" text would contradict the file.
  */
-export function issueText(issue: Issue, locale: Locale, t: Catalog): string {
-  if (locale !== "ar") return issue.message;
+export function issueText(issue: Issue, locale: Locale, t: Catalog, detectedRows = 0): string {
+  if (locale !== "ar") {
+    const notUsable = issue.code === "NO_ROWS" && detectedRows > 0;
+    return (notUsable && t["importWizard.issue.NO_ROWS"]) || issue.message;
+  }
   const template = t[`importWizard.issue.${issue.code}`];
   const values: Record<string, string> = {};
   for (const [name, value] of Object.entries(DETAILS.exec(issue.message)?.groups ?? {})) {

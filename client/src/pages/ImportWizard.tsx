@@ -111,7 +111,9 @@ export default function ImportWizard() {
   const { companyId } = useDefaultCompany();
   // Passive view of the provider's company query: still pending (loading, or paused offline
   // before its first response) does not mean the user has no company.
-  const companiesPending = useQuery({ queryKey: ["/api/companies"], enabled: false }).isPending;
+  const companiesQuery = useQuery({ queryKey: ["/api/companies"], enabled: false });
+  const { isPending: companiesPending, isError: companiesFailed } = companiesQuery;
+  // A failed load (first or refetch) is not the same as a loaded list with no company in it.
   const [kind, setKind] = useState<Kind>(() =>
     kindFromSearch(typeof window === "undefined" ? "" : window.location.search)
   );
@@ -131,7 +133,6 @@ export default function ImportWizard() {
   const [held, setHeld] = useState<{ companyId: string; job: Job } | null>(null);
   if (held && held.companyId !== companyId) setHeld(null);
   const job = held && held.companyId === companyId ? held.job : null;
-  const clearJob = () => setHeld(null);
   /** Replaces the shown job only if it is still the same one. */
   const updateJob = (next: Job) =>
     setHeld((h) => (h && h.job.id === next.id ? { ...h, job: next } : h));
@@ -171,9 +172,12 @@ export default function ImportWizard() {
     },
   });
   const resetPreview = preview.reset;
+  // Anything that invalidates a preview also drops the review held for it (the chosen file stays),
+  // so Validate and Commit need a fresh Preview.
   const discardPreview = useCallback(() => {
     previewSeq.current += 1;
     resetPreview();
+    setHeld(null);
   }, [resetPreview]);
   // Company switch or leaving the page. A layout effect, so the sequence moves on within the
   // commit itself, before any pending response callback can run.
@@ -212,7 +216,6 @@ export default function ImportWizard() {
   const onFile = async (f: File | undefined) => {
     // The previous file and its review go at once, not when the new read finishes.
     discardPreview();
-    clearJob();
     const read = ++readSeq.current;
     if (!f) return setFile(null);
     setFile({ name: f.name, text: null });
@@ -230,11 +233,13 @@ export default function ImportWizard() {
   const historyState = !companyId
     ? companiesPending
       ? "Loading"
-      : "NoCompany"
+      : companiesFailed
+        ? "CompaniesError"
+        : "NoCompany"
     : history.fetchStatus === "paused"
       ? history.data
-        ? "OfflineCached"
-        : "Offline"
+        ? "PausedCached"
+        : "Paused"
       : history.isPending
         ? "Loading"
         : history.isLoadingError
@@ -243,6 +248,7 @@ export default function ImportWizard() {
             ? "Stale"
             : null;
   const historyFailed = historyState === "Error" || historyState === "Stale";
+  const historyAlert = historyFailed || historyState === "CompaniesError";
 
   return (
     <SettingsLayout>
@@ -262,10 +268,7 @@ export default function ImportWizard() {
           <CardContent className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>{t["importWizard.kindLabel"]}</Label>
-              <Select
-                value={kind}
-                onValueChange={(v) => (discardPreview(), setKind(v as Kind), clearJob())}
-              >
+              <Select value={kind} onValueChange={(v) => (discardPreview(), setKind(v as Kind))}>
                 <SelectTrigger data-testid="select-import-kind">
                   <SelectValue />
                 </SelectTrigger>
@@ -321,7 +324,7 @@ export default function ImportWizard() {
                   value={mode}
                   onValueChange={(v) => (discardPreview(), setMode(v as "balance" | "documents"))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger data-testid="select-import-mode">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -393,8 +396,8 @@ export default function ImportWizard() {
           <CardContent>
             {historyState && (
               <div
-                className={`flex flex-wrap items-center gap-2 text-sm ${historyFailed ? "text-destructive" : "text-muted-foreground"}`}
-                role={historyFailed ? "alert" : "status"}
+                className={`flex flex-wrap items-center gap-2 text-sm ${historyAlert ? "text-destructive" : "text-muted-foreground"}`}
+                role={historyAlert ? "alert" : "status"}
                 data-testid={`text-import-history-${historyState.toLowerCase()}`}
               >
                 <p>{t[`importWizard.history${historyState}`]}</p>

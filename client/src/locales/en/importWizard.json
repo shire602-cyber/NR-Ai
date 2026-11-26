@@ -1,8 +1,9 @@
 {
   "importWizard.historyLoading": "Loading import history...",
   "importWizard.historyNoCompany": "Select a company to see its import history.",
-  "importWizard.historyOffline": "You are offline. Import history will load when you reconnect.",
-  "importWizard.historyOfflineCached": "You are offline. Showing the last loaded import history.",
+  "importWizard.historyCompaniesError": "Could not load your companies, so the import history is unavailable. Reload the page to try again.",
+  "importWizard.historyPaused": "Loading import history is paused.",
+  "importWizard.historyPausedCached": "Refreshing import history is paused. Showing the last loaded import history.",
   "importWizard.historyError": "Could not load the import history.",
   "importWizard.historyStale": "Could not refresh the import history. Showing the last loaded list.",
   "importWizard.historyRetry": "Try again",
