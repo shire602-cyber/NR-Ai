@@ -1,6 +1,6 @@
 import type { Tenant } from "./harness";
 
-export async function recordTestAppointment(tenant: Tenant, provider: "acube" | "complyance") {
+export async function recordTestAppointment(tenant: Tenant, provider: string) {
   const { acceptPartnerTerms, confirmEmaraTaxAppointment, eInvoicePartner } =
     await import("../../server/services/einvoice-appointment.service");
   const userId = tenant.user.id;

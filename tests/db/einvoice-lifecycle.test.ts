@@ -5,6 +5,7 @@
  *   with backoff, cancellation, the immutable five-year archive and tenancy.
  */
 import { describe, expect, it } from "vitest";
+import { recordTestAppointment } from "./einvoice-appointment-fixture";
 import { useHarness, type Tenant } from "./harness";
 import type { EInvoiceProvider } from "../../server/services/einvoice-provider";
 
@@ -352,6 +353,7 @@ describe("W4-C transport failures are retried with backoff", () => {
       cancel: async (id) => ({ providerMessageId: id, status: "cancelled" }),
       parseWebhook: () => null,
     };
+    await recordTestAppointment(t, flaky.name);
     // Server modules are imported after the harness bound the database.
     const { storage } = await import("../../server/storage");
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =

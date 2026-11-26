@@ -350,6 +350,37 @@ async function seed(fixture) {
   return { ...fixture, email, token, clients };
 }
 
+async function appointProvider({ lang, clients, providers }) {
+  const companyId = clients[0].id;
+  const email = `einvoice-client-owner-${lang}-${runTag}@example.test`;
+  await request("", "POST", "/api/auth/register", {
+    email,
+    password: PASSWORD,
+    name: "Invoice fixture client owner",
+  });
+  const {
+    rows: [owner],
+  } = await db.query("UPDATE users SET email_verified = true WHERE email = $1 RETURNING id", [
+    email,
+  ]);
+  await db.query("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'owner')", [
+    companyId,
+    owner.id,
+  ]);
+  const { token } = await request("", "POST", "/api/auth/login", { email, password: PASSWORD });
+  const path = `/api/companies/${companyId}/einvoice/partner`;
+  const { partner, state } = await request(token, "GET", path);
+  assert.equal(partner.provider, providers[0]);
+  assert.equal(state, "not_started");
+  const accepted = await request(token, "POST", `${path}/accept-terms`, {
+    termsVersion: partner.termsVersion,
+    accepted: true,
+  });
+  assert.equal(accepted.state, "awaiting_emaratax");
+  const confirmed = await request(token, "POST", `${path}/confirm-emaratax`, { confirmed: true });
+  assert.equal(confirmed.state, "active");
+}
+
 async function seedOutbound(persona, existingContactId) {
   const companyId = persona.clients[0].id;
   const clientPath = `/api/companies/${companyId}`;
@@ -818,7 +849,8 @@ async function sendInvoice(browser, persona) {
       "rgb(11, 106, 74)"
     );
     await send.click();
-    assert.equal((await submit).status(), 202);
+    const response = await submit;
+    assert.equal(response.status(), 202, response.ok() ? undefined : await response.text());
     const queued = sheet.getByTestId("einvoice-queued");
     await queued.waitFor();
     assert.equal(await queued.textContent(), copies[lang].queued);
@@ -1358,12 +1390,18 @@ try {
     ACUBE_WEBHOOK_BASE_URL: callbackOrigin,
     COMPLYANCE_BASE_URL: providerBase,
     COMPLYANCE_WEBHOOK_BASE_URL: callbackOrigin,
+    EINVOICE_ASP_ACUBE_TERMS_URL: "https://acube.example.test/terms",
+    EINVOICE_ASP_ACUBE_TERMS_VERSION: "fixture-v1",
+    EINVOICE_ASP_COMPLYANCE_TERMS_URL: "https://complyance.example.test/terms",
+    EINVOICE_ASP_COMPLYANCE_TERMS_VERSION: "fixture-v1",
     ...encrypted,
   });
-  for (const { token, clients } of personas) {
+  for (const persona of personas) {
+    const { token, clients } = persona;
     const status = (id) => request(token, "GET", `/api/companies/${id}/einvoicing/provider`);
     assert.equal((await status(clients[0].id)).status, "configured");
     assert.equal((await status(clients[1].id)).status, "not_configured");
+    await appointProvider(persona);
   }
   const recover = async (browser, persona) => {
     for (const legacy of persona.legacy) await verifyLegacyTracking(browser, persona, legacy);
