@@ -37,6 +37,11 @@ function applyTheme(preference: ThemePreference): void {
   document.documentElement.classList.toggle("dark", resolveTheme(preference) === "dark");
 }
 
+/** Re-apply the saved preference (used when a light-only public page hands back to the app). */
+export function applyStoredTheme(): void {
+  applyTheme(readPreference());
+}
+
 export function setThemePreference(preference: ThemePreference): void {
   try {
     localStorage.setItem(THEME_STORAGE_KEY, preference);

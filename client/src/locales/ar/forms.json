@@ -235,6 +235,7 @@
   "forms.errors.pricePositive": "يجب ألا يكون السعر سالبًا",
   "forms.errors.vendorNameRequired": "اسم المورّد مطلوب",
   "forms.errors.lineItemRequired": "يلزم بند واحد على الأقل",
+  "forms.errors.paymentExceedsBalance": "المبلغ أكبر من الرصيد المستحق على هذه الفاتورة.",
   "forms.errors.amountPositive": "يجب أن يكون المبلغ أكبر من صفر",
   "forms.errors.creditNoteNumberRequired": "رقم الإشعار الدائن مطلوب",
   "forms.errors.customerNameRequired": "اسم العميل مطلوب",
