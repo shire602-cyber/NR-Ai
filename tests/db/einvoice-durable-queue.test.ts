@@ -172,6 +172,44 @@ describe("Durable UAE e-invoice submission queue", () => {
     expect(await runEInvoiceRetries(now, () => provider)).toEqual({ attempted: 1, submitted: 1 });
   });
 
+  it("[PR174] preserves the original document allowance category on a full credit's XML", async () => {
+    const { invoice, company, tenant } = await readyInvoice({
+      discountType: "amount",
+      discountValue: 0.01,
+      // The zero-rated line is larger before quantity rounding and smaller afterwards.
+      lines: [
+        { description: "Consulting", quantity: 10_000.0006, unitPrice: 100, vatRate: 5 },
+        {
+          description: "Equipment",
+          quantity: 20_000.0014,
+          unitPrice: 50,
+          vatRate: 0,
+          vatSupplyType: "zero_rated",
+        },
+      ],
+    });
+    const issued = await tenant.as.post(
+      `/api/companies/${company.id}/invoices/${invoice.id}/credit-note`,
+      {}
+    );
+    expect(issued.status, issued.text).toBe(201);
+
+    const { storage } = await import("../../server/storage");
+    const { generateEInvoiceXML } = await import("../../server/services/einvoice.service");
+    const { all, parseXml, textAt } = await import("../../server/services/einvoice/dom");
+    const credit = (await storage.getInvoice(issued.body.id, company.id))!;
+    const lines = await storage.getInvoiceLinesByInvoiceId(credit.id);
+    const { xml } = generateEInvoiceXML(credit, lines, company);
+    const root = parseXml(xml).documentElement;
+    expect(root.localName).toBe("CreditNote");
+    expect(
+      all(root, "cac:AllowanceCharge").map((allowance) => [
+        textAt(allowance, "cac:TaxCategory/cbc:ID"),
+        textAt(allowance, "cbc:Amount"),
+      ])
+    ).toEqual([["Z", "0.01"]]);
+  });
+
   it.each([
     { staleField: "LineExtensionAmount", attempted: false },
     { staleField: "TaxableAmount", attempted: false },

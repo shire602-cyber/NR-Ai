@@ -1388,7 +1388,12 @@ export async function insertCreditNoteDocument(
     .from(invoiceLines)
     .where(eq(invoiceLines.invoiceId, original.id));
   let mode: "lines" | "remaining" = "lines";
-  let docLines: Array<Omit<CreditNoteLineInput, "unitPriceFils"> & { unitPrice: number }>;
+  let docLines: Array<
+    Omit<CreditNoteLineInput, "unitPriceFils"> & {
+      unitPrice: number;
+      documentDiscountAmount?: InvoiceLine["documentDiscountAmount"];
+    }
+  >;
   let header: Partial<Invoice> = {};
   let totals: SalesDocumentTotals;
   if (args.lines && args.lines.length) {
@@ -1424,6 +1429,7 @@ export async function insertCreditNoteDocument(
         vatSupplyType: (l.vatSupplyType ?? "standard_rated") as SupplyType,
         discountType: l.discountType,
         discountValue: l.discountValue,
+        documentDiscountAmount: l.documentDiscountAmount,
         productId: l.productId,
         costCenterId: l.costCenterId,
         marginScheme: l.marginScheme,
@@ -1498,6 +1504,7 @@ export async function insertCreditNoteDocument(
       discountType: l.discountType ?? null,
       discountValue: l.discountValue ?? null,
       discountAmount: totals.lines[i] ? Number(fromFils(totals.lines[i].lineDiscountFils)) : 0,
+      documentDiscountAmount: l.documentDiscountAmount ?? null,
       netAmount: totals.lines[i] ? -Number(fromFils(totals.lines[i].netFils)) : null,
       productId: l.productId ?? null,
       costCenterId: l.costCenterId ?? null,
