@@ -8,7 +8,7 @@
 // latest wins. amendVatReturn marks the original "amended" as soon as the
 // amendment DRAFT is created, so an amended original stays effective until a
 // later version is submitted or filed. Draft / pending_review / ready rows never
-// count. Amendment history is preserved � this selects, it never deletes.
+// count. Amendment history is preserved — this selects, it never deletes.
 //
 // Summary cards and their drilldowns must use the same selection so a card
 // total always equals the sum of the rows it links to.
