@@ -367,7 +367,11 @@ const linkEvent = (action = "LINK", status = "Active") => ({
   timestamp: new Date().toISOString(),
 });
 
-async function issuedInvoice(t: Tenant, customerTrn = "100765432100003") {
+async function issuedInvoice(
+  t: Tenant,
+  customerTrn = "100765432100003",
+  invoiceFields: Record<string, unknown> = {}
+) {
   const c = await t.as.post(`/api/companies/${t.company.id}/customer-contacts`, {
     name: "Acme Gulf FZ-LLC",
     trnNumber: customerTrn,
@@ -384,6 +388,7 @@ async function issuedInvoice(t: Tenant, customerTrn = "100765432100003") {
     date: today(),
     paymentTerms: "net30",
     lines: [{ description: "Consulting", quantity: 2, unitPrice: 500, vatRate: 5 }],
+    ...invoiceFields,
   });
   expect(inv.status, inv.text).toBe(200);
   const sent = await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" });
@@ -1046,6 +1051,89 @@ describe("E1 submit, two tracks and history", () => {
     expect(s.events.filter((e: any) => e.track === "delivery").map((e: any) => e.to)).toEqual(
       expect.arrayContaining(["queued", "sending", "rejected"])
     );
+  });
+
+  it("[PR174] a refusal retry stopped before sending keeps its authorization and provider pins", async () => {
+    const t = await linkedTenant();
+    const verified = (value: boolean) =>
+      h.sql("UPDATE users SET email_verified = $2 WHERE id = $1", [t.user.id, value]);
+    await verified(true);
+    const inv = await issuedInvoice(t, undefined, { currency: "USD", exchangeRate: 3.6725 });
+    const route = `/api/invoices/${inv.id}/einvoice`;
+    const stored = async () =>
+      (
+        await h.sql(
+          `SELECT status, attempts, next_retry_at, last_error_code,
+             validation->'submission' AS pin FROM einvoice_documents WHERE invoice_id = $1`,
+          [inv.id]
+        )
+      )[0];
+    const setPin = (key: string, value: unknown) =>
+      h.sql(
+        `UPDATE einvoice_documents SET validation =
+           jsonb_set(validation::jsonb, ARRAY['submission', $2::text], $3::jsonb)
+         WHERE invoice_id = $1`,
+        [inv.id, key, JSON.stringify(value)]
+      );
+
+    fake.nextSubmit = ["422"];
+    expect((await t.as.post(`${route}/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    expect((await t.as.post(`${route}/resubmit`, {})).status).toBe(202);
+    // Rewrite the queued retry to the pre-upgrade shape (line amounts in the document currency),
+    // so the worker stops it before the first claim.
+    const { sha256Hex } = await import("../../server/services/einvoice/store");
+    const [{ einvoice_xml: current }] = await h.sql(
+      "SELECT einvoice_xml FROM invoices WHERE id = $1",
+      [inv.id]
+    );
+    const legacy = (current as string).replace(
+      /<cac:ItemPriceExtension>[\s\S]*?<\/cac:ItemPriceExtension>/g,
+      (block) => block.replaceAll('currencyID="AED"', 'currencyID="USD"')
+    );
+    expect(legacy).not.toBe(current);
+    await h.sql("UPDATE invoices SET einvoice_xml = $1, einvoice_hash = $2 WHERE id = $3", [
+      legacy,
+      sha256Hex(legacy),
+      inv.id,
+    ]);
+    await h.sql("UPDATE einvoice_documents SET xml_hash = $1 WHERE invoice_id = $2", [
+      sha256Hex(legacy),
+      inv.id,
+    ]);
+    await runEInvoiceRetries();
+    expect(fake.posts).toBe(1);
+    const stopped = await stored();
+    expect(stopped).toMatchObject({
+      status: "failed",
+      attempts: 0,
+      next_retry_at: null,
+      last_error_code: "EINVOICE_SCHEMA_INVALID",
+      pin: { verifiedEmailRequired: true, providerAttempted: true },
+    });
+
+    const ordinary = await t.as.post(`${route}/submit`, {});
+    expect(ordinary.status, ordinary.text).toBe(409);
+    expect(ordinary.body.code).toBe("EINVOICE_NOT_RESUBMITTABLE");
+
+    await verified(false);
+    const unverified = await t.as.post(`${route}/resubmit`, {});
+    expect(unverified.status, unverified.text).toBe(403);
+    expect(await stored()).toEqual(stopped);
+    await verified(true);
+
+    for (const key of ["legalEntityId", "scope"]) {
+      await setPin(key, "another-provider-connection");
+      const changed = await t.as.post(`${route}/resubmit`, {});
+      expect(changed.status, changed.text).toBe(409);
+      expect(changed.body.code).toBe("EINVOICE_RETRY_PROVIDER_CHANGED");
+      await setPin(key, stopped.pin[key]);
+    }
+
+    const again = await t.as.post(`${route}/resubmit`, {});
+    expect(again.status, again.text).toBe(202);
+    await runEInvoiceRetries();
+    expect(fake.posts).toBe(2);
   });
 
   it("shows a provider-held delivery failure and polls for recovery without another POST", async () => {

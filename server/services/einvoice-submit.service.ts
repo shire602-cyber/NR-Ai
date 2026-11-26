@@ -10,7 +10,7 @@ import {
   isB2cCashSale,
 } from "./einvoice/applicability";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
-import { fromFils } from "../../shared/money";
+import { filsToNumber } from "../../shared/money";
 import {
   computeEInvoiceAmounts,
   validateForEInvoicing,
@@ -308,8 +308,11 @@ export async function prepareEInvoiceSubmission(args: {
     (invoice.currency ?? "AED").toUpperCase() === "AED"
       ? undefined
       : computeEInvoiceAmounts(invoice, lines).lines.map((line) => ({
-          taxAmount: fromFils(line.vatFils),
-          lineTotal: fromFils(line.lineExtensionFils - line.documentDiscountFils + line.vatFils),
+          // Numbers, not decimal strings: the queued snapshot's reader accepts only numbers.
+          taxAmount: filsToNumber(line.vatFils),
+          lineTotal: filsToNumber(
+            line.lineExtensionFils - line.documentDiscountFils + line.vatFils
+          ),
         }));
 
   return { ...built, validation, documentCurrencyLines };

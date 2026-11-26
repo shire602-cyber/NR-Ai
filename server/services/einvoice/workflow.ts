@@ -289,6 +289,26 @@ async function updateInvoiceInTransaction(
     .where(and(eq(invoices.companyId, invoice.companyId), eq(invoices.id, invoice.id)));
 }
 
+/**
+ * A retry of a definitively refused number that was stopped before its first claim. No provider
+ * has seen this revision, so replacing it still needs the same verified-email authorization and
+ * the same provider pins as the retry it replaces. (A correction restores its rejected state in
+ * stopQueuedSubmission instead.)
+ */
+function isStoppedUnsentRefusalRetry(doc: EInvoiceDocument | undefined) {
+  const pin = documentSubmissionMetadata(doc);
+  return (
+    doc?.provider === "acube" &&
+    doc.status === "failed" &&
+    doc.attempts === 0 &&
+    !doc.providerMessageId &&
+    !doc.nextRetryAt &&
+    !doc.submitClaimedAt &&
+    pin?.verifiedEmailRequired === true &&
+    !pin.correctionOf
+  );
+}
+
 /** Validate and freeze the XML, audit history and provider together before reporting it queued. */
 export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueResult> {
   const { provider } = args;
@@ -318,7 +338,9 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         message: "A cleared revision of this e-invoice is already archived.",
       };
     }
-    const definitiveAcubeRefusal = canRetryOriginalRejectedNumber(fresh, existing);
+    const stoppedUnsentRetry = isStoppedUnsentRefusalRetry(existing);
+    const definitiveAcubeRefusal =
+      canRetryOriginalRejectedNumber(fresh, existing) || stoppedUnsentRetry;
     const verifiedEmailRequired = !!correctionOf || definitiveAcubeRefusal;
     if (NEW_DOCUMENT_REQUIRED_CODES.has(existing?.lastErrorCode ?? "")) {
       return {
@@ -344,10 +366,12 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         message: "Check or link the existing service provider document before sending it again.",
       };
     }
+    // A refusal retry that was stopped unsent reads "failed", but replacing it is still an
+    // explicit resubmission, exactly as for the rejected row it came from.
     if (
       existing?.provider === "acube" &&
-      existing.status === "rejected" &&
-      (!args.regenerate || !definitiveAcubeRefusal)
+      ((existing.status === "rejected" && (!args.regenerate || !definitiveAcubeRefusal)) ||
+        (!args.regenerate && stoppedUnsentRetry))
     ) {
       return {
         ok: false,

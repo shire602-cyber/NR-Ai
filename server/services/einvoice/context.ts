@@ -118,30 +118,36 @@ async function loadTaxExchangeRate(
 ): Promise<string | null | undefined> {
   const baseCurrency = baseCurrencyOf(company);
   const currency = (invoice.currency ?? "AED").toUpperCase();
-  if (currency === "AED" || baseCurrency === "AED") return undefined;
-  const documentRate = currency === baseCurrency ? 1 : Number(invoice.exchangeRate);
-  if (!Number.isFinite(documentRate) || documentRate <= 0) return null;
-  // The base-to-AED leg uses the same tax point as the VAT 201 return, not just the issue date.
+  if (currency === "AED") return undefined;
+  // A credit note adjusts an earlier supply. With an AED ledger it keeps the rate stored on the
+  // note, so that its own date cannot introduce an exchange difference.
+  if (baseCurrency === "AED" && invoice.invoiceType === "credit_note") return undefined;
+  // The document-to-AED rate is the rate at the sales tax point, never the ledger's stored rate.
   const [sale] = await conn
     .select({ taxPoint: sql<string>`(${sql.raw(salesTaxPointSql("invoices"))})::text` })
     .from(invoices)
     .where(and(eq(invoices.companyId, company.id), eq(invoices.id, invoice.id)));
   if (!sale) return null;
-  try {
-    const baseRate = await resolve<FxGetRate>("fx.getRate")(
-      company.id,
-      baseCurrency,
-      "AED",
-      sale.taxPoint,
-      { tx: conn }
-    );
-    return new Decimal(documentRate).times(baseRate.rateText).toDecimalPlaces(6).toString();
-  } catch (err) {
-    if (err instanceof DomainError && ["NO_EXCHANGE_RATE", "INVALID_DATE"].includes(err.code)) {
-      return null;
+  const getRate = resolve<FxGetRate>("fx.getRate");
+  const rateAtTaxPoint = async (from: string, to: string) => {
+    try {
+      return (await getRate(company.id, from, to, sale.taxPoint, { tx: conn })).rateText;
+    } catch (err) {
+      if (err instanceof DomainError && ["NO_EXCHANGE_RATE", "INVALID_DATE"].includes(err.code)) {
+        return null;
+      }
+      throw err;
     }
-    throw err;
-  }
+  };
+  const direct = await rateAtTaxPoint(currency, "AED");
+  if (direct) return new Decimal(direct).toDecimalPlaces(6).toString();
+  if (baseCurrency === "AED" || currency === baseCurrency) return null;
+  // Rates for a non-AED ledger are stored against its base, so cross through it at the same date.
+  const toBase = await rateAtTaxPoint(currency, baseCurrency);
+  const baseToAed = toBase ? await rateAtTaxPoint(baseCurrency, "AED") : null;
+  return toBase && baseToAed
+    ? new Decimal(toBase).times(baseToAed).toDecimalPlaces(6).toString()
+    : null;
 }
 
 const CASH_SALE_MEANS: Readonly<Record<string, PaymentMeansCode>> = {

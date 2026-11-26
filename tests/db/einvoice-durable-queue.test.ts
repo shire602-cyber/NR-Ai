@@ -175,19 +175,52 @@ describe("Durable UAE e-invoice submission queue", () => {
     }
   );
 
+  it("[PR174] sends exact document-currency line amounts that AED rounding cannot reproduce", async () => {
+    const args = await readyInvoice({
+      lines: [{ description: "Consulting", quantity: 1, unitPrice: 1, vatRate: 5 }],
+    });
+    await h.sql(
+      `INSERT INTO exchange_rates (company_id, base_currency, target_currency, rate, date, source)
+       VALUES ($1, 'JPY', 'AED', 0.025, $2, 'manual')`,
+      [args.company.id, new Date().toISOString().slice(0, 10)]
+    );
+    await h.sql("UPDATE invoices SET currency = 'JPY', exchange_rate = 0.025 WHERE id = $1", [
+      args.invoice.id,
+    ]);
+    const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+      await import("../../server/services/einvoice/workflow");
+    const { ublToGets } = await import("../../server/services/einvoice/providers/complyance-gets");
+    const sent: unknown[] = [];
+    const provider = fakeProvider({
+      submit: async ({ uuid, xml, documentCurrencyLines }) => {
+        sent.push(ublToGets(xml, documentCurrencyLines).payload.lineItems);
+        return { providerMessageId: uuid, status: "submitted" };
+      },
+    });
+    const now = new Date();
+    const queued = await enqueueEInvoiceSubmission({ ...args, provider, now });
+    expect(queued.ok, JSON.stringify(queued)).toBe(true);
+    expect(await runEInvoiceRetries(now, () => provider)).toEqual({ attempted: 1, submitted: 1 });
+    // 0.05 JPY of VAT is 0.00 AED at 0.025, so dividing the AED figure back would lose it.
+    expect(sent).toEqual([[expect.objectContaining({ taxAmount: 0.05, lineTotal: 1.05 })]]);
+  });
+
   it("[PR174] converts a non-AED ledger's document at the tax-point rate, not the issue rate", async () => {
     const args = await readyInvoice();
     const other = await h.createSecondTenant();
     const day = (offset: number) =>
       new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
-    const addRate = (companyId: string, rate: number, date: string) =>
+    const addRate = (companyId: string, rate: number, date: string, from = "EUR", to = "AED") =>
       h.sql(
         `INSERT INTO exchange_rates (company_id, base_currency, target_currency, rate, date, source)
-         VALUES ($1, 'EUR', 'AED', $2, $3, 'manual')`,
-        [companyId, rate, date]
+         VALUES ($1, $2, $3, $4, $5, 'manual')`,
+        [companyId, from, to, rate, date]
       );
     await addRate(args.company.id, 4, day(-10));
     await addRate(args.company.id, 4.2, day(0));
+    // The third-currency leg is read at the same date as the base-to-AED leg.
+    await addRate(args.company.id, 1.15, day(-10), "GBP", "EUR");
+    await addRate(args.company.id, 1.25, day(0), "GBP", "EUR");
     // Newer than the tenant's tax-point rate, but it belongs to another company.
     await addRate(other.company.id, 9, day(-9));
     await h.sql("UPDATE companies SET base_currency = 'EUR' WHERE id = $1", [args.company.id]);
@@ -200,8 +233,8 @@ describe("Durable UAE e-invoice submission queue", () => {
     const company = (await storage.getCompany(args.company.id))!;
     const invoice = (await storage.getInvoice(args.invoice.id, company.id))!;
 
-    // 1.2 EUR per GBP at booking, times 4 AED per EUR on the supply date.
-    expect((await loadEInvoiceContext(invoice, company)).options?.taxExchangeRate).toBe("4.8");
+    // 1.15 EUR per GBP times 4 AED per EUR, both on the supply date (not the booked 1.2).
+    expect((await loadEInvoiceContext(invoice, company)).options?.taxExchangeRate).toBe("4.6");
 
     const foreign = await loadEInvoiceContext(invoice, {
       ...company,
