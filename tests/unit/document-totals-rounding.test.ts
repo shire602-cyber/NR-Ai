@@ -1,5 +1,9 @@
 // F01 — one line-level VAT rounding rule across editor, API, PDF buckets,
 // e-invoice payload and VAT autopilot.
+// Source-inspection tests are used here because the full CN→invoice posting
+// path requires a live Postgres DB; we can verify the code paths exist and
+// wire through computeSalesDocument without a DB.
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import {
   calculateDocumentTotals,
@@ -62,5 +66,24 @@ describe("F01 document totals — line-level half-up rounding", () => {
     expect(
       calculateDocumentTotals([{ quantity: " " as any, unitPrice: "abc" as any, vatRate: null }])
     ).toEqual({ subtotal: 0, vatAmount: 0, total: 0 });
+  });
+});
+
+describe("F01 CN-line totals path — insertCreditNoteDocument routes through computeSalesDocument", () => {
+  // Source-inspection: behaviour test requires Postgres (insertCreditNoteDocument
+  // runs inside a DB transaction). We verify the code-path invariants here.
+  it("insertCreditNoteDocument calls computeSalesDocument for explicit lines", () => {
+    const s = readFileSync("server/services/invoice-posting.service.ts", "utf8");
+    // The function is imported from document-totals.service.
+    expect(s).toContain('"./document-totals.service"');
+    // computeSalesDocument is called inside insertCreditNoteDocument.
+    expect(s).toMatch(/insertCreditNoteDocument[\s\S]{0,2000}computeSalesDocument/);
+  });
+
+  it("CN creation route delegates to createDraftCreditNote (uses insertCreditNoteDocument)", () => {
+    const s = readFileSync("server/routes/credit-notes.routes.ts", "utf8");
+    expect(s).toContain("createDraftCreditNote");
+    // Lines are prepared via toCreditLines → prepareSalesLines → unitPriceFils
+    expect(s).toContain("toCreditLines");
   });
 });
