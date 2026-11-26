@@ -1615,6 +1615,8 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               companyId={companyId}
               transaction={dialogLine}
               canSubmit={() => canWriteRow(dialogLine.id, false)}
+              isRowBusy={isRowBusy}
+              canUseCounterpart={(id) => canWriteRow(id, false)}
               bankAccounts={bankAccounts ?? []}
               transactions={transactions ?? []}
               onDone={() => {
@@ -2184,11 +2186,15 @@ function BankLineActions({
   bankAccounts,
   transactions,
   canSubmit,
+  isRowBusy,
+  canUseCounterpart,
   onDone,
 }: {
   companyId: string;
   transaction: BankTransaction;
   canSubmit: () => boolean;
+  isRowBusy: (id: string) => boolean;
+  canUseCounterpart: (id: string) => boolean;
   bankAccounts: BankAccount[];
   transactions: BankTransaction[];
   onDone: () => void;
@@ -2232,6 +2238,8 @@ function BankLineActions({
     (x) =>
       x.bankStatementAccountId === otherAccount &&
       !x.isReconciled &&
+      // A pending Unmatch shows its row as unreconciled before the server has agreed.
+      !isRowBusy(x.id) &&
       Math.round(x.amount * 100) === -Math.round(transaction.amount * 100)
   );
 
@@ -2475,7 +2483,11 @@ function BankLineActions({
           <div className="sm:col-span-2 flex justify-end">
             <Button
               size="sm"
-              onClick={() => submit(transferMutation)}
+              onClick={() => {
+                // The picked counterpart can become busy or reconciled after it was chosen.
+                if (counterpart !== "none" && !canUseCounterpart(counterpart)) return;
+                submit(transferMutation);
+              }}
               disabled={!otherAccount || transferMutation.isPending}
             >
               {tr("banking.line.applyTransfer")}

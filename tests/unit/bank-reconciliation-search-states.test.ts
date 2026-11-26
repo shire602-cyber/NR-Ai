@@ -177,18 +177,22 @@ async function search(value: string) {
 
 const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 
-async function selectAccount(name: string) {
-  const trigger = byTestId("select-bank-account")!;
+/** Opens a Radix Select by keyboard and returns the options it offers. */
+async function openSelect(trigger: HTMLElement) {
   await act(async () => {
     trigger.focus();
     trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   });
-  const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find((o) =>
-    o.textContent?.includes(name)
-  )!;
+  return Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'));
+}
+
+async function pickOption(trigger: HTMLElement, name: string) {
+  const option = (await openSelect(trigger)).find((o) => o.textContent?.includes(name))!;
   await act(async () => option.click());
   await flush(4);
 }
+
+const selectAccount = (name: string) => pickOption(byTestId("select-bank-account")!, name);
 
 async function openMatchDialog() {
   await act(async () => byTestId("button-match-t-1")!.click());
@@ -740,6 +744,89 @@ describe("bank reconciliation match and unmatch cache writes", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(writes()).toEqual(["DELETE /t-1/match"]);
   }, 60_000);
+  it("neither offers nor writes a selected transfer counterpart while its Unmatch is held", async () => {
+    bankAccounts = [
+      { id: "a-1", nameEn: "Operating", bankName: "ADCB", currency: "AED", isActive: true },
+      { id: "a-2", nameEn: "Savings", bankName: "FAB", currency: "AED", isActive: true },
+    ];
+    const line = { ...baseTx, id: "t-1", bankStatementAccountId: "a-1" };
+    const other = {
+      ...baseTx,
+      id: "t-2",
+      bankStatementAccountId: "a-2",
+      amount: 42,
+      description: "INCOMING TRANSFER",
+    };
+    transactions = [line, other];
+    const client = await mountPage("en");
+    await showReconciledRows();
+    const { translateNow } = await import("../../client/src/lib/i18n");
+    const action = (key: string) =>
+      Array.from(byTestId("bank-line-actions")!.querySelectorAll("button")).find(
+        (b) => b.textContent?.trim() === translateNow(key)
+      )!;
+    const select = (index: number) =>
+      byTestId("bank-line-actions")!.querySelectorAll<HTMLElement>('[role="combobox"]')[index]!;
+    const offersCounterpart = async () => {
+      const options = await openSelect(select(1));
+      expect(options.length).toBeGreaterThan(0);
+      const offered = options.some((o) => o.textContent?.includes(other.description));
+      // Escape closes only the select (the top layer) and keeps its current value.
+      await act(async () => {
+        document.activeElement!.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
+        );
+      });
+      await flush(4);
+      expect(document.querySelector('[role="option"]')).toBeNull();
+      return offered;
+    };
+
+    // Pick the counterpart while it is still eligible.
+    await openMatchDialogFor("t-1");
+    await act(async () => action("banking.line.transfer").click());
+    await pickOption(select(0), "Savings");
+    await pickOption(select(1), other.description);
+
+    // It turns out to be reconciled, then its Unmatch is held (the row sits behind the dialog).
+    await act(async () => {
+      client.setQueryData(TRANSACTIONS_KEY, [
+        line,
+        { ...reconciled, ...other, isReconciled: true },
+      ]);
+    });
+    await flush(4);
+    let respond!: (response: Response) => void;
+    matchReply = () => new Promise<Response>((resolve) => (respond = resolve));
+    await act(async () => mobileButton(translateNow("pageLabels.unmatch")).click());
+    await flush();
+    expect(writes()).toEqual(["DELETE /t-2/match"]);
+    expect(client.getQueryData<Rows>(TRANSACTIONS_KEY)![1]).toMatchObject({
+      id: "t-2",
+      isReconciled: false,
+    });
+
+    expect(await offersCounterpart()).toBe(false);
+    await act(async () => action("banking.line.applyTransfer").click());
+    await flush();
+    expect(writes()).toEqual(["DELETE /t-2/match"]);
+
+    // Once the Unmatch settles, the same selection is offered and written.
+    matchReply = () => json({});
+    await act(async () => respond(json({})));
+    await flush();
+    expect(await offersCounterpart()).toBe(true);
+    await act(async () => action("banking.line.applyTransfer").click());
+    await flush();
+    expect(writes()).toEqual(["DELETE /t-2/match", "POST /t-1/match"]);
+    const post = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === "POST")!;
+    expect(JSON.parse(String(post[1]!.body))).toEqual({
+      matchedType: "transfer",
+      matchedId: "a-2",
+      counterpartTransactionId: "t-2",
+    });
+  }, 60_000);
+
   it("hides create-entry, split, transfer and exclude while a dialog match is pending, and restores them after a failure", async () => {
     suggestionsReply = () => json([suggestion]);
     const client = await mountPage("en");
