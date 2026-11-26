@@ -20,7 +20,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
 import { isolateLtrText } from "@/lib/format-bidi";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 
 /*
  * Settings › Numbering (WQ7, 12.8): prefix, zero padding, yearly reset and the next number for
@@ -37,6 +37,29 @@ interface NumberingRow {
   nextNumber: number;
   nextFormatted: string;
   lastIssued: number;
+}
+
+/** Captured at click time: a save paused offline is sent as it was submitted. */
+interface SaveNumberingVariables {
+  companyId: string;
+  docType: NumberingRow["docType"];
+  payload: { prefix: string; padding: number; yearlyReset: boolean; nextNumber?: number };
+  draft: Draft;
+}
+
+/** Only the fields the user edited; every other field follows the server row. */
+interface Draft {
+  prefix?: string;
+  padding?: number;
+  yearlyReset?: boolean;
+  next?: string;
+}
+
+/** Drop the edits the server now holds; anything changed since the save was submitted stays. */
+function withoutSaved(draft: Draft, saved: Draft): Draft {
+  return Object.fromEntries(
+    Object.entries(draft).filter(([field, value]) => saved[field as keyof Draft] !== value)
+  );
 }
 
 /** Same rule as the server: the year is part of the number only with yearly reset. */
@@ -57,39 +80,63 @@ function NumberingCard({
 }) {
   const { locale, t } = useTranslation();
   const { toast } = useToast();
-  const [prefix, setPrefix] = useState(row.prefix);
-  const [padding, setPadding] = useState(row.padding);
-  const [yearlyReset, setYearlyReset] = useState(row.yearlyReset);
-  const [next, setNext] = useState(String(row.nextNumber));
+  const [draft, setDraft] = useState<Draft>({});
   const [error, setError] = useState<string | null>(null);
+
+  const prefix = draft.prefix ?? row.prefix;
+  const padding = draft.padding ?? row.padding;
+  const yearlyReset = draft.yearlyReset ?? row.yearlyReset;
+  const next = draft.next ?? String(row.nextNumber);
+  const edit = (change: Draft) => setDraft((current) => ({ ...current, ...change }));
 
   const nextNum = Number(next);
   const nextFormatted = preview(prefix.trim().toUpperCase(), padding, yearlyReset, nextNum || 1);
   const nextTooLow = Number.isFinite(nextNum) && nextNum <= row.lastIssued;
 
   const save = useMutation({
-    mutationFn: () =>
-      apiRequest("PUT", `/api/companies/${companyId}/numbering/${row.docType}`, {
-        prefix: prefix.trim(),
-        padding,
-        yearlyReset,
-        ...(nextNum !== row.nextNumber ? { nextNumber: nextNum } : {}),
-      }),
-    onSuccess: () => {
+    mutationFn: ({ companyId, docType, payload }: SaveNumberingVariables) =>
+      apiRequest("PUT", `/api/companies/${companyId}/numbering/${docType}`, payload),
+    onMutate: () => {
       setError(null);
-      toast({ title: translateNow("settingsPages.numberingSaved") });
-      void queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "numbering"] });
     },
-    onError: (e: Error & { body?: { code?: string } }) => setError(e.message),
+    onSuccess: async (saved: NumberingRow, submitted) => {
+      setError(null);
+      toast({ title: translateNow("settingsNumbering.numberingSaved") });
+      const queryKey = ["/api/companies", submitted.companyId, "numbering"];
+      // The PUT returns the full saved row. Put it in the cache now, so a refresh that is paused
+      // or fails can never leave the old row behind to be compared against the next submit.
+      await queryClient.cancelQueries({ queryKey, exact: true });
+      queryClient.setQueryData<{ numbering: NumberingRow[] }>(queryKey, (current) =>
+        current
+          ? {
+              ...current,
+              numbering: current.numbering.map((r) => (r.docType === saved.docType ? saved : r)),
+            }
+          : current
+      );
+      setDraft((current) => withoutSaved(current, submitted.draft));
+      void queryClient.invalidateQueries({ queryKey, exact: true });
+    },
+    onError: (e: unknown) => {
+      // Only a server-sent 4xx (validation / conflict) message is shown; raw network, CSRF,
+      // offline and 5xx failures get the generic localized text.
+      setError(
+        e instanceof ApiError && e.status >= 400 && e.status < 500 && e.message
+          ? e.message
+          : t["settingsNumbering.numberingSaveFailed"]
+      );
+    },
   });
 
   const id = (f: string) => `numbering-${row.docType}-${f}`;
   return (
     <Card data-testid={`numbering-${row.docType}`}>
       <CardHeader>
-        <CardTitle className="text-h4">{t[`settingsPages.numberingDoc_${row.docType}`]}</CardTitle>
+        <CardTitle className="text-h4">
+          {t[`settingsNumbering.numberingDoc_${row.docType}`]}
+        </CardTitle>
         <CardDescription>
-          {formatMessage(t["settingsPages.numberingNextIs"], {
+          {formatMessage(t["settingsNumbering.numberingNextIs"], {
             number: locale === "ar" ? isolateLtrText(nextFormatted) : nextFormatted,
           })}
         </CardDescription>
@@ -99,32 +146,43 @@ function NumberingCard({
           className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
           onSubmit={(e) => {
             e.preventDefault();
+            if (save.isPending) return;
             if (nextTooLow) {
               setError(
-                formatMessage(t["settingsPages.numberingBelowIssued"], { last: row.lastIssued })
+                formatMessage(t["settingsNumbering.numberingBelowIssued"], { last: row.lastIssued })
               );
               return;
             }
-            save.mutate();
+            save.mutate({
+              companyId,
+              docType: row.docType,
+              payload: {
+                prefix: prefix.trim(),
+                padding,
+                yearlyReset,
+                ...(nextNum !== row.nextNumber ? { nextNumber: nextNum } : {}),
+              },
+              draft,
+            });
           }}
         >
           <div className="space-y-1.5">
-            <Label htmlFor={id("prefix")}>{t["settingsPages.numberingPrefix"]}</Label>
+            <Label htmlFor={id("prefix")}>{t["settingsNumbering.numberingPrefix"]}</Label>
             <Input
               id={id("prefix")}
               dir="ltr"
               maxLength={12}
               value={prefix}
-              onChange={(e) => setPrefix(e.target.value.replace(/[^A-Za-z0-9\-/]/g, ""))}
+              onChange={(e) => edit({ prefix: e.target.value.replace(/[^A-Za-z0-9\-/]/g, "") })}
               disabled={disabled}
               data-testid={`numbering-prefix-${row.docType}`}
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor={id("padding")}>{t["settingsPages.numberingPadding"]}</Label>
+            <Label htmlFor={id("padding")}>{t["settingsNumbering.numberingPadding"]}</Label>
             <Select
               value={String(padding)}
-              onValueChange={(v) => setPadding(Number(v))}
+              onValueChange={(v) => edit({ padding: Number(v) })}
               disabled={disabled}
             >
               <SelectTrigger id={id("padding")}>
@@ -133,21 +191,21 @@ function NumberingCard({
               <SelectContent>
                 {[3, 4, 5, 6, 7, 8].map((p) => (
                   <SelectItem key={p} value={String(p)}>
-                    {formatMessage(t["settingsPages.numberingDigits"], { count: p })}
+                    {formatMessage(t["settingsNumbering.numberingDigits"], { count: p })}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor={id("next")}>{t["settingsPages.numberingNext"]}</Label>
+            <Label htmlFor={id("next")}>{t["settingsNumbering.numberingNext"]}</Label>
             <Input
               id={id("next")}
               inputMode="numeric"
               dir="ltr"
               className="text-end tabular-nums"
               value={next}
-              onChange={(e) => setNext(e.target.value.replace(/[^0-9]/g, ""))}
+              onChange={(e) => edit({ next: e.target.value.replace(/[^0-9]/g, "") })}
               aria-invalid={nextTooLow}
               aria-describedby={id("next-help")}
               disabled={disabled}
@@ -155,16 +213,18 @@ function NumberingCard({
             />
             <p id={id("next-help")} className="text-caption text-muted-foreground">
               {row.lastIssued > 0
-                ? formatMessage(t["settingsPages.numberingLastIssued"], { last: row.lastIssued })
-                : t["settingsPages.numberingNoneIssued"]}
+                ? formatMessage(t["settingsNumbering.numberingLastIssued"], {
+                    last: row.lastIssued,
+                  })
+                : t["settingsNumbering.numberingNoneIssued"]}
             </p>
           </div>
           <div className="flex items-center justify-between gap-3 sm:col-span-2 lg:col-span-1 lg:flex-col lg:items-start">
-            <Label htmlFor={id("reset")}>{t["settingsPages.numberingYearlyReset"]}</Label>
+            <Label htmlFor={id("reset")}>{t["settingsNumbering.numberingYearlyReset"]}</Label>
             <Switch
               id={id("reset")}
               checked={yearlyReset}
-              onCheckedChange={setYearlyReset}
+              onCheckedChange={(v) => edit({ yearlyReset: v })}
               disabled={disabled}
               data-testid={`numbering-reset-${row.docType}`}
             />
@@ -174,6 +234,15 @@ function NumberingCard({
               {error}
             </p>
           ) : null}
+          {save.isPaused ? (
+            <p
+              role="status"
+              className="text-small text-muted-foreground sm:col-span-2 lg:col-span-4"
+              data-testid={`numbering-save-waiting-${row.docType}`}
+            >
+              {t["settingsNumbering.numberingSaveWaiting"]}
+            </p>
+          ) : null}
           <div className="sm:col-span-2 lg:col-span-4">
             <Button
               type="submit"
@@ -181,7 +250,7 @@ function NumberingCard({
               data-testid={`numbering-save-${row.docType}`}
             >
               {save.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />}
-              {t["settingsPages.numberingSave"]}
+              {t["settingsNumbering.numberingSave"]}
             </Button>
           </div>
         </form>
@@ -195,8 +264,9 @@ export default function NumberingSettings() {
   const { companyId } = useDefaultCompany();
   const { can } = useCompanyPermission();
   const canManage = can("settings.company");
+  const numberingQueryKey = ["/api/companies", companyId, "numbering"];
   const data = useQuery<{ numbering: NumberingRow[] }>({
-    queryKey: ["/api/companies", companyId, "numbering"],
+    queryKey: numberingQueryKey,
     enabled: !!companyId,
   });
 
@@ -205,28 +275,68 @@ export default function NumberingSettings() {
       <div className="space-y-6">
         <PageHeader
           eyebrow={t["pages.companyProfileEyebrow"]}
-          title={t["settingsPages.numberingTitle"]}
-          description={t["settingsPages.numberingDescription"]}
+          title={t["settingsNumbering.numberingTitle"]}
+          description={t["settingsNumbering.numberingDescription"]}
         />
         {!canManage ? (
-          <p className="text-small text-muted-foreground">{t["settingsPages.numberingReadOnly"]}</p>
+          <p className="text-small text-muted-foreground">
+            {t["settingsNumbering.numberingReadOnly"]}
+          </p>
         ) : null}
         {data.isLoading ? (
-          <div className="flex justify-center py-12">
+          <div
+            className="flex justify-center py-12"
+            role="status"
+            aria-label={t["common.loading"]}
+            data-testid="numbering-loading"
+          >
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
           </div>
+        ) : null}
+        {data.fetchStatus === "paused" ? (
+          <p
+            role="status"
+            className="text-small text-muted-foreground"
+            data-testid="numbering-waiting"
+          >
+            {t["settingsNumbering.numberingWaiting"]}
+          </p>
+        ) : null}
+        {(data.isLoadingError || data.isRefetchError) && data.fetchStatus === "idle" ? (
+          <div
+            role="alert"
+            className="space-y-2"
+            data-testid={data.isLoadingError ? "numbering-load-error" : "numbering-refresh-error"}
+          >
+            <p className="text-small text-danger">
+              {data.isLoadingError
+                ? t["settingsNumbering.numberingLoadFailed"]
+                : t["settingsNumbering.numberingRefreshFailed"]}
+            </p>
+            <Button variant="outline" size="sm" onClick={() => void data.refetch()}>
+              {t["settingsNumbering.numberingRetry"]}
+            </Button>
+          </div>
+        ) : null}
+        {data.isSuccess && data.fetchStatus === "idle" && data.data.numbering.length === 0 ? (
+          <p className="text-small text-muted-foreground" data-testid="numbering-empty">
+            {t["settingsNumbering.numberingEmpty"]}
+          </p>
         ) : null}
         {companyId
           ? (data.data?.numbering ?? []).map((row) => (
               <NumberingCard
-                key={`${row.docType}-${row.prefix}-${row.padding}-${row.yearlyReset}-${row.nextNumber}`}
+                // Stable per company and document, so a refresh never remounts away a draft.
+                key={`${companyId}-${row.docType}`}
                 row={row}
                 companyId={companyId}
                 disabled={!canManage}
               />
             ))
           : null}
-        <p className="text-caption text-muted-foreground">{t["settingsPages.numberingFtaNote"]}</p>
+        <p className="text-caption text-muted-foreground">
+          {t["settingsNumbering.numberingFtaNote"]}
+        </p>
       </div>
     </SettingsLayout>
   );
