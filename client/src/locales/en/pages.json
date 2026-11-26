@@ -825,6 +825,8 @@
   "pages.subscriptionWhiteLabel": "White-label",
   "pages.subscriptionUnlimited": "Unlimited",
   "pages.subscriptionPageTitle": "Subscription and billing",
+  "pages.subscriptionBillingUnavailable": "Billing information is unavailable",
+  "pages.subscriptionBillingUnavailableHelp": "We couldn’t find billing information for this company.",
   "pages.subscriptionPageDescription": "Manage your plan, usage, and billing details",
   "pages.subscriptionStatus_active": "Active",
   "pages.subscriptionStatus_trialing": "Trialing",

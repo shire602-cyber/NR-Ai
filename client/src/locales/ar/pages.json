@@ -825,6 +825,8 @@
   "pages.subscriptionWhiteLabel": "العلامة البيضاء",
   "pages.subscriptionUnlimited": "غير محدود",
   "pages.subscriptionPageTitle": "الاشتراك والفوترة",
+  "pages.subscriptionBillingUnavailable": "معلومات الفوترة غير متاحة",
+  "pages.subscriptionBillingUnavailableHelp": "تعذّر العثور على معلومات الفوترة لهذه الشركة.",
   "pages.subscriptionPageDescription": "أدر باقتك واستخدامك وتفاصيل الفوترة",
   "pages.subscriptionStatus_active": "نشط",
   "pages.subscriptionStatus_trialing": "فترة تجريبية",
