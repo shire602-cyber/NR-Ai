@@ -13,8 +13,8 @@ import {
   formSpanFull,
   lineLabelClass,
 } from "@/components/ui/form-layout";
-import { useState, useCallback } from "react";
-import { useQuery, useMutation, type UseQueryResult } from "@tanstack/react-query";
+import { useState, useCallback, useSyncExternalStore } from "react";
+import { onlineManager, useQuery, useMutation, type UseQueryResult } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
@@ -84,11 +84,11 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslation, translateNow } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { budgetCategoryLabel } from "@/lib/budget-categories";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import { Money } from "@/components/ui/money";
@@ -280,6 +280,9 @@ function isoDay(v: string | null | undefined): string {
   return calendarDayKey(v) || String(v).slice(0, 10);
 }
 
+const subscribeToOnline = onlineManager.subscribe.bind(onlineManager);
+const isOnline = () => onlineManager.isOnline();
+
 function BudgetQueryStatus({
   query,
   errorTestId,
@@ -291,11 +294,13 @@ function BudgetQueryStatus({
   errorTestId: string;
 }) {
   const { t } = useTranslation();
+  const online = useSyncExternalStore(subscribeToOnline, isOnline);
 
   if (query.isPending) {
+    const pausedMessage = online ? t["budgets.loadWaiting"] : t["budgets.loadPaused"];
     return (
       <div role="status" className="text-center py-8 text-muted-foreground">
-        {query.fetchStatus === "paused" ? t["budgets.loadPaused"] : t.loading || "Loading..."}
+        {query.fetchStatus === "paused" ? pausedMessage : t.loading}
       </div>
     );
   }
@@ -336,8 +341,9 @@ export default function Budgets() {
 
   // ─── Queries ────────────────────────────────────────────
 
+  const budgetPlansKey = [`/api/companies/${companyId}/budget-plans`];
   const budgetPlansQuery = useQuery<BudgetPlan[]>({
-    queryKey: [`/api/companies/${companyId}/budget-plans`],
+    queryKey: budgetPlansKey,
     enabled: !!companyId,
   });
 
@@ -417,11 +423,18 @@ export default function Budgets() {
 
   // ─── Mutations ──────────────────────────────────────────
 
+  const refreshBudgets = () => refreshAfterWrite(budgetPlansKey);
+  const refreshAfterLineWrite = (planId: string) => {
+    refreshAfterWrite([`/api/budget-plans/${planId}/lines`]);
+    refreshAfterWrite([`/api/budget-plans/${planId}/variance`]);
+    refreshBudgets();
+  };
+
   const createBudgetMutation = useMutation({
     mutationFn: (data: BudgetFormData) =>
       apiRequest("POST", `/api/companies/${companyId}/budget-plans`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshBudgets();
       toast({
         title: translateNow("toasts.budgetCreated"),
         description: translateNow("toasts.theBudgetPlanHasBeenCreatedSuccessfully"),
@@ -441,8 +454,9 @@ export default function Budgets() {
   const updateBudgetMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<BudgetFormData> }) =>
       apiRequest("PATCH", `/api/budget-plans/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+    onSuccess: (_, { id }) => {
+      refreshBudgets();
+      refreshAfterWrite([`/api/budget-plans/${id}/variance`]);
       toast({
         title: translateNow("toasts.budgetUpdated"),
         description: translateNow("toasts.theBudgetPlanHasBeenUpdated"),
@@ -463,7 +477,7 @@ export default function Budgets() {
   const deleteBudgetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/budget-plans/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshBudgets();
       toast({
         title: translateNow("toasts.budgetDeleted"),
         description: translateNow("toasts.theBudgetPlanHasBeenDeleted"),
@@ -482,7 +496,7 @@ export default function Budgets() {
   const approveBudgetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/approve`, {}),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshBudgets();
       toast({
         title: translateNow("toasts.budgetApproved"),
         description: translateNow("toasts.theBudgetHasBeenApproved"),
@@ -496,9 +510,6 @@ export default function Budgets() {
       });
     },
   });
-
-  const refreshBudgets = () =>
-    queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
 
   const newVersionMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/new-version`, {}),
@@ -548,11 +559,8 @@ export default function Budgets() {
   const importLinesMutation = useMutation({
     mutationFn: ({ id, csv }: { id: string; csv: string }) =>
       apiRequest("POST", `/api/budget-plans/${id}/import`, { csv }),
-    onSuccess: (result: { imported: number }) => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
-      });
-      refreshBudgets();
+    onSuccess: (result: { imported: number }, { id }) => {
+      refreshAfterLineWrite(id);
       toast({
         title: tr(locale, "Import complete", "اكتمل الاستيراد"),
         description: `${result.imported} ${tr(locale, "lines imported", "سطر تم استيراده")}`,
@@ -603,13 +611,10 @@ export default function Budgets() {
   };
 
   const addLineMutation = useMutation({
-    mutationFn: (data: BudgetLineFormData) =>
-      apiRequest("POST", `/api/budget-plans/${selectedBudget?.id}/lines`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
-      });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+    mutationFn: ({ planId, data }: { planId: string; data: BudgetLineFormData }) =>
+      apiRequest("POST", `/api/budget-plans/${planId}/lines`, data),
+    onSuccess: (_, { planId }) => {
+      refreshAfterLineWrite(planId);
       toast({
         title: translateNow("toasts.lineAdded"),
         description: translateNow("toasts.budgetLineHasBeenAdded"),
@@ -628,13 +633,10 @@ export default function Budgets() {
   });
 
   const updateLineMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<BudgetLineFormData> }) =>
+    mutationFn: ({ id, data }: { id: string; planId: string; data: Partial<BudgetLineFormData> }) =>
       apiRequest("PATCH", `/api/budget-lines/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
-      });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+    onSuccess: (_, { planId }) => {
+      refreshAfterLineWrite(planId);
       toast({
         title: translateNow("toasts.lineUpdated"),
         description: translateNow("toasts.budgetLineHasBeenUpdated"),
@@ -653,12 +655,10 @@ export default function Budgets() {
   });
 
   const deleteLineMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/budget-lines/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
-      });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+    mutationFn: ({ id }: { id: string; planId: string }) =>
+      apiRequest("DELETE", `/api/budget-lines/${id}`),
+    onSuccess: (_, { planId }) => {
+      refreshAfterLineWrite(planId);
       toast({
         title: translateNow("toasts.lineDeleted"),
         description: translateNow("toasts.budgetLineHasBeenRemoved"),
@@ -766,10 +766,12 @@ export default function Budgets() {
   };
 
   const handleLineSubmit = (data: BudgetLineFormData) => {
+    if (!selectedBudget) return;
+    const planId = selectedBudget.id;
     if (editingLine) {
-      updateLineMutation.mutate({ id: editingLine.id, data });
+      updateLineMutation.mutate({ id: editingLine.id, planId, data });
     } else {
-      addLineMutation.mutate(data);
+      addLineMutation.mutate({ planId, data });
     }
   };
 
@@ -1016,8 +1018,8 @@ export default function Budgets() {
                     type="search"
                     value={budgetSearch}
                     onChange={(e) => setBudgetSearch(e.target.value)}
-                    placeholder={tr(locale, "Search budgets", "ابحث في الموازنات")}
-                    aria-label={tr(locale, "Search budgets", "ابحث في الموازنات")}
+                    placeholder={t["budgets.searchBudgets"]}
+                    aria-label={t["budgets.searchBudgets"]}
                     className="ps-9"
                     data-testid="input-search-budgets"
                   />
@@ -1164,7 +1166,7 @@ export default function Budgets() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>
-                      {tr(locale, "Budget Lines", "بنود الموازنة")} - {selectedBudget.name}
+                      {formatMessage(t["budgets.detailHeading"], { name: selectedBudget.name })}
                     </CardTitle>
                     <CardDescription>
                       <T k="pages.monthlyBudgetAllocationByCategoryClickARowToEdit" />
@@ -1329,15 +1331,10 @@ export default function Budgets() {
             <Card>
               <CardHeader>
                 <CardTitle>
-                  {tr(locale, "Budget vs Actual Variance", "الموازنة مقابل الفعلي (الانحراف)")} -{" "}
-                  {selectedBudget.name}
+                  {formatMessage(t["budgets.varianceHeading"], { name: selectedBudget.name })}
                 </CardTitle>
                 <CardDescription>
-                  {tr(
-                    locale,
-                    "Comparing budgeted amounts against actual journal entries. Green = under budget, Red = over budget.",
-                    "مقارنة المبالغ المخططة بقيود اليومية الفعلية. الأخضر = أقل من الموازنة، الأحمر = أكثر من الموازنة."
-                  )}
+                  <T k="budgets.varianceDescription" />
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1857,8 +1854,8 @@ export default function Budgets() {
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (lineToDelete) {
-                  deleteLineMutation.mutate(lineToDelete);
+                if (lineToDelete && selectedBudget) {
+                  deleteLineMutation.mutate({ id: lineToDelete, planId: selectedBudget.id });
                   setLineToDelete(null);
                 }
               }}

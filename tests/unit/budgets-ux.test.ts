@@ -6,43 +6,26 @@
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  focusManager,
+  onlineManager,
+  QueryClientProvider,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import enFinanceViews from "../../client/src/locales/en/financeViews.json";
+import arFinanceViews from "../../client/src/locales/ar/financeViews.json";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const CID = "22222222-2222-4222-8222-222222222222";
-const state = vi.hoisted(() => ({
-  failing: new Map<string, unknown>(),
-  fixtures: {} as Record<string, unknown>,
-}));
+const failing = new Map<string, number | "network">();
+const fixtures: Record<string, unknown> = {};
 
 vi.mock("../../client/src/lib/queryClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../client/src/lib/queryClient")>();
-  const { QueryClient: QC } = await import("@tanstack/react-query");
-  const queryClient = new QC({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        staleTime: Infinity,
-        queryFn: async ({ queryKey }) => {
-          const url = String(queryKey[0]);
-          for (const [prefix, f] of state.failing) {
-            if (url.startsWith(prefix)) {
-              if (f === "network") throw new TypeError("Failed to fetch");
-              throw new actual.ApiError(
-                "Internal error injected",
-                (f as { status: number }).status
-              );
-            }
-          }
-          return state.fixtures[url] ?? [];
-        },
-      },
-    },
-  });
-  return { ...actual, queryClient, apiRequest: vi.fn(async () => ({})) };
+  return { ...actual, apiRequest: vi.fn(async () => ({ imported: 1 })) };
 });
 vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
   useDefaultCompany: () => ({
@@ -56,18 +39,27 @@ let container: HTMLDivElement;
 let root: Root;
 let qc: QueryClient;
 
+const fetchFixture = async (url: string, _init?: RequestInit) => {
+  const failure = failing.get(url);
+  if (failure === "network") throw new TypeError("Failed to fetch");
+  if (failure) return Response.json({ message: "Internal error injected" }, { status: failure });
+  return Response.json(fixtures[url] ?? []);
+};
+
 beforeAll(async () => {
   const { loadLocale } = await import("../../client/src/lib/i18n");
   await Promise.all([loadLocale("en"), loadLocale("ar")]);
 });
 beforeEach(async () => {
   window.localStorage.clear();
-  state.failing = new Map();
-  state.fixtures = {};
-  ({ queryClient: qc } = (await import("../../client/src/lib/queryClient")) as unknown as {
-    queryClient: QueryClient;
-  });
+  failing.clear();
+  for (const key of Object.keys(fixtures)) delete fixtures[key];
+  vi.stubGlobal("fetch", vi.fn(fetchFixture));
+  ({ queryClient: qc } = await import("../../client/src/lib/queryClient"));
   qc.clear();
+  qc.setDefaultOptions({
+    queries: { ...qc.getDefaultOptions().queries, retry: false, staleTime: Infinity },
+  });
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -75,7 +67,10 @@ beforeEach(async () => {
 });
 afterEach(() => {
   act(() => root.unmount());
+  qc.clear();
+  focusManager.setFocused(undefined);
   onlineManager.setOnline(true);
+  vi.unstubAllGlobals();
   container.remove();
 });
 
@@ -115,13 +110,14 @@ const URL = `/api/companies/${CID}/budget-plans`;
 const LINES_URL = "/api/budget-plans/a/lines";
 const VARIANCE_URL = "/api/budget-plans/a/variance";
 const PAUSED = "You're offline. Budget data will load when you reconnect.";
+const WAITING = "Waiting to load budget data…";
 
 function setDetailFixtures() {
-  state.fixtures[URL] = [plan("a", "موازنة التسويق", 2026)];
-  state.fixtures[LINES_URL] = [
+  fixtures[URL] = [plan("a", "موازنة التسويق", 2026)];
+  fixtures[LINES_URL] = [
     { id: "line", category: "Marketing", description: "حملة التسويق", annual_total: "1000" },
   ];
-  state.fixtures[VARIANCE_URL] = {
+  fixtures[VARIANCE_URL] = {
     periods: ["2026-01"],
     varianceLines: [
       {
@@ -157,20 +153,20 @@ async function clickRetry(id: string, label: string) {
 
 describe("budgets list states", () => {
   it("a 500 shows translated copy with Retry, not the server message or the empty state", async () => {
-    state.failing.set(URL, { status: 500 });
+    failing.set(URL, 500);
     await renderPage();
     expect(q("budgets-load-error")).not.toBeNull();
     expect(q("budgets-empty")).toBeNull();
     expect(text()).not.toContain("Internal error injected");
-    state.failing.delete(URL);
-    state.fixtures[URL] = [plan("a", "Recovered budget plan", 2026)];
+    failing.delete(URL);
+    fixtures[URL] = [plan("a", "Recovered budget plan", 2026)];
     await clickRetry("budgets-load-error", "Try again");
     expect(q("budgets-load-error")).toBeNull();
     expect(text()).toContain("Recovered budget plan");
   });
 
   it("a network failure in Arabic hides 'Failed to fetch' and has no English lines", async () => {
-    state.failing.set(URL, "network");
+    failing.set(URL, "network");
     await setLocale("ar");
     await renderPage();
     expect(q("budgets-load-error")).not.toBeNull();
@@ -191,26 +187,52 @@ describe("budgets list states", () => {
     expect(q("budgets-empty")).not.toBeNull();
   });
 
-  it("keeps cached budget rows visible when a refresh fails and retries the refresh", async () => {
-    state.fixtures[URL] = [plan("a", "Marketing 2026", 2026)];
+  it("shows neutral waiting copy when an online retry pauses in an unfocused tab", async () => {
+    qc.setDefaultOptions({
+      queries: { ...qc.getDefaultOptions().queries, retry: 1, retryDelay: 0 },
+    });
+    focusManager.setFocused(false);
+    failing.set(URL, 500);
     await renderPage();
 
-    state.failing.set(URL, { status: 500 });
+    expect(qc.getQueryState([URL])?.fetchStatus).toBe("paused");
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(WAITING);
+    expect(q("budgets-empty")).toBeNull();
+    expect(q("budgets-load-error")).toBeNull();
+
+    act(() => onlineManager.setOnline(false));
+    expect(text()).toContain(PAUSED);
+    act(() => onlineManager.setOnline(true));
+    expect(text()).toContain(WAITING);
+
+    failing.delete(URL);
+    fixtures[URL] = [plan("a", "Recovered after focus", 2026)];
+    act(() => focusManager.setFocused(true));
+    await settle();
+    expect(text()).toContain("Recovered after focus");
+    expect(text()).not.toContain(WAITING);
+  });
+
+  it("keeps cached budget rows visible when a refresh fails and retries the refresh", async () => {
+    fixtures[URL] = [plan("a", "Marketing 2026", 2026)];
+    await renderPage();
+
+    failing.set(URL, 500);
     await act(async () => qc.invalidateQueries({ queryKey: [URL] }));
     await settle();
     expect(text()).toContain("Marketing 2026");
     expect(q("budgets-load-error")?.textContent).toContain("Could not refresh budget data");
     expect(q("budgets-empty")).toBeNull();
 
-    state.failing.delete(URL);
-    state.fixtures[URL] = [plan("a", "Updated marketing plan", 2026)];
+    failing.delete(URL);
+    fixtures[URL] = [plan("a", "Updated marketing plan", 2026)];
     await clickRetry("budgets-load-error", "Try again");
     expect(q("budgets-load-error")).toBeNull();
     expect(text()).toContain("Updated marketing plan");
   });
 
   it("announces no search matches in the same status region without moving focus", async () => {
-    state.fixtures[URL] = [plan("a", "Marketing 2026", 2026), plan("b", "Operations", 2025)];
+    fixtures[URL] = [plan("a", "Marketing 2026", 2026), plan("b", "Operations", 2025)];
     await renderPage();
     const input = q("input-search-budgets") as HTMLInputElement;
     expect(input).not.toBeNull();
@@ -238,7 +260,7 @@ describe("budgets list states", () => {
   });
 
   it("Arabic list screen has no English text nodes", async () => {
-    state.fixtures[URL] = [plan("a", "ميزانية التسويق", 2026)];
+    fixtures[URL] = [plan("a", "ميزانية التسويق", 2026)];
     await setLocale("ar");
     await renderPage();
     const english: string[] = [];
@@ -254,6 +276,87 @@ describe("budgets list states", () => {
 });
 
 describe("budget detail states", () => {
+  it.each([
+    ["en", enFinanceViews, "Variance"],
+    ["ar", arFinanceViews, "الانحراف"],
+  ] as const)(
+    "renders search and detail copy from the %s catalog",
+    async (locale, catalog, tab) => {
+      const name = "2026";
+      fixtures[URL] = [plan("a", name, 2026)];
+      fixtures[VARIANCE_URL] = { periods: [], varianceLines: [] };
+      await setLocale(locale);
+      await renderPage();
+
+      const search = q("input-search-budgets");
+      expect(search?.getAttribute("aria-label")).toBe(catalog["budgets.searchBudgets"]);
+      expect(search?.getAttribute("placeholder")).toBe(catalog["budgets.searchBudgets"]);
+
+      openBudget();
+      expect(text()).toContain(catalog["budgets.detailHeading"].replace("{name}", name));
+      openTab(tab);
+      expect(text()).toContain(catalog["budgets.varianceHeading"].replace("{name}", name));
+      expect(text()).toContain(catalog["budgets.varianceDescription"]);
+      await settle();
+    }
+  );
+
+  it("aborts an uncached lines read after a CSV import and refreshes affected budget data", async () => {
+    setDetailFixtures();
+    let firstReadSignal: AbortSignal | null | undefined;
+    let resolveFirstRead!: (value: Response) => void;
+    const firstRead = new Promise<Response>((resolve) => (resolveFirstRead = resolve));
+    let lineReads = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === LINES_URL && ++lineReads === 1) {
+          firstReadSignal = init?.signal;
+          return firstRead;
+        }
+        return fetchFixture(url);
+      })
+    );
+    await renderPage();
+    openBudget();
+    await settle();
+    expect(lineReads).toBe(1);
+    expect(firstReadSignal?.aborted).toBe(false);
+
+    const variance = fixtures[VARIANCE_URL];
+    openTab("Variance");
+    await settle();
+    expect(qc.getQueryData([VARIANCE_URL])).toEqual(variance);
+    openTab("Budget detail");
+
+    fixtures[LINES_URL] = [
+      { id: "imported", category: "Marketing", description: "Imported line", annual_total: "500" },
+    ];
+    fixtures[URL] = [{ ...plan("a", "موازنة التسويق", 2026), total_budget: "1500" }];
+    fixtures[VARIANCE_URL] = { periods: ["2026-01"], varianceLines: [] };
+    const input = q("input-import-budget") as HTMLInputElement;
+    const csv = "category,jan\nMarketing,500";
+    const file = Object.assign(new File([csv], "budget.csv"), { text: async () => csv });
+    Object.defineProperty(input, "files", { value: [file] });
+    act(() => input.dispatchEvent(new Event("change", { bubbles: true })));
+    await settle();
+
+    const { apiRequest } = await import("../../client/src/lib/queryClient");
+    expect(apiRequest).toHaveBeenCalledWith("POST", "/api/budget-plans/a/import", { csv });
+    expect(firstReadSignal?.aborted).toBe(true);
+    expect(lineReads).toBe(2);
+    expect(text()).toContain("Imported line");
+    expect(qc.getQueryData([URL])).toEqual(fixtures[URL]);
+    expect(qc.getQueryState([VARIANCE_URL])?.isInvalidated).toBe(true);
+
+    // Even if a response arrives after cancellation, it cannot overwrite the replacement read.
+    await act(async () => resolveFirstRead(Response.json([])));
+    expect(qc.getQueryData([LINES_URL])).toEqual(fixtures[LINES_URL]);
+    openTab("Variance");
+    await settle();
+    expect(qc.getQueryData([VARIANCE_URL])).toEqual(fixtures[VARIANCE_URL]);
+  });
+
   it("waits for uncached lines and variance to reconnect before showing data and totals", async () => {
     setDetailFixtures();
     await renderPage();
@@ -283,8 +386,8 @@ describe("budget detail states", () => {
 
   it("retries initial lines and variance errors and shows Arabic headings", async () => {
     setDetailFixtures();
-    state.failing.set(LINES_URL, { status: 500 });
-    state.failing.set(VARIANCE_URL, { status: 500 });
+    failing.set(LINES_URL, 500);
+    failing.set(VARIANCE_URL, 500);
     await setLocale("ar");
     await renderPage();
 
@@ -293,7 +396,7 @@ describe("budget detail states", () => {
     expect(text()).toContain("بنود الموازنة");
     expect(q("empty-state")).toBeNull();
     expect(q("budget-total-net")).toBeNull();
-    state.failing.delete(LINES_URL);
+    failing.delete(LINES_URL);
     await clickRetry("budget-lines-load-error", "أعد المحاولة");
     expect(q("budget-lines-load-error")).toBeNull();
     expect(container.querySelector("thead")?.textContent).toContain("الإجمالي السنوي");
@@ -303,7 +406,7 @@ describe("budget detail states", () => {
     expect(text()).toContain("الموازنة مقابل الفعلي (الانحراف)");
     expect(text()).not.toContain("لا توجد بيانات انحراف");
     expect(q("budget-summary-net")).toBeNull();
-    state.failing.delete(VARIANCE_URL);
+    failing.delete(VARIANCE_URL);
     await clickRetry("budget-variance-load-error", "أعد المحاولة");
     expect(q("budget-variance-load-error")).toBeNull();
     const headings = container.querySelector("thead")?.textContent;
