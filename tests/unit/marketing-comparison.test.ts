@@ -74,6 +74,19 @@ describe("comparison config", () => {
     expect(visibleColumns()).toEqual(["muhasib", "wafeq", "zoho"]);
     expect(visibleColumns("zoho")).toEqual(["muhasib", "zoho"]);
   });
+
+  it("sources Wafeq bilingual invoices and the multi-client accountant workspace", () => {
+    const bilingual = COMPARISON_ROWS.find((r) => r.id === "bilingual")!;
+    const firm = COMPARISON_ROWS.find((r) => r.id === "firm")!;
+    expect(bilingual.cells.wafeq.key).toBe("hxCmpYes");
+    expect(bilingual.cells.wafeq.source).toBe(
+      "https://help.wafeq.com/hc/en-ae/articles/21821665791900-Standard-Document-Template-Editor"
+    );
+    expect(bilingual.cells.wafeq.sourceLabelKey).toBe("hxCmpSrcWafeqTemplates");
+    expect(firm.cells.wafeq.key).toBe("hxCmpYes");
+    expect(firm.cells.wafeq.source).toBe("https://www.wafeq.com/en-ae/accountants");
+    expect(firm.cells.wafeq.sourceLabelKey).toBe("hxCmpSrcWafeqAccountants");
+  });
 });
 
 describe("comparison render", () => {
@@ -174,6 +187,22 @@ describe("comparison render", () => {
       zohoBilingual.querySelector('a[href="https://www.zoho.com/ae/books/help/e-invoicing/"]')
         ?.textContent
     ).toBe("UAE e-invoicing documentation");
+    const wafeqBilingual = container.querySelector(
+      'tr[data-row="bilingual"] td[data-column="wafeq"]'
+    )!;
+    expect(wafeqBilingual.getAttribute("data-dash")).not.toBe("true");
+    expect(wafeqBilingual.textContent).toContain("Yes");
+    expect(
+      wafeqBilingual.querySelector(
+        'a[href="https://help.wafeq.com/hc/en-ae/articles/21821665791900-Standard-Document-Template-Editor"]'
+      )?.textContent
+    ).toBe("Document template help");
+    const wafeqFirm = container.querySelector('tr[data-row="firm"] td[data-column="wafeq"]')!;
+    expect(wafeqFirm.getAttribute("data-dash")).not.toBe("true");
+    expect(wafeqFirm.textContent).toContain("Yes");
+    expect(
+      wafeqFirm.querySelector('a[href="https://www.wafeq.com/en-ae/accountants"]')?.textContent
+    ).toBe("For accountants");
     expect(container.querySelector('a[href="/en/compare/wafeq"]')).not.toBeNull();
     expect(container.querySelector('a[href="/en/compare/zoho"]')).not.toBeNull();
   });
@@ -221,6 +250,16 @@ describe("comparison render", () => {
     expect(
       container.querySelector('tr[data-row="bilingual"] td[data-column="zoho"]')?.textContent
     ).toContain("ملف PDF بالإنجليزية والعربية للفواتير المرسلة عبر");
+    const arBilingualWafeq = container.querySelector(
+      'tr[data-row="bilingual"] td[data-column="wafeq"]'
+    )!;
+    expect(arBilingualWafeq.getAttribute("data-dash")).not.toBe("true");
+    expect(arBilingualWafeq.textContent).toContain("نعم");
+    expect(arBilingualWafeq.querySelector("a")?.textContent).toBe("مساعدة قوالب المستندات");
+    const arFirmWafeq = container.querySelector('tr[data-row="firm"] td[data-column="wafeq"]')!;
+    expect(arFirmWafeq.getAttribute("data-dash")).not.toBe("true");
+    expect(arFirmWafeq.textContent).toContain("نعم");
+    expect(arFirmWafeq.querySelector("a")?.textContent).toBe("للمحاسبين");
     expect(container.querySelector('a[href="/ar/compare/wafeq"]')).not.toBeNull();
     expect(container.textContent).not.toMatch(/[٠-٩۰-۹]/);
     for (const cell of container.querySelectorAll("tbody td")) {

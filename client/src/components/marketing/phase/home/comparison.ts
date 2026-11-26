@@ -32,6 +32,9 @@ const ZOHO_SRC = COMPETITOR_PRICES.zoho.source;
 const ZOHO_EINVOICING_SRC = "https://www.zoho.com/ae/books/e-invoicing/";
 const ZOHO_EINVOICING_HELP_SRC = "https://www.zoho.com/ae/books/help/e-invoicing/";
 const ZOHO_SIGNUP_SRC = "https://www.zoho.com/ae/books/signup/";
+const WAFEQ_TEMPLATES_SRC =
+  "https://help.wafeq.com/hc/en-ae/articles/21821665791900-Standard-Document-Template-Editor";
+const WAFEQ_ACCOUNTANTS_SRC = "https://www.wafeq.com/en-ae/accountants";
 
 const wafeq = (cell: ComparisonCell = {}): ComparisonCell => ({
   source: WAFEQ_SRC,
@@ -52,7 +55,8 @@ function includingVat(aed: number): number {
 /*
  * Vendor pricing pages cover prices. Zoho's sign-up page covers its trial; its e-invoicing page
  * covers the included allowance and packs, and its e-invoicing help page the bilingual PDF for
- * Peppol invoices. Cells with no `key` render as a dash.
+ * Peppol invoices. Wafeq's document-template help covers bilingual invoice layouts, and its
+ * accountants page covers the multi-client workspace. Cells with no `key` render as a dash.
  */
 export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
@@ -113,7 +117,11 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
     labelKey: "hxCmpRowBilingual",
     cells: {
       muhasib: yes,
-      wafeq: wafeq(),
+      wafeq: wafeq({
+        ...yes,
+        source: WAFEQ_TEMPLATES_SRC,
+        sourceLabelKey: "hxCmpSrcWafeqTemplates",
+      }),
       zoho: zoho({
         key: "hxCmpBilingualZoho",
         source: ZOHO_EINVOICING_HELP_SRC,
@@ -134,7 +142,15 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
     id: "firm",
     labelKey: "hxCmpRowFirm",
-    cells: { muhasib: yes, wafeq: wafeq(), zoho: zoho() },
+    cells: {
+      muhasib: yes,
+      wafeq: wafeq({
+        ...yes,
+        source: WAFEQ_ACCOUNTANTS_SRC,
+        sourceLabelKey: "hxCmpSrcWafeqAccountants",
+      }),
+      zoho: zoho(),
+    },
   },
 ];
 
