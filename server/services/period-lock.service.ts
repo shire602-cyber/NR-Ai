@@ -44,6 +44,8 @@ export const CLOSE_ROLES = new Set(["owner", "admin", "accountant", "cfo"]);
 
 interface LockRequestContext {
   req: Request;
+  /** Soft-lock overrides already audited in this request (route guard + ledger kernel). */
+  auditedOverrides?: Set<string>;
 }
 const lockContext = new AsyncLocalStorage<LockRequestContext>();
 
@@ -184,6 +186,40 @@ export function canManageClose(actor: CloseActor): boolean {
   return isFirmOrAdmin(actor) || CLOSE_ROLES.has(actor.companyRole ?? "");
 }
 
+/**
+ * Audit a soft-lock override once per request: a route guard and the ledger kernel both run
+ * assertPeriodNotLocked for the same posting, which recorded the same override twice.
+ */
+async function auditSoftLockOverride(args: {
+  userId: string;
+  companyId: string;
+  periodEnd: string;
+  postingDate: string;
+  reason: string;
+  req: Request | undefined;
+  tx: LedgerTx | undefined;
+}): Promise<void> {
+  const ctx = lockContext.getStore();
+  const key = `${args.companyId.toLowerCase()}|${args.periodEnd}|${args.postingDate}`;
+  if (ctx) {
+    ctx.auditedOverrides ??= new Set();
+    if (ctx.auditedOverrides.has(key)) return;
+    ctx.auditedOverrides.add(key);
+  }
+  const { recordAudit } = await import("./audit.service");
+  await recordAudit({
+    userId: args.userId,
+    companyId: args.companyId,
+    action: "period.soft_lock_override",
+    entityType: "period",
+    entityId: args.periodEnd,
+    before: null,
+    after: { postingDate: args.postingDate, lockedThrough: args.periodEnd, reason: args.reason },
+    req: args.req,
+    tx: args.tx,
+  });
+}
+
 // ─── Guard ──────────────────────────────────────────────────────────────────
 
 /**
@@ -231,7 +267,11 @@ export async function assertPeriodNotLocked(
         message: `Cannot post to locked period (${label}). Unlock the period first.`,
         statusCode: 403,
         code: "PERIOD_LOCKED",
-        details: { lockedThrough: lock.periodEnd, lockType: lock.lockType, lockScope: lock.lockScope },
+        details: {
+          lockedThrough: lock.periodEnd,
+          lockType: lock.lockType,
+          lockScope: lock.lockScope,
+        },
       });
     }
     // Soft lock: evaluate the same override path as the non-storesBusinessDate branch so that
@@ -244,15 +284,12 @@ export async function assertPeriodNotLocked(
     const actor = user ? await resolveCloseActor(companyId, user, tx) : null;
     const canOverride = !!actor && canManageClose(actor);
     if (user && reason.length >= 3 && canOverride) {
-      const { recordAudit } = await import("./audit.service");
-      await recordAudit({
+      await auditSoftLockOverride({
         userId: user.id,
         companyId,
-        action: "period.soft_lock_override",
-        entityType: "period",
-        entityId: lock.periodEnd,
-        before: null,
-        after: { postingDate: isoDate, lockedThrough: lock.periodEnd, reason },
+        periodEnd: lock.periodEnd,
+        postingDate: isoDate,
+        reason,
         req,
         tx,
       });
@@ -307,15 +344,12 @@ export async function assertPeriodNotLocked(
   const canOverride = !!actor && canManageClose(actor);
   if (user && reason.length >= 3) {
     if (canOverride) {
-      const { recordAudit } = await import("./audit.service");
-      await recordAudit({
+      await auditSoftLockOverride({
         userId: user.id,
         companyId,
-        action: "period.soft_lock_override",
-        entityType: "period",
-        entityId: lock.periodEnd,
-        before: null,
-        after: { postingDate: isoDate, lockedThrough: lock.periodEnd, reason },
+        periodEnd: lock.periodEnd,
+        postingDate: isoDate,
+        reason,
         req,
         tx,
       });
