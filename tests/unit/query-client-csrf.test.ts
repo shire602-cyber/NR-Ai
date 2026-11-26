@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, ApiRequestNotSentError, apiRequest } from "../../client/src/lib/queryClient";
+import { apiUrl } from "../../client/src/lib/api";
 import { clearCsrfToken } from "../../client/src/lib/csrf";
 import { useI18n } from "../../client/src/lib/i18n";
 import offlineAr from "../../client/src/locales/offline/ar.json";
@@ -157,6 +158,52 @@ describe("apiRequest offline write refusal", () => {
 
     const writes = fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/things"));
     expect(writes).toHaveLength(0);
+  });
+
+  it.each([
+    ["en", offlineEn],
+    ["ar", offlineAr],
+  ] as const)(
+    "refuses an immediate-only write (%s) when the connection drops and the CSRF fetch fails",
+    async (locale, catalog) => {
+      useI18n.setState({ locale });
+      clearCsrfToken();
+      const network = { onLine: true };
+      vi.stubGlobal("navigator", network);
+      const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => {
+        network.onLine = false;
+        throw new TypeError("Failed to fetch");
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const error = await apiRequest("POST", "/api/things", {}, undefined, {
+        queueWhenOffline: false,
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ApiRequestNotSentError);
+      expect(error).toMatchObject({ message: catalog["offline.writeNotSent"], status: 0 });
+
+      // The only network call was the token fetch; the write itself never went out.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe(apiUrl("/api/csrf-token"));
+      expect(init?.method).toBe("GET");
+    }
+  );
+
+  it("keeps the preparation error when the CSRF fetch fails while online", async () => {
+    clearCsrfToken();
+    vi.stubGlobal("navigator", { onLine: true });
+    const fetchMock = vi.fn(async (_url: string) => jsonResponse({}, { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const error = await apiRequest("POST", "/api/things", {}, undefined, {
+      queueWhenOffline: false,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ApiRequestNotSentError);
+    expect(error).toMatchObject({ message: "Could not prepare the request.", status: 0 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("has distinct English and Arabic copy", () => {

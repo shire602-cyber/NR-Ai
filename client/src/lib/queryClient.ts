@@ -204,7 +204,11 @@ async function requestWithHeaders(
   try {
     headers = withExtra(await buildRequestHeaders(method, data, authHeaders));
   } catch (error) {
-    if (immediateOnly) throw new ApiRequestNotSentError("Could not prepare the request.");
+    if (immediateOnly) {
+      throw new ApiRequestNotSentError(
+        isOnline() ? "Could not prepare the request." : offlineWriteMessage()
+      );
+    }
     if (isMutation && !isOnline()) throw new ApiError(offlineWriteMessage(), 0);
     throw error;
   }
