@@ -991,7 +991,7 @@
   "reportCenter.code.inventory_adjustment": "تسوية المخزون",
   "reportCenter.code.manual_workpaper": "ورقة عمل يدوية",
   "reportCenter.dataLoadError": "تعذّر تحميل بيانات التقرير. تحقق من اتصالك وأعد المحاولة.",
-  "reportCenter.dataStale": "يتم عرض البيانات المحمّلة مسبقاً. قد تكون قديمة.",
+  "reportCenter.dataStale": "يتم عرض البيانات المحمّلة مسبقًا. قد تكون قديمة.",
   "reportCenter.retry": "أعد المحاولة",
   "reportCenter.partyListLoading": "جارٍ التحميل…",
   "reportCenter.partyNoCustomers": "لا يوجد عملاء بعد. أضف عميلًا لعرض كشف حسابه.",

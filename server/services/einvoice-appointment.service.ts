@@ -24,8 +24,6 @@ export interface EInvoicePartner {
 }
 
 const DISPLAY_NAMES: Record<string, string> = {
-  complyance: "Complyance",
-  acube: "A-Cube",
   http: "Accredited service provider",
   mock: "Test provider (no real transmission)",
 };

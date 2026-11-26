@@ -294,6 +294,8 @@ describe("sweep: Reports > Trial balance in Arabic", () => {
       dateRange: { from: new Date("2026-07-01T00:00:00"), to: new Date("2026-09-30T00:00:00") },
       t,
       trialBalanceLoading: false,
+      tbFetchStatus: "idle" as const,
+      reportLoadErrors: { pl: null, bs: null, vat: null, tb: null },
       trialBalanceSummary: { isBalanced: true, activeAccounts: 1, foreignCurrencyAccounts: 0 },
       trialBalance: {
         reportCurrency: "AED",

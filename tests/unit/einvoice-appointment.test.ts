@@ -24,7 +24,7 @@ describe("e-invoicing partner (reseller model)", () => {
   it("describes the active partner from env", () => {
     expect(partner).toMatchObject({
       provider: "complyance",
-      displayName: "Complyance",
+      displayName: "complyance",
       termsUrl: "https://partner.example/terms",
       termsVersion: "2026-11",
       requiresAppointment: true,

@@ -468,7 +468,7 @@ export function registerBankStatementRoutes(app: Express) {
       await assertAccess(req, companyId);
       const parsed = z.object({ csvContent: z.string().min(1) }).safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.issues[0]?.message ?? "Invalid body" });
+        return res.status(400).json({ code: "VALIDATION_ERROR", message: parsed.error.issues[0]?.message ?? "Invalid body" });
       }
       const { transactions, format, errors, skippedRows } = parseBankCsv(parsed.data.csvContent);
       res.json({
