@@ -786,8 +786,11 @@ export async function applyCustomerCredit(args: {
   userId: string;
 }) {
   const out = await withLedgerTx(async (tx) => {
-    const credit = await lockCredit(tx, args.creditId, args.companyId);
+    // Lock invoice first (consistent with reversal order: invoice → credit),
+    // then credit.  Reversing the lock order creates a deadlock window when a
+    // concurrent reversal path locks the invoice before this path locks the credit.
     const invoice = await lockInvoice(tx, args.invoiceId, args.companyId);
+    const credit = await lockCredit(tx, args.creditId, args.companyId);
     if (
       invoice.invoiceType === "credit_note" ||
       !["sent", "posted", "partial"].includes(invoice.status)
