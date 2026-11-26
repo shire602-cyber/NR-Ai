@@ -151,7 +151,12 @@ describe("Public SaaS launch surface", () => {
       const banking = JSON.parse(readRepoFile(`client/src/locales/${locale}/banking.json`));
       const toasts = JSON.parse(readRepoFile(`client/src/locales/${locale}/toasts.json`));
       expect(banking).not.toHaveProperty(["banking.rulesDescription"]);
-      expect(banking["banking.rulesCreateDesc"]).toContain("CSV");
+      // The rules screen loads its copy lazily from its own catalog.
+      const rules = JSON.parse(
+        readRepoFile(`client/src/locales/${locale}/reconciliationRules.json`)
+      );
+      expect(rules, locale).not.toHaveProperty(["banking.rulesDescription"]);
+      expect(rules["banking.rulesCreateDesc"], locale).toContain("CSV");
       expect(toasts).not.toHaveProperty(["toasts.newsletterFeatureWillBeAvailableSoonConfigure"]);
     }
     expect(readRepoFile("server/services/email-intake.ts")).not.toMatch(/\bbank\s+feeds?\b/i);

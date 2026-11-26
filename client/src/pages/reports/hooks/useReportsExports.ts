@@ -1,7 +1,6 @@
 // Excel / Google Sheets export handlers and workspace panel layout helpers.
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
 import { ReportWorkspaceTab, reportsWorkspaceHref } from "../shared";
-import { unreadableReportIds } from "@/lib/reportReadState";
 import { translateNow, formatMessage, useI18n } from "@/lib/i18n";
 import { formatDateRange } from "@/lib/format-date";
 import {
@@ -38,7 +37,6 @@ type UseReportsExportsDeps = Pick<
     ReportsDataQueriesState &
     ReportsWorkspacePackState &
     ReportsWorkspaceSummariesState,
-  | "activeCoreReportId"
   | "activeReportViewerOption"
   | "activeReportWorkspaceTab"
   | "activeTab"
@@ -47,7 +45,8 @@ type UseReportsExportsDeps = Pick<
   | "balanceSheet"
   | "buildWorkspaceReportPack"
   | "consolidatedStatementsReport"
-  | "coreReportReadStates"
+  | "reportLoadErrors"
+  | "selectedReportId"
   | "corporateTaxEstimate"
   | "dateRange"
   | "effectiveReportPersona"
@@ -64,7 +63,6 @@ type UseReportsExportsDeps = Pick<
   | "profitLoss"
   | "receivableAgingExportSheets"
   | "selectedCompanyId"
-  | "selectedReportId"
   | "setIsExporting"
   | "toast"
   | "trialBalance"
@@ -72,7 +70,6 @@ type UseReportsExportsDeps = Pick<
 >;
 
 export function useReportsExports({
-  activeCoreReportId,
   activeReportViewerOption,
   activeReportWorkspaceTab,
   activeTab,
@@ -81,7 +78,7 @@ export function useReportsExports({
   balanceSheet,
   buildWorkspaceReportPack,
   consolidatedStatementsReport,
-  coreReportReadStates,
+  reportLoadErrors,
   corporateTaxEstimate,
   dateRange,
   effectiveReportPersona,
@@ -170,14 +167,14 @@ export function useReportsExports({
   };
   const handleExportExcel = async () => {
     // F03: refuse exports when the active report's data could not be loaded (never export AED 0.00).
-    const unreadable = unreadableReportIds(
-      activeCoreReportId ? [activeCoreReportId] : [],
-      coreReportReadStates
-    );
-    if (
-      unreadable.length > 0 ||
-      (activeCoreReportId && coreReportReadStates[activeCoreReportId] === "error")
-    ) {
+    const reportKeyMap: Record<string, keyof typeof reportLoadErrors> = {
+      pl: "pl",
+      bs: "bs",
+      vat: "vat",
+      trial: "tb",
+    };
+    const activeKey = reportKeyMap[activeTab];
+    if (activeKey && reportLoadErrors[activeKey]?.error) {
       toast({
         variant: "destructive",
         title: translateNow("toasts.exportFailed"),

@@ -55,17 +55,24 @@ describe("F03 Reports page source invariants", () => {
 
   it("P&L, balance sheet and VAT render an error branch with retry", () => {
     // Source-inspection: behaviour tests would require mocking react-query and the context.
-    // plReadState === "error" guards 3 KPI cards + the detail card = 4 occurrences minimum.
-    expect(plTabSrc.match(/plReadState === "error"/g)?.length).toBeGreaterThanOrEqual(4);
-    expect(bsTabSrc).toContain('bsReadState === "error"');
-    expect(vatTabSrc).toContain('vatReadState === "error"');
-    expect(plTabSrc).toContain("onRetry={() => refetchProfitLoss()}");
+    // The test-branch pattern wraps each tab in <ReportBody state={state} error={reportLoadErrors.X}>
+    // which handles loading/waiting/error/data states uniformly via reportQueryState.
+    expect(plTabSrc).toContain("reportQueryState(");
+    expect(plTabSrc).toContain("reportLoadErrors.pl");
+    expect(plTabSrc).toContain("<ReportBody");
+    expect(bsTabSrc).toContain("reportQueryState(");
+    expect(bsTabSrc).toContain("reportLoadErrors.bs");
+    expect(bsTabSrc).toContain("<ReportBody");
+    expect(vatTabSrc).toContain("reportQueryState(");
+    expect(vatTabSrc).toContain("reportLoadErrors.vat");
+    expect(vatTabSrc).toContain("<ReportBody");
   });
   it("exports refuse failed reads", () => {
     // Source-inspection: gating logic lives in useReportsExports, not in a React component,
     // making a behaviour test impractical without a full hook harness.
-    expect(exportsSrc).toContain("unreadableReportIds(");
-    expect(exportsSrc).toMatch(/coreReportReadStates\[activeCoreReportId\] === "error"/);
+    // The test-branch pattern uses reportLoadErrors[activeKey]?.error to block exports.
+    expect(exportsSrc).toContain("reportLoadErrors");
+    expect(exportsSrc).toMatch(/reportLoadErrors\[activeKey\]?\?\.error/);
   });
   it("report queries are keyed by company and period and do not keep previous data", () => {
     // Source-inspection: verifies the query key shape that react-query uses for cache separation.

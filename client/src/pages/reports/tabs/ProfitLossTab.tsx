@@ -4,7 +4,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DollarSign, TrendingDown, TrendingUp } from "lucide-react";
 import { ProfitLossSections, StatementDownloads } from "../StatementParts";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ErrorState } from "@/components/ui/error-state";
 import { T } from "@/components/layout/T";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
@@ -12,18 +11,17 @@ import { useTranslation } from "@/lib/i18n";
 import { formatDateRange } from "@/lib/format-date";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
+import { reportQueryState } from "../model/reportQueryState";
+import { ReportBody } from "../ReportQueryNotice";
 
 export default function ProfitLossTab() {
-  const {
-    dateRange,
-    plLoading,
-    plReadState,
-    profitLoss,
-    refetchProfitLoss,
-    selectedCompanyId,
-    t,
-  } = useReportsPageContext();
+  const { dateRange, plFetchStatus, profitLoss, reportLoadErrors, selectedCompanyId, t } =
+    useReportsPageContext();
   const { locale } = useTranslation();
+  const state = reportQueryState(profitLoss, plFetchStatus, reportLoadErrors.pl?.error);
+  // Totals come only from a response; every other state shows a skeleton or a dash.
+  const kpi = (amount: number | undefined) =>
+    state.view === "data" ? <Money amount={amount || 0} currency={"AED"} /> : "—";
   // SWEEP: Arabic statements showed English account names and dates.
   const accountLabel = (item: { accountName?: string | null; accountNameAr?: string | null }) =>
     (locale === "ar" && item.accountNameAr) || item.accountName || t["screens.unknownAccount"];
@@ -40,17 +38,11 @@ export default function ProfitLossTab() {
             </div>
           </CardHeader>
           <CardContent>
-            {plReadState === "error" ? (
-              <ErrorState
-                compact
-                title={t["reportCenter.dataLoadError"]}
-                onRetry={() => refetchProfitLoss()}
-              />
-            ) : plLoading ? (
+            {state.view === "loading" ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="text-kpi tabular-nums" data-testid="text-total-revenue">
-                <Money amount={profitLoss?.totalRevenue || 0} currency={"AED"} />
+                {kpi(profitLoss?.totalRevenue)}
               </div>
             )}
           </CardContent>
@@ -66,17 +58,11 @@ export default function ProfitLossTab() {
             </div>
           </CardHeader>
           <CardContent>
-            {plReadState === "error" ? (
-              <ErrorState
-                compact
-                title={t["reportCenter.dataLoadError"]}
-                onRetry={() => refetchProfitLoss()}
-              />
-            ) : plLoading ? (
+            {state.view === "loading" ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="text-kpi tabular-nums" data-testid="text-total-expenses">
-                <Money amount={profitLoss?.totalExpenses || 0} currency={"AED"} />
+                {kpi(profitLoss?.totalExpenses)}
               </div>
             )}
           </CardContent>
@@ -92,37 +78,16 @@ export default function ProfitLossTab() {
             </div>
           </CardHeader>
           <CardContent>
-            {plReadState === "error" ? (
-              <ErrorState
-                compact
-                title={t["reportCenter.dataLoadError"]}
-                onRetry={() => refetchProfitLoss()}
-              />
-            ) : plLoading ? (
+            {state.view === "loading" ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="text-kpi tabular-nums" data-testid="text-net-profit">
-                <Money amount={profitLoss?.netProfit || 0} currency={"AED"} />
+                {kpi(profitLoss?.netProfit)}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
-
-      {plReadState === "stale" && (
-        <div
-          role="status"
-          className="rounded-md bg-warning-subtle p-3 text-small text-warning-subtle-foreground flex items-center justify-between gap-4"
-        >
-          <span>{t["reportCenter.dataStale"]}</span>
-          <button
-            onClick={() => void refetchProfitLoss()}
-            className="shrink-0 text-sm font-medium underline underline-offset-2"
-          >
-            {t["reportCenter.retry"]}
-          </button>
-        </div>
-      )}
 
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
@@ -142,89 +107,89 @@ export default function ProfitLossTab() {
           />
         </CardHeader>
         <CardContent>
-          {plReadState === "error" ? (
-            <ErrorState
-              title={t["reportCenter.dataLoadError"]}
-              onRetry={() => refetchProfitLoss()}
-            />
-          ) : plLoading ? (
-            <Skeleton className="h-64" />
-          ) : profitLoss?.sections ? (
-            <ProfitLossSections report={profitLoss} />
-          ) : (
-            <div className="space-y-6">
-              <div>
-                <h3 className="font-semibold mb-3 text-success ">
-                  <T k="reportCenter.revenue" />
-                </h3>
-                <Table>
-                  <TableBody>
-                    {profitLoss?.revenue?.map((item, index) => (
-                      <TableRow key={item.accountCode || `revenue-${index}`}>
-                        <TableCell className="tabular-nums text-xs text-muted-foreground">
-                          {item.accountCode || "-"}
+          <ReportBody
+            state={state}
+            error={reportLoadErrors.pl}
+            testId="report-pl"
+            skeletonClassName="h-64"
+          >
+            {profitLoss?.sections ? (
+              <ProfitLossSections report={profitLoss} />
+            ) : (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="font-semibold mb-3 text-success ">
+                    <T k="reportCenter.revenue" />
+                  </h3>
+                  <Table>
+                    <TableBody>
+                      {profitLoss?.revenue?.map((item, index) => (
+                        <TableRow key={item.accountCode || `revenue-${index}`}>
+                          <TableCell className="tabular-nums text-xs text-muted-foreground">
+                            {item.accountCode || "-"}
+                          </TableCell>
+                          <TableCell>{accountLabel(item)}</TableCell>
+                          <TableCell data-numeric className=" font-medium">
+                            <Money amount={item.amount ?? 0} currency={"AED"} />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="border-t-2">
+                        <TableCell colSpan={2} className="font-semibold">
+                          <T k="pages.totalRevenue" />
                         </TableCell>
-                        <TableCell>{accountLabel(item)}</TableCell>
-                        <TableCell data-numeric className=" font-medium">
-                          <Money amount={item.amount ?? 0} currency={"AED"} />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    <TableRow className="border-t-2">
-                      <TableCell colSpan={2} className="font-semibold">
-                        <T k="pages.totalRevenue" />
-                      </TableCell>
-                      <TableCell data-numeric className=" font-semibold">
-                        <Money amount={profitLoss?.totalRevenue || 0} currency={"AED"} />
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-
-              <div>
-                <h3 className="font-semibold mb-3 text-destructive ">
-                  <T k="reportCenter.expenses" />
-                </h3>
-                <Table>
-                  <TableBody>
-                    {profitLoss?.expenses?.map((item, index) => (
-                      <TableRow key={item.accountCode || `expense-${index}`}>
-                        <TableCell className="tabular-nums text-xs text-muted-foreground">
-                          {item.accountCode || "-"}
-                        </TableCell>
-                        <TableCell>{accountLabel(item)}</TableCell>
-                        <TableCell data-numeric className=" font-medium">
-                          <Money amount={item.amount ?? 0} currency={"AED"} />
+                        <TableCell data-numeric className=" font-semibold">
+                          <Money amount={profitLoss?.totalRevenue || 0} currency={"AED"} />
                         </TableCell>
                       </TableRow>
-                    ))}
-                    <TableRow className="border-t-2">
-                      <TableCell colSpan={2} className="font-semibold">
-                        <T k="pages.totalExpenses" />
-                      </TableCell>
-                      <TableCell data-numeric className=" font-semibold">
-                        <Money amount={profitLoss?.totalExpenses || 0} currency={"AED"} />
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableBody>
+                  </Table>
+                </div>
 
-              <div className="border-t-4 pt-4">
-                <div className="flex justify-between items-center text-lg font-semibold">
-                  <span>
-                    <T k="reportCenter.netProfit" />
-                  </span>
-                  <span
-                    className={`tabular-nums ${(profitLoss?.netProfit ?? 0) >= 0 ? "text-success " : "text-destructive "}`}
-                  >
-                    <Money amount={profitLoss?.netProfit ?? 0} currency={"AED"} />
-                  </span>
+                <div>
+                  <h3 className="font-semibold mb-3 text-destructive ">
+                    <T k="reportCenter.expenses" />
+                  </h3>
+                  <Table>
+                    <TableBody>
+                      {profitLoss?.expenses?.map((item, index) => (
+                        <TableRow key={item.accountCode || `expense-${index}`}>
+                          <TableCell className="tabular-nums text-xs text-muted-foreground">
+                            {item.accountCode || "-"}
+                          </TableCell>
+                          <TableCell>{accountLabel(item)}</TableCell>
+                          <TableCell data-numeric className=" font-medium">
+                            <Money amount={item.amount ?? 0} currency={"AED"} />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="border-t-2">
+                        <TableCell colSpan={2} className="font-semibold">
+                          <T k="pages.totalExpenses" />
+                        </TableCell>
+                        <TableCell data-numeric className=" font-semibold">
+                          <Money amount={profitLoss?.totalExpenses || 0} currency={"AED"} />
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="border-t-4 pt-4">
+                  <div className="flex justify-between items-center text-lg font-semibold">
+                    <span>
+                      <T k="reportCenter.netProfit" />
+                    </span>
+                    <span
+                      className={`tabular-nums ${(profitLoss?.netProfit ?? 0) >= 0 ? "text-success " : "text-destructive "}`}
+                    >
+                      <Money amount={profitLoss?.netProfit ?? 0} currency={"AED"} />
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </ReportBody>
         </CardContent>
       </Card>
     </>

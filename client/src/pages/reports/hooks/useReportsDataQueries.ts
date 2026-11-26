@@ -43,8 +43,6 @@ import {
   reportText,
   startOfReportMonth,
 } from "../shared";
-import { reportReadState } from "@/lib/reportReadState";
-import type { ReportReadState } from "@/lib/reportReadState";
 import type { Company } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
@@ -151,8 +149,9 @@ export function useReportsDataQueries({
   const {
     data: profitLoss,
     isLoading: plLoading,
-    isError: plError,
-    refetch: refetchProfitLoss,
+    fetchStatus: plFetchStatus,
+    error: plError,
+    refetch: plRefetch,
   } = useQuery<ProfitLossReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "pl", dateParams],
     ...reportQueryOptions,
@@ -172,8 +171,9 @@ export function useReportsDataQueries({
   const {
     data: balanceSheet,
     isLoading: bsLoading,
-    isError: bsError,
-    refetch: refetchBs,
+    fetchStatus: bsFetchStatus,
+    error: bsError,
+    refetch: bsRefetch,
   } = useQuery<BalanceSheetReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "balance-sheet", dateParams],
     ...reportQueryOptions,
@@ -182,8 +182,9 @@ export function useReportsDataQueries({
   const {
     data: vatSummary,
     isLoading: vatLoading,
-    isError: vatError,
-    refetch: refetchVat,
+    fetchStatus: vatFetchStatus,
+    error: vatError,
+    refetch: vatRefetch,
   } = useQuery<VATSummaryReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "vat-summary", dateParams],
     ...reportQueryOptions,
@@ -622,8 +623,9 @@ export function useReportsDataQueries({
   const {
     data: trialBalance,
     isLoading: trialBalanceLoading,
-    isError: tbError,
-    refetch: refetchTrialBalance,
+    fetchStatus: tbFetchStatus,
+    error: tbError,
+    refetch: tbRefetch,
   } = useQuery<TrialBalanceReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "trial-balance", trialBalanceParams],
     queryFn: () =>
@@ -810,37 +812,6 @@ export function useReportsDataQueries({
     inventoryProductsLoading ||
     inventoryMovementsLoading;
 
-  // F03 — read states for the four main statement queries.
-  const plReadState = reportReadState({
-    isLoading: plLoading,
-    isError: plError,
-    hasData: Boolean(profitLoss),
-  });
-  const bsReadState = reportReadState({
-    isLoading: bsLoading,
-    isError: bsError,
-    hasData: Boolean(balanceSheet),
-  });
-  const vatReadState = reportReadState({
-    isLoading: vatLoading,
-    isError: vatError,
-    hasData: Boolean(vatSummary),
-  });
-  const trialBalanceReadState = reportReadState({
-    isLoading: trialBalanceLoading,
-    isError: tbError,
-    hasData: Boolean(trialBalance),
-  });
-  // coreReportReadStates: used by exports to gate export on error (unreadableReportIds).
-  const coreReportReadStates: Record<string, ReportReadState> = {
-    "profit-loss": plReadState,
-    "balance-sheet": bsReadState,
-    "vat-summary": vatReadState,
-    "trial-balance": trialBalanceReadState,
-  };
-  // activeCoreReportId: the focused report whose read state governs exports.
-  const activeCoreReportId = selectedReportId;
-
   return {
     comparisonRanges,
     comparisonCurrentLabel,
@@ -856,18 +827,22 @@ export function useReportsDataQueries({
     shouldLoadReportDeliveryData,
     profitLoss,
     plLoading,
-    plReadState,
-    refetchProfitLoss,
+    plFetchStatus,
+    bsFetchStatus,
+    vatFetchStatus,
+    /** A failed statement fetch is shown as an error, never as an all-zero statement. */
+    reportLoadErrors: {
+      pl: plError ? { error: plError, retry: () => void plRefetch() } : null,
+      bs: bsError ? { error: bsError, retry: () => void bsRefetch() } : null,
+      vat: vatError ? { error: vatError, retry: () => void vatRefetch() } : null,
+      tb: tbError ? { error: tbError, retry: () => void tbRefetch() } : null,
+    },
     costCenterProfitability,
     costCenterProfitabilityLoading,
     balanceSheet,
     bsLoading,
-    bsReadState,
-    refetchBs,
     vatSummary,
     vatLoading,
-    vatReadState,
-    refetchVat,
     cashFlowStatement,
     cashFlowStatementLoading,
     agingReport,
@@ -913,10 +888,7 @@ export function useReportsDataQueries({
     serverGroupConsolidation,
     trialBalance,
     trialBalanceLoading,
-    trialBalanceReadState,
-    refetchTrialBalance,
-    coreReportReadStates,
-    activeCoreReportId,
+    tbFetchStatus,
     invoices,
     invoicesLoading,
     salesProductServiceReport,

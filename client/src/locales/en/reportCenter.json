@@ -785,6 +785,10 @@
   "reportCenter.tabs.date": "Date",
   "reportCenter.tabs.asOf": "As of {date}",
   "reportCenter.tabs.balanceSheetToday": "Assets, liabilities, and equity as of today",
+  "reportCenter.tabs.waitingForData": "Waiting for a connection. The report will load when you are back online.",
+  "reportCenter.tabs.waitingToRefresh": "Waiting for a connection to refresh. Showing the last loaded figures.",
+  "reportCenter.tabs.refreshFailedTitle": "We couldn't refresh this report",
+  "reportCenter.tabs.refreshFailedBody": "Showing the last loaded figures. Try again to refresh them.",
   "reportCenter.tabs.salesByProduct": "Sales by product/service",
   "reportCenter.tabs.productService": "Product / service",
   "reportCenter.tabs.vat": "VAT",
@@ -988,5 +992,14 @@
   "reportCenter.code.manual_workpaper": "Manual workpaper",
   "reportCenter.dataLoadError": "Report data could not be loaded. Check your connection and try again.",
   "reportCenter.dataStale": "Showing last-loaded data. It may be out of date.",
-  "reportCenter.retry": "Try again"
+  "reportCenter.retry": "Try again",
+  "reportCenter.partyListLoading": "Loading…",
+  "reportCenter.partyNoCustomers": "No customers yet. Add a customer to see their statement.",
+  "reportCenter.partyNoSuppliers": "No suppliers yet. Add a supplier to see their statement.",
+  "reportCenter.partyStatementLoadFailed": "The statement could not be loaded",
+  "reportCenter.partyLoadPausedTitle": "Loading paused",
+  "reportCenter.partyLoadPausedBody": "The request will resume automatically.",
+  "reportCenter.partyStatementLoading": "Loading statement",
+  "reportCenter.partyStatementOpening": "Opening balance",
+  "reportCenter.partyStatementClosing": "Closing balance"
 }
