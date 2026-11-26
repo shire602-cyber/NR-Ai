@@ -90,6 +90,10 @@ S4 = ops/evidence.
 | O06 | blocked (partly) | Test billing account needed |
 | O07 | **fixed awaiting verification** | WPS SIF fixture: `tests/unit/wps-sif-fixture.test.ts` (15 assertions) validates the fixed-width SCR (165 chars) and EDR (229 chars) layout, field offsets, amount encoding, IBAN vs bankAccountNumber fallback, missing-employee skip, and CRLF line separators. No schema migration change was required — the existing `generateSIFFile` export in `wps-sif.service.ts` is correct. Still open: a DB-backed integration test generating a SIF from a live payroll run; payroll journal reconciliation to bank submission status. |
 
+## 2b. CI evidence (2026-11-26)
+
+PR [#169](https://github.com/shire602-cyber/NR-Ai/pull/169) head `ded8b7dc`: all 6 checks pass — Typecheck/Lint/Unit/Audit/Build/Bundle budget; DB harness on real Postgres 16 (route matrix, concurrency, soak, migration rehearsal); Boot gate and live integration; Browser E2E route crawl; self-hosting go-live gate; GitGuardian. This includes the first real-Postgres run of `tests/db/f07-fx-credit-payment.test.ts` (credit-note FX legs, payment FX gain/loss, overpayment credit, refund FX, reversal, settlement ↔ GL 1040 tie). CI is code evidence only: dispositions stay **fixed awaiting verification** until staging verification and reviewer approval.
+
 ## 3. Counts
 
 - Original items: 32. Verified dispositions: **0**.
