@@ -16,7 +16,7 @@ import {
   formSpanFull,
 } from "@/components/ui/form-layout";
 import { T } from "@/components/layout/T";
-import { isCancelledError, useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useOpenInvoiceParam } from "@/hooks/use-open-invoice-param";
 import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
@@ -30,6 +30,8 @@ import {
   receiptMerchantLabel,
 } from "@/lib/receiptSearch";
 import {
+  hasUnconfirmedRowRemoval,
+  openReceiptById,
   receiptsReadState,
   refreshReceiptsAfterWrite,
   rollbackReceipts,
@@ -509,6 +511,18 @@ function CompanyReceipts({
   } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "receipts"],
     enabled: !!companyId,
+    // A confirmed read can hand back rows that are structurally shared with the optimistic ones,
+    // so `data` alone may not change. dataUpdatedAt/fetchStatus still do, and re-render this page
+    // so the unconfirmed-removal gate below is re-evaluated.
+    notifyOnChangeProps: [
+      "data",
+      "status",
+      "isSuccess",
+      "isLoadingError",
+      "isPaused",
+      "fetchStatus",
+      "dataUpdatedAt",
+    ],
   });
   const receiptsState = receiptsReadState({
     data: receipts,
@@ -516,6 +530,14 @@ function CompanyReceipts({
     isLoadingError: receiptsLoadFailed,
     isPaused: receiptsPaused,
   });
+  const receiptsConfirmed =
+    receiptsState === "ready" &&
+    !hasUnconfirmedRowRemoval(queryClient, ["/api/companies", companyId, "receipts"]);
+
+  // The lookup for `?open=<id>` is owned by this page: a new link, unmount or company change
+  // (the page is keyed by company) aborts it before it can open anything.
+  const openLookup = useRef<AbortController | null>(null);
+  useEffect(() => () => openLookup.current?.abort(), []);
 
   // Fetch accounts for posting
   const { data: accounts } = useQuery<any[]>({
@@ -727,24 +749,18 @@ function CompanyReceipts({
   // an older (or shorter) copy, so a receipt missing from it is looked up in a fresh list.
   useOpenInvoiceParam(
     (id) => {
-      void (async () => {
-        let target = (receipts ?? []).find((r) => r.id === id);
-        if (!target && companyId) {
-          let fresh: any[];
-          try {
-            fresh = await queryClient.fetchQuery({
-              queryKey: ["/api/companies", companyId, "receipts"],
-              staleTime: 0,
-            });
-          } catch (error) {
-            // A write refresh cancelled this lookup; the refetch it started replaces it.
-            if (isCancelledError(error)) return;
-            throw error;
-          }
-          target = fresh.find((r) => r.id === id);
-        }
-        if (target) handleEditReceipt(target);
-      })();
+      if (!companyId) return;
+      openLookup.current?.abort();
+      const controller = new AbortController();
+      openLookup.current = controller;
+      void openReceiptById<any>({
+        client: queryClient,
+        queryKey: ["/api/companies", companyId, "receipts"],
+        id,
+        cached: receipts,
+        signal: controller.signal,
+        onOpen: handleEditReceipt,
+      });
     },
     "/receipts",
     receipts !== undefined
@@ -1609,8 +1625,7 @@ function CompanyReceipts({
   }, [receipts, receiptSearch, t, dateRange.from, dateRange.to]);
 
   const hasReceiptSearch = receiptSearch.trim().length > 0;
-  const hasNoReceiptMatches =
-    receiptsState === "ready" && hasReceiptSearch && !filteredReceipts.length;
+  const hasNoReceiptMatches = receiptsConfirmed && hasReceiptSearch && !filteredReceipts.length;
 
   function canExportReceipts(origin: string) {
     try {
@@ -2749,7 +2764,7 @@ function CompanyReceipts({
                     </div>
                   )}
                 />
-              ) : receiptsState === "ready" ? (
+              ) : receiptsConfirmed ? (
                 <EmptyState
                   icon={hasReceiptSearch ? Search : Upload}
                   title={

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { focusManager, onlineManager, QueryClient, QueryObserver } from "@tanstack/react-query";
 import {
+  hasUnconfirmedRowRemoval,
   receiptsReadState,
   rollbackReceipts,
   updateReceiptsOptimistically,
@@ -221,6 +222,82 @@ describe("receipts optimistic cache (PR143)", () => {
     await read;
 
     expect(client.getQueryData(queryKey)).toEqual(rows);
+  });
+});
+
+describe("receipts unconfirmed row removal gate (PR143)", () => {
+  const gate = (client: QueryClient, observer: QueryObserver<Row[]>) =>
+    receiptsReadState(observer.getCurrentResult()) === "ready" &&
+    !hasUnconfirmedRowRemoval(client, queryKey);
+
+  it("withholds the empty claim after an optimistic last delete until a read confirms it", async () => {
+    const client = makeClient();
+    client.setQueryData<Row[]>(queryKey, [{ id: "a" }]);
+    let serverRows: Row[] = [{ id: "a" }];
+    const observer = observe(client, async () => serverRows);
+    await vi.waitFor(() => expect(observer.getCurrentResult().isFetching).toBe(false));
+    serverRows = [];
+    const countBefore = client.getQueryState(queryKey)?.dataUpdateCount ?? 0;
+
+    await updateReceiptsOptimistically(client, queryKey, removeA);
+    const result = observer.getCurrentResult();
+    expect(result.data).toEqual([]);
+    expect(client.getQueryState(queryKey)?.dataUpdateCount).toBe(countBefore);
+    expect(receiptsReadState(result)).toBe("ready");
+    expect(gate(client, observer)).toBe(false);
+
+    // The replacement read returns [] and shares the optimistic reference structurally.
+    await observer.refetch();
+    expect(observer.getCurrentResult().data).toEqual([]);
+    expect(client.getQueryState(queryKey)?.dataUpdateCount).toBeGreaterThan(countBefore);
+    expect(gate(client, observer)).toBe(true);
+  });
+
+  it("keeps a failed refresh stale through the post and rollback, then clears after a read", async () => {
+    const client = makeClient();
+    client.setQueryData(queryKey, rows);
+    let fail = true;
+    const observer = observe(client, async () => {
+      if (fail) throw new Error("boom");
+      return rows;
+    });
+    await observer.refetch();
+    expect(receiptsReadState(observer.getCurrentResult())).toBe("stale");
+
+    const originalError = client.getQueryState(queryKey)?.error;
+    expect(originalError).toBeInstanceOf(Error);
+
+    // A same-count post: every row is marked posted, nothing is removed.
+    const snapshot = await updateReceiptsOptimistically<Row>(client, queryKey, (list) =>
+      list.map((row) => ({ ...row, posted: true }))
+    );
+    expect(observer.getCurrentResult().data).toEqual([
+      { id: "a", posted: true },
+      { id: "b", posted: true },
+    ]);
+    expect(client.getQueryState(queryKey)?.error).toBe(originalError);
+    expect(receiptsReadState(observer.getCurrentResult())).toBe("stale");
+    expect(hasUnconfirmedRowRemoval(client, queryKey)).toBe(false);
+
+    await rollbackReceipts(client, snapshot);
+    expect(observer.getCurrentResult().data).toEqual(rows);
+    expect(client.getQueryState(queryKey)?.error).toBe(originalError);
+    expect(receiptsReadState(observer.getCurrentResult())).toBe("stale");
+    expect(observer.getCurrentResult().isRefetchError).toBe(true);
+
+    fail = false;
+    await observer.refetch();
+    expect(receiptsReadState(observer.getCurrentResult())).toBe("ready");
+    expect(gate(client, observer)).toBe(true);
+  });
+
+  it("does not gate a change that keeps the row count", async () => {
+    const client = makeClient();
+    client.setQueryData(queryKey, rows);
+    await updateReceiptsOptimistically<Row>(client, queryKey, (list) =>
+      list.map((row) => ({ ...row, posted: true }))
+    );
+    expect(hasUnconfirmedRowRemoval(client, queryKey)).toBe(false);
   });
 });
 
