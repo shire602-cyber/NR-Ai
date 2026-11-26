@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { onlineManager } from "@tanstack/react-query";
 import { act } from "react";
 import ar from "../../client/src/locales/ar/compliance.json";
+import corporateTaxAr from "../../client/src/locales/ar/corporateTax.json";
 import en from "../../client/src/locales/en/compliance.json";
 import firmAr from "../../client/src/locales/ar/firm.json";
 import {
@@ -29,10 +30,10 @@ const companyLookup = vi.hoisted(() => ({ missing: false, paused: false }));
 
 vi.mock("../../client/src/lib/i18n", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../client/src/lib/i18n")>();
-  const compliance = (await import("../../client/src/locales/ar/compliance.json")).default;
-  const firm = (await import("../../client/src/locales/ar/firm.json")).default;
-  const dict = { ...firm, ...compliance } as Record<string, string>;
-  return { ...actual, useTranslation: () => ({ t: dict, locale: "ar" }) };
+  // The app's own Arabic catalog (base keys plus every namespace), so a shared key the page
+  // reads renders as in production, and an absent one renders nothing.
+  await actual.loadLocale("ar");
+  return { ...actual, useTranslation: () => ({ t: actual.t.ar, locale: "ar" }) };
 });
 vi.mock("../../client/src/lib/queryClient", () => {
   const mock = formHarnessQueryClientMock();
@@ -228,6 +229,10 @@ describe("tax return archive page (Arabic)", () => {
     await renderPage(TaxReturnArchive);
     expect(addFirstButton()).toBeDefined();
     expect(document.querySelector("table")).toBeNull();
+    // A label shared with another namespace: empty here if its key goes missing.
+    expect(byTestId("button-add-return")?.textContent?.trim()).toBe(
+      corporateTaxAr["corporateTax.externalAdd"]
+    );
   });
 
   it("keeps cached rows, filters and file actions after a failed refresh", async () => {

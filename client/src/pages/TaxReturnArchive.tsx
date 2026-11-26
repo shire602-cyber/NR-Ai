@@ -262,14 +262,14 @@ export default function TaxReturnArchive() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow={t["compliance.taxArchiveEyebrow"]}
+        eyebrow={t.complianceEyebrow}
         title={t["compliance.filedReturnsTitle"]}
         description={t["compliance.taxArchiveViewAllTaxReturnsFiledWith"]}
         primaryAction={
           companyId ? (
             <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-return">
               <Plus className="w-4 h-4 me-2" />
-              {t["compliance.taxArchiveAddReturn"]}
+              {t["corporateTax.externalAdd"]}
             </Button>
           ) : undefined
         }
@@ -280,7 +280,7 @@ export default function TaxReturnArchive() {
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
           <StatCard label={t["compliance.taxArchiveTotalReturns"]} value={stats.totalReturns} />
           <StatCard label={t["compliance.taxArchiveVatReturns"]} value={stats.vatReturns} />
-          <StatCard label={t["compliance.taxArchiveCorporateTax"]} value={stats.corporateTax} />
+          <StatCard label={t.corporateTax} value={stats.corporateTax} />
           <StatCard
             label={t["compliance.taxArchiveTotalTaxPaid"]}
             value={<Money amount={stats.totalTaxPaid} />}
@@ -354,7 +354,7 @@ export default function TaxReturnArchive() {
                     <SelectValue placeholder={t["compliance.taxArchiveReturnType"]} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">{t["compliance.taxArchiveAllTypes"]}</SelectItem>
+                    <SelectItem value="all">{t["pageLabels.allTypes"]}</SelectItem>
                     {RETURN_TYPES.map((type) => (
                       <SelectItem key={type.value} value={type.value}>
                         {locale === "ar" ? type.labelAr : type.labelEn}
@@ -410,7 +410,7 @@ export default function TaxReturnArchive() {
                     <TableRow>
                       <TableHead>{locale === "ar" ? "الفترة" : "Period"}</TableHead>
                       <TableHead>{locale === "ar" ? "النوع" : "Type"}</TableHead>
-                      <TableHead>{t["compliance.taxArchiveFilingDate"]}</TableHead>
+                      <TableHead>{t["serverErrors.field.filingDate"]}</TableHead>
                       <TableHead>{locale === "ar" ? "رقم المرجع" : "Reference No."}</TableHead>
                       <TableHead data-numeric>{locale === "ar" ? "المبلغ" : "Amount"}</TableHead>
                       <TableHead>{locale === "ar" ? "حالة الدفع" : "Payment"}</TableHead>
@@ -575,7 +575,7 @@ export default function TaxReturnArchive() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{t["compliance.taxArchivePeriodStart"]} *</Label>
+                <Label>{t["pages.periodStart"]} *</Label>
                 <DatePicker
                   value={newReturn.periodStart}
                   onChange={(value) => setNewReturn({ ...newReturn, periodStart: value })}
@@ -583,7 +583,7 @@ export default function TaxReturnArchive() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{t["compliance.taxArchivePeriodEnd"]} *</Label>
+                <Label>{t["pages.periodEnd"]} *</Label>
                 <DatePicker
                   value={newReturn.periodEnd}
                   onChange={(value) => setNewReturn({ ...newReturn, periodEnd: value })}
@@ -594,7 +594,7 @@ export default function TaxReturnArchive() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{t["compliance.taxArchiveFilingDate"]} *</Label>
+                <Label>{t["serverErrors.field.filingDate"]} *</Label>
                 <DatePicker
                   value={newReturn.filingDate}
                   onChange={(value) => setNewReturn({ ...newReturn, filingDate: value })}
@@ -629,7 +629,7 @@ export default function TaxReturnArchive() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{t["compliance.taxArchivePaymentStatus"]}</Label>
+                <Label>{t["invoices.publicPaymentStatus"]}</Label>
                 <Select
                   value={newReturn.paymentStatus}
                   onValueChange={(val) => setNewReturn({ ...newReturn, paymentStatus: val })}
