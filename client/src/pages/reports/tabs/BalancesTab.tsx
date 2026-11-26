@@ -59,6 +59,9 @@ export default function BalancesTab() {
       <SecondaryQueryError error={secondaryLoadErrors.fixedAssets} testId="balances-tab-fixed-assets-error" />
       <SecondaryQueryError error={secondaryLoadErrors.inventoryProducts} testId="balances-tab-inventory-error" />
       <SecondaryQueryError error={secondaryLoadErrors.bankTransactions} testId="balances-tab-bank-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.billAgingReport} testId="balances-tab-bill-aging-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.balanceSummaries} testId="balances-tab-summaries-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.fixedAssetSummary} testId="balances-tab-fixed-asset-summary-error" />
       <div
         className={reportSectionClass(
           [...BALANCE_STRIP_REPORT_IDS],

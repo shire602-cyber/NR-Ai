@@ -135,6 +135,8 @@ export default function SalesTab() {
 
       <SecondaryQueryError error={secondaryLoadErrors.agingReport} testId="sales-tab-aging-error" />
       <SecondaryQueryError error={secondaryLoadErrors.invoices} testId="sales-tab-invoices-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.salesProductServiceReport} testId="sales-tab-product-service-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.overdueReport} testId="sales-tab-overdue-error" />
 
       <Card className={reportSectionClass(["ar-aging"])}>
         <CardHeader>

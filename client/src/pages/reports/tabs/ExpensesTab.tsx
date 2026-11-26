@@ -44,6 +44,7 @@ export default function ExpensesTab() {
     <>
       <SecondaryQueryError error={secondaryLoadErrors.receipts} testId="expenses-tab-receipts-error" />
       <SecondaryQueryError error={secondaryLoadErrors.expenseClaims} testId="expenses-tab-expense-claims-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.expenseClaimSummary} testId="expenses-tab-claim-summary-error" />
       <div
         className={reportSectionClass(
           ["expenses-vendor", "expenses-category"],

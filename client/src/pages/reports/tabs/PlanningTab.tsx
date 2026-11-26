@@ -34,6 +34,8 @@ export default function PlanningTab() {
   return (
     <>
       <SecondaryQueryError error={secondaryLoadErrors.budgetPlans} testId="planning-tab-budgets-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.varianceReport} testId="planning-tab-variance-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.cashFlowForecast} testId="planning-tab-forecast-error" />
       <div
         className={reportSectionClass(
           ["budget-actual", "cash-flow-forecast"],
