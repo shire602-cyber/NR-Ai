@@ -1093,5 +1093,7 @@
   "serverErrors.FIRM_MEMBER_INELIGIBLE": "لا يمكن لحسابات بوابة العملاء الانضمام إلى المكتب.",
   "serverErrors.LAST_FIRM_OWNER": "يجب أن يكون للمكتب مالك واحد على الأقل. عيّن مالكًا آخر أولًا.",
   "serverErrors.TRANSACTION_CONFLICT": "تعارض تحديث آخر مع هذه العملية. أعد تحميل الصفحة وحاول مرة أخرى.",
-  "serverErrors.UNRESOLVED_FIRM_ACCESS": "يجب أن يراجع مالك الشركة صلاحية الوصول المتبقية قبل إتمام تغيير الصلاحيات."
+  "serverErrors.UNRESOLVED_FIRM_ACCESS": "يجب أن يراجع مالك الشركة صلاحية الوصول المتبقية قبل إتمام تغيير الصلاحيات.",
+  "serverErrors.FAF_RANGE_TOO_LONG": "يغطي ملف التدقيق للهيئة الاتحادية للضرائب 366 يومًا كحد أقصى. اختر نطاق تواريخ أقصر.",
+  "serverErrors.INVALID_RANGE": "يجب أن يكون تاريخ البداية في أو قبل تاريخ النهاية."
 }

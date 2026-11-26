@@ -1093,5 +1093,7 @@
   "serverErrors.FIRM_MEMBER_INELIGIBLE": "Customer portal accounts cannot become firm members.",
   "serverErrors.LAST_FIRM_OWNER": "A firm must have at least one owner. Make someone else an owner first.",
   "serverErrors.TRANSACTION_CONFLICT": "Another update conflicted with this operation. Reload the page and try again.",
-  "serverErrors.UNRESOLVED_FIRM_ACCESS": "A company owner must review the remaining client access before this access change can finish."
+  "serverErrors.UNRESOLVED_FIRM_ACCESS": "A company owner must review the remaining client access before this access change can finish.",
+  "serverErrors.FAF_RANGE_TOO_LONG": "The FTA audit file covers at most 366 days. Choose a shorter date range.",
+  "serverErrors.INVALID_RANGE": "The start date must be on or before the end date."
 }
