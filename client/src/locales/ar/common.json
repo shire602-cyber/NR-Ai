@@ -3,6 +3,7 @@
   "common.cancel": "إلغاء",
   "common.close": "إغلاق",
   "common.loading": "جارٍ التحميل…",
+  "common.refreshFailed": "تعذّر التحديث. تُعرض آخر المعلومات التي تم تحميلها.",
   "common.save": "حفظ",
   "common.noPermission": "دورك الحالي لا يتيح لك تنفيذ هذا الإجراء.",
   "common.noAccessTitle": "ليس لديك صلاحية الوصول",
