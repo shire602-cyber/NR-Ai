@@ -71,3 +71,28 @@ export function ReportBody({
     </div>
   );
 }
+
+/**
+ * Inline error notice for a secondary query (list data).
+ * Shows nothing when `error` is null (i.e. the query succeeded or hasn't run yet).
+ */
+export function SecondaryQueryError({
+  error,
+  testId,
+}: {
+  error: { retry: () => void } | null;
+  testId: string;
+}) {
+  const { t } = useTranslation();
+  if (!error) return null;
+  return (
+    <ErrorState
+      compact
+      onRetry={error.retry}
+      retryLabel={t["firm.retry"]}
+      title={t["reportCenter.tabs.refreshFailedTitle"]}
+      description={t["reportCenter.tabs.refreshFailedBody"]}
+      testId={testId}
+    />
+  );
+}

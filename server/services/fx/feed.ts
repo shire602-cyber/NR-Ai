@@ -18,6 +18,7 @@
  * 20% sanity band — a suspicious jump is skipped and reported, never written). Every run is
  * logged in fx_rate_feed_runs. Admins can also upload a CSV of system rates.
  */
+import { todayDubai } from "@shared/accounting-date";
 import { desc, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { fxRateFeedRuns } from "../../../shared/schema";
@@ -388,7 +389,7 @@ export async function runFeedProvider(
     return result;
   }
   return ingestFeedPayload(provider, payload, opts.userId ?? null, {
-    fallbackDate: new Date().toISOString().slice(0, 10),
+    fallbackDate: todayDubai(),
   });
 }
 

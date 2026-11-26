@@ -98,8 +98,7 @@ export default function ComplianceCalendar() {
   const search = useSearch();
   const [, navigate] = useLocation();
   const view = new URLSearchParams(search).get("view") === "list" ? "list" : "calendar";
-  const { t } = useTranslation();
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -120,8 +119,9 @@ export default function ComplianceCalendar() {
   const obligations = obligationsQuery.data;
 
   // Nothing may be reported as empty (or totalled) until both sources have succeeded.
-  const sourcesReady = tasksQuery.isSuccess && obligationsQuery.isSuccess;
-  const sourcesPaused = tasksQuery.isPaused || obligationsQuery.isPaused;
+  const sourcesPaused =
+    tasksQuery.fetchStatus === "paused" || obligationsQuery.fetchStatus === "paused";
+  const sourcesReady = !sourcesPaused && tasksQuery.isSuccess && obligationsQuery.isSuccess;
   const sourcesLoading = tasksQuery.isLoading || obligationsQuery.isLoading;
   const progressText = sourcesPaused
     ? t["complianceCalendar.refreshPaused"]
@@ -245,7 +245,7 @@ export default function ComplianceCalendar() {
         </TabsList>
       </Tabs>
 
-      {tasksQuery.error && (
+      {tasksQuery.isError && (
         <LoadErrorState
           compact
           error={tasksQuery.error}
@@ -258,7 +258,7 @@ export default function ComplianceCalendar() {
           testId="compliance-calendar-error"
         />
       )}
-      {obligationsQuery.error && (
+      {obligationsQuery.isError && (
         <LoadErrorState
           compact
           error={obligationsQuery.error}

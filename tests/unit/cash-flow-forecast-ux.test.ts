@@ -169,7 +169,7 @@ describe("cash flow forecast load failure", () => {
     await renderPage(CashFlowForecast);
     await flush(50);
 
-    const err = document.querySelector('[data-testid="forecast-load-error"]');
+    const err = document.querySelector('[data-testid="cashflow-forecast-error"]');
     expect(err).not.toBeNull();
     expect(err!.textContent).toContain(arFirm["firm.loadFailedTitle"]);
     expect(document.body.textContent).not.toContain("boom");
@@ -193,7 +193,7 @@ describe("cash flow forecast load failure", () => {
     });
     await click(err!.querySelector("button"));
     await flush(50);
-    expect(document.querySelector('[data-testid="forecast-load-error"]')).toBeNull();
+    expect(document.querySelector('[data-testid="cashflow-forecast-error"]')).toBeNull();
     const empty = document.querySelector('[data-testid="forecast-empty"]');
     expect(empty).not.toBeNull();
     expect(empty!.textContent).toContain(arFinance["cashFlowForecast.emptyTitle"]);
@@ -474,7 +474,7 @@ describe("cash flow forecast load failure", () => {
     expect(err!.textContent).toContain(arFirm["firm.loadFailedTitle"]);
     expect(document.body.textContent).not.toContain("boom");
     expect(byTestId("forecast-projections")).not.toBeNull();
-    expect(byTestId("forecast-load-error")).toBeNull();
+    expect(byTestId("cashflow-forecast-error")).toBeNull();
     expect(byTestId("button-remove-forecast-item-a")).toBeNull();
 
     failItems = false;

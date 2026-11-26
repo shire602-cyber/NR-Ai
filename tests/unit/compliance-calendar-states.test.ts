@@ -2,24 +2,17 @@
 /** Compliance calendar: error, empty and Arabic states (behaviour: renders the real page). */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import {
-  focusManager,
-  onlineManager,
-  QueryClient,
-  QueryClientProvider,
-} from "@tanstack/react-query";
+import { focusManager, onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import enCopy from "../../client/src/locales/en/documentsEvidence.json";
+import { queryClient as client } from "../../client/src/lib/queryClient";
+import enCopy from "../../client/src/locales/en/complianceCalendar.json";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
 
 vi.mock("@/hooks/useDefaultCompany", () => ({
   useDefaultCompany: () => ({ companyId: "c1", isLoading: false }),
 }));
 
-// The task panel writes through the app-wide `queryClient`; point it at this suite's client so
-// the real cancel + invalidate after a create acts on the cache the page is reading.
 const appQuery = vi.hoisted(() => ({
-  client: null as import("@tanstack/react-query").QueryClient | null,
   apiRequest: vi.fn(async (..._args: unknown[]): Promise<unknown> => null),
 }));
 vi.mock("@/lib/queryClient", async (importOriginal) => {
@@ -27,9 +20,6 @@ vi.mock("@/lib/queryClient", async (importOriginal) => {
   return {
     ...actual,
     apiRequest: (...args: unknown[]) => appQuery.apiRequest(...args),
-    get queryClient() {
-      return appQuery.client ?? actual.queryClient;
-    },
   };
 });
 
@@ -43,7 +33,7 @@ vi.mock("@/lib/queryClient", async (importOriginal) => {
 
 let container: HTMLDivElement;
 let root: Root;
-let client: QueryClient;
+const appDefaults = client.getDefaultOptions();
 /** Per source: data, an Error to throw, or a function returning a promise. */
 const responses: Record<string, unknown> = {};
 
@@ -62,6 +52,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   client.clear();
+  client.setDefaultOptions(appDefaults);
   onlineManager.setOnline(true);
   focusManager.setFocused(undefined);
   appQuery.apiRequest.mockClear();
@@ -91,22 +82,19 @@ async function mount(
   const { useI18n } = await import("../../client/src/lib/i18n");
   act(() => useI18n.getState().setLocale(locale));
   const { default: ComplianceCalendar } = await import("../../client/src/pages/ComplianceCalendar");
-  client = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry,
-        retryDelay: 0,
-        networkMode,
-        queryFn: async ({ queryKey }) => {
-          const r = responses[String(queryKey[queryKey.length - 1])];
-          if (r instanceof Error) throw r;
-          if (typeof r === "function") return r();
-          return r;
-        },
+  client.setDefaultOptions({
+    queries: {
+      retry,
+      retryDelay: 0,
+      networkMode,
+      queryFn: async ({ queryKey, signal }) => {
+        const response = responses[String(queryKey[queryKey.length - 1])];
+        if (response instanceof Error) throw response;
+        if (typeof response === "function") return response(signal);
+        return response;
       },
     },
   });
-  appQuery.client = client;
   await act(async () => {
     root.render(createElement(QueryClientProvider, { client }, createElement(ComplianceCalendar)));
   });
@@ -239,6 +227,22 @@ describe("compliance calendar states", () => {
     expect(container.textContent).not.toContain(enCopy["complianceCalendar.noDeadlinesYet"]);
   });
 
+  it("withholds empty claims when a refresh of cached empty results is paused", async () => {
+    await mount("en", { networkMode: "online" });
+    const empty = enCopy["complianceCalendar.noDeadlinesYet"];
+    const paused = enCopy["complianceCalendar.refreshPaused"];
+    await until(() => expect(text("compliance-upcoming-empty")).toContain(empty));
+
+    await act(async () => {
+      onlineManager.setOnline(false);
+      void client.invalidateQueries({ queryKey: ["/api/companies", "c1"] });
+    });
+    await until(() => expect(text("compliance-upcoming-empty")).toContain(paused));
+    await selectDay(10);
+    expect(text("compliance-day-status")).toContain(paused);
+    expect(container.textContent).not.toContain(empty);
+  });
+
   it("uses the same neutral copy when a hidden tab pauses a retry while online", async () => {
     const tasksKey = ["/api/companies", "c1", "compliance-tasks"];
     const paused = enCopy["complianceCalendar.refreshPaused"];
@@ -276,10 +280,12 @@ describe("compliance calendar states", () => {
     window.history.replaceState(null, "", "/compliance-calendar?view=list");
     let tasksGets = 0;
     let resolveFirst: (rows: unknown[]) => void = () => {};
-    responses["compliance-tasks"] = () => {
+    let firstSignal: AbortSignal | undefined;
+    responses["compliance-tasks"] = (signal: AbortSignal) => {
       tasksGets += 1;
       if (tasksGets === 1) {
         // The initial GET, started before the write: it has not answered yet.
+        firstSignal = signal;
         return new Promise<unknown[]>((r) => {
           resolveFirst = r;
         });
@@ -325,6 +331,7 @@ describe("compliance calendar states", () => {
     // The fresh GET returns the created row while the first one is still unanswered.
     await until(() => expect(q("task-t-new")).not.toBeNull());
     expect(tasksGets).toBeGreaterThanOrEqual(2);
+    expect(firstSignal?.aborted).toBe(true);
 
     // The stale first GET answers late, without the new task: it must not win.
     await act(async () => resolveFirst([]));

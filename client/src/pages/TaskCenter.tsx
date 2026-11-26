@@ -34,7 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { Plus, Search, Calendar, Loader2, ListTodo, MoreHorizontal, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -218,9 +218,7 @@ export function TaskListPanel({
         ...(note ? { note } : {}),
       }),
     onSuccess: (_d, vars) => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "compliance-calendar"],
-      });
+      refreshAfterWrite(["/api/companies", companyId, "compliance-calendar"]);
       if (vars.status === "dismissed") {
         setNaTask(null);
         setNaNote("");
@@ -239,12 +237,8 @@ export function TaskListPanel({
   const createMutation = useMutation({
     mutationFn: (data: typeof newTask) =>
       apiRequest("POST", `/api/companies/${companyId}/compliance-tasks`, data),
-    onSuccess: async () => {
-      // A GET already in flight started before this write: cancel it so its stale (task-less)
-      // response cannot land after the write, then refetch fresh.
-      const tasksKey = ["/api/companies", companyId, "compliance-tasks"];
-      await queryClient.cancelQueries({ queryKey: tasksKey, exact: true });
-      void queryClient.invalidateQueries({ queryKey: tasksKey, exact: true });
+    onSuccess: () => {
+      refreshAfterWrite(["/api/companies", companyId, "compliance-tasks"]);
       toast({
         title: locale === "ar" ? "تمت الإضافة" : "Task created",
         description:
@@ -266,9 +260,7 @@ export function TaskListPanel({
     mutationFn: ({ taskId, status }: { taskId: string; status: string }) =>
       apiRequest("PATCH", `/api/compliance-tasks/${taskId}`, { status }),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "compliance-tasks"],
-      });
+      refreshAfterWrite(["/api/companies", companyId, "compliance-tasks"]);
       toast({
         title: locale === "ar" ? "تم التحديث" : "Updated",
       });
@@ -278,9 +270,7 @@ export function TaskListPanel({
   const deleteMutation = useMutation({
     mutationFn: (taskId: string) => apiRequest("DELETE", `/api/compliance-tasks/${taskId}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "compliance-tasks"],
-      });
+      refreshAfterWrite(["/api/companies", companyId, "compliance-tasks"]);
       toast({
         title: locale === "ar" ? "تم الحذف" : "Deleted",
       });

@@ -1358,7 +1358,14 @@ async function main() {
     if (!returnId || !dueDate) throw new Error("VAT fixture is missing its return ID or due date");
     const datesOn = async (p) => {
       await p.goto(`${BASE}/vat-filing`, { timeout: 45000 });
-      await p.getByTestId(`button-view-${returnId}`).click({ timeout: 20000 });
+      // Generated draft returns appear in the hero section (not in the
+      // effectiveVatReturns table, which shows only submitted/filed). Fall back
+      // to the hero "view return" button when the table row is absent.
+      await p
+        .getByTestId(`button-view-${returnId}`)
+        .or(p.getByTestId("button-hero-view-return"))
+        .first()
+        .click({ timeout: 20000 });
       const workbook = p.getByTestId("vat201-workbook");
       const value = (label) =>
         workbook

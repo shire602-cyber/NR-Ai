@@ -38,7 +38,14 @@ vi.mock("../../client/src/lib/queryClient", async () => {
   const actual = await vi.importActual<typeof import("../../client/src/lib/queryClient")>(
     "../../client/src/lib/queryClient"
   );
-  return { ...actual, apiRequest: (...args: unknown[]) => sub.apiRequest(...args) };
+  return {
+    ...actual,
+    // The billing documents list is a background read; keep it off the spy so write counts stay exact.
+    apiRequest: (...args: unknown[]) =>
+      args[0] === "GET" && args[1] === "/api/companies/c1/billing/documents"
+        ? Promise.resolve([])
+        : sub.apiRequest(...args),
+  };
 });
 
 import { getTierLimits } from "../../server/middleware/featureGate";
@@ -71,6 +78,7 @@ function freshState(): Record<string, unknown> {
       users: { used: 4, limit: -1 },
       storage: { used: 12.5, limit: TRIAL_LIMITS.maxStorageMb },
     },
+    usageState: { loaded: true, loadError: null, refreshError: false, retry: vi.fn() },
   };
 }
 
