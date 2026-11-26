@@ -257,6 +257,8 @@
   "firmOps.bulkFilesDone": "{count, plural, zero {لا ملفات مكتملة} one {ملف واحد مكتمل} two {ملفان مكتملان} few {# ملفات مكتملة} many {# ملفًا مكتملًا} other {# ملف مكتمل}}",
   "firmOps.bulkFilesFailed": "{count, plural, zero {لا ملفات فاشلة} one {ملف واحد فاشل} two {ملفان فاشلان} few {# ملفات فاشلة} many {# ملفًا فاشلًا} other {# ملف فاشل}}",
   "firmOps.bulkIssuesCount": "{count, plural, zero {لا ملاحظات} one {ملاحظة واحدة} two {ملاحظتان} few {# ملاحظات} many {# ملاحظة} other {# ملاحظة}}",
-  "firmOps.recurringIntervalUnit": "{count, plural, zero {يوم} one {يوم} two {يومان} few {أيام} many {يومًا} other {يوم}}",
+  "firmOps.recurringIntervalUnit": "{count, plural, zero {يوم} one {{day}} two {يومان} few {{days}} many {يومًا} other {يوم}}",
+  "firmOps.recurringIntervalDay": "يوم",
+  "firmOps.recurringIntervalDays": "أيام",
   "firmOps.chaseBulkSendUnavailable": "تعذّر تحديث قائمة المتابعة، وقد تكون قديمة. حدّثها قبل إرسال الكل."
 }

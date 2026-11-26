@@ -928,9 +928,14 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
                   className="w-32"
                   aria-label={t["documentChasing.recurringIntervalInDays"]}
                 />
-                <span className="text-sm text-muted-foreground" data-testid="recurring-interval-unit">
+                <span
+                  className="text-sm text-muted-foreground"
+                  data-testid="recurring-interval-unit"
+                >
                   {formatMessage(t["firmOps.recurringIntervalUnit"], {
                     count: form.recurringIntervalDays,
+                    day: t["firmOps.recurringIntervalDay"],
+                    days: t["firmOps.recurringIntervalDays"],
                   })}
                 </span>
               </>

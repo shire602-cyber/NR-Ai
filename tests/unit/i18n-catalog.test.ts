@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error - plain .mjs script without type declarations
 import { scanComponents, scanPages } from "../../scripts/i18n-scan.mjs";
-import { formatMessage, isLocaleLoaded, loadLocale, t } from "../../client/src/lib/i18n";
+import { formatMessage, isLocaleLoaded, loadLocale, t, useI18n } from "../../client/src/lib/i18n";
 import { brandOnlyPageLabels } from "../helpers/brand-only-page-labels";
 
 // S5: namespace catalogs are code-split (one lazy chunk per namespace and locale).
@@ -211,6 +211,33 @@ describe("i18n catalogs", () => {
       "اكتمل 0 من 8"
     );
     expect(formatMessage("{a} {missing}", { a: 1 })).toBe("1 {missing}");
+  });
+
+  it("interpolates the recurring interval unit inside plural forms", () => {
+    const originalLocale = useI18n.getState().locale;
+    try {
+      const formatUnit = (locale: "en" | "ar", count: number) => {
+        useI18n.setState({ locale });
+        const catalog = t[locale];
+        return formatMessage(catalog["firmOps.recurringIntervalUnit"], {
+          count,
+          day: catalog["firmOps.recurringIntervalDay"],
+          days: catalog["firmOps.recurringIntervalDays"],
+        });
+      };
+
+      expect([1, 2].map((count) => formatUnit("en", count))).toEqual(["day", "days"]);
+      expect([0, 1, 2, 3, 11, 100].map((count) => formatUnit("ar", count))).toEqual([
+        "يوم",
+        "يوم",
+        "يومان",
+        "أيام",
+        "يومًا",
+        "يوم",
+      ]);
+    } finally {
+      useI18n.setState({ locale: originalLocale });
+    }
   });
 });
 

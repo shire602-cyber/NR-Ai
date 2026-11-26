@@ -1154,7 +1154,7 @@ describe("bank reconciliation report dialog states", () => {
 
   it("offers retry after a failed first load, then keeps totals through a failed refresh", async () => {
     reportReply = () => json({ message: "boom" }, 404);
-    const client = await mountPage("en");
+    const client = await mountPage("en", failRefreshesAtOnce);
     await openReport();
     expect(byTestId("report-load-error")).not.toBeNull();
     expect(byTestId("report-loading")).toBeNull();
@@ -1165,7 +1165,6 @@ describe("bank reconciliation report dialog states", () => {
     expect(byTestId("report-load-error")).toBeNull();
     expect(dialogText()).toContain("1,234");
 
-    failRefreshesAtOnce(client);
     reportReply = () => json({ message: "boom" }, 500);
     await refresh(client);
     expect(byTestId("report-refresh-error")!.textContent).toContain(
