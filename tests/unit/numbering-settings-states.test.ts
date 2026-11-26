@@ -6,6 +6,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import en from "../../client/src/locales/en/settingsNumbering.json";
 import ar from "../../client/src/locales/ar/settingsNumbering.json";
+import { formatMessage } from "../../client/src/lib/i18n";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -72,11 +73,29 @@ describe("Numbering page states", () => {
     fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
       if (String(input).includes("/api/csrf-token")) return jsonResponse({ csrfToken: "tok" });
       if (init?.method === "PUT") {
-        serverRow = { ...serverRow, ...JSON.parse(String(init.body)) };
+        const body = JSON.parse(String(init.body));
+        // Like the server: the next number must be above the highest number issued (409).
+        if (body.nextNumber !== undefined && body.nextNumber <= serverRow.lastIssued) {
+          return jsonResponse(
+            {
+              code: "NUMBERING_BELOW_ISSUED",
+              message: `Next number must be above ${serverRow.lastIssued}`,
+            },
+            409
+          );
+        }
+        const { nextNumber: requested, ...settings } = body;
+        serverRow = { ...serverRow, ...settings };
+        // Moving the next number forward moves the issued counter with it.
+        if (requested !== undefined) {
+          serverRow.lastIssued = requested - 1;
+          serverRow.nextNumber = requested;
+        }
         // The server derives the formatted number from the series (no yearly reset here).
         const { prefix, nextNumber, padding } = serverRow;
         serverRow.nextFormatted = `${prefix}-${String(nextNumber).padStart(padding, "0")}`;
-        return jsonResponse({ ok: true });
+        // The PUT answers with the full saved row, as the route does.
+        return jsonResponse(serverRow);
       }
       if (mode === "error") return jsonResponse({ message: "boom" }, 500);
       return jsonResponse({ numbering: mode === "rows" ? [serverRow] : [] });
@@ -292,11 +311,51 @@ describe("Numbering page states", () => {
       expect(gets().length).toBeGreaterThan(getsBefore);
       const { queryClient } = await import("../../client/src/lib/queryClient");
       expect(queryClient.getQueryData(KEY)).toEqual({
-        numbering: [{ ...ROW, prefix: "ABC", nextNumber: 9, nextFormatted: "ABC-0009" }],
+        numbering: [
+          { ...ROW, prefix: "ABC", nextNumber: 9, lastIssued: 8, nextFormatted: "ABC-0009" },
+        ],
       });
       const value = (id: string) => (byTestId(id) as HTMLInputElement).value;
       expect(value("numbering-prefix-invoice")).toBe("XYZ");
       expect(value("numbering-next-invoice")).toBe("20");
+    });
+
+    it("never resubmits against a stale row when the refresh after a save fails", async () => {
+      const { onlineManager } = await import("@tanstack/react-query");
+      const { queryClient } = await import("../../client/src/lib/queryClient");
+      mode = "rows";
+      await mount();
+      await type("numbering-next-invoice", "9");
+      await act(async () => onlineManager.setOnline(false));
+      await clickSave();
+      // Back to the number the page started with, while the save is still waiting.
+      await type("numbering-next-invoice", "5");
+
+      // The PUT is handled before mode, so only the refresh GET fails.
+      mode = "error";
+      await act(async () => onlineManager.setOnline(true));
+      await settle();
+      expect(puts()).toHaveLength(1);
+      expect(JSON.parse(String((puts()[0][1] as RequestInit).body)).nextNumber).toBe(9);
+      // The refresh failed, yet the cache holds the saved row, not the old one.
+      expect(byTestId("numbering-refresh-error")).not.toBeNull();
+      expect(queryClient.getQueryData(KEY)).toEqual({
+        numbering: [{ ...ROW, nextNumber: 9, lastIssued: 8, nextFormatted: "INV-0009" }],
+      });
+      // The edit made after submitting survives.
+      expect((byTestId("numbering-next-invoice") as HTMLInputElement).value).toBe("5");
+
+      // Submitting 5 must not be mistaken for "unchanged" (which would drop nextNumber and
+      // leave the server at 9): it is refused as below the highest issued number, and the
+      // server row is untouched.
+      await clickSave();
+      expect(puts()).toHaveLength(1);
+      // Scoped to the invoice card: the page-level refresh alert is a separate element.
+      expect(byTestId("numbering-invoice")?.querySelector('[role="alert"]')?.textContent).toContain(
+        formatMessage(en["settingsNumbering.numberingBelowIssued"], { last: 8 })
+      );
+      expect(serverRow.nextNumber).toBe(9);
+      expect((byTestId("numbering-next-invoice") as HTMLInputElement).value).toBe("5");
     });
 
     it("follows the server again for saved and untouched fields", async () => {

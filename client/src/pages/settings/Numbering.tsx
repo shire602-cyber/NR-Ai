@@ -71,29 +71,17 @@ function preview(prefix: string, padding: number, yearlyReset: boolean, n: numbe
 
 function NumberingCard({
   row,
-  rowDataUpdateCount,
   companyId,
   disabled,
 }: {
   row: NumberingRow;
-  /** How many times the query data holding `row` has been received. */
-  rowDataUpdateCount: number;
   companyId: string;
   disabled: boolean;
 }) {
   const { locale, t } = useTranslation();
   const { toast } = useToast();
   const [draft, setDraft] = useState<Draft>({});
-  // A successful save whose refreshed row has not arrived yet. The draft is kept until it does,
-  // so a paused or failed refresh never shows the old values again.
-  // The cutoff is an update count, not a timestamp: two receipts can share a clock millisecond.
-  const [saved, setSaved] = useState<{ draft: Draft; dataUpdateCountAtSave: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  if (saved && rowDataUpdateCount > saved.dataUpdateCountAtSave) {
-    setDraft((current) => withoutSaved(current, saved.draft));
-    setSaved(null);
-  }
 
   const prefix = draft.prefix ?? row.prefix;
   const padding = draft.padding ?? row.padding;
@@ -111,15 +99,23 @@ function NumberingCard({
     onMutate: () => {
       setError(null);
     },
-    onSuccess: (_result, submitted) => {
+    onSuccess: async (saved: NumberingRow, submitted) => {
       setError(null);
       toast({ title: translateNow("settingsNumbering.numberingSaved") });
       const queryKey = ["/api/companies", submitted.companyId, "numbering"];
-      setSaved({
-        draft: submitted.draft,
-        dataUpdateCountAtSave: queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0,
-      });
-      void queryClient.invalidateQueries({ queryKey });
+      // The PUT returns the full saved row. Put it in the cache now, so a refresh that is paused
+      // or fails can never leave the old row behind to be compared against the next submit.
+      await queryClient.cancelQueries({ queryKey, exact: true });
+      queryClient.setQueryData<{ numbering: NumberingRow[] }>(queryKey, (current) =>
+        current
+          ? {
+              ...current,
+              numbering: current.numbering.map((r) => (r.docType === saved.docType ? saved : r)),
+            }
+          : current
+      );
+      setDraft((current) => withoutSaved(current, submitted.draft));
+      void queryClient.invalidateQueries({ queryKey, exact: true });
     },
     onError: (e: unknown) => {
       // Only a server-sent 4xx (validation / conflict) message is shown; raw network, CSRF,
@@ -273,8 +269,6 @@ export default function NumberingSettings() {
     queryKey: numberingQueryKey,
     enabled: !!companyId,
   });
-  const numberingDataUpdateCount =
-    queryClient.getQueryState(numberingQueryKey)?.dataUpdateCount ?? 0;
 
   return (
     <SettingsLayout>
@@ -335,7 +329,6 @@ export default function NumberingSettings() {
                 // Stable per company and document, so a refresh never remounts away a draft.
                 key={`${companyId}-${row.docType}`}
                 row={row}
-                rowDataUpdateCount={numberingDataUpdateCount}
                 companyId={companyId}
                 disabled={!canManage}
               />
