@@ -50,6 +50,7 @@ import {
   linkMovementsToEntry,
   loadState,
   lockProduct,
+  lockProductsOrdered,
   movementExists,
   q,
   type ProductRow,
@@ -118,6 +119,11 @@ export async function reverseDocumentStock(
   const date = todayIso();
   const lines: DraftLine[] = [];
   let firstReversal: string | null = null;
+  await lockProductsOrdered(
+    tx,
+    args.companyId,
+    movements.map((m) => m.product_id)
+  );
   for (const m of [...movements].reverse()) {
     const meta = (m.meta ?? {}) as Record<string, unknown>;
     if (m.type === "grni_clear") {
@@ -295,6 +301,13 @@ export async function planBillStock(
   const label = docLabel(doc);
   const out: PostJournalLineInput[] = [];
   const movementIds: string[] = [];
+  if (!replay) {
+    await lockProductsOrdered(
+      tx,
+      companyId,
+      rows.map((r) => r.product_id)
+    );
+  }
   for (let i = 0; i < input.lines.length; i++) {
     const line = { ...input.lines[i] };
     const src = input.lineSources[i];
@@ -507,6 +520,11 @@ export async function planPurchaseReturnStock(
   const draft: DraftLine[] = [];
   const movementIds: string[] = [];
   const handled: number[] = [];
+  await lockProductsOrdered(
+    tx,
+    args.companyId,
+    args.lines.map((l) => l.productId)
+  );
   for (const l of args.lines) {
     const product = await productOrNull(tx, args.companyId, l.productId);
     if (!product || !isStocked(product)) continue;
@@ -563,18 +581,41 @@ export interface SalesLineLike {
   description?: string;
 }
 
-/** Components of a bundle (empty for a plain product). */
-async function bundleComponents(
+type BundleParts = Map<string, Array<{ productId: string; quantity: number }>>;
+
+/**
+ * Lock every product a sales document will touch (line products and bundle components) in the
+ * common id order, and return the component snapshot the locks were taken from. The movement
+ * loops use that same snapshot, so a concurrent bundle edit cannot add an unlocked product.
+ */
+async function lockSalesProducts(
   tx: LedgerTx,
   companyId: string,
-  bundleId: string
-): Promise<Array<{ productId: string; quantity: number }>> {
-  const rows = await q<{ component_product_id: string; quantity: number }>(
+  lines: SalesLineLike[]
+): Promise<BundleParts> {
+  const ids = [...new Set(lines.map((l) => l.productId).filter((id): id is string => !!id))];
+  const bundles: BundleParts = new Map();
+  if (!ids.length) return bundles;
+  const rows = await q<{
+    bundle_product_id: string;
+    component_product_id: string;
+    quantity: number;
+  }>(
     tx,
-    sql`SELECT component_product_id, quantity FROM product_components
-         WHERE company_id = ${companyId} AND bundle_product_id = ${bundleId} ORDER BY id`
+    sql`SELECT bundle_product_id, component_product_id, quantity FROM product_components
+         WHERE company_id = ${companyId} AND bundle_product_id IN (${sql.join(
+           ids.map((id) => sql`${id}`),
+           sql`, `
+         )})
+         ORDER BY bundle_product_id, id`
   );
-  return rows.map((r) => ({ productId: r.component_product_id, quantity: Number(r.quantity) }));
+  for (const r of rows) {
+    const parts = bundles.get(r.bundle_product_id) ?? [];
+    parts.push({ productId: r.component_product_id, quantity: Number(r.quantity) });
+    bundles.set(r.bundle_product_id, parts);
+  }
+  await lockProductsOrdered(tx, companyId, [...ids, ...rows.map((r) => r.component_product_id)]);
+  return bundles;
 }
 
 /** invoice issue: stock out and post COGS in the invoice's transaction. */
@@ -597,12 +638,15 @@ export async function onInvoiceIssued(
   const draft: DraftLine[] = [];
   const movementIds: string[] = [];
   let costFils = 0;
+  // Common lock order (product id, bundle components included) before the line-order loop below:
+  // a stocktake locks its products in id order, so line order alone could deadlock with it.
+  const bundles = await lockSalesProducts(tx, invoice.companyId, args.lines);
   for (const line of args.lines) {
     const p = await productOrNull(tx, invoice.companyId, line.productId);
     if (!p) continue;
     const parts =
       p.product_type === "bundle"
-        ? await bundleComponents(tx, invoice.companyId, p.id)
+        ? (bundles.get(p.id) ?? [])
         : isStocked(p)
           ? [{ productId: p.id, quantity: 1 }]
           : [];
@@ -700,13 +744,14 @@ export async function onCreditNoteIssued(
   const date = isoDate(creditNote.date);
   const draft: DraftLine[] = [];
   const movementIds: string[] = [];
+  const bundles = await lockSalesProducts(tx, creditNote.companyId, args.lines);
   for (const line of args.lines) {
     if (!line.productId) continue;
     const p = await productOrNull(tx, creditNote.companyId, line.productId);
     if (!p) continue;
     const parts =
       p.product_type === "bundle"
-        ? await bundleComponents(tx, creditNote.companyId, p.id)
+        ? (bundles.get(p.id) ?? [])
         : isStocked(p)
           ? [{ productId: p.id, quantity: 1 }]
           : [];
@@ -770,7 +815,12 @@ export async function onCreditNoteIssued(
         costCenterId: line.costCenterId ?? null,
         ...journalLine("creditNoteReverseCogs", { ref: creditNote.number }),
       });
-      draft.push(...trueUpLines(r, value, line.costCenterId, { docKind: "creditNote", ref: creditNote.number }));
+      draft.push(
+        ...trueUpLines(r, value, line.costCenterId, {
+          docKind: "creditNote",
+          ref: creditNote.number,
+        })
+      );
     }
   }
   const entryId = await postInventoryJournal(tx, {

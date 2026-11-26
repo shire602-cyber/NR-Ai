@@ -101,6 +101,19 @@ it.each([
       });
       expect(draft.body.clearedPlanCostCenterIds).toEqual(planCenter === valid ? [] : [gonePlan]);
       expect(draft.body.clearedLineCostCenterIds).toEqual(planCenter === valid ? [] : [goneLine]);
+      // Lines whose effective centre (own, else the plan's) is gone: A (own) and C (inherits the
+      // plan's). The plan's centre is gone too, so both fall back to all centres. B is untouched.
+      const clearedLines = [...(draft.body.clearedLines as Array<{ category: string }>)].sort(
+        (a, b) => a.category.localeCompare(b.category)
+      );
+      expect(clearedLines).toEqual(
+        planCenter === valid
+          ? []
+          : [
+              { category: "A", description: null, costCenterId: goneLine, fallback: "all" },
+              { category: "C", description: null, costCenterId: gonePlan, fallback: "all" },
+            ]
+      );
       const lines = await h.sql(
         "SELECT category, cost_center_id FROM budget_lines WHERE budget_id = $1 ORDER BY category",
         [draft.body.id]

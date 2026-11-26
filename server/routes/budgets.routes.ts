@@ -248,6 +248,21 @@ async function copyLines<TCreated extends { id: string }>(
   const cleared = {
     clearedPlanCostCenterIds: isMissing(from.cost_center_id) ? [from.cost_center_id] : [],
     clearedLineCostCenterIds: [...new Set(lineCenters.filter(isMissing))].sort(),
+    // Which lines change actuals scope, so the screen can name them. A line's effective centre is
+    // its own, else the plan's (as in computeBudgetVariance). If that one is missing, the draft
+    // falls back to the plan's centre when it still exists, else to all centres.
+    clearedLines: rows.flatMap((l) => {
+      const effective = (l.cost_center_id as string | null) ?? from.cost_center_id ?? null;
+      if (!isMissing(effective)) return [];
+      return [
+        {
+          category: String(l.category ?? ""),
+          description: (l.description as string | null) ?? null,
+          costCenterId: effective as string,
+          fallback: keep(from.cost_center_id) ? ("plan" as const) : ("all" as const),
+        },
+      ];
+    }),
   };
   return { created, lines: rows.length, cleared };
 }
@@ -422,7 +437,8 @@ export function registerBudgetRoutes(app: Express) {
              name = COALESCE($1, name), fiscal_year = COALESCE($2, fiscal_year),
              start_date = COALESCE($3, start_date), end_date = COALESCE($4, end_date),
              notes = COALESCE($5, notes), status = COALESCE($6, status),
-             cost_center_id = COALESCE($7, cost_center_id), class_tag = COALESCE($8, class_tag),
+             cost_center_id = CASE WHEN $11::boolean THEN $7::uuid ELSE cost_center_id END,
+             class_tag = COALESCE($8, class_tag),
              alert_threshold_pct = COALESCE($9, alert_threshold_pct), updated_at = now()
            WHERE id = $10 RETURNING *`,
           [
@@ -436,6 +452,8 @@ export function registerBudgetRoutes(app: Express) {
             b.classTag ?? null,
             b.alertThresholdPct ?? null,
             plan.id,
+            // An explicit null clears the cost centre; an absent key leaves it untouched.
+            b.costCenterId !== undefined,
           ]
         );
       });
@@ -592,7 +610,8 @@ export function registerBudgetRoutes(app: Express) {
         return tx.query(
           `UPDATE budget_lines SET
              account_id = COALESCE($1, account_id), category = COALESCE($2, category),
-             description = COALESCE($3, description), cost_center_id = COALESCE($4, cost_center_id),
+             description = COALESCE($3, description),
+             cost_center_id = CASE WHEN $20::boolean THEN $4::uuid ELSE cost_center_id END,
              is_contra = $5,
              jan = $6, feb = $7, mar = $8, apr = $9, may = $10, jun = $11,
              jul = $12, aug = $13, sep = $14, oct = $15, nov = $16, dec = $17, annual_total = $18
@@ -606,6 +625,8 @@ export function registerBudgetRoutes(app: Express) {
             ...BUDGET_MONTHS.map((m) => months[m]),
             annualOf(months),
             line.id,
+            // An explicit null clears the cost centre; an absent key leaves it untouched.
+            b.costCenterId !== undefined,
           ]
         );
       });

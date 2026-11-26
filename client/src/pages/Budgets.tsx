@@ -85,6 +85,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { budgetCategoryLabel } from "@/lib/budget-categories";
+import { budgetScopeChange, type BudgetScopeChange } from "@/lib/budget-scope";
+import { BudgetScopeChangeDialog } from "@/components/budgets/BudgetScopeChangeDialog";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -294,12 +296,18 @@ export default function Budgets() {
   const [editingLine, setEditingLine] = useState<BudgetLine | null>(null);
   const [budgetToDelete, setBudgetToDelete] = useState<string | null>(null);
   const [lineToDelete, setLineToDelete] = useState<string | null>(null);
+  const [scopeChange, setScopeChange] = useState<BudgetScopeChange | null>(null);
   // E2 (J4-r2): a viewer is not offered writes the server refuses (403).
   const { gate } = useCompanyPermission();
 
   // ─── Queries ────────────────────────────────────────────
 
-  const { data: budgetPlans = [], isLoading: isLoadingBudgets } = useQuery<BudgetPlan[]>({
+  const {
+    data: budgetPlans = [],
+    isLoading: isLoadingBudgets,
+    isError: isBudgetsError,
+    refetch: refetchBudgets,
+  } = useQuery<BudgetPlan[]>({
     queryKey: [`/api/companies/${companyId}/budget-plans`],
     enabled: !!companyId,
   });
@@ -459,18 +467,41 @@ export default function Budgets() {
   const refreshBudgets = () =>
     queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
 
+  const toastNewVersionCreated = () =>
+    toast({
+      title: tr(locale, "New draft version created", "تم إنشاء نسخة مسودة جديدة"),
+      description: tr(
+        locale,
+        "Edit the draft, then have a different approver approve it.",
+        "عدّل المسودة ثم اطلب اعتمادها من معتمد آخر."
+      ),
+    });
+
+  const toastBudgetCopied = () =>
+    toast({
+      title: tr(locale, "Budget copied", "تم نسخ الموازنة"),
+      description: tr(
+        locale,
+        "A draft for the next year was created.",
+        "تم إنشاء مسودة للسنة التالية."
+      ),
+    });
+
+  /** Success is held back until the user acknowledges a changed cost-centre scope. */
+  const acknowledgeScopeChange = () => {
+    const action = scopeChange?.action;
+    setScopeChange(null);
+    if (action === "copy") toastBudgetCopied();
+    else if (action === "newVersion") toastNewVersionCreated();
+  };
+
   const newVersionMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/new-version`, {}),
-    onSuccess: () => {
+    onSuccess: (result: unknown) => {
       refreshBudgets();
-      toast({
-        title: tr(locale, "New draft version created", "تم إنشاء نسخة مسودة جديدة"),
-        description: tr(
-          locale,
-          "Edit the draft, then have a different approver approve it.",
-          "عدّل المسودة ثم اطلب اعتمادها من معتمد آخر."
-        ),
-      });
+      const change = budgetScopeChange("newVersion", result);
+      if (change) setScopeChange(change);
+      else toastNewVersionCreated();
     },
     onError: (error: Error) => {
       toast({
@@ -484,16 +515,11 @@ export default function Budgets() {
   const copyBudgetMutation = useMutation({
     mutationFn: ({ id, fiscalYear }: { id: string; fiscalYear: number }) =>
       apiRequest("POST", `/api/budget-plans/${id}/copy`, { fiscalYear }),
-    onSuccess: () => {
+    onSuccess: (result: unknown) => {
       refreshBudgets();
-      toast({
-        title: tr(locale, "Budget copied", "تم نسخ الموازنة"),
-        description: tr(
-          locale,
-          "A draft for the next year was created.",
-          "تم إنشاء مسودة للسنة التالية."
-        ),
-      });
+      const change = budgetScopeChange("copy", result);
+      if (change) setScopeChange(change);
+      else toastBudgetCopied();
     },
     onError: (error: Error) => {
       toast({
@@ -811,6 +837,9 @@ export default function Budgets() {
 
   // ─── Render ─────────────────────────────────────────────
 
+  // One copy / new-version at a time: a second click would create a second draft.
+  const copyOrVersionPending = copyBudgetMutation.isPending || newVersionMutation.isPending;
+
   /** Row actions shared by the table and the phone cards. */
   const budgetActions = (budget: BudgetPlan) => (
     <RowActions
@@ -818,7 +847,10 @@ export default function Budgets() {
         <>
           {budget.status !== "draft" && (
             <DropdownMenuItem
-              onSelect={() => newVersionMutation.mutate(budget.id)}
+              disabled={copyOrVersionPending}
+              onSelect={() => {
+                if (!copyOrVersionPending) newVersionMutation.mutate(budget.id);
+              }}
               data-testid={`button-new-version-${budget.id}`}
             >
               <Plus aria-hidden />
@@ -826,12 +858,14 @@ export default function Budgets() {
             </DropdownMenuItem>
           )}
           <DropdownMenuItem
-            onSelect={() =>
-              copyBudgetMutation.mutate({
-                id: budget.id,
-                fiscalYear: budget.fiscal_year + 1,
-              })
-            }
+            disabled={copyOrVersionPending}
+            onSelect={() => {
+              if (!copyOrVersionPending)
+                copyBudgetMutation.mutate({
+                  id: budget.id,
+                  fiscalYear: budget.fiscal_year + 1,
+                });
+            }}
           >
             <Copy aria-hidden />
             {tr(locale, "Copy to next year", "نسخ إلى السنة التالية")}
@@ -881,6 +915,11 @@ export default function Budgets() {
 
   return (
     <div className="space-y-6">
+      <BudgetScopeChangeDialog
+        change={scopeChange}
+        locale={locale}
+        onAcknowledge={acknowledgeScopeChange}
+      />
       {selectedBudget && (
         <Button
           variant="ghost"
@@ -952,6 +991,23 @@ export default function Budgets() {
               {isLoadingBudgets ? (
                 <div className="text-center py-8 text-muted-foreground">
                   {t.loading || "Loading..."}
+                </div>
+              ) : isBudgetsError && budgetPlans.length === 0 ? (
+                <div
+                  className="flex flex-col items-center gap-3 py-8 text-center"
+                  role="alert"
+                  data-testid="budgets-load-error"
+                >
+                  <p className="text-sm text-muted-foreground">
+                    {tr(
+                      locale,
+                      "The budget list could not be loaded.",
+                      "تعذّر تحميل قائمة الموازنات."
+                    )}
+                  </p>
+                  <Button variant="outline" size="sm" onClick={() => void refetchBudgets()}>
+                    {tr(locale, "Try again", "حاول مرة أخرى")}
+                  </Button>
                 </div>
               ) : budgetPlans.length === 0 ? (
                 <EmptyState
