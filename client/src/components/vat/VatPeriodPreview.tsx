@@ -103,7 +103,10 @@ export function VatPeriodPreview({
           <AskNajmaButton
             companyId={companyId}
             topic="vat201"
-            period={`${periodStart} to ${periodEnd}`}
+            period={formatMessage(t["components.vatPeriodRange"], {
+              start: periodStart,
+              end: periodEnd,
+            })}
             figures={[
               {
                 label: t["compliance.vatFilingOutputVat"],

@@ -335,7 +335,11 @@ function SendersTab({
                     <TableCell className="font-medium">{s.senderEmail}</TableCell>
                     <TableCell>{clientName(s.companyId)}</TableCell>
                     <TableCell className="text-muted-foreground">{s.label ?? "—"}</TableCell>
-                    <TableCell>{s.requireDkimPass ? "Required" : "Off"}</TableCell>
+                    <TableCell>
+                      {s.requireDkimPass
+                        ? t["firmOps.intakeDkimRequired"]
+                        : t["firmOps.intakeDkimOff"]}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={s.status === "active" ? "default" : "secondary"}>
                         {s.status}
@@ -343,7 +347,9 @@ function SendersTab({
                     </TableCell>
                     <TableCell data-numeric className=" space-x-2">
                       <Button variant="outline" size="sm" onClick={() => toggleMutation.mutate(s)}>
-                        {s.status === "active" ? "Pause" : "Resume"}
+                        {s.status === "active"
+                          ? t["firmOps.intakePause"]
+                          : t["firmOps.intakeResume"]}
                       </Button>
                       <Button
                         variant="ghost"
@@ -483,8 +489,10 @@ function CompletenessTab({
               ) : (
                 <AlertTriangle className="h-5 w-5 text-warning" />
               )}
-              Coverage {coveragePct}% · {result.summary.gapCount} gap
-              {result.summary.gapCount === 1 ? "" : "s"}
+              {formatMessage(t["firmOps.intakeCoverage"], {
+                percent: coveragePct,
+                count: result.summary.gapCount,
+              })}
             </CardTitle>
             {result.summary.gapCount > 0 && (
               <Button
@@ -540,7 +548,9 @@ function CompletenessTab({
                       </TableCell>
                       <TableCell>
                         <Badge variant={g.direction === "outflow" ? "secondary" : "outline"}>
-                          {g.kind === "missing_purchase_evidence" ? "Purchase" : "Sales"}
+                          {g.kind === "missing_purchase_evidence"
+                            ? t["firmOps.intakePurchase"]
+                            : t["firmOps.intakeSales"]}
                         </Badge>
                       </TableCell>
                       <TableCell data-numeric className=" font-medium">

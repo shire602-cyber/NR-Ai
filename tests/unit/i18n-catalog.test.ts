@@ -89,6 +89,28 @@ describe("i18n catalogs", () => {
     }
   });
 
+  // The checks above read the namespace files only. This one reads the merged runtime dictionary
+  // (legacy flat keys included), so an English value copied into Arabic anywhere is caught.
+  it("R18-02: no Arabic value is newly identical to English Latin text", () => {
+    // Exact key and value: a changed value has to be reviewed again.
+    const legitimate: Record<string, string> = {
+      "pageLabels.muhasibAi": "Muhasib.ai", // brand
+      "reportCenter.downloadPdfArabic": "PDF (العربية)", // file format
+    };
+    // Parameter names are not visible text.
+    const hasLatin = (value: string) => /[A-Za-z]/.test(value.replace(/\{\w+\}/g, ""));
+    const english = t.en as Record<string, unknown>;
+    const arabic = t.ar as Record<string, unknown>;
+    const missing = Object.keys(english).filter((key) => !(key in arabic));
+    expect(missing).toEqual([]);
+    const identical = Object.fromEntries(
+      Object.entries(english).filter(
+        ([key, value]) => typeof value === "string" && value === arabic[key] && hasLatin(value)
+      )
+    );
+    expect(identical).toEqual(legitimate);
+  });
+
   it("R18-02: interpolation placeholders match between en and ar (word order lives in the template)", () => {
     for (const [namespace, catalog] of Object.entries(en)) {
       for (const [key, value] of Object.entries(catalog)) {

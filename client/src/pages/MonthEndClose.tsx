@@ -10,6 +10,7 @@ import {
   parseCalendarDate,
 } from "@/lib/format-date";
 import { localizeServerText, type CopyDescriptor } from "@shared/server-copy";
+import { accountDisplayName } from "@/lib/account-name";
 import { lazy, Suspense, useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -135,6 +136,7 @@ interface ClosingEntry {
     accountId: string;
     accountCode: string;
     accountName: string;
+    accountNameAr?: string | null;
     debit: number;
     credit: number;
   }>;
@@ -1074,7 +1076,10 @@ export default function MonthEndClose() {
                   <TableRow key={idx}>
                     <TableCell>
                       <span className="tabular-nums text-xs me-2">{line.accountCode}</span>
-                      {line.accountName}
+                      {accountDisplayName(
+                        { nameEn: line.accountName, nameAr: line.accountNameAr },
+                        locale
+                      )}
                     </TableCell>
                     <TableCell data-numeric>
                       {line.debit > 0

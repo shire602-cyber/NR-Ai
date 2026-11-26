@@ -892,7 +892,7 @@ export default function FirmCommandCenter() {
                 </ResponsiveContainer>
               ) : (
                 <p className="text-center text-muted-foreground py-8">
-                  No firm_admin staff configured yet.
+                  {t["firmOps.noFirmAdminStaff"]}
                 </p>
               )}
               <Table className="mt-4">
@@ -1047,6 +1047,7 @@ function BatchActionButton({
   pending: boolean;
   description: string;
 }) {
+  const { t } = useTranslation();
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
@@ -1065,7 +1066,9 @@ function BatchActionButton({
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Confirm: {label}</AlertDialogTitle>
+          <AlertDialogTitle>
+            {formatMessage(t["firmOps.confirmAction"], { action: label })}
+          </AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

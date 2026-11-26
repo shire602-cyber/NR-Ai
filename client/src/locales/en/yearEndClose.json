@@ -5,5 +5,6 @@
   "yearEndClose.hardClose": "Hard close (only the firm or an administrator can reopen)",
   "yearEndClose.closeYear": "Close fiscal year",
   "yearEndClose.closed": "Fiscal year closed",
-  "yearEndClose.postClosingEntry": "Post a year-end closing entry to retained earnings"
+  "yearEndClose.postClosingEntry": "Post a year-end closing entry to retained earnings",
+  "yearEndClose.askPeriod": "FY ending {date}"
 }

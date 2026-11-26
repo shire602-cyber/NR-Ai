@@ -160,7 +160,7 @@ export default function StaffManagement() {
           pendingChanges.size > 0 && (
             <div className="flex items-center gap-3">
               <span className="text-sm text-muted-foreground">
-                {pendingChanges.size} pending change{pendingChanges.size !== 1 ? "s" : ""}
+                {formatMessage(t["firmOps.staffPendingChanges"], { count: pendingChanges.size })}
               </span>
               <Button variant="outline" size="sm" onClick={() => setPendingChanges(new Map())}>
                 <T k="pages.discard" />
@@ -222,7 +222,7 @@ export default function StaffManagement() {
             <T k="pages.noStaffMembersFound" />
           </h3>
           <p className="text-muted-foreground text-sm mt-1">
-            {search ? "Try adjusting your search." : "No admin users exist yet."}
+            {search ? t["firmOps.staffTrySearch"] : t["firmOps.staffNoAdmins"]}
           </p>
         </div>
       ) : (

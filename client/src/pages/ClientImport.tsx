@@ -286,11 +286,16 @@ export default function ClientImport() {
                     <span>
                       <T k="pageLabels.previewData" />
                     </span>
-                    <Badge variant="secondary">{previewData.totalRows} records found</Badge>
+                    <Badge variant="secondary">
+                      {formatMessage(t["components.clientImportRecordsFound"], {
+                        count: previewData.totalRows,
+                      })}
+                    </Badge>
                   </CardTitle>
                   <CardDescription>
-                    Review the mapped data before importing. We detected the following columns:{" "}
-                    {previewData.headers.join(", ")}
+                    {formatMessage(t["components.clientImportReviewColumns"], {
+                      columns: previewData.headers.join(", "),
+                    })}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -346,7 +351,9 @@ export default function ClientImport() {
                   </ScrollArea>
                   {previewData.totalRows > 10 && (
                     <p className="text-sm text-muted-foreground mt-4 text-center">
-                      Showing first 10 of {previewData.totalRows} records
+                      {formatMessage(t["components.clientImportShowingFirst"], {
+                        count: previewData.totalRows,
+                      })}
                     </p>
                   )}
                 </CardContent>
@@ -394,7 +401,9 @@ export default function ClientImport() {
                   ) : (
                     <>
                       <Upload className="w-4 h-4 me-2" />
-                      Import {previewData.totalRows} Clients
+                      {formatMessage(t["components.clientImportSubmit"], {
+                        count: previewData.totalRows,
+                      })}
                     </>
                   )}
                 </Button>
@@ -416,18 +425,24 @@ export default function ClientImport() {
               <TabsList className="mb-4">
                 <TabsTrigger value="success" className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  Imported ({importResults.results.success.length})
+                  {formatMessage(t["components.clientImportImported"], {
+                    count: importResults.results.success.length,
+                  })}
                 </TabsTrigger>
                 {importResults.results.errors.length > 0 && (
                   <TabsTrigger value="errors" className="flex items-center gap-2">
                     <XCircle className="w-4 h-4" />
-                    Errors ({importResults.results.errors.length})
+                    {formatMessage(t["components.clientImportErrors"], {
+                      count: importResults.results.errors.length,
+                    })}
                   </TabsTrigger>
                 )}
                 {importResults.results.invitations.length > 0 && (
                   <TabsTrigger value="invitations" className="flex items-center gap-2">
                     <Mail className="w-4 h-4" />
-                    Invitations ({importResults.results.invitations.length})
+                    {formatMessage(t["components.clientImportInvitations"], {
+                      count: importResults.results.invitations.length,
+                    })}
                   </TabsTrigger>
                 )}
               </TabsList>
@@ -487,7 +502,7 @@ export default function ClientImport() {
                       {importResults.results.errors.map((item, index) => (
                         <TableRow key={index}>
                           <TableCell className="font-medium">
-                            {item.row?.name || "Unknown"}
+                            {item.row?.name || t["components.clientImportUnknown"]}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2 text-destructive">

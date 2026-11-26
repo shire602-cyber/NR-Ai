@@ -2997,7 +2997,7 @@ export default function Invoices() {
                                 }
                                 description={
                                   dateRange.from || dateRange.to
-                                    ? "Try widening the date filter or clearing it to see all invoices."
+                                    ? t["invoices.emptyWidenDateFilter"]
                                     : ((t as any).createFirstInvoice ??
                                       "Create your first invoice — VAT, sequential numbering, and PDFs are handled automatically.")
                                 }
@@ -3014,7 +3014,7 @@ export default function Invoices() {
                                 secondaryAction={
                                   dateRange.from || dateRange.to
                                     ? {
-                                        label: "Clear filter",
+                                        label: t["invoices.emptyClearFilter"],
                                         onClick: () =>
                                           setDateRange({ from: undefined, to: undefined }),
                                       }
@@ -3457,7 +3457,7 @@ export default function Invoices() {
                   data-testid="button-create-payment-account"
                 >
                   <Plus className="w-4 h-4" />
-                  Create Bank/Cash Account
+                  {t["invoices.createPaymentAccount"]}
                 </Button>
               </div>
             )}

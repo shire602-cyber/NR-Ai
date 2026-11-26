@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +24,7 @@ import {
 export default function ClientDashboard() {
   const { t } = useTranslation();
   const { data: user } = useCurrentUser();
-  const userName = user?.name || user?.email || "Client";
+  const userName = user?.name || user?.email || t["dashboard.clientFallbackName"];
   const { companyId } = useDefaultCompany();
 
   // Fetch documents count
@@ -85,9 +85,15 @@ export default function ClientDashboard() {
         label: t["pages.allClear"],
       };
     if (daysUntilDeadline !== null && daysUntilDeadline <= 7)
-      return { color: "bg-danger-subtle text-destructive border-destructive/30", label: "Urgent" };
+      return {
+        color: "bg-danger-subtle text-destructive border-destructive/30",
+        label: t["dashboard.clientUrgent"],
+      };
     if (daysUntilDeadline !== null && daysUntilDeadline <= 30)
-      return { color: "bg-warning-subtle text-warning border-warning/30", label: "Upcoming" };
+      return {
+        color: "bg-warning-subtle text-warning border-warning/30",
+        label: t["dashboard.clientUpcoming"],
+      };
     return {
       color: "bg-success-subtle text-success border-success/30",
       label: t["pageLabels.onTrack"],
@@ -99,7 +105,7 @@ export default function ClientDashboard() {
   // Recent updates feed data
   const recentUpdates = activityLogs.slice(0, 5).map((item: any) => ({
     id: item.id,
-    description: item.description || item.memo || "Activity logged",
+    description: item.description || item.memo || t["dashboard.clientActivityLogged"],
     date: item.createdAt || item.date,
   }));
 
@@ -136,7 +142,7 @@ export default function ClientDashboard() {
             ) : (
               <div className="text-2xl font-bold">{documents.length}</div>
             )}
-            <p className="text-xs text-muted-foreground mt-1">documents in vault</p>
+            <p className="text-xs text-muted-foreground mt-1">{t["dashboard.clientDocsInVault"]}</p>
             <Link href="/document-vault">
               <Button variant="ghost" size="sm" className="px-0 mt-2 text-primary gap-1">
                 <T k="pageLabels.viewAll" />
@@ -162,10 +168,10 @@ export default function ClientDashboard() {
             ) : nextDeadline ? (
               <>
                 <div className="text-sm font-semibold">
-                  {nextDeadline.title || "Upcoming deadline"}
+                  {nextDeadline.title || t["dashboard.clientUpcomingDeadline"]}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  due in {daysUntilDeadline} day{daysUntilDeadline !== 1 ? "s" : ""}
+                  {formatMessage(t["dashboard.clientDueInDays"], { count: daysUntilDeadline ?? 0 })}
                 </p>
               </>
             ) : (
@@ -195,7 +201,9 @@ export default function ClientDashboard() {
             ) : (
               <div className="text-2xl font-bold">{pendingTasks.length}</div>
             )}
-            <p className="text-xs text-muted-foreground mt-1">tasks incomplete</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {t["dashboard.clientTasksIncomplete"]}
+            </p>
             <Link href="/compliance-calendar">
               <Button variant="ghost" size="sm" className="px-0 mt-2 text-primary gap-1">
                 <T k="pageLabels.viewTasks" />
@@ -221,7 +229,9 @@ export default function ClientDashboard() {
             ) : (
               <div className="text-2xl font-bold">{recentActivityItems.length}</div>
             )}
-            <p className="text-xs text-muted-foreground mt-1">items this week</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {t["dashboard.clientItemsThisWeek"]}
+            </p>
           </CardContent>
         </Card>
       </div>

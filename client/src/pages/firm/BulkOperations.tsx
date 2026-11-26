@@ -110,12 +110,25 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 function VatStatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const map: Record<string, { label: string; cls: string }> = {
-    draft: { label: "Draft", cls: "bg-muted text-foreground border-border" },
-    pending_review: { label: "Pending review", cls: "bg-info-subtle text-info border-info/30" },
-    submitted: { label: "Submitted", cls: "bg-warning-subtle text-warning border-warning/30" },
-    filed: { label: "Filed", cls: "bg-success-subtle text-success border-success/30" },
-    none: { label: "Not started", cls: "bg-muted text-muted-foreground border-border" },
+    draft: { label: t["firmOps.bulkVatDraft"], cls: "bg-muted text-foreground border-border" },
+    pending_review: {
+      label: t["firmOps.bulkVatPendingReview"],
+      cls: "bg-info-subtle text-info border-info/30",
+    },
+    submitted: {
+      label: t["firmOps.bulkVatSubmitted"],
+      cls: "bg-warning-subtle text-warning border-warning/30",
+    },
+    filed: {
+      label: t["firmOps.bulkVatFiled"],
+      cls: "bg-success-subtle text-success border-success/30",
+    },
+    none: {
+      label: t["firmOps.bulkVatNotStarted"],
+      cls: "bg-muted text-muted-foreground border-border",
+    },
   };
   const { label, cls } = map[status] ?? map.draft;
   return <Badge className={cls}>{label}</Badge>;
@@ -677,7 +690,9 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                 </div>
                 {selectedIds.size > 0 && (
                   <div className="flex justify-between text-primary font-semibold pt-1">
-                    <span>Total ({selectedIds.size} clients)</span>
+                    <span>
+                      {formatMessage(t["firmOps.bulkTotalClients"], { count: selectedIds.size })}
+                    </span>
                     <span>{formatAed(total * selectedIds.size)}</span>
                   </div>
                 )}
@@ -751,7 +766,7 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                   <TableHead>
                     <T k="pages.company" />
                   </TableHead>
-                  <TableHead>Invoice #</TableHead>
+                  <TableHead>{t["firmOps.bulkInvoiceNumber"]}</TableHead>
                   <TableHead>
                     <T k="pages.status" />
                   </TableHead>

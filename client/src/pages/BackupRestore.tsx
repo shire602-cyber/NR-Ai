@@ -667,8 +667,9 @@ export default function BackupRestore() {
                                   <T k="pageLabels.deleteBackup" />
                                 </AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will permanently delete "{backup.name}". This action cannot
-                                  be undone.
+                                  {formatMessage(t["components.backupDeleteConfirm"], {
+                                    name: backup.name,
+                                  })}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

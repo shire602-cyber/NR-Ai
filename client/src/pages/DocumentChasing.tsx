@@ -274,7 +274,7 @@ export default function DocumentChasing() {
           <T k="pages.failedToLoadDocumentChasingData" />
         </div>
         <div className="text-muted-foreground">
-          {err instanceof Error ? err.message : "An unexpected error occurred."}
+          {err instanceof Error ? err.message : t["firmOps.chasingUnexpectedError"]}
         </div>
         <Button
           variant="outline"
@@ -500,7 +500,7 @@ export default function DocumentChasing() {
                         disabled={sendChaseMutation.isPending}
                         data-testid="btn-send-chase"
                       >
-                        <SiWhatsapp className="w-4 h-4 me-2" /> Send
+                        <SiWhatsapp className="w-4 h-4 me-2" /> {t["firmOps.chasingSend"]}
                       </Button>
                     </div>
                   ))}
