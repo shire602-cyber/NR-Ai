@@ -15,8 +15,8 @@ import {
   type CompareGroup,
   type CompareRow,
 } from "../../plans";
-import { ComparisonTable, PRICING_COMPETITOR_ANCHOR } from "../home/ComparisonTable";
 import { Faq } from "../home/Faq";
+import { SwitchStrip } from "../home/SwitchStrip";
 import { PlanCards } from "../home/PricingSection";
 import { SectionHead } from "../home/SectionHead";
 import { useMarketingText, type MarketingKey } from "../home/text";
@@ -185,14 +185,7 @@ export function PricingPage({ base, locale, tr }: LegacySectionProps) {
               {formatMessage(t["marketing.prYearlyNote"], { months: YEARLY_FREE })}
             </p>
           </div>
-          <PlanCards
-            base={base}
-            locale={locale}
-            tr={tr}
-            immediate
-            cycle={cycle}
-            compareHref={`#${PRICING_COMPETITOR_ANCHOR}`}
-          />
+          <PlanCards base={base} locale={locale} tr={tr} immediate cycle={cycle} />
           <p className="mz-price-note mz-price-readonly" data-testid="price-readonly">
             {text("hxPriceReadOnly")}
           </p>
@@ -208,12 +201,7 @@ export function PricingPage({ base, locale, tr }: LegacySectionProps) {
         </div>
       </section>
       <FeatureMatrix locale={locale} />
-      <ComparisonTable
-        base={base}
-        locale={locale}
-        headingLevel={2}
-        anchorId={PRICING_COMPETITOR_ANCHOR}
-      />
+      <SwitchStrip base={base} locale={locale} />
       <Faq base={base} locale={locale} tr={tr} />
     </div>
   );

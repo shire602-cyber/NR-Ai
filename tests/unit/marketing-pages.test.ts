@@ -9,6 +9,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import enMarketingBase from "../../client/src/locales/en/marketing.json";
 import arMarketingBase from "../../client/src/locales/ar/marketing.json";
+import { COMPARISON_ROWS } from "../../client/src/components/marketing/phase/home/comparison";
 import enMarketingHome from "../../client/src/locales/en/marketingHome.json";
 import arMarketingHome from "../../client/src/locales/ar/marketingHome.json";
 import enMarketingMeta from "../../client/src/locales/en/marketingMeta.json";
@@ -161,9 +162,62 @@ describe.each(["en", "ar"] as const)("compare pages (%s)", (locale) => {
     expect(
       container.querySelector('[data-testid="compare-migration"] a[href="/register?step=account"]')
     ).not.toBeNull();
+    // The table carries its sources, the checked-on date, the VAT note and the trademark line.
+    const foot = top.querySelector('[data-testid="compare-footnote"]')!;
+    const source =
+      vendor === "wafeq"
+        ? "https://www.wafeq.com/en-ae/pricing"
+        : "https://www.zoho.com/ae/books/pricing/";
+    expect(foot.querySelector(`a[href="${source}"]`)?.getAttribute("rel")).toContain("noopener");
+    for (const key of ["hxCmpFootAsOf", "hxCmpFootMarks"] as const) {
+      const copy = (locale === "ar" ? arMarketingHome : enMarketingHome)[`marketing.${key}`];
+      expect(foot.textContent).toContain(copy);
+    }
+    expect(foot.textContent).toMatch(
+      locale === "ar" ? /24 نوفمبر 2026.*5%/ : /24 Nov 2026.*5% UAE VAT/
+    );
+    expect(
+      top.querySelector('tr[data-row="top"] td[data-column="muhasib"]')?.textContent
+    ).toContain("229");
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
     // The existing editorial content stays below the table.
     expect(container.querySelector("[data-editorial-content]")).not.toBeNull();
     expect(container.textContent).not.toMatch(PROVIDERS);
+  });
+});
+
+describe.each(["en", "ar"] as const)("comparison placement (%s)", (locale) => {
+  it("shows all three products, with both sources, on the /compare hub", async () => {
+    await renderAt(`/${locale}/compare`, '[data-testid="section-compare"] tbody');
+    const table = container.querySelector('[data-testid="section-compare"]')!;
+    expect(table.querySelectorAll("thead th[scope=col]")).toHaveLength(4);
+    const foot = table.querySelector('[data-testid="compare-footnote"]')!;
+    expect(foot.querySelector('a[href="https://www.wafeq.com/en-ae/pricing"]')).not.toBeNull();
+    expect(foot.querySelector('a[href="https://www.zoho.com/ae/books/pricing/"]')).not.toBeNull();
+    expect(foot.textContent).toContain(
+      (locale === "ar" ? arMarketingHome : enMarketingHome)["marketing.hxCmpFootMarks"]
+    );
+    expect(table.querySelector(`a[href="/${locale}/compare/wafeq"]`)).not.toBeNull();
+    expect(table.querySelector(`a[href="/${locale}/compare/zoho"]`)).not.toBeNull();
+    expect(container.querySelectorAll("h1")).toHaveLength(1);
+  });
+
+  it("keeps the competitor table and its prices off the homepage", async () => {
+    await renderAt(`/${locale}`, '[data-testid="section-switch"] a');
+    expect(container.querySelector('[data-testid="section-compare"]')).toBeNull();
+    expect(container.querySelector('[data-testid="compare-footnote"]')).toBeNull();
+    expect(container.querySelector("[data-column]")).toBeNull();
+    // The table's competitor prices (VAT included) are nowhere in the homepage text.
+    for (const row of COMPARISON_ROWS.filter((r) => r.id === "entry" || r.id === "top")) {
+      for (const column of ["wafeq", "zoho"] as const) {
+        for (const price of Object.values(row.cells[column].vars ?? {})) {
+          expect(container.textContent, `${column} ${price}`).not.toContain(`${price} `);
+        }
+      }
+    }
+    const strip = container.querySelector('[data-testid="section-switch"]')!;
+    expect(strip.querySelector(`a[href="/${locale}/compare/wafeq"]`)).not.toBeNull();
+    expect(strip.querySelector(`a[href="/${locale}/compare/zoho"]`)).not.toBeNull();
   });
 });
 

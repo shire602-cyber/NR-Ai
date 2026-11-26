@@ -127,7 +127,10 @@ describe("savings render", () => {
     });
   }
 
-  const byId = (id: string) => container.querySelector<HTMLElement>(`[data-testid="${id}"]`)!;
+  const byId = (id: string, optional = false) => {
+    const el = container.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+    return (optional ? el : el!) as HTMLElement;
+  };
   const range = (index: number) =>
     container.querySelectorAll<HTMLInputElement>("input[type=range]")[index];
   function setValue(el: HTMLInputElement | HTMLSelectElement, value: string) {
@@ -206,6 +209,33 @@ describe("savings render", () => {
     expect(container.querySelector(`a[href="${trialSignupPath}"]`)?.textContent).toContain(
       "Start saving - 14 days free"
     );
+  });
+
+  it("shows a guided zero state and a labelled inputs group", async () => {
+    await mount("en");
+    expect(byId("savings-empty", true)).toBeNull();
+    const group = container.querySelector<HTMLElement>('[role="group"]')!;
+    expect(
+      container.querySelector(`#${CSS.escape(group.getAttribute("aria-labelledby")!)}`)?.textContent
+    ).toBe("Your numbers");
+    expect(byId("savings-mini").textContent).toContain("AED 8,160");
+    setValue(range(0), "0");
+    setValue(range(1), "0");
+    expect(byId("savings-year").textContent).toBe("AED 0");
+    expect(byId("savings-empty").textContent).toBe(
+      "Add your invoices, receipts and hours to see an estimate."
+    );
+    expect(byId("savings-mini").textContent).toContain("AED 0");
+    setValue(range(0), "10");
+    expect(byId("savings-empty", true)).toBeNull();
+  });
+
+  it("keeps zero-state copy in Arabic and values stay Western-digit", async () => {
+    await mount("ar");
+    setValue(range(0), "0");
+    setValue(range(1), "0");
+    expect(byId("savings-empty").textContent).toContain("أضف");
+    expect(byId("savings-mini").textContent).toContain("0 درهم");
   });
 
   it("renders Arabic with Western digits and Arabic copy", async () => {

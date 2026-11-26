@@ -180,7 +180,7 @@ describe("D1 public site", () => {
       "e-invoicing-deadlines",
       "tour",
       "savings",
-      "compare",
+      "switch",
       "features",
       "firms",
       "trust",
@@ -194,6 +194,8 @@ describe("D1 public site", () => {
         id
       ).not.toBeNull();
     }
+    // The competitor comparison lives on the /compare pages, not on the homepage.
+    expect(container.querySelector('[data-testid="section-compare"]')).toBeNull();
     // No provider is named; the e-invoicing answer says it is built in and included.
     expect(container.textContent).not.toMatch(/A-?Cube|Complyance/i);
     expect(container.textContent).toContain("accredited service provider, built into");

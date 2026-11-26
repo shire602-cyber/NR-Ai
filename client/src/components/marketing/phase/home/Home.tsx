@@ -1,6 +1,5 @@
 import type { LegacySectionProps } from "./types";
 import { AnnouncementBar } from "./AnnouncementBar";
-import { ComparisonTable } from "./ComparisonTable";
 import { DeadlineFinder } from "./DeadlineFinder";
 import { Faq } from "./Faq";
 import { FinalCta } from "./FinalCta";
@@ -11,6 +10,7 @@ import { PricingSection } from "./PricingSection";
 import { ProductTour } from "./ProductTour";
 import { SavingsCalculator } from "./SavingsCalculator";
 import { Showcase } from "./Showcase";
+import { SwitchStrip } from "./SwitchStrip";
 import { TrustChips } from "./TrustChips";
 import { TrustSecurity } from "./TrustSecurity";
 import "./home.css";
@@ -26,7 +26,7 @@ export function Home({ base, locale, tr }: LegacySectionProps) {
       <DeadlineFinder {...section} />
       <ProductTour {...section} />
       <SavingsCalculator {...section} />
-      <ComparisonTable {...section} />
+      <SwitchStrip {...section} />
       <Showcase {...section} />
       <FirmsBand {...section} />
       <TrustSecurity {...section} />
