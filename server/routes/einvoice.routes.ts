@@ -83,6 +83,11 @@ import {
   verifyInboundSignature,
 } from "../services/einvoice/inbound";
 import {
+  activeEInvoicePartner,
+  appointmentGate,
+  getAppointment,
+} from "../services/einvoice-appointment.service";
+import {
   cancelAndPersist,
   canRecoverAcubeSubmission,
   recoverAcubeSubmission,
@@ -577,6 +582,15 @@ export function registerEInvoiceRoutes(app: Express) {
           "This invoice number cannot be sent again."
         );
       }
+      // Guard: tenant must have an active appointment before (re)submitting.
+      {
+        const partner = activeEInvoicePartner();
+        if (partner.requiresAppointment) {
+          const appt = await getAppointment(company.id, partner.provider);
+          const gate = appointmentGate(appt, partner);
+          if (gate) return res.status(409).json(gate);
+        }
+      }
       const provider = await providerForSubmission(invoice, company, doc);
       const result = await enqueueEInvoiceSubmission({
         invoice,
@@ -611,6 +625,15 @@ export function registerEInvoiceRoutes(app: Express) {
       await assertScopedCompanyPermission(req.user, company.id, "tax.submit");
       if (isB2cCashSale(invoice)) {
         throw new DomainError(EINVOICE_NOT_REQUIRED, 409, undefined, EINVOICE_NOT_REQUIRED_MESSAGE);
+      }
+      // Guard: tenant must have an active appointment before submitting.
+      {
+        const partner = activeEInvoicePartner();
+        if (partner.requiresAppointment) {
+          const appt = await getAppointment(company.id, partner.provider);
+          const gate = appointmentGate(appt, partner);
+          if (gate) return res.status(409).json(gate);
+        }
       }
       const prior = await getEInvoiceDocument(company.id, invoice.id);
       const provider = await providerForSubmission(invoice, company, prior);
