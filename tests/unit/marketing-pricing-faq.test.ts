@@ -277,14 +277,15 @@ describe.each(["en", "ar"] as const)("%s", (locale) => {
 
   it("states the trial caps in the pricing lead and the trial FAQ", async () => {
     expect([maxCompanies, aiCreditsPerMonth, storageGb]).toEqual([3, 100, 1]);
-    const { pricingLead, marketingMetadata } =
+    const { marketingMetadata } =
       await import("../../client/src/components/marketing/phase/route-content");
-    const lead = pricingLead[locale === "ar" ? 1 : 0];
-    // The server's meta description is the same derived lead.
-    expect(marketingMetadata(`/${locale}/pricing`)?.description).toBe(lead);
-    const { PricingPage } =
-      await import("../../client/src/components/marketing/phase/pages/PricingPage");
-    await render(locale, "/pricing", async () => createElement(PricingPage, sectionProps(locale)));
+    expect(marketingMetadata(`/${locale}/pricing`)?.description).toBe(
+      catalog["marketing.hxMetaPricingLead"]
+    );
+    const { default: PhaseSite } =
+      await import("../../client/src/components/marketing/phase/PhaseSite");
+    await render(locale, "/pricing", async () => createElement(PhaseSite));
+    const lead = container.querySelector(".phase-subpage .phase-lead")?.textContent ?? "";
     const answer = container.querySelector('details[data-faq="card"] p')?.textContent ?? "";
     for (const phrase of CAP_PHRASES[locale]) {
       expect(lead).toContain(phrase);
