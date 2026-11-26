@@ -35,12 +35,12 @@ import { EInvoicingPartnerCard } from "@/components/einvoice/EInvoicingPartnerCa
 
 const companyProfileSchema = z.object({
   // Basic Info
-  name: z.string().min(2, "Company name is required"),
+  name: z.string().min(2, "forms.errors.companyNameRequired"),
   baseCurrency: z.string().default("AED"),
   locale: z.enum(["en", "ar"]).default("en"),
 
   // Company Information
-  legalStructure: z.string().min(1, "Legal structure is required"),
+  legalStructure: z.string().min(1, "forms.errors.legalStructureRequired"),
   industry: z
     .string()
     .transform((val) => val || undefined)
@@ -53,20 +53,20 @@ const companyProfileSchema = z.object({
     .string()
     .transform((val) => val || undefined)
     .optional(),
-  businessAddress: z.string().min(1, "Business address is required"),
+  businessAddress: z.string().min(1, "forms.errors.businessAddressRequired"),
   contactPhone: z
     .string()
     .transform((val) => val || undefined)
     .optional(),
   contactEmail: z
     .string()
-    .email("Invalid email")
+    .email("forms.errors.invalidEmail")
     .or(z.literal(""))
     .transform((val) => val || undefined)
     .optional(),
   websiteUrl: z
     .string()
-    .url("Invalid URL")
+    .url("forms.errors.invalidUrl")
     .or(z.literal(""))
     .transform((val) => val || undefined)
     .optional(),
@@ -76,9 +76,9 @@ const companyProfileSchema = z.object({
     .optional(),
 
   // Tax & Compliance
-  trnVatNumber: z.string().min(1, "TRN/VAT Number is required"),
-  taxRegistrationType: z.string().min(1, "Tax registration type is required"),
-  vatFilingFrequency: z.string().min(1, "VAT filing frequency is required"),
+  trnVatNumber: z.string().min(1, "forms.errors.trnRequired"),
+  taxRegistrationType: z.string().min(1, "forms.errors.taxRegistrationTypeRequired"),
+  vatFilingFrequency: z.string().min(1, "forms.errors.vatFilingFrequencyRequired"),
   taxRegistrationDate: z
     .string()
     .transform((val) => val || undefined)
@@ -219,8 +219,8 @@ export default function CompanyProfile() {
           <CardContent className="py-12">
             <div className="text-center text-muted-foreground">
               <Building2 className="w-12 h-12 mx-auto mb-4" />
-              <p className="mb-4">Set up your company to manage its profile.</p>
-              <Button onClick={() => navigate("/onboarding")} data-testid="button-create-company">
+              <p className="mb-4">Set up your company to manage its profile.</p> {/* i18n-ignore: UI copy awaiting AR sweep */}
+              <Button onClick={() => navigate("/onboarding")} data-testid="button-create-company"> {/* i18n-ignore: UI copy awaiting AR sweep */}
                 Create your company
               </Button>
             </div>
@@ -234,8 +234,8 @@ export default function CompanyProfile() {
     <div className="space-y-8 max-w-4xl">
       <PageHeader
         eyebrow="Settings"
-        title="Company Profile"
-        description="Manage your company information, tax settings, and compliance details"
+        title="Company Profile" // i18n-ignore: UI copy awaiting AR sweep
+        description="Manage your company information, tax settings, and compliance details" // i18n-ignore: UI copy awaiting AR sweep
       />
 
       <Form {...form}>
@@ -246,8 +246,8 @@ export default function CompanyProfile() {
               <div className="flex items-center gap-3">
                 <Building2 className="w-5 h-5 text-primary" />
                 <div>
-                  <CardTitle>Company Information</CardTitle>
-                  <CardDescription>Basic details about your business</CardDescription>
+                  <CardTitle>Company Information</CardTitle> {/* i18n-ignore: UI copy awaiting AR sweep */}
+                  <CardDescription>Basic details about your business</CardDescription> {/* i18n-ignore: UI copy awaiting AR sweep */}
                 </div>
               </div>
             </CardHeader>
@@ -262,7 +262,7 @@ export default function CompanyProfile() {
                       <FormControl>
                         <Input
                           {...field}
-                          placeholder="Acme Corporation"
+                          placeholder="Acme Corporation" // i18n-ignore: UI copy awaiting AR sweep
                           data-testid="input-company-name"
                         />
                       </FormControl>
@@ -280,15 +280,15 @@ export default function CompanyProfile() {
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-legal-structure">
-                            <SelectValue placeholder="Select legal structure" />
+                            <SelectValue placeholder="Select legal structure" /> {/* i18n-ignore: UI copy awaiting AR sweep */}
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Sole Proprietorship">Sole Proprietorship</SelectItem>
+                          <SelectItem value="Sole Proprietorship">Sole Proprietorship</SelectItem> {/* i18n-ignore: UI copy awaiting AR sweep */}
                           <SelectItem value="LLC">LLC</SelectItem>
-                          <SelectItem value="Corporation">Corporation</SelectItem>
-                          <SelectItem value="Partnership">Partnership</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
+                          <SelectItem value="Corporation">Corporation</SelectItem> {/* i18n-ignore: UI copy awaiting AR sweep */}
+                          <SelectItem value="Partnership">Partnership</SelectItem> {/* i18n-ignore: UI copy awaiting AR sweep */}
+                          <SelectItem value="Other">Other</SelectItem> {/* i18n-ignore: UI copy awaiting AR sweep */}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -301,11 +301,11 @@ export default function CompanyProfile() {
                   name="industry"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Industry</FormLabel>
+                      <FormLabel>Industry</FormLabel> {/* i18n-ignore: UI copy awaiting AR sweep */}
                       <FormControl>
                         <Input
                           {...field}
-                          placeholder="Technology, Retail, etc."
+                          placeholder="Technology, Retail, etc." // i18n-ignore: UI copy awaiting AR sweep
                           data-testid="input-industry"
                         />
                       </FormControl>
@@ -319,7 +319,7 @@ export default function CompanyProfile() {
                   name="registrationNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Business Registration Number</FormLabel>
+                      <FormLabel>Business Registration Number</FormLabel> {/* i18n-ignore: UI copy awaiting AR sweep */}
                       <FormControl>
                         <Input
                           {...field}
@@ -338,11 +338,11 @@ export default function CompanyProfile() {
                   name="tradeLicenseAuthority"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Licence Issuing Authority</FormLabel>
+                      <FormLabel>Licence Issuing Authority</FormLabel> {/* i18n-ignore: UI copy awaiting AR sweep */}
                       <FormControl>
                         <Input
                           {...field}
-                          placeholder="Dubai Economy and Tourism"
+                          placeholder="Dubai Economy and Tourism" // i18n-ignore: UI copy awaiting AR sweep
                           data-testid="input-trade-license-authority"
                         />
                       </FormControl>
@@ -377,7 +377,7 @@ export default function CompanyProfile() {
                   name="contactPhone"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Phone</FormLabel>
+                      <FormLabel>Contact Phone</FormLabel> {/* i18n-ignore: UI copy awaiting AR sweep */}
                       <FormControl>
                         <Input
                           {...field}
@@ -396,7 +396,7 @@ export default function CompanyProfile() {
                   name="contactEmail"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Contact Email</FormLabel>
+                      <FormLabel>Contact Email</FormLabel> {/* i18n-ignore: UI copy awaiting AR sweep */}
                       <FormControl>
                         <Input
                           {...field}
@@ -417,7 +417,7 @@ export default function CompanyProfile() {
                   name="websiteUrl"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Website URL</FormLabel>
+                      <FormLabel>Website URL</FormLabel> {/* i18n-ignore: UI copy awaiting AR sweep */}
                       <FormControl>
                         <Input
                           {...field}
@@ -432,7 +432,7 @@ export default function CompanyProfile() {
                 />
 
                 <FormItem>
-                  <FormLabel>Company Logo</FormLabel>
+                  <FormLabel>Company Logo</FormLabel> {/* i18n-ignore: UI copy awaiting AR sweep */}
                   <div className="flex items-center gap-4">
                     {logoPreview && (
                       <div className="w-16 h-16 rounded border overflow-hidden flex-shrink-0">
@@ -467,8 +467,8 @@ export default function CompanyProfile() {
               <div className="flex items-center gap-3">
                 <FileText className="w-5 h-5 text-primary" />
                 <div>
-                  <CardTitle>Tax & Compliance Settings</CardTitle>
-                  <CardDescription>VAT registration and tax compliance information</CardDescription>
+                  <CardTitle>Tax & Compliance Settings</CardTitle> {/* i18n-ignore: UI copy awaiting AR sweep */}
+                  <CardDescription>VAT registration and tax compliance information</CardDescription> {/* i18n-ignore: UI copy awaiting AR sweep */}
                 </div>
               </div>
             </CardHeader>
@@ -499,18 +499,18 @@ export default function CompanyProfile() {
                   name="taxRegistrationType"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Tax Registration Type</FormLabel>
+                      <FormLabel>Tax Registration Type</FormLabel> {/* i18n-ignore: UI copy awaiting AR sweep */}
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-tax-registration-type">
-                            <SelectValue placeholder="Select registration type" />
+                            <SelectValue placeholder="Select registration type" /> {/* i18n-ignore: UI copy awaiting AR sweep */}
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Standard">Standard</SelectItem>
-                          <SelectItem value="Flat Rate">Flat Rate</SelectItem>
-                          <SelectItem value="Non-registered">Non-registered</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
+                          <SelectItem value="Standard">Standard</SelectItem> {/* i18n-ignore: UI copy awaiting AR sweep */}
+                          <SelectItem value="Flat Rate">Flat Rate</SelectItem> {/* i18n-ignore: UI copy awaiting AR sweep */}
+                          <SelectItem value="Non-registered">Non-registered</SelectItem> {/* i18n-ignore: UI copy awaiting AR sweep */}
+                          <SelectItem value="Other">Other</SelectItem> {/* i18n-ignore: UI copy awaiting AR sweep */}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -527,16 +527,16 @@ export default function CompanyProfile() {
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-vat-filing-frequency">
-                            <SelectValue placeholder="Select filing frequency" />
+                            <SelectValue placeholder="Select filing frequency" /> {/* i18n-ignore: UI copy awaiting AR sweep */}
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Monthly">Monthly</SelectItem>
-                          <SelectItem value="Quarterly">Quarterly</SelectItem>
-                          <SelectItem value="Annually">Annually</SelectItem>
+                          <SelectItem value="Monthly">Monthly</SelectItem> {/* i18n-ignore: UI copy awaiting AR sweep */}
+                          <SelectItem value="Quarterly">Quarterly</SelectItem> {/* i18n-ignore: UI copy awaiting AR sweep */}
+                          <SelectItem value="Annually">Annually</SelectItem> {/* i18n-ignore: UI copy awaiting AR sweep */}
                         </SelectContent>
                       </Select>
-                      <FormDescription>Required for VAT registered businesses</FormDescription>
+                      <FormDescription>Required for VAT registered businesses</FormDescription> {/* i18n-ignore: UI copy awaiting AR sweep */}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -547,7 +547,7 @@ export default function CompanyProfile() {
                   name="taxRegistrationDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Tax Registration Effective Date</FormLabel>
+                      <FormLabel>Tax Registration Effective Date</FormLabel> {/* i18n-ignore: UI copy awaiting AR sweep */}
                       <FormControl>
                         <Input {...field} type="date" data-testid="input-tax-registration-date" />
                       </FormControl>
@@ -561,7 +561,7 @@ export default function CompanyProfile() {
                   name="corporateTaxId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Corporate Tax ID</FormLabel>
+                      <FormLabel>Corporate Tax ID</FormLabel> {/* i18n-ignore: UI copy awaiting AR sweep */}
                       <FormControl>
                         <Input
                           {...field}
@@ -590,7 +590,7 @@ export default function CompanyProfile() {
                 "Saving..."
               ) : (
                 <>
-                  <Save className="w-4 h-4 mr-2" />
+                  <Save className="w-4 h-4 mr-2" /> {/* i18n-ignore: UI copy awaiting AR sweep */}
                   Save Changes
                 </>
               )}

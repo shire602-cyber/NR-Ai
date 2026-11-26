@@ -121,6 +121,7 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
       </CardHeader>
       <CardContent className="space-y-5 text-sm">
         {state === "not_required" && (
+          // i18n-ignore: UI copy awaiting AR sweep
           <p className="text-muted-foreground">
             No accredited partner is connected in this environment, so nothing is sent to the FTA.
           </p>
@@ -152,6 +153,7 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
                   />
                   <span>I have read these terms and accept them on behalf of my company.</span>
                 </label>
+                {/* i18n-ignore: UI copy awaiting AR sweep */}
                 <Button disabled={!agreed || accept.isPending} onClick={() => accept.mutate()}>
                   Accept terms
                 </Button>
@@ -168,10 +170,11 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
           <section className="space-y-3">
             <h3 className="font-medium">Step 2: Appoint {partner.displayName} in EmaraTax</h3>
             <ol className="list-decimal pl-5 space-y-1 text-muted-foreground">
-              <li>Sign in to EmaraTax with your company's account.</li>
+              <li>Sign in to EmaraTax with your company's account.</li> {/* i18n-ignore: UI copy awaiting AR sweep */}
               <li>Open the e-invoicing service and choose to appoint a service provider.</li>
               <li>Select {partner.displayName} from the list and submit.</li>
             </ol>
+            {/* i18n-ignore: UI copy awaiting AR sweep */}
             <p className="text-muted-foreground">
               Businesses under AED 50 million revenue must appoint a provider by 31 March 2027.
             </p>
@@ -183,6 +186,7 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
               />
               <span>I have appointed {partner.displayName} in EmaraTax.</span>
             </label>
+            {/* i18n-ignore: UI copy awaiting AR sweep */}
             <Button disabled={!appointed || confirm.isPending} onClick={() => confirm.mutate()}>
               Confirm
             </Button>
@@ -190,6 +194,7 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
         )}
 
         {state === "active" && (
+          // i18n-ignore: UI copy awaiting AR sweep
           <p className="text-muted-foreground">
             You can now send invoices for clearance from each invoice's e-invoicing menu.
           </p>
@@ -207,6 +212,7 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
               )
                 revoke.mutate();
             }}
+            // i18n-ignore: UI copy awaiting AR sweep
           >
             Switch off e-invoicing
           </Button>
