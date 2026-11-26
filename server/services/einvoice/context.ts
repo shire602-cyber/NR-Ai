@@ -5,7 +5,12 @@
  * original invoice from another company is ignored.
  */
 import { and, eq, inArray } from "drizzle-orm";
+import Decimal from "decimal.js";
 import { db, type AppDatabase } from "../../db";
+import { DomainError } from "../../errors";
+import { baseCurrencyOf } from "../../ledger/currency";
+import { resolve } from "../../platform";
+import type { FxGetRate } from "../fx";
 import {
   customerContacts,
   invoices,
@@ -83,7 +88,7 @@ export async function loadEInvoiceContext(
   invoice: Invoice,
   company: Company,
   lines?: InvoiceLine[],
-  conn: ContextReader = db
+  conn: AppDatabase = db
 ): Promise<EInvoiceContext> {
   const customer = await loadEInvoiceBuyer(invoice, company, conn);
   let originalInvoice: EInvoiceContext["originalInvoice"] = null;
@@ -96,12 +101,42 @@ export async function loadEInvoiceContext(
   }
   const lineExtras = await loadLineExtras(company.id, lines, conn);
   const cashSalePayment = await loadCashSalePayment(invoice, company, conn);
+  const taxExchangeRate = await loadTaxExchangeRate(invoice, company, conn);
   return {
     customer,
     originalInvoice,
     ...(lineExtras ? { lineExtras } : {}),
-    options: cashSalePayment,
+    options: { ...cashSalePayment, taxExchangeRate },
   };
+}
+
+async function loadTaxExchangeRate(
+  invoice: Invoice,
+  company: Company,
+  conn: AppDatabase
+): Promise<string | null | undefined> {
+  const baseCurrency = baseCurrencyOf(company);
+  const currency = (invoice.currency ?? "AED").toUpperCase();
+  if (currency === "AED" || baseCurrency === "AED") return undefined;
+  const documentRate = currency === baseCurrency ? 1 : Number(invoice.exchangeRate);
+  if (!Number.isFinite(documentRate) || documentRate <= 0) return null;
+  try {
+    const baseRate = await resolve<FxGetRate>("fx.getRate")(
+      company.id,
+      baseCurrency,
+      "AED",
+      invoice.date,
+      {
+        tx: conn,
+      }
+    );
+    return new Decimal(documentRate).times(baseRate.rateText).toDecimalPlaces(6).toString();
+  } catch (err) {
+    if (err instanceof DomainError && ["NO_EXCHANGE_RATE", "INVALID_DATE"].includes(err.code)) {
+      return null;
+    }
+    throw err;
+  }
 }
 
 const CASH_SALE_MEANS: Readonly<Record<string, PaymentMeansCode>> = {

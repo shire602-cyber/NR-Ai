@@ -577,6 +577,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
               sourceName: entitySourceField(entity, "sourceName"),
               sourceVersion: entitySourceField(entity, "sourceVersion"),
               scope,
+              documentCurrencyLines: built.documentCurrencyLines,
               actorId: args.actorId ?? null,
               providerAttempted: triedProvider,
               ...(required === null ? {} : { reportingRequired: required }),
@@ -898,7 +899,13 @@ async function dispatchQueuedSubmission(
     }
     return {
       providerAttempted: true,
-      result: await sendQueuedSubmission(claim, provider, context, now),
+      result: await sendQueuedSubmission(
+        claim,
+        provider,
+        context,
+        now,
+        metadata.documentCurrencyLines
+      ),
     } satisfies SubmissionDispatch;
   });
 }
@@ -1023,7 +1030,8 @@ async function sendQueuedSubmission(
   claim: SubmissionClaim,
   provider: EInvoiceProvider,
   context: EInvoiceProviderContext | undefined,
-  now: Date
+  now: Date,
+  documentCurrencyLines: EInvoiceSubmission["documentCurrencyLines"]
 ): Promise<EInvoiceProviderResult> {
   const { invoice, built } = claim;
   const submission: EInvoiceSubmission = {
@@ -1033,6 +1041,7 @@ async function sendQueuedSubmission(
     uuid: built.uuid,
     xml: built.xml,
     documentType: built.documentType ?? undefined,
+    documentCurrencyLines,
     scopeFingerprint: claim.scope ?? undefined,
     context,
   };

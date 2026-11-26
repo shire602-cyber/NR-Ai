@@ -105,6 +105,8 @@ export interface EInvoiceOptions {
   uuid?: string;
   /** An explicit UAE business clock time (HH:MM:SS). */
   issueTime?: string;
+  /** Issue-date conversion from the document currency into AED. */
+  taxExchangeRate?: string | null;
   originalInvoice?: { number: string; date: Date | string } | null;
   creditNoteReasonCode?: CreditNoteReasonCode | null;
   paymentMeansCode?: PaymentMeansCode | null;
@@ -437,11 +439,13 @@ export function generateEInvoiceXML(
   const categories = computed.map((l) => l.category);
   const doc = documentKind(inv, categories);
   const isCredit = doc.root === "CreditNote";
-  const rate =
-    Number(inv.exchangeRate) > 0 ? new Decimal(String(inv.exchangeRate)) : new Decimal(1);
+  const exchangeRate = opts.taxExchangeRate === undefined ? inv.exchangeRate : opts.taxExchangeRate;
+  const rate = Number(exchangeRate) > 0 ? new Decimal(String(exchangeRate)) : new Decimal(1);
   const foreign = currency !== "AED";
   const toAedFils = (fils: number) =>
-    new Decimal(fils).times(rate).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber();
+    foreign
+      ? new Decimal(fils).times(rate).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber()
+      : fils;
 
   const seller = sellerFromCompany(co);
   const buyer: EInvoiceParty = {
@@ -605,9 +609,9 @@ export function generateEInvoiceXML(
       el(
         "cac:ItemPriceExtension",
         null,
-        amountEl("cbc:Amount", lineNetAfterDoc + lineVatFils, currency),
+        amountEl("cbc:Amount", toAedFils(lineNetAfterDoc + lineVatFils), "AED"),
         category !== "E" &&
-          el("cac:TaxTotal", null, amountEl("cbc:TaxAmount", lineVatFils, currency))
+          el("cac:TaxTotal", null, amountEl("cbc:TaxAmount", toAedFils(lineVatFils), "AED"))
       )
     );
   });
@@ -821,6 +825,8 @@ export function validateForEInvoicing(
   const inv = invoice as InvoiceLike;
   const co = company as CompanyLike;
   const options = ctx.options;
+  const exchangeRate =
+    options?.taxExchangeRate === undefined ? inv.exchangeRate : options.taxExchangeRate;
   const categories = lines.map((line) => vatCategoryFor(line, inv.reverseCharge));
   const doc = documentKind(inv, categories);
   const seller = sellerFromCompany(co);
@@ -987,7 +993,7 @@ export function validateForEInvoicing(
     );
   } else if (
     inv.currency.toUpperCase() !== "AED" &&
-    (!Number.isFinite(Number(inv.exchangeRate)) || Number(inv.exchangeRate) <= 0)
+    (!Number.isFinite(Number(exchangeRate)) || Number(exchangeRate) <= 0)
   ) {
     add(
       "invoice.exchangeRate",

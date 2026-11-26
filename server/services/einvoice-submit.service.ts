@@ -10,7 +10,9 @@ import {
   isB2cCashSale,
 } from "./einvoice/applicability";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
+import { fromFils } from "../../shared/money";
 import {
+  computeEInvoiceAmounts,
   validateForEInvoicing,
   generateEInvoiceXML,
   readEInvoiceDocumentType,
@@ -28,6 +30,7 @@ import {
   type EInvoiceStatus,
 } from "./einvoice-status";
 import type {
+  EInvoiceDocumentCurrencyLine,
   EInvoiceDocumentRef,
   EInvoiceProvider,
   EInvoiceProviderResult,
@@ -301,11 +304,20 @@ export async function prepareEInvoiceSubmission(args: {
     };
   }
 
-  return { ...built, validation };
+  const documentCurrencyLines =
+    (invoice.currency ?? "AED").toUpperCase() === "AED"
+      ? undefined
+      : computeEInvoiceAmounts(invoice, lines).lines.map((line) => ({
+          taxAmount: fromFils(line.vatFils),
+          lineTotal: fromFils(line.lineExtensionFils - line.documentDiscountFils + line.vatFils),
+        }));
+
+  return { ...built, validation, documentCurrencyLines };
 }
 
 export type PreparedSubmission = Extract<ReturnType<typeof buildEInvoiceDocument>, { ok: true }> & {
   validation: EInvoiceValidationSummary;
+  documentCurrencyLines?: EInvoiceDocumentCurrencyLine[];
 };
 
 export function submittedEInvoiceOutcome(
@@ -365,6 +377,7 @@ export async function submitEInvoice(args: {
     uuid: built.uuid,
     xml: built.xml,
     documentType: built.documentType ?? undefined,
+    documentCurrencyLines: built.documentCurrencyLines,
     companyId: company.id,
   });
   return submittedEInvoiceOutcome(built, provider, result, args.attempts ?? 0, now);
