@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { translateNow } from "@/lib/i18n";
 
 type AppointmentState =
   | "not_started"
@@ -66,7 +67,7 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
     toast({ title: message });
   };
   const onError = (err: any) =>
-    toast({ title: "Could not save", description: err?.message, variant: "destructive" });
+    toast({ title: translateNow("toasts.couldNotSave"), description: err?.message, variant: "destructive" });
 
   const accept = useMutation({
     mutationFn: () =>

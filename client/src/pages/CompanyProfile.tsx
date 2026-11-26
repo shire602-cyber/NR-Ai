@@ -29,6 +29,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { translateNow } from "@/lib/i18n";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Building2, FileText, Save } from "lucide-react";
 import type { Company } from "@shared/schema";
 import { EInvoicingPartnerCard } from "@/components/einvoice/EInvoicingPartnerCard";
@@ -173,14 +175,14 @@ export default function CompanyProfile() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: "Company profile updated",
-        description: "Your company profile has been saved successfully.",
+        title: translateNow("toasts.companyProfileUpdated"),
+        description: translateNow("toasts.companyProfileSaved"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update profile",
+        title: translateNow("toasts.companyProfileUpdateFailed"),
         description: error?.message || "Please try again.",
       });
     },
@@ -549,7 +551,11 @@ export default function CompanyProfile() {
                     <FormItem>
                       <FormLabel>Tax Registration Effective Date</FormLabel> {/* i18n-ignore: UI copy awaiting AR sweep */}
                       <FormControl>
-                        <Input {...field} type="date" data-testid="input-tax-registration-date" />
+                        <DatePicker
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          data-testid="input-tax-registration-date"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
