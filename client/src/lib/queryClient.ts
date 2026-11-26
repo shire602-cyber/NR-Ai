@@ -168,20 +168,13 @@ export function portalQuery<T = any>(
   };
 }
 
-interface RequestOptions {
-  queueWhenOffline?: boolean;
-  keepalive?: boolean;
-  /** React Query's cancellation signal, for reads. */
-  signal?: AbortSignal;
-}
-
 export function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
   /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
   extraHeaders?: Record<string, string>,
-  options?: RequestOptions
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean; signal?: AbortSignal }
 ): Promise<any> {
   const authHeaders = PORTAL_API_PREFIX.test(url) ? portalRequestHeaders() : getAuthHeaders();
   return requestWithHeaders(method, url, data, authHeaders, extraHeaders, options);
@@ -193,7 +186,7 @@ async function requestWithHeaders(
   data: unknown,
   authHeaders: Record<string, string>,
   extraHeaders?: Record<string, string>,
-  options?: RequestOptions
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean; signal?: AbortSignal }
 ): Promise<any> {
   const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
   const upperMethod = method.toUpperCase();
