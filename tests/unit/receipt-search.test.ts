@@ -1,8 +1,40 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { matchesReceiptSearch, receiptCategoryLabel } from "../../client/src/lib/receiptSearch";
+import {
+  knownReceiptMerchant,
+  matchesReceiptSearch,
+  receiptCategoryLabel,
+  receiptMerchantLabel,
+} from "../../client/src/lib/receiptSearch";
 import arPages from "../../client/src/locales/ar/pages.json";
 import enPages from "../../client/src/locales/en/pages.json";
+import arScreens from "../../client/src/locales/ar/screens.json";
+import enScreens from "../../client/src/locales/en/screens.json";
+
+describe("receipt merchant display label", () => {
+  const ar = { ...arPages, ...arScreens };
+  const placeholders = [null, undefined, "", "   ", "Unknown", "Unknown Merchant"];
+
+  it("localizes blanks and placeholders, current and legacy", () => {
+    for (const merchant of placeholders) {
+      expect(knownReceiptMerchant(merchant)).toBe("");
+      expect(receiptMerchantLabel(ar, merchant)).toBe(arScreens["screens.unknownMerchant"]);
+      expect(receiptMerchantLabel(enScreens, merchant)).toBe("Unknown merchant");
+    }
+    expect(receiptMerchantLabel(ar, "Unknown Brewery")).toBe("Unknown Brewery");
+  });
+
+  it("searches the Arabic label and the raw stored value", () => {
+    const query = arScreens["screens.unknownMerchant"];
+    for (const merchant of placeholders) {
+      expect(matchesReceiptSearch({ merchant }, query, ar)).toBe(true);
+    }
+    expect(matchesReceiptSearch({ merchant: "Unknown Merchant" }, "unknown merchant", ar)).toBe(
+      true
+    );
+    expect(matchesReceiptSearch({ merchant: "Carrefour" }, query, ar)).toBe(false);
+  });
+});
 
 describe("matchesReceiptSearch", () => {
   const r = { merchant: "Al Futtaim Motors", category: "Fuel", amount: 125.5 };
@@ -36,6 +68,7 @@ describe("receipt screen copy", () => {
       "screens.receiptPreviewFor",
       "screens.receiptPreviewThis",
       "screens.receiptScannedFor",
+      "screens.receiptsExportSearchScope",
     ]) {
       expect(load("en")[k]).toBeTruthy();
       expect(load("ar")[k]).toBeTruthy();

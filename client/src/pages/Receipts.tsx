@@ -23,7 +23,12 @@ import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { matchesReceiptSearch, receiptCategoryLabel } from "@/lib/receiptSearch";
+import {
+  knownReceiptMerchant,
+  matchesReceiptSearch,
+  receiptCategoryLabel,
+  receiptMerchantLabel,
+} from "@/lib/receiptSearch";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +47,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -132,10 +138,6 @@ import {
 } from "@/components/ui/form";
 import { accountDisplayName } from "@/lib/account-name";
 import { parseCalendarDate } from "@/lib/format-date";
-
-function knownReceiptMerchant(merchant?: string | null): string {
-  return merchant === UNKNOWN_RECEIPT_MERCHANT ? "" : (merchant ?? "");
-}
 
 /** Fill in band + the "as extracted" snapshot used to record the reviewer's decision. */
 function withReviewMeta(data: ExtractedData): ExtractedData {
@@ -451,6 +453,8 @@ function CompanyReceipts({
   const [totalToSave, setTotalToSave] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState<any>(null);
+  // Placeholders are hidden only until the user types, so "Unknown Brewery" can be entered.
+  const [editMerchantTouched, setEditMerchantTouched] = useState(false);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
   const [postingReceipt, setPostingReceipt] = useState<any>(null);
   const [selectedExpenseAccount, setSelectedExpenseAccount] = useState<string>("");
@@ -705,6 +709,7 @@ function CompanyReceipts({
 
   const handleEditReceipt = (receipt: any) => {
     setEditingReceipt(receipt);
+    setEditMerchantTouched(false);
     form.reset({
       merchant: receipt.merchant || "",
       date: receipt.date || "",
@@ -1470,7 +1475,7 @@ function CompanyReceipts({
           if (Array.isArray(created?.duplicateWarnings) && created.duplicateWarnings.length > 0) {
             const savedMerchant = created.duplicateWarnings[0].merchant;
             const merchant = savedMerchant
-              ? knownReceiptMerchant(savedMerchant) || t["screens.unknownMerchant"]
+              ? receiptMerchantLabel(t, savedMerchant)
               : tr("the same merchant", "نفس التاجر");
             toast({
               title: tr("Possible duplicate", "احتمال وجود تكرار"),
@@ -2176,7 +2181,11 @@ function CompanyReceipts({
                               <Input
                                 id={`ocr-merchant-${index}`}
                                 dir="auto"
-                                value={knownReceiptMerchant(receipt.data.merchant)}
+                                value={
+                                  receipt.data.merchant === UNKNOWN_RECEIPT_MERCHANT
+                                    ? ""
+                                    : (receipt.data.merchant ?? "")
+                                }
                                 placeholder={t["screens.unknownMerchant"]}
                                 onChange={(e) =>
                                   updateReceiptData(receipt.id, { merchant: e.target.value })
@@ -2527,6 +2536,14 @@ function CompanyReceipts({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {hasReceiptSearch && (
+                      <DropdownMenuLabel
+                        className="max-w-64"
+                        data-testid="text-export-search-scope"
+                      >
+                        {t["screens.receiptsExportSearchScope"]}
+                      </DropdownMenuLabel>
+                    )}
                     <DropdownMenuItem
                       onClick={handleExportExcel}
                       data-testid="menu-export-expenses-excel"
@@ -2582,7 +2599,7 @@ function CompanyReceipts({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline justify-between gap-3">
                           <p dir="auto" className="truncate text-sm font-medium text-foreground">
-                            {knownReceiptMerchant(receipt.merchant) || t["screens.unknownMerchant"]}
+                            {receiptMerchantLabel(t, receipt.merchant)}
                           </p>
                           <Money
                             amount={Number(receipt.amount || 0)}
@@ -2825,11 +2842,17 @@ function CompanyReceipts({
                         <Input
                           {...field}
                           dir="auto"
-                          value={knownReceiptMerchant(field.value)}
+                          value={
+                            editMerchantTouched ? field.value : knownReceiptMerchant(field.value)
+                          }
+                          onChange={(e) => {
+                            setEditMerchantTouched(true);
+                            field.onChange(e);
+                          }}
                           placeholder={
-                            field.value === UNKNOWN_RECEIPT_MERCHANT
-                              ? t["screens.unknownMerchant"]
-                              : undefined
+                            knownReceiptMerchant(editingReceipt?.merchant)
+                              ? undefined
+                              : t["screens.unknownMerchant"]
                           }
                           data-testid="input-edit-merchant"
                         />
@@ -2980,7 +3003,7 @@ function CompanyReceipts({
                   <div className="flex justify-between items-start">
                     <div>
                       <p dir="auto" className="font-medium">
-                        {knownReceiptMerchant(transaction.merchant) || t["screens.unknownMerchant"]}
+                        {receiptMerchantLabel(t, transaction.merchant)}
                       </p>
                       <p className="text-sm text-muted-foreground">
                         {transaction.date ? formatDate(transaction.date, locale) : "—"}
@@ -3136,8 +3159,7 @@ function CompanyReceipts({
                 <div className="flex justify-between items-center">
                   <div>
                     <p dir="auto" className="font-medium">
-                      {knownReceiptMerchant(postingReceipt.merchant) ||
-                        t["screens.unknownMerchant"]}
+                      {receiptMerchantLabel(t, postingReceipt.merchant)}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {postingReceipt.date ? formatDate(postingReceipt.date, locale) : "—"}

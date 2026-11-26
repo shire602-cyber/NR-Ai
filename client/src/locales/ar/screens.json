@@ -247,6 +247,7 @@
   "screens.receiptScannedFor": "الصورة الممسوحة الأصلية لـ {merchant}",
   "screens.receiptsSearchPlaceholder": "ابحث بالتاجر أو الفئة",
   "screens.receiptsNoMatchTitle": "لا توجد إيصالات مطابقة",
+  "screens.receiptsExportSearchScope": "تُصدَّر الإيصالات المطابقة للبحث الحالي.",
   "screens.searchClaims": "ابحث برقم المطالبة أو العنوان أو الحالة",
   "screens.noMatchingClaims": "لا توجد مطالبات مطابقة",
   "screens.noMatchingClaimsBody": "جرّب كلمة مختلفة أو امسح البحث.",
