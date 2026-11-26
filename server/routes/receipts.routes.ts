@@ -975,7 +975,6 @@ export function registerReceiptRoutes(app: Express) {
       const { id } = req.params;
       const userId = req.user!.id;
 
-      // Remove image file before deleting DB row (best-effort; don't block on failure)
       const existing = await findReceiptForUser(userId, id);
       if (!existing) {
         return res.status(404).json({ message: "Receipt not found", code: "RECEIPT_NOT_FOUND" });
@@ -998,11 +997,22 @@ export function registerReceiptRoutes(app: Express) {
         "Receipt"
       );
 
-      if (existing.imagePath) {
-        await deleteReceiptImage(existing.imagePath);
-      }
-
       await storage.deleteReceipt(id, existing.companyId);
+
+      // Row first, then the file: split parts share one stored image, so it is removed only when
+      // no receipt of the company still points at it. Best-effort: the row is already gone.
+      if (existing.imagePath) {
+        try {
+          if (!(await storage.isReceiptImageReferenced(existing.companyId, existing.imagePath))) {
+            await deleteReceiptImage(existing.imagePath);
+          }
+        } catch (err) {
+          log.warn(
+            { err: (err as Error).message, receiptId: id },
+            "Receipt image cleanup failed (non-fatal - receipt deleted)"
+          );
+        }
+      }
 
       await recordAudit({
         userId,

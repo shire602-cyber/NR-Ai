@@ -2,7 +2,7 @@
 /**
  * Homepage savings calculator: the pure model (assumptions, cap, software comparison) and the
  * rendered section in English and Arabic. Sliders are native range inputs driven through the
- * input event; reduced motion makes the count-up static.
+ * input event.
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -99,12 +99,6 @@ describe("savings render", () => {
   });
 
   beforeEach(() => {
-    vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: query.includes("reduce"),
-      media: query,
-      addEventListener() {},
-      removeEventListener() {},
-    }));
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -175,6 +169,14 @@ describe("savings render", () => {
     setValue(range(2), "5");
     expect(byId("savings-hours").textContent).toBe("3 h");
     expect(byId("savings-month").textContent).toBe("AED 360");
+  });
+
+  it("shows the calculated annual value immediately in Arabic", async () => {
+    // Hold animation frames so a count-up cannot reach its final value before the assertion.
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    await mount("ar");
+    expect(byId("savings-headline").textContent).toContain("8,160 درهم");
   });
 
   it("shows a dash, never a number, for Xero and an honest higher cost for Zoho", async () => {
