@@ -527,7 +527,12 @@ export function useReportsDataQueries({
       ...reportQueryOptions,
       enabled: shouldLoadWorkflowData,
     });
-  const { data: consolidatedStatementSources = [], isLoading: consolidatedStatementsLoading } =
+  const {
+    data: consolidatedStatementSources = [],
+    isLoading: consolidatedStatementsLoading,
+    isError: consolidatedStatementsIsError,
+    refetch: consolidatedStatementsRefetch,
+  } =
     useQuery<ConsolidatedCompanyStatementSource[]>({
       queryKey: [
         "/api/companies",
@@ -883,6 +888,7 @@ export function useReportsDataQueries({
       comparisonSalesProductService: (comparisonCurrentSpsIsError || comparisonPreviousSpsIsError) ? { retry: () => { if (comparisonCurrentSpsIsError) void comparisonCurrentSpsRefetch(); if (comparisonPreviousSpsIsError) void comparisonPreviousSpsRefetch(); } } : null,
       comparisonCostCenter: (comparisonCurrentCcIsError || comparisonPreviousCcIsError) ? { retry: () => { if (comparisonCurrentCcIsError) void comparisonCurrentCcRefetch(); if (comparisonPreviousCcIsError) void comparisonPreviousCcRefetch(); } } : null,
       comparisonCorporateTax: comparisonPreviousCorporateTaxIsError ? { retry: () => void comparisonPreviousCorporateTaxRefetch() } : null,
+      consolidatedStatements: consolidatedStatementsIsError ? { retry: () => void consolidatedStatementsRefetch() } : null,
     },
     costCenterProfitability,
     costCenterProfitabilityLoading,

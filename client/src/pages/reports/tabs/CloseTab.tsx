@@ -59,6 +59,7 @@ export default function CloseTab() {
   return (
     <>
       <SecondaryQueryError error={secondaryLoadErrors.monthEndCloseStatus} testId="close-tab-month-end-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.consolidatedStatements} testId="close-tab-consolidated-statements-error" />
       <div
         className={reportSectionClass(
           ["month-end-close-status", "audit-trail", "consolidated-statements"],
