@@ -184,6 +184,9 @@ export default function Journal() {
   const {
     data: allEntries,
     isLoading,
+    isLoadingError,
+    isSuccess: entriesLoaded,
+    fetchStatus: entriesFetchStatus,
     error: entriesError,
     refetch: refetchEntries,
   } = useQuery<any[]>({
@@ -197,6 +200,9 @@ export default function Journal() {
   const entries = draftsOnly
     ? allEntries?.filter((e) => (e.lifecycleStatus ?? e.status) === "draft")
     : allEntries;
+
+  // A paused query (network or focus) is neither loading nor failed; do not guess the cause.
+  const entriesPaused = entriesFetchStatus === "paused";
 
   const form = useForm<JournalFormData>({
     resolver: zodResolver(journalSchema),
@@ -900,9 +906,28 @@ export default function Journal() {
         </div>
       )}
 
-      {isLoading ? (
+      {entriesPaused && (
+        <p
+          role="status"
+          className="rounded-lg border bg-surface-sunken px-3 py-2 text-small text-muted-foreground"
+          data-testid="journal-paused"
+        >
+          {t["journal.pausedStatus"]}
+        </p>
+      )}
+
+      {!selectedCompanyId ? (
+        <Card>
+          <CardContent
+            className="p-6 text-center text-small text-muted-foreground"
+            data-testid="journal-waiting-company"
+          >
+            {t["journal.waitingForCompany"]}
+          </CardContent>
+        </Card>
+      ) : isLoading ? (
         <CardListSkeleton count={4} />
-      ) : entriesError && !allEntries ? (
+      ) : isLoadingError && !entriesPaused ? (
         <LoadErrorState
           error={entriesError}
           onRetry={() => void refetchEntries()}
@@ -1233,7 +1258,7 @@ export default function Journal() {
             );
           }}
         />
-      ) : (
+      ) : entriesLoaded && entries?.length === 0 && !entriesPaused ? (
         <Card>
           <CardContent className="p-0">
             <EmptyState
@@ -1252,7 +1277,7 @@ export default function Journal() {
             />
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
   );
 }
