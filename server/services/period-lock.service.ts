@@ -8,6 +8,7 @@ import { todayIso } from "../ledger/normalize";
 import { rowsOf } from "../ledger/tx";
 import { lockVatReturns } from "../ledger/vat-lock";
 import type { LedgerTx } from "../ledger/types";
+import { toAccountingDate, type AccountingDate } from "../../shared/accounting-date";
 
 /**
  * Period lock policy (W2-B: R08-05, R02-11, R02-19).
@@ -196,8 +197,46 @@ export function canManageClose(actor: CloseActor): boolean {
 export async function assertPeriodNotLocked(
   companyId: string,
   date: Date | string | null | undefined,
+  opts: { storesBusinessDate: true }
+): Promise<AccountingDate | null>;
+export async function assertPeriodNotLocked(
+  companyId: string,
+  date: Date | string | null | undefined,
   tx?: LedgerTx
-): Promise<void> {
+): Promise<void>;
+export async function assertPeriodNotLocked(
+  companyId: string,
+  date: Date | string | null | undefined,
+  optsOrTx?: { storesBusinessDate?: boolean } | LedgerTx
+): Promise<AccountingDate | null | void> {
+  const storesBizDate =
+    optsOrTx != null && "storesBusinessDate" in optsOrTx && optsOrTx.storesBusinessDate === true;
+  const tx: LedgerTx | undefined =
+    optsOrTx == null || "storesBusinessDate" in optsOrTx ? undefined : (optsOrTx as LedgerTx);
+
+  if (storesBizDate) {
+    const accountingDate = toAccountingDate(date);
+    if (!companyId || !accountingDate) return accountingDate ?? null;
+    const isoDate = accountingDate.businessDate;
+    const lock = await getEffectiveLock(companyId, isoDate, tx);
+    if (!lock) return accountingDate;
+    const label = `${isoDate.slice(5, 7)}/${isoDate.slice(0, 4)}`;
+    if (lock.lockType === "hard") {
+      throw new AppError({
+        message: `Cannot post to locked period (${label}). Unlock the period first.`,
+        statusCode: 403,
+        code: "PERIOD_LOCKED",
+        details: { lockedThrough: lock.periodEnd, lockType: lock.lockType, lockScope: lock.lockScope },
+      });
+    }
+    throw new AppError({
+      message: `Period ${label} is closed (soft lock). Ask the owner or your accountant to post it, or to reopen the period.`,
+      statusCode: 403,
+      code: "PERIOD_SOFT_LOCKED",
+      details: { lockedThrough: lock.periodEnd, lockType: lock.lockType, lockScope: lock.lockScope },
+    });
+  }
+
   if (!companyId) return;
   if (!date) return;
   const isoDate = toIsoDate(date);
