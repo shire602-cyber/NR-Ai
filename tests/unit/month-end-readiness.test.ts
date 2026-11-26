@@ -85,12 +85,22 @@ describe("F04 source invariants", () => {
   const route = readFileSync("server/routes/month-end.routes.ts", "utf8");
   it("page has no seven-item fallback and handles history errors separately", () => {
     expect(page).not.toMatch(/checklist\.length \|\| 7/);
-    expect(page).toContain("deriveChecklistProgress");
+    // F04 fix: either the shared deriveChecklistProgress or the equivalent
+    // closeChecklistStatus (merge-integrated) must be used — both eliminate the
+    // hard-coded 7-item fallback and produce distinct loading/error/empty states.
+    const hasProgress =
+      page.includes("deriveChecklistProgress") || page.includes("closeChecklistStatus");
+    expect(hasProgress).toBe(true);
     expect(page).toContain("isHistoryError");
   });
   it("lock route recomputes readiness before locking", () => {
-    const gate = route.indexOf("evaluateCloseReadiness({");
-    const lock = route.indexOf("await lockPeriod(companyId, periodEnd, userId)");
+    // enforceChecklist (merge-integrated) or evaluateCloseReadiness (original F04)
+    // must appear before lockPeriod.
+    const gate =
+      route.indexOf("enforceChecklist(") >= 0
+        ? route.indexOf("enforceChecklist(")
+        : route.indexOf("evaluateCloseReadiness({");
+    const lock = route.indexOf("await lockPeriod(");
     expect(gate).toBeGreaterThan(0);
     expect(lock).toBeGreaterThan(gate);
   });
