@@ -16,8 +16,7 @@ async function setPrefix(t: Tenant, docType: "invoice" | "cash_sale", prefix: st
   expect(result.status, result.text).toBe(200);
 }
 
-// Remaining PR #83 follow-up. Keep it from blocking this PR's CI.
-it.skip("CASH-SERIES: a change of prefix also reserves numbers printed in prior open years", async () => {
+it("CASH-SERIES: a change of prefix also reserves numbers printed in prior open years", async () => {
   const t = await h.createTenant();
   const year = new Date().getUTCFullYear() - 1;
   const date = `${year}-04-12`;
@@ -44,20 +43,40 @@ it.skip("CASH-SERIES: a change of prefix also reserves numbers printed in prior 
   expect(sale.body.number).toBe(`POS-${year}-00002`);
 });
 
-// Remaining PR #83 follow-up. Keep it from blocking this PR's CI.
-it.skip("CASH-SERIES: migration 0130 chooses a free prefix when CS and CSL are in use", async () => {
+it("CASH-SERIES: forward repair resolves an already-applied 0130 collision and reserves printed numbers", async () => {
   const t = await h.createTenant();
+  const date = new Date("2025-04-12T00:00:00Z");
+  const { allocateInvoiceNumber, peekNextInvoiceNumber } =
+    await import("../../server/services/invoice-numbering.service");
+  const doc = {
+    date: "2025-04-12",
+    customerName: "Imported customer",
+    placeOfSupplyEmirate: "dubai",
+    lines: [{ description: "Sale", quantity: 1, unitPrice: 100, vatRate: 0.05 }],
+  };
+  for (const number of ["CSL-2025-00012", "CSL3-2025-00020"]) {
+    const imported = await t.as.post(`${base(t)}/invoices`, doc);
+    expect(imported.status, imported.text).toBe(200);
+    await h.sql("UPDATE invoices SET number = $1 WHERE id = $2", [number, imported.body.id]);
+  }
   // Both were valid settings before cash sales had their own document type.
   await h.sql(
-    `INSERT INTO document_numbering_settings (company_id, doc_type, prefix)
-     VALUES ($1, 'quote', 'CS'), ($1, 'invoice', 'CSL')`,
+    `INSERT INTO document_numbering_settings (company_id, doc_type, prefix, yearly_reset)
+     VALUES ($1, 'quote', 'CS', true), ($1, 'invoice', 'CSL', true),
+            ($1, 'debit_note', 'CSL2-2025', false)`,
     [t.company.id]
   );
-  const migration = readFileSync(
-    path.join(repoRoot, "migrations/0130_cash_sale_numbering.sql"),
-    "utf8"
-  );
-  for (const stmt of migration.split("--> statement-breakpoint")) await h.sql(stmt);
+  async function applyMigration(file: string) {
+    const migration = readFileSync(path.join(repoRoot, "migrations", file), "utf8");
+    for (const stmt of migration.split("--> statement-breakpoint")) await h.sql(stmt);
+  }
+  await applyMigration("0130_cash_sale_numbering.sql");
+  expect(await peekNextInvoiceNumber(t.company.id, "cash_sale", date)).toBe("CSL-2025-00013");
+  const repair = "0157_preserve_period_locks_and_repair_cash_sale_numbering.sql";
+  await applyMigration(repair);
+  await applyMigration(repair);
+  expect(await allocateInvoiceNumber(t.company.id, "cash_sale", date)).toBe("CSL3-2025-00021");
+  expect(await allocateInvoiceNumber(t.company.id, "invoice", date)).toBe("CSL-2025-00013");
   const result = await t.as.get(`${base(t)}/numbering`);
   expect(result.status, result.text).toBe(200);
   const settings = result.body.numbering as { docType: string; nextFormatted: string }[];
@@ -65,6 +84,21 @@ it.skip("CASH-SERIES: migration 0130 chooses a free prefix when CS and CSL are i
   expect(
     settings.filter((row) => row.docType !== "cash_sale").map((row) => row.nextFormatted)
   ).not.toContain(cash.nextFormatted);
+});
+
+it("CASH-SERIES: rejects a continuous prefix that overlaps yearly numbers before the first allocation", async () => {
+  const t = await h.createTenant();
+  const url = `${base(t)}/numbering/cash_sale`;
+  const response = await t.as.put(url, { prefix: "INV-2026", padding: 5, yearlyReset: false });
+  expect(response.status, response.text).toBe(409);
+  expect(response.body.code).toBe("NUMBERING_PREFIX_IN_USE");
+  const accepted = await t.as.put(url, { prefix: "POS-2026", padding: 5, yearlyReset: false });
+  expect(accepted.status, accepted.text).toBe(200);
+
+  const { allocateInvoiceNumber } = await import("../../server/services/invoice-numbering.service");
+  const date = new Date("2026-04-12T00:00:00Z");
+  expect(await allocateInvoiceNumber(t.company.id, "invoice", date)).toBe("INV-2026-00001");
+  expect(await allocateInvoiceNumber(t.company.id, "cash_sale", date)).toBe("POS-2026-00001");
 });
 
 it("CLOSE: a retry after a fiscal close record write fails sweeps earnings only once", async () => {
@@ -102,8 +136,7 @@ it("CLOSE: a retry after a fiscal close record write fails sweeps earnings only 
   expect(posted).toEqual({ entries: 1, retained: "100.00" });
 });
 
-// Remaining PR #83 follow-up. Keep it from blocking this PR's CI.
-it.skip("CLOSE: the first half-hour of an open UAE month can be posted after last month is locked", async () => {
+it("CLOSE: the first half-hour of an open UAE month can be posted after last month is locked", async () => {
   const t = await h.createTenant();
   const { lockPeriod } = await import("../../server/services/month-end.service");
   await lockPeriod(t.company.id, "2025-07-31", t.user.id);
@@ -169,8 +202,7 @@ it("LEDGER: a one-fil difference cannot survive a posted journal with high gross
   });
 });
 
-// Remaining PR #83 follow-up. Keep it from blocking this PR's CI.
-it.skip("CLOSE: the default year-end close preserves a hard December month-end close", async () => {
+it("CLOSE: the default year-end close preserves a hard December month-end close", async () => {
   const t = await h.createTenant();
   const { lockPeriod, closeFiscalYear } = await import("../../server/services/month-end.service");
   const { getEffectiveLock } = await import("../../server/services/period-lock.service");
@@ -181,3 +213,92 @@ it.skip("CLOSE: the default year-end close preserves a hard December month-end c
   expect(await getEffectiveLock(t.company.id, "2025-06-15")).toMatchObject({ lockType: "soft" });
   expect(await getEffectiveLock(t.company.id, "2025-12-15")).toMatchObject({ lockType: "hard" });
 });
+
+it.each([
+  { lockScope: "through", hardClose: false },
+  { lockScope: "month", hardClose: true },
+] as const)(
+  "CLOSE: fiscal close (hard=$hardClose) and reopen preserve an independent hard $lockScope lock",
+  async ({ lockScope, hardClose }) => {
+    const t = await h.createTenant();
+    const {
+      lockPeriod,
+      closeFiscalYear,
+      reopenFiscalYear,
+      listLockedPeriods,
+      updateCloseSettings,
+    } = await import("../../server/services/month-end.service");
+    const { getEffectiveLock } = await import("../../server/services/period-lock.service");
+    const { postJournal } = await import("../../server/ledger");
+    const yearEnd = "2025-12-31";
+    const december = "2025-12-15";
+    const june = "2025-06-15";
+    await postJournalEntry(t, {
+      date: june,
+      description: "Cash revenue",
+      lines: [
+        { code: "1020", debit: 100 },
+        { code: "4020", credit: 100 },
+      ],
+    });
+    await updateCloseSettings(t.company.id, { postYearEndClosingEntry: true }, t.user.id);
+    const cash = await accountByCode(t, "1020");
+    const capital = await accountByCode(t, "3010");
+    const postOrdinaryJournal = () =>
+      postJournal(
+        {
+          companyId: t.company.id,
+          date: yearEnd,
+          status: "posted",
+          lines: [
+            { accountId: cash.id, debit: 100 },
+            { accountId: capital.id, credit: 100 },
+          ],
+        },
+        { actorId: t.user.id }
+      );
+    await lockPeriod(
+      t.company.id,
+      yearEnd,
+      t.user.id,
+      lockScope === "through" ? {} : { lockScope }
+    );
+    const independent = await listLockedPeriods(t.company.id);
+    expect(independent).toHaveLength(1);
+    const closed = await closeFiscalYear(t.company.id, yearEnd, t.user.id, { hardClose });
+    expect(closed.posted).toBe(true);
+    expect(closed.closingEntryId).toBeTruthy();
+    await expect(postOrdinaryJournal()).rejects.toMatchObject({ code: "PERIOD_LOCKED" });
+    expect(await getEffectiveLock(t.company.id, june)).toMatchObject({
+      lockType: "hard",
+      lockScope: "through",
+    });
+    expect(await listLockedPeriods(t.company.id)).toEqual(independent);
+    await reopenFiscalYear(t.company.id, yearEnd, t.user.id, "Restatement approved", {
+      canReopenHardClose: true,
+    });
+    await expect(postOrdinaryJournal()).rejects.toMatchObject({ code: "PERIOD_LOCKED" });
+    const journals = await h.sql(
+      `SELECT je.id, je.source_id, SUM(jl.credit - jl.debit)::float8 AS retained
+         FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id
+         JOIN accounts a ON a.id = jl.account_id
+        WHERE je.company_id = $1 AND je.source = 'year_end_close'
+          AND je.entry_kind = 'year_end_close' AND je.status = 'posted' AND a.code = '3020'
+        GROUP BY je.id`,
+      [t.company.id]
+    );
+    expect(journals).toHaveLength(2);
+    expect(journals).toEqual(
+      expect.arrayContaining([
+        { id: closed.closingEntryId, source_id: null, retained: 100 },
+        { id: expect.any(String), source_id: closed.closingEntryId, retained: -100 },
+      ])
+    );
+    expect(await listLockedPeriods(t.company.id)).toEqual(independent);
+    expect(await getEffectiveLock(t.company.id, december)).toMatchObject({
+      lockType: "hard",
+      lockScope,
+    });
+    if (lockScope === "month") expect(await getEffectiveLock(t.company.id, june)).toBeNull();
+  }
+);

@@ -1,0 +1,365 @@
+/* Savings calculator (sand band). Logical properties only; RTL follows the page direction. */
+.phase-site .mz-sav .mz-sav-grid {
+  display: grid;
+  gap: clamp(20px, 3vw, 36px);
+  margin-block-start: clamp(24px, 3vw, 40px);
+}
+@media (min-width: 960px) {
+  .phase-site .mz-sav .mz-sav-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    align-items: stretch;
+  }
+}
+
+.phase-site .mz-sav .mz-sav-inputs {
+  display: grid;
+  gap: 22px;
+  align-content: start;
+  margin: 0;
+  min-inline-size: 0;
+}
+/* Same block size as the results head (badge row) so both card titles share a baseline. */
+.phase-site .mz-sav .mz-sav-inputs > .mz-sav-h3 {
+  min-block-size: 30px;
+  display: flex;
+  align-items: center;
+}
+.phase-site .mz-sav .mz-sav-field {
+  display: grid;
+  gap: 8px;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-field label {
+  font-size: 15px;
+  font-weight: 650;
+}
+/* Label wraps; the value stays on the first line, end-aligned, at every width and locale. */
+.phase-site .mz-sav .mz-sav-field-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 16px;
+}
+.phase-site .mz-sav .mz-sav-field-head label {
+  min-inline-size: 0;
+}
+.phase-site .mz-sav .mz-sav-value {
+  flex: none;
+  text-align: end;
+  white-space: nowrap;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  color: var(--mz-emerald-deep);
+}
+/* 44px touch target: the input is tall, the visible track and thumb are drawn inside it. */
+.phase-site .mz-sav .mz-sav-range {
+  --sav-track: #d7ddd9;
+  inline-size: 100%;
+  block-size: 44px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+.phase-site .mz-sav .mz-sav-range::-webkit-slider-runnable-track {
+  block-size: 8px;
+  border-radius: 999px;
+  background: var(--sav-track);
+}
+.phase-site .mz-sav .mz-sav-range::-moz-range-track {
+  block-size: 8px;
+  border-radius: 999px;
+  background: var(--sav-track);
+}
+.phase-site .mz-sav .mz-sav-range::-moz-range-progress {
+  block-size: 8px;
+  border-radius: 999px;
+  background: var(--mz-emerald);
+}
+.phase-site .mz-sav .mz-sav-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  inline-size: 28px;
+  block-size: 28px;
+  margin-block-start: -10px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: var(--mz-emerald-deep);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+}
+.phase-site .mz-sav .mz-sav-range::-moz-range-thumb {
+  inline-size: 22px;
+  block-size: 22px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: var(--mz-emerald-deep);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+}
+.phase-site .mz-sav .mz-sav-range:focus-visible,
+.phase-site .mz-sav .mz-sav-select:focus-visible {
+  outline: 3px solid var(--mz-focus);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.phase-site .mz-sav .mz-sav-selects {
+  display: grid;
+  gap: 18px;
+}
+@media (min-width: 560px) {
+  .phase-site .mz-sav .mz-sav-selects {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.phase-site .mz-sav .mz-sav-select {
+  min-block-size: 48px;
+  padding-inline: 12px;
+  border: 1px solid #8fa398;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--mz-ink-soft);
+  font: inherit;
+}
+
+@media (min-width: 960px) {
+  .phase-site .mz-sav .mz-sav-inputs {
+    align-content: space-between;
+  }
+}
+
+/* ---------- Results ---------- */
+.phase-site .mz-sav .mz-sav-results {
+  display: grid;
+  gap: 20px;
+}
+.phase-site .mz-sav .mz-sav-results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.phase-site .mz-sav .mz-sav-h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-h4 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-big-hint {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: #cfe9dc;
+}
+/* Phone only: keeps the live yearly figure in view while the sliders move. */
+.phase-site .mz-sav .mz-sav-mini {
+  position: sticky;
+  inset-block-end: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--mz-emerald-deep);
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 8px 20px rgb(11 106 74 / 0.28);
+}
+.phase-site .mz-sav .mz-sav-mini strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+@media (min-width: 960px) {
+  .phase-site .mz-sav .mz-sav-mini {
+    display: none;
+  }
+}
+.phase-site .mz-sav .mz-sav-big {
+  padding: clamp(16px, 2.4vw, 24px);
+  border-radius: calc(var(--mz-radius) - 4px);
+  background: var(--mz-emerald-deep);
+}
+.phase-site .mz-sav .mz-sav-big .mz-sav-big-label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #cfe9dc;
+}
+.phase-site .mz-sav .mz-sav-big .mz-sav-big-num {
+  margin: 4px 0 0;
+  font-size: clamp(34px, 5vw, 52px);
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.phase-site .mz-sav .mz-sav-sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.phase-site .mz-sav .mz-sav-stats {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+.phase-site .mz-sav .mz-sav-stats > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 16px;
+  padding-block-end: 10px;
+  border-block-end: 1px solid var(--mz-line-light);
+}
+.phase-site .mz-sav .mz-sav-stats dt {
+  font-size: 15px;
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-sav .mz-sav-stats dd {
+  margin: 0;
+  margin-inline-start: auto;
+  text-align: end;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-software {
+  margin-block-start: 4px;
+  padding-block-start: 20px;
+  border-block-start: 2px solid var(--mz-line-light);
+}
+.phase-site .mz-sav .mz-sav-stats > div:last-child {
+  border-block-end: 0;
+  padding-block-end: 0;
+}
+.phase-site .mz-sav .mz-sav-diff {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgb(11 106 74 / 0.08);
+  font-weight: 700;
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-sav .mz-sav-diff[data-tone="more"] {
+  color: #7a4a00;
+  background: rgb(122 74 0 / 0.08);
+}
+.phase-site .mz-sav .mz-sav-note {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--mz-muted-light);
+}
+
+/* Context box: visually separate, not part of the estimate. */
+.phase-site .mz-sav .mz-sav-context {
+  padding: 14px 16px;
+  border: 1px dashed #8fa398;
+  border-radius: 12px;
+}
+.phase-site .mz-sav .mz-sav-context-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-sav .mz-sav-context-line {
+  margin: 4px 0 0;
+  font-weight: 650;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-cta {
+  justify-self: start;
+  min-block-size: 48px;
+}
+@media (max-width: 559px) {
+  .phase-site .mz-sav .mz-sav-cta {
+    justify-self: stretch;
+    justify-content: center;
+  }
+  .phase-site .mz-sav .mz-sav-results-head {
+    flex-wrap: wrap;
+  }
+}
+
+/* ---------- Disclosure ---------- */
+.phase-site .mz-sav .mz-sav-how {
+  margin-block-start: clamp(20px, 3vw, 32px);
+  padding: 16px 20px;
+  border: 1px solid var(--mz-sand-deep);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.6);
+}
+.phase-site .mz-sav .mz-sav-how summary {
+  display: list-item;
+  padding-block: 10px;
+  min-block-size: 44px;
+  box-sizing: border-box;
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-how summary:focus-visible {
+  outline: 3px solid var(--mz-focus);
+  outline-offset: 3px;
+}
+.phase-site .mz-sav .mz-sav-table {
+  inline-size: 100%;
+  max-inline-size: 640px;
+  margin-block: 12px;
+  border-collapse: collapse;
+}
+.phase-site .mz-sav .mz-sav-table th,
+.phase-site .mz-sav .mz-sav-table td {
+  padding: 8px 12px;
+  border-block-end: 1px solid var(--mz-sand-deep);
+  text-align: start;
+  font-size: 15px;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-sav .mz-sav-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.phase-site .mz-sav .mz-sav-how a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+  color: var(--mz-emerald-deep);
+  text-decoration: underline;
+}
+.phase-site .mz-sav .mz-sav-how a:focus-visible {
+  outline: 3px solid var(--mz-focus);
+  outline-offset: 2px;
+}
+.phase-site .mz-sav .mz-sav-fine {
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-site .mz-sav * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Keep the two selects on one line when a label wraps. */
+.phase-site .mz-sav .mz-sav-selects {
+  align-items: end;
+}
