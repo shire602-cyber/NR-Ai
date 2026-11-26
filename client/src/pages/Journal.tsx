@@ -184,6 +184,7 @@ export default function Journal() {
   const {
     data: allEntries,
     isLoading,
+    isError,
     isLoadingError,
     isSuccess: entriesLoaded,
     fetchStatus: entriesFetchStatus,
@@ -914,6 +915,26 @@ export default function Journal() {
         >
           {t["journal.pausedStatus"]}
         </p>
+      )}
+
+      {/* A failed refresh keeps the cached result: say so without replacing the list. */}
+      {isError && !isLoadingError && !entriesPaused && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-surface-sunken px-3 py-2 text-small"
+          data-testid="journal-refresh-error"
+        >
+          <span role="alert" className="text-danger">
+            {t["toasts.refreshFailed"]}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void refetchEntries()}
+            data-testid="button-retry-journal-refresh"
+          >
+            {t["firm.retry"]}
+          </Button>
+        </div>
       )}
 
       {!selectedCompanyId ? (

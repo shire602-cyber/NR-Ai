@@ -95,6 +95,7 @@ describe("journal list", { timeout: 60_000 }, () => {
     await flushUntil(() => !!byTestId("journal-load-error"));
     expect(byTestId("journal-load-error")).toBeTruthy();
     expect(byTestId("empty-state-journal")).toBeFalsy();
+    expect(byTestId("journal-refresh-error")).toBeFalsy();
     // The button label comes from the lazily loaded "firm" locale namespace, so wait for it.
     const retryButton = () => {
       const error = byTestId("journal-load-error");
@@ -129,7 +130,7 @@ describe("journal list", { timeout: 60_000 }, () => {
     expect(byTestId("journal-paused")).toBeFalsy();
   });
 
-  it("keeps cached rows visible, without an error or empty state, when a refresh fails", async () => {
+  it("keeps cached rows visible, with a non-blocking refresh error, when a refresh fails", async () => {
     let calls = 0;
     queryClient.setQueryDefaults(KEY, {
       queryFn: async () => {
@@ -150,7 +151,58 @@ describe("journal list", { timeout: 60_000 }, () => {
     expect(byTestId("button-proof-journal-j1")).toBeTruthy();
     expect(byTestId("journal-load-error")).toBeFalsy();
     expect(byTestId("empty-state-journal")).toBeFalsy();
+    const refreshError = byTestId("journal-refresh-error");
+    expect(refreshError?.querySelector('[role="alert"]')?.textContent).toBe("Refresh failed");
+    expect(buttonByText(/^Try again$/i, refreshError!)).toBeTruthy();
   });
+
+  it.each([
+    {
+      name: "a successful empty result",
+      rows: [],
+      url: "/journal",
+      emptyTitle: "No journal entries yet",
+    },
+    {
+      name: "posted rows hidden by the drafts filter",
+      rows: [ROW],
+      url: "/journal?status=draft",
+      emptyTitle: "No draft entries",
+    },
+  ])(
+    "reports a failed refresh of $name without claiming it is empty, and Retry recovers",
+    async ({ rows, url, emptyTitle }) => {
+      let calls = 0;
+      queryClient.setQueryDefaults(KEY, {
+        queryFn: async () => {
+          calls += 1;
+          if (calls === 2) throw new Error("Failed to fetch");
+          return rows;
+        },
+      });
+      window.history.replaceState({}, "", url);
+      const { default: Journal } = await import("../../client/src/pages/Journal");
+      await renderPage(Journal);
+      await flushUntil(() => !!byTestId("empty-state-journal"));
+      expect(byTestId("empty-state-journal")?.textContent).toContain(emptyTitle);
+      expect(byTestId("journal-refresh-error")).toBeFalsy();
+      await act(async () => {
+        await queryClient.refetchQueries({ queryKey: KEY });
+      });
+      await flushUntil(() => !!byTestId("journal-refresh-error"));
+      expect(calls).toBe(2);
+      const refreshError = byTestId("journal-refresh-error");
+      expect(refreshError?.querySelector('[role="alert"]')?.textContent).toBe("Refresh failed");
+      expect(byTestId("journal-load-error")).toBeFalsy();
+      expect(byTestId("empty-state-journal")).toBeFalsy();
+      expect(byTestId("journal-paused")).toBeFalsy();
+      await click(buttonByText(/^Try again$/i, refreshError!));
+      await flushUntil(() => !!byTestId("empty-state-journal"));
+      expect(calls).toBe(3);
+      expect(byTestId("journal-refresh-error")).toBeFalsy();
+      expect(byTestId("empty-state-journal")?.textContent).toContain(emptyTitle);
+    }
+  );
 
   it("shows the paused status, not the empty state, when a refresh of cached empty results pauses", async () => {
     setFixtures({ [fixtureKey]: [] });
@@ -165,6 +217,7 @@ describe("journal list", { timeout: 60_000 }, () => {
     expect(fetchStatusOf()).toBe("paused");
     expect(byTestId("empty-state-journal")).toBeFalsy();
     expect(byTestId("journal-load-error")).toBeFalsy();
+    expect(byTestId("journal-refresh-error")).toBeFalsy();
   });
 
   it("shows neutral copy and fetches nothing while no company is selected", async () => {
@@ -177,6 +230,7 @@ describe("journal list", { timeout: 60_000 }, () => {
     );
     expect(byTestId("empty-state-journal")).toBeFalsy();
     expect(byTestId("journal-load-error")).toBeFalsy();
+    expect(byTestId("journal-refresh-error")).toBeFalsy();
     // The journal query is disabled, so it stays idle (nothing loading, paused or failed).
     expect(queryClient.getQueryState(["/api/companies", "", "journal"])?.fetchStatus).toBe("idle");
   });
