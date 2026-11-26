@@ -53,7 +53,9 @@ async function lockExpectedPartner(
   expectedProvider: string,
   tx: Pick<typeof db, "select">
 ) {
-  const company = await lockOnboardingCompany(companyId, tx);
+  // Serialize consent and provider changes while allowing the validation event's FK
+  // check to take KEY SHARE when submission already holds the appointment lock.
+  const company = await lockOnboardingCompany(companyId, tx, "no key update");
   if (!company || company.deletedAt) {
     throw new DomainError("NOT_FOUND", 404, undefined, "Company not found");
   }
