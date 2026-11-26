@@ -81,7 +81,7 @@ describe("O03 bills-aging p95 performance probe", () => {
           bill_date: billDate(5),
           due_date: s.due,
           currency: "AED",
-          lines: [{ description: s.desc, quantity: 1, unitPrice: s.amount, vatRate: 0 }],
+          line_items: [{ description: s.desc, quantity: 1, unitPrice: s.amount, vatRate: 0 }],
         });
         if (r.status !== 200) {
           throw new Error(`Bill seed failed (${r.status}): ${r.text}`);

@@ -216,6 +216,11 @@ export async function assertPeriodNotLocked(
 
   if (storesBizDate) {
     const accountingDate = toAccountingDate(date);
+    // A non-empty string that toAccountingDate rejects is an invalid date (e.g. "2025-02-30"):
+    // return 422 INVALID_DATE immediately instead of falling back to new Date() roll-over.
+    if (typeof date === "string" && date !== "" && !accountingDate) {
+      throw new DomainError("INVALID_DATE", 422, undefined, "Date is not a valid calendar date");
+    }
     if (!companyId || !accountingDate) return accountingDate ?? null;
     const isoDate = accountingDate.businessDate;
     const lock = await getEffectiveLock(companyId, isoDate, tx);
@@ -229,11 +234,43 @@ export async function assertPeriodNotLocked(
         details: { lockedThrough: lock.periodEnd, lockType: lock.lockType, lockScope: lock.lockScope },
       });
     }
+    // Soft lock: evaluate the same override path as the non-storesBusinessDate branch so that
+    // owners/close-managers can still post with a reason (R02-19 / X5-J1-D3).
+    const ctx = lockContext.getStore();
+    const req = ctx?.req;
+    const rawReason = req?.header?.(PERIOD_LOCK_REASON_HEADER);
+    const reason = decodeLockReason(rawReason);
+    const user = req?.user;
+    const actor = user ? await resolveCloseActor(companyId, user, tx) : null;
+    const canOverride = !!actor && canManageClose(actor);
+    if (user && reason.length >= 3 && canOverride) {
+      const { recordAudit } = await import("./audit.service");
+      await recordAudit({
+        userId: user.id,
+        companyId,
+        action: "period.soft_lock_override",
+        entityType: "period",
+        entityId: lock.periodEnd,
+        before: null,
+        after: { postingDate: isoDate, lockedThrough: lock.periodEnd, reason },
+        req,
+        tx,
+      });
+      return accountingDate;
+    }
     throw new AppError({
-      message: `Period ${label} is closed (soft lock). Ask the owner or your accountant to post it, or to reopen the period.`,
+      message: canOverride
+        ? `Period ${label} is closed (soft lock). You can still post this by giving a reason, which is kept in the audit trail.`
+        : `Period ${label} is closed (soft lock). Ask the owner or your accountant to post it, or to reopen the period.`,
       statusCode: 403,
       code: "PERIOD_SOFT_LOCKED",
-      details: { lockedThrough: lock.periodEnd, lockType: lock.lockType, lockScope: lock.lockScope },
+      details: {
+        lockedThrough: lock.periodEnd,
+        lockType: lock.lockType,
+        lockScope: lock.lockScope,
+        canOverride,
+        reasonRequired: canOverride,
+      },
     });
   }
 
