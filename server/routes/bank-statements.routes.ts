@@ -142,6 +142,9 @@ const bankStatementPreviewSchema = z
   })
   .refine(hasStatementSource, statementSourceMessage);
 
+/** O04: lightweight CSV preview without persisting.  Validated by strictBody. */
+const bankCsvImportPreviewSchema = z.object({ csvContent: z.string().min(1) }).strict();
+
 const unmatchBody = z.object({ reason: z.string().trim().max(500).optional() }).strict();
 const emptyBody = z.object({}).strict();
 
@@ -463,14 +466,12 @@ export function registerBankStatementRoutes(app: Express) {
     "/api/companies/:companyId/bank-statements/import-preview",
     authMiddleware,
     requireCustomer,
+    strictBody(bankCsvImportPreviewSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       await assertAccess(req, companyId);
-      const parsed = z.object({ csvContent: z.string().min(1) }).safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ code: "VALIDATION_ERROR", message: parsed.error.issues[0]?.message ?? "Invalid body" });
-      }
-      const { transactions, format, errors, skippedRows } = parseBankCsv(parsed.data.csvContent);
+      const { csvContent } = req.body as { csvContent: string };
+      const { transactions, format, errors, skippedRows } = parseBankCsv(csvContent);
       res.json({
         transactionCount: transactions.length,
         skippedRows,
