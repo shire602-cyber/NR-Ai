@@ -13,6 +13,7 @@
   "customerContacts.thisLinkIsValidFor": "هذا الرابط صالح لمدة سنة. يمكن للعميل عرض الفواتير وتنزيل ملفات PDF دون تسجيل الدخول.",
   "customerContacts.invoicesWillBeKeptBut": "ستبقى الفواتير لكن سيُزال ارتباطها بالعميل. قد تحتاج إلى إعادة ربطها بعد إعادة استيراد قائمة العملاء.",
   "customerContacts.clearAllConfirmLabel": "اكتب {phrase} للتأكيد.",
+  "customerContacts.clearAllBodyUnverified": "سيؤدي هذا إلى حذف جميع جهات الاتصال لهذه الشركة نهائيًا. لا يمكن التراجع عن هذا الإجراء.",
   "customerContacts.contactCreatedSuccessfully": "تم إنشاء جهة الاتصال بنجاح",
   "customerContacts.contactUpdatedSuccessfully": "تم تحديث جهة الاتصال بنجاح",
   "customerContacts.contactDeletedSuccessfully": "تم حذف جهة الاتصال بنجاح",
