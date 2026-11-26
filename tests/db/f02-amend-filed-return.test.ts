@@ -5,7 +5,10 @@
  * and only the amendment counts once it is filed.
  */
 import { expect, it } from "vitest";
-import { selectEffectiveVatReturns } from "../../shared/vat-effective-returns";
+import {
+  selectEffectiveVatReturns,
+  type VatReturnVersionLike,
+} from "../../shared/vat-effective-returns";
 import { useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -15,9 +18,7 @@ const period = { periodStart: "2026-01-01", periodEnd: "2026-03-31" };
 async function effective(t: Tenant) {
   const list = await t.as.get(`${base(t)}/vat-returns`);
   expect(list.status, list.text).toBe(200);
-  return selectEffectiveVatReturns(list.body as Array<Record<string, any>>) as Array<
-    Record<string, any>
-  >;
+  return selectEffectiveVatReturns(list.body as VatReturnVersionLike[]);
 }
 
 it("amends a filed return: the original stays effective until the amendment is filed", async () => {
@@ -46,7 +47,6 @@ it("amends a filed return: the original stays effective until the amendment is f
   const originalId = gen.body.id as string;
   const filed = await t.as.post(`/api/vat-returns/${originalId}/submit`, {
     ftaReferenceNumber: "TEST-REF-0001",
-    filedOn: "2026-04-20",
   });
   expect(filed.status, filed.text).toBe(200);
   expect(filed.body.status).toBe("filed");
@@ -61,9 +61,12 @@ it("amends a filed return: the original stays effective until the amendment is f
   expect(amendmentId).not.toBe(originalId);
 
   // While the amendment is a draft it has no effect: the original (now "amended") still counts.
-  const rows = (await t.as.get(`${base(t)}/vat-returns`)).body as Array<Record<string, any>>;
+  const rows = (await t.as.get(`${base(t)}/vat-returns`)).body as VatReturnVersionLike[];
   expect(rows.find((r) => r.id === originalId)?.status).toBe("amended");
-  expect(rows.find((r) => r.id === amendmentId)?.status).toBe("draft");
+  expect(rows.find((r) => r.id === amendmentId)).toMatchObject({
+    status: "draft",
+    amendsReturnId: originalId,
+  });
   let current = await effective(t);
   expect(current.map((r) => r.id)).toEqual([originalId]);
   expect(Number(current[0].box14PayableTax)).toBe(500);
@@ -82,12 +85,14 @@ it("amends a filed return: the original stays effective until the amendment is f
   current = await effective(t);
   expect(current.map((r) => r.id)).toEqual([originalId]);
 
+  // The original used the recording timestamp because filedOn was omitted.
   const refiled = await t.as.post(`/api/vat-returns/${amendmentId}/submit`, {
     ftaReferenceNumber: "TEST-REF-0002",
     filedOn: "2026-04-25",
   });
   expect(refiled.status, refiled.text).toBe(200);
   expect(refiled.body.status).toBe("filed");
+  expect(Date.parse(refiled.body.submittedAt)).toBeLessThan(Date.parse(filed.body.submittedAt));
 
   current = await effective(t);
   expect(current.map((r) => r.id)).toEqual([amendmentId]);

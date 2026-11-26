@@ -2,13 +2,12 @@
 //
 // A company/period can hold several VAT return rows: the original, one or more
 // amendments, and drafts of an amendment that has not taken effect yet. The
-// "effective" version for a company + period is the most recently submitted
-// row. Candidates are rows with status submitted, filed or amended (an amended
-// row was submitted once), ranked by submittedAt (createdAt as fallback); the
-// latest wins. amendVatReturn marks the original "amended" as soon as the
-// amendment DRAFT is created, so an amended original stays effective until a
-// later version is submitted or filed. Draft / pending_review / ready rows never
-// count. Amendment history is preserved — this selects, it never deletes.
+// "effective" version for a company + period is selected from submitted, filed
+// and amended rows. An effective amendment supersedes its amendsReturnId even
+// when its recorded filing date is earlier. Among the remaining candidates,
+// the latest submittedAt wins (createdAt as fallback and tie-breaker).
+// amendVatReturn marks the original "amended" when it creates the amendment
+// draft, so the original stays effective until the amendment is submitted or filed.
 //
 // Summary cards and their drilldowns must use the same selection so a card
 // total always equals the sum of the rows it links to.
@@ -23,6 +22,7 @@ export interface VatReturnVersionLike {
   periodStart: string | Date;
   periodEnd: string | Date;
   status: string;
+  amendsReturnId?: string | null;
   submittedAt?: string | Date | null;
   createdAt?: string | Date | null;
   box14PayableTax?: number | string | null;
@@ -49,21 +49,38 @@ export function vatReturnPeriodKey(r: VatReturnVersionLike): string {
 export function selectEffectiveVatReturns<T extends VatReturnVersionLike>(
   returns: readonly T[]
 ): T[] {
-  const best = new Map<string, T>();
+  const periods = new Map<string, { candidates: T[]; superseded: Set<string> }>();
   for (const r of returns) {
     if (!EFFECTIVE_STATUSES.has(r.status)) continue;
     const key = vatReturnPeriodKey(r);
-    const current = best.get(key);
-    const rank = (x: T) => [ts(x.submittedAt) || ts(x.createdAt), ts(x.createdAt)] as const;
-    if (!current) {
-      best.set(key, r);
-      continue;
+    let period = periods.get(key);
+    if (!period) {
+      period = { candidates: [], superseded: new Set() };
+      periods.set(key, period);
     }
-    const [a1, a2] = rank(r);
-    const [b1, b2] = rank(current);
-    if (a1 > b1 || (a1 === b1 && a2 > b2)) best.set(key, r);
+    period.candidates.push(r);
+    if (r.amendsReturnId && r.amendsReturnId !== r.id) period.superseded.add(r.amendsReturnId);
   }
-  return Array.from(best.values());
+
+  const effective: T[] = [];
+  const rank = (r: T) => [ts(r.submittedAt) || ts(r.createdAt), ts(r.createdAt)] as const;
+  for (const { candidates, superseded } of periods.values()) {
+    let best: T | undefined;
+    for (const candidate of candidates) {
+      if (superseded.has(candidate.id)) continue;
+      if (!best) {
+        best = candidate;
+        continue;
+      }
+      const [submitted, created] = rank(candidate);
+      const [bestSubmitted, bestCreated] = rank(best);
+      if (submitted > bestSubmitted || (submitted === bestSubmitted && created > bestCreated)) {
+        best = candidate;
+      }
+    }
+    if (best) effective.push(best);
+  }
+  return effective;
 }
 
 /** Net Box 14 across effective returns (payable +, refundable −), in fils-safe sum. */

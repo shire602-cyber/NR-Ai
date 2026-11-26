@@ -54,7 +54,7 @@ describe("F02 effective VAT return selection", () => {
     // amendVatReturn flips the original to "amended" when the amendment DRAFT is created, and the
     // original keeps its submittedAt. A pending amendment must not remove the period's tax.
     const original = r("orig", "amended", 10000, "2026-04-20T08:00:00Z");
-    const pending = r("amend", "draft", 9000, null);
+    const pending = { ...r("amend", "draft", 9000, null), amendsReturnId: original.id };
     expect(effectiveNetVatDeclared([original, pending])).toBe(10000);
     expect(selectEffectiveVatReturns([pending, original]).map((x) => x.id)).toEqual(["orig"]);
 
@@ -62,6 +62,20 @@ describe("F02 effective VAT return selection", () => {
     expect(effectiveNetVatDeclared([original, filed])).toBe(9000);
     expect(selectEffectiveVatReturns([filed, original]).map((x) => x.id)).toEqual(["amend"]);
   });
+
+  it.each(["submitted", "filed"])(
+    "a %s amendment supersedes a predecessor recorded after its historical filing date",
+    (status) => {
+      const original = r("orig", "amended", 10000, "2026-06-01T08:00:00Z");
+      const amendment = {
+        ...r("amend", status, 9000, "2026-04-25T08:00:00Z"),
+        amendsReturnId: original.id,
+      };
+
+      expect(selectEffectiveVatReturns([original, amendment])).toEqual([amendment]);
+      expect(effectiveNetVatDeclared([amendment, original])).toBe(9000);
+    }
+  );
 
   it("multiple amendments: only the latest effective counts", () => {
     const rows = [

@@ -231,8 +231,7 @@ export function globalErrorHandler(
   const pgCode = pgFound?.code ?? null;
   const pgMapped = pgCode ? PG_ERRORS[pgCode] : undefined;
   if (pgMapped && pgFound) {
-    // Server-side only: constraint/table/detail (detail can hold key values) never reach the body.
-    const pg = pgFound.source as { constraint?: unknown; table?: unknown; detail?: unknown };
+    const pg = pgFound.source as { constraint?: unknown; table?: unknown };
     log.warn(
       {
         requestId: req.id,
@@ -240,9 +239,8 @@ export function globalErrorHandler(
         code: pgMapped.code,
         constraint: pg.constraint,
         table: pg.table,
-        detail: pg.detail,
         method: req.method,
-        path: req.originalUrl || req.url,
+        route: typeof req.route?.path === "string" ? req.route.path : undefined,
       },
       "postgres error mapped to client response"
     );
