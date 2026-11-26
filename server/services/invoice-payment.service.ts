@@ -620,6 +620,31 @@ export async function reverseInvoicePayment(
         journalToReverse = { id: payment.journalEntryId, date: je.date };
       }
     }
+    // F07: an overpayment parked its excess in a customer credit (2055). Reversing the receipt
+    // reverses that liability, so the credit must still be untouched and is closed with it;
+    // otherwise it stays refundable with no liability behind it.
+    const overpaymentCredits = (await tx
+      .select()
+      .from(customerCredits)
+      .where(
+        and(
+          eq(customerCredits.companyId, input.companyId),
+          eq(customerCredits.sourceType, "overpayment"),
+          eq(customerCredits.sourceId, payment.id)
+        )
+      )
+      // Same lock as lockCredit (refund/apply), taken before the period-policy lock as they do.
+      .for("update")) as CustomerCredit[];
+    for (const c of overpaymentCredits) {
+      if (c.status !== "void" && Number(c.remaining) !== Number(c.amount)) {
+        throw new DomainError(
+          "CUSTOMER_CREDIT_USED",
+          409,
+          { creditId: c.id },
+          "The customer credit from this overpayment has been applied or refunded. Reverse that first."
+        );
+      }
+    }
     let postingDate: string | Date | null | undefined = input.date;
     if (payment.method !== WRITE_OFF_METHOD) {
       await lockPeriodPolicy(tx, input.companyId, "shared");
@@ -660,6 +685,17 @@ export async function reverseInvoicePayment(
         },
         { actorId: input.actorId, tx, companyId: input.companyId }
       );
+    }
+    if (overpaymentCredits.length) {
+      await tx
+        .update(customerCredits)
+        .set({ status: "void", remaining: 0, updatedAt: new Date() })
+        .where(
+          inArray(
+            customerCredits.id,
+            overpaymentCredits.map((c) => c.id)
+          )
+        );
     }
     await tx.delete(invoicePayments).where(eq(invoicePayments.id, payment.id));
     const updated = await refreshSettlementStatus(tx, invoice.id);

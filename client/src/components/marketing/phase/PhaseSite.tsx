@@ -22,7 +22,7 @@ import { audiences } from "./audiences";
 import { Home } from "./home/Home";
 import { FinalCta } from "./home/FinalCta";
 import { SiteFooter } from "./home/SiteFooter";
-import { PricingPage } from "./pages/PricingPage";
+import { PricingLead, PricingPage } from "./pages/PricingPage";
 import { Picture, type Translate } from "./shared";
 import { metaText, type MetaKey } from "./meta-text";
 import { fragmentId } from "./fragment";
@@ -214,7 +214,11 @@ export default function PhaseSite() {
                   )}
                 </nav>
                 <h1>{title}</h1>
-                {lead && <p className="phase-lead">{lead}</p>}
+                {plans ? (
+                  <PricingLead locale={locale} fallback={lead} />
+                ) : (
+                  lead && <p className="phase-lead">{lead}</p>
+                )}
                 {feature && !hub && (
                   <div
                     className={

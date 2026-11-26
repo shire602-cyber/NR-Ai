@@ -48,6 +48,10 @@ import { VatLoadFailed, VatRefreshNotice, VatWaiting } from "@/components/vat/Va
 import VatReturnControls from "@/components/vat/VatReturnControls";
 import VatFilingActions from "@/components/vat/VatFilingActions";
 import { summariseVatReturns, vatChecklist, vatFilingStage } from "@/lib/vat-filing-stage";
+import {
+  effectiveNetVatDeclared,
+  selectEffectiveVatReturns,
+} from "@shared/vat-effective-returns";
 import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import VatWorkpaperPanel from "@/components/vat/VatWorkpaperPanel";
 import { VatPeriodPreview } from "@/components/vat/VatPeriodPreview";
@@ -391,6 +395,16 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
   });
 
   const stats = useMemo(() => summariseVatReturns(vatReturns), [vatReturns]);
+  // F02: card total and drilldown list use the same effective-version selector so they always agree.
+  // effectiveNetVatDeclared(vatReturns) counts each company/period once at its effective version.
+  const effectiveVatTotal = useMemo(
+    () => effectiveNetVatDeclared(vatReturns ?? []),
+    [vatReturns]
+  );
+  const effectiveVatReturns = useMemo(
+    () => selectEffectiveVatReturns(vatReturns ?? []),
+    [vatReturns]
+  );
 
   const currentQuarter = useMemo(() => {
     const now = new Date();
@@ -1492,12 +1506,12 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
                   },
                   {
                     label:
-                      stats.totalPayable >= 0
+                      effectiveVatTotal >= 0
                         ? t["compliance.vatFilingTotalPayable"]
                         : locale === "ar"
                           ? "إجمالي الاسترداد"
                           : "Total refundable",
-                    value: <Money amount={Math.abs(stats.totalPayable)} />,
+                    value: <Money amount={Math.abs(effectiveVatTotal)} />,
                   },
                 ] as const
               ).map((s) => (
@@ -1543,7 +1557,7 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
               ) : (
                 <>
                   <div className="grid gap-3 md:hidden" data-testid="mobile-vat-return-list">
-                    {vatReturns.map((vatReturn) => (
+                    {effectiveVatReturns.map((vatReturn) => (
                       <Card key={vatReturn.id}>
                         <CardContent className="p-4 space-y-3">
                           <div className="flex items-start justify-between gap-3">
@@ -1669,7 +1683,7 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {vatReturns.map((vatReturn) => (
+                        {effectiveVatReturns.map((vatReturn) => (
                           <TableRow key={vatReturn.id} data-testid={`row-return-${vatReturn.id}`}>
                             <TableCell className="font-medium">
                               {format(parseCalendarDate(vatReturn.periodStart), "MMM yyyy", dfOpts)}{" "}

@@ -5,6 +5,7 @@
  *
  *   draft -> ready -> submitted -> filed        (amended: superseded by a newer return)
  */
+import { todayDubai } from "@shared/accounting-date";
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { db } from "../db";
 import { DomainError } from "../errors";
@@ -260,7 +261,7 @@ async function validateReturnPeriod(
     frequency: company.frequency,
     startMonth: company.startMonth,
   });
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayDubai();
   if (period.to > today) {
     // X5 (J1 D7): the running period can be previewed (GET /vat/compute); the return itself
     // is generated only once the period has ended.

@@ -1,3 +1,4 @@
+import { todayDubai } from "@shared/accounting-date";
 import { sizeErrorBody } from "../../http/upload-errors";
 // Cash-flow forecast, classification feedback, receipt autopilot and classifier config handlers.
 // Handlers moved from ai.routes.ts (R20-09); the route registrations (paths and
@@ -247,7 +248,7 @@ export const handlePostAiAutopilotProcess = async (req: Request, res: Response) 
     vatAmount: ocr.vatAmount,
     total: ocr.total,
     currency: ocr.currency,
-    date: ocr.date || new Date().toISOString().slice(0, 10),
+    date: ocr.date || todayDubai(),
     lineItems: ocr.lineItems,
     rawText: ocr.rawText ?? null,
     imagePath: safeImagePath,

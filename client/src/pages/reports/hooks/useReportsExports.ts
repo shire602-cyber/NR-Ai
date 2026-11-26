@@ -45,6 +45,8 @@ type UseReportsExportsDeps = Pick<
   | "balanceSheet"
   | "buildWorkspaceReportPack"
   | "consolidatedStatementsReport"
+  | "reportLoadErrors"
+  | "selectedReportId"
   | "corporateTaxEstimate"
   | "dateRange"
   | "effectiveReportPersona"
@@ -61,7 +63,6 @@ type UseReportsExportsDeps = Pick<
   | "profitLoss"
   | "receivableAgingExportSheets"
   | "selectedCompanyId"
-  | "selectedReportId"
   | "setIsExporting"
   | "toast"
   | "trialBalance"
@@ -77,6 +78,7 @@ export function useReportsExports({
   balanceSheet,
   buildWorkspaceReportPack,
   consolidatedStatementsReport,
+  reportLoadErrors,
   corporateTaxEstimate,
   dateRange,
   effectiveReportPersona,
@@ -164,6 +166,22 @@ export function useReportsExports({
     }
   };
   const handleExportExcel = async () => {
+    // F03: refuse exports when the active report's data could not be loaded (never export AED 0.00).
+    const reportKeyMap: Record<string, keyof typeof reportLoadErrors> = {
+      pl: "pl",
+      bs: "bs",
+      vat: "vat",
+      trial: "tb",
+    };
+    const activeKey = reportKeyMap[activeTab];
+    if (activeKey && reportLoadErrors[activeKey]?.error) {
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.exportFailed"),
+        description: translateNow("reportCenter.dataLoadError"),
+      });
+      return;
+    }
     setIsExporting(true);
     try {
       const dateRangeStr =
@@ -276,6 +294,22 @@ export function useReportsExports({
   };
   const handleExportGoogleSheets = async () => {
     if (!selectedCompanyId) return;
+    // F03: same guard as Excel — refuse when the active report's data failed to load.
+    const gsReportKeyMap: Record<string, keyof typeof reportLoadErrors> = {
+      pl: "pl",
+      bs: "bs",
+      vat: "vat",
+      trial: "tb",
+    };
+    const gsActiveKey = gsReportKeyMap[activeTab];
+    if (gsActiveKey && reportLoadErrors[gsActiveKey]?.error) {
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.exportFailed"),
+        description: translateNow("reportCenter.dataLoadError"),
+      });
+      return;
+    }
 
     setIsExporting(true);
     const dateRangeStr =

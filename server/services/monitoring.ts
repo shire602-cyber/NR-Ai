@@ -41,7 +41,19 @@ export function captureException(error: unknown, context: CaptureContext = {}): 
   // if (process.env.SENTRY_DSN) { ...Sentry.captureException(error, { extra: context })... }
 }
 
-/** Whether an external monitor is configured (for /health to report). */
-export function monitoringConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.SENTRY_DSN || env.MONITORING_DSN);
+/**
+ * Whether an error forwarder is actually active. captureException only logs today (no SDK is
+ * wired), so this is false even when SENTRY_DSN / MONITORING_DSN is set: reporting "configured"
+ * for a DSN nothing consumes would be a false assurance on /health. Flip this only together with
+ * a real forwarder in captureException.
+ */
+const ERROR_FORWARDER_ACTIVE = false;
+
+export function monitoringConfigured(_env: NodeJS.ProcessEnv = process.env): boolean {
+  return ERROR_FORWARDER_ACTIVE;
+}
+
+/** True when a DSN is set but nothing forwards errors to it (surfaced on /health). */
+export function monitoringDsnIgnored(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !ERROR_FORWARDER_ACTIVE && Boolean(env.SENTRY_DSN || env.MONITORING_DSN);
 }

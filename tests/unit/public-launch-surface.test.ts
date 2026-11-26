@@ -468,6 +468,26 @@ describe("Public SaaS launch surface", () => {
     }
   });
 
+  it("keeps pricing at AED 59 / 119 / 229 (monthly) and e-invoicing on every plan", () => {
+    // Prices are canonical in shared/plans.ts (read by Pricing and Subscription pages).
+    const plansSource = readRepoFile("shared/plans.ts");
+
+    // Monthly prices must match owner-approved schedule.
+    expect(plansSource).toContain("starter: 59");
+    expect(plansSource).toContain("professional: 119");
+    expect(plansSource).toContain("enterprise: 229");
+
+    // E-invoicing must be on every plan (EVERY_PLAN in marketing plans catalog).
+    const marketingPlansSource = readRepoFile("client/src/components/marketing/plans.ts");
+    expect(marketingPlansSource).toContain('"einvoice"');
+    expect(marketingPlansSource).toContain("EVERY_PLAN");
+
+    // Trial is 14 days (TRIAL_DAYS in shared/trial.ts); read-only after.
+    const trialSource = readRepoFile("shared/trial.ts");
+    expect(trialSource).toContain("TRIAL_DAYS = 14");
+    expect(plansSource).toContain("read-only");
+  });
+
   const words = (...parts: string[]) => parts.join(" ");
   const legacyBankingTerm = words("bank", "feeds");
   const legacyArabicTerm = words("الربط", "البنكي");
