@@ -4,6 +4,7 @@
 // cannot prove the middleware fires on a live HTTP request. This file proves it end-to-end:
 //   1. firm_admin → POST /api/firm/clients/:companyId/assign-staff → 403 FIRM_PERMISSION_DENIED
 //   2. firm_owner → same endpoint → succeeds (200/201)
+//   3. no-token request → rejected (401 from authMiddleware once Bearer bypasses CSRF)
 //
 // The assign-staff route sits behind requireFirmAccess() (router-level) and then
 // requireFirmPermission("firm.staff.manage"). firm_admin has firm access but not staff.manage.
@@ -57,11 +58,14 @@ it("firm_owner can assign a preparer to a client (200)", async () => {
   expect([200, 201]).toContain(r.status);
 });
 
-it("unauthenticated request to assign-staff is 401", async () => {
+it("request with no valid token to assign-staff is rejected (401)", async () => {
+  // h.anon has no Bearer header so CSRF fires first (403 CSRF_INVALID).
+  // A fake Bearer token bypasses CSRF (hasBearerAuth = true) so authMiddleware
+  // runs and returns 401 TOKEN_INVALID, proving no-token calls are rejected.
   const { client } = await linkedClient();
-  const r = await h.anon.post(`/api/firm/clients/${client.company.id}/assign-staff`, {
-    staffUserId: "00000000-0000-0000-0000-000000000000",
-    action: "assign",
-  });
+  const r = await h.client("not-a-real-jwt").post(
+    `/api/firm/clients/${client.company.id}/assign-staff`,
+    { staffUserId: "00000000-0000-0000-0000-000000000000", action: "assign" }
+  );
   expect(r.status).toBe(401);
 });
