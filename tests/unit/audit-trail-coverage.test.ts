@@ -44,12 +44,13 @@ describe("S02+S03 audit-trail coverage — financial record mutations", () => {
     expect(s).toContain("recordAudit(");
   });
 
-  it("credit-note DELETE is disabled; route does not silently skip audit", () => {
+  it("credit-note DELETE restricts to draft (pre-financial-record); no audit needed for drafts", () => {
     const s = src("server/routes/credit-notes.routes.ts");
-    // The DELETE route returns sendLegacyWriteDisabled before any storage call,
-    // so no audit is needed. If the route is ever re-enabled, this test should
-    // fail until audit recording is added.
-    expect(s).toContain("sendLegacyWriteDisabled");
+    // F07 refactor: draft CNs (no journal entries) may be deleted; issued CNs
+    // must be voided. Draft deletion is pre-financial-record so audit recording
+    // is not required (matches expense-claim draft pattern).
+    expect(s).toContain("An issued credit note cannot be deleted");
+    expect(s).toContain('"draft"');
   });
 
   it("audit service swallows failures and never blocks business operations", () => {
