@@ -5,7 +5,12 @@
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { QueryClient, QueryClientProvider, onlineManager } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  focusManager,
+  onlineManager,
+} from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -78,6 +83,7 @@ afterEach(async () => {
   act(() => root.unmount());
   client.clear();
   onlineManager.setOnline(true);
+  focusManager.setFocused(undefined);
   container.remove();
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
@@ -277,5 +283,74 @@ describe("Activity logs load states", () => {
 
     await search("zzz");
     expect(byId("empty-state")?.textContent).toContain(en["activityLogs.noLogsMatchYourFilters"]);
+  });
+
+  // TanStack also pauses a failed request's retry while the tab is hidden, so "paused" does not
+  // mean "offline". These tests stay online and only remove focus.
+  describe("retry paused on an unfocused tab while online", () => {
+    beforeEach(() => {
+      client.setQueryDefaults(LOGS_KEY, { retry: 1, retryDelay: 0 });
+    });
+
+    it.each(["en", "ar"] as const)(
+      "cold load: paused status without an offline claim, then rows on focus (%s)",
+      async (locale) => {
+        const { useI18n } = await import("../../client/src/lib/i18n");
+        await act(async () => useI18n.getState().setLocale(locale));
+        focusManager.setFocused(false);
+        server.status = 500;
+        await mount();
+
+        expect(onlineManager.isOnline()).toBe(true);
+        expect(focusManager.isFocused()).toBe(false);
+        const status = byId("status-activity-logs-paused")!;
+        expect(status.getAttribute("role")).toBe("status");
+        expect(status.textContent).toBe((locale === "ar" ? ar : en)["activityLogs.loadPaused"]);
+        expect(status.textContent).not.toMatch(/offline|غير متصل|عدم وجود اتصال/i);
+        expectNoEmptyClaim();
+        expect(byId("state-activity-logs-error")).toBeNull();
+        expect(logRequests).toBe(1);
+
+        server.status = 200;
+        await act(async () => focusManager.setFocused(true));
+        await flush();
+        expect(logRequests).toBe(2);
+        expect(byId("status-activity-logs-paused")).toBeNull();
+        expect(byId("row-log-l1")).not.toBeNull();
+      }
+    );
+
+    it.each(["en", "ar"] as const)(
+      "cached refresh: keeps rows with a paused status, then resumes on focus (%s)",
+      async (locale) => {
+        const { useI18n } = await import("../../client/src/lib/i18n");
+        await act(async () => useI18n.getState().setLocale(locale));
+        await mount();
+        expect(byId("row-log-l1")).not.toBeNull();
+
+        focusManager.setFocused(false);
+        server.status = 500;
+        const before = logRequests;
+        await refresh();
+
+        expect(onlineManager.isOnline()).toBe(true);
+        expect(logRequests).toBe(before + 1);
+        const paused = byId("status-activity-logs-refresh-paused")!;
+        expect(paused.getAttribute("role")).toBe("status");
+        expect(paused.textContent).toBe((locale === "ar" ? ar : en)["activityLogs.refreshPaused"]);
+        expect(paused.textContent).not.toMatch(/offline|غير متصل|عدم وجود اتصال/i);
+        expect(byId("row-log-l1")).not.toBeNull();
+        expect(byId("state-activity-logs-refresh-error")).toBeNull();
+        expect(exportButton().disabled).toBe(false);
+
+        server.status = 200;
+        await act(async () => focusManager.setFocused(true));
+        await flush();
+        expect(logRequests).toBe(before + 2);
+        expect(byId("status-activity-logs-refresh-paused")).toBeNull();
+        expect(byId("state-activity-logs-refresh-error")).toBeNull();
+        expect(byId("row-log-l1")).not.toBeNull();
+      }
+    );
   });
 });
