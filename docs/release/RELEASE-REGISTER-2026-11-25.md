@@ -22,6 +22,8 @@ frozen candidate in staging. "Fixed awaiting verification" is not closed.
 | GitHub access | `gh` is **not authenticated**, so PRs 116/125/137/167, CI runs and issues can't be read | `gh pr view` → auth prompt |
 | Untracked, not part of the candidate | `reports/`, `research_notes/` (e-invoicing pricing research) | `git status` |
 
+**Candidate refresh (2026-11-26, ~14:50 UTC).** Verification candidate = staging `448dcac1` (test-branch merge of PR #180; contains PR #169 merge `3398a561`), read from `/api/version`. Migration head at that SHA: `0158_s4_einvoice_asp_appointments` (159 journal entries). `origin/main` is still `bcef2255` (ancestor of the candidate; candidate is 1,497 commits ahead). Local runtime is now Node v24.12.0. PRs read through the public GitHub API (no login needed): #104 (accounting audit findings, merged 2026-11-25 16:32Z), #116 (reports retryable errors, 21:10Z), #125 (VAT return screen states, 2026-11-26 01:05Z), #137 (month-end close states, 2026-11-25 19:12Z), #167 (cash-flow retryable errors, 18:48Z) — all merged into the test branch and all ancestors of `448dcac1`, so their behaviour is covered by the staging checks in [STAGING-VERIFY-2026-11-26.md](STAGING-VERIFY-2026-11-26.md). Staging redeployed to `9e5fa726` at ~14:50 UTC after the checks; the verified dispositions are pinned to `448dcac1`. Still blocked for O05: Railway read access for build ID, worker versions and feature-flag/provider env.
+
 **Open O05 blockers:** (1) authenticated `gh` or a GitHub token, so PRs/CI can be reconciled;
 (2) staging URL plus Railway read access for the deployment SHA, build ID, migration state
 and worker versions; (3) a Node 20.19 runtime for `npm run build` and the browser crawl.
@@ -82,7 +84,7 @@ S4 = ops/evidence.
 
 | ID | Disposition | Note |
 |---|---|---|
-| O05 | open (partial) | Local identifiers recorded above; staging receipt blocked |
+| O05 | open (partial) | Candidate pinned 2026-11-26: staging `448dcac1`, migration head 0158, PRs 104/116/125/137/167 merged and contained (section 1). Still blocked: Railway build ID, worker versions, provider env. |
 | O03 | **test written; CI-only** | Benchmark probe written: `tests/db/bills-aging-perf.test.ts` seeds 50 bills across four aging buckets and measures `GET /bills/aging` over 20 consecutive requests (2 warm-up). Budget: 101 ms p95 (Postgres), 800 ms p95 (PGlite). Dataset defined: 10 current × AED 500, 15 days_1_30 × AED 1,000, 15 days_31_60 × AED 1,500, 10 days_90_plus × AED 2,000. PGlite startup exceeds the 300 s harness timeout on this machine (Node 18.16, Windows); test runs against Postgres in CI. Postgres baseline from `scripts/qa/perf-baseline.json`: 67 ms p95. |
 | O04 | **verified fixed** (staging `448dcac1`, demo tenant, 2026-11-26; [STAGING-VERIFY-2026-11-26.md](STAGING-VERIFY-2026-11-26.md)). | Import preview default: `POST /api/companies/:companyId/bank-statements/import-preview` registers a parse-only endpoint (no DB write). `BankReconciliation.tsx` auto-calls it when a CSV is selected and shows a `data-testid="import-preview-panel"` with row count, skipped-row warning and a 5-row mini-table before the user clicks Import. importPreview resets on dialog close and successful import in both PDF and CSV paths. Test: `tests/unit/bank-import-ux.test.ts` extended with preview-panel assertion. |
 | O01 | blocked (partly) | Provider sandbox credentials/references needed; F01 changes the tax-subtotal derivation, so revalidate |
