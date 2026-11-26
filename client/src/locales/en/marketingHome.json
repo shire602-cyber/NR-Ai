@@ -199,6 +199,7 @@
   "marketing.hxSavXeroNote": "Xero lists UAE prices in US dollars on its site, so we do not convert them.",
   "marketing.hxSavOtherNote": "We have no list price for this option, so no software comparison is shown.",
   "marketing.hxSavSheetNote": "A spreadsheet has no software price, so this shows the full Muhasib cost.",
+  "marketing.hxSavZeroHint": "Add your invoices, receipts and hours to see an estimate.",
   "marketing.hxSavDashLabel": "No list price available",
   "marketing.hxSavContextLabel": "Context, not part of the estimate",
   "marketing.hxSavPenalty": "E-invoicing penalty: AED {amount} initially, then AED {amount} per month or part thereof, capped at AED {cap} in any 12 consecutive months",
