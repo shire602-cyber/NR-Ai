@@ -4,10 +4,11 @@ import { AppError, globalErrorHandler, asyncHandler } from "../../server/middlew
 import { ZodError } from "zod";
 
 // Mock logger
+const logWarn = vi.hoisted(() => vi.fn());
 vi.mock("../../server/config/logger", () => ({
   createLogger: () => ({
     info: vi.fn(),
-    warn: vi.fn(),
+    warn: logWarn,
     error: vi.fn(),
     debug: vi.fn(),
     fatal: vi.fn(),
@@ -137,9 +138,38 @@ describe("Error Handler Middleware", () => {
       globalErrorHandler(pgError, req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(409);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ code: "DUPLICATE_VALUE" })
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "DUPLICATE_VALUE" }));
+    });
+
+    it("logs the pg constraint, table and detail server-side only, never in the response", () => {
+      const req = createMockReq({ id: "req-1" } as Partial<Request>);
+      const res = createMockRes();
+      const next = vi.fn() as NextFunction;
+      const pgError = Object.assign(new Error("duplicate key"), {
+        code: "23505",
+        constraint: "uniq_audit_logs_chain_seq",
+        table: "audit_logs",
+        detail: "Key (chain_key, seq)=(abc, 7) already exists.",
+      });
+      const wrapped = Object.assign(new Error("Failed query"), { cause: pgError });
+      logWarn.mockClear();
+
+      globalErrorHandler(wrapped, req, res, next);
+
+      expect(logWarn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestId: "req-1",
+          pgCode: "23505",
+          constraint: "uniq_audit_logs_chain_seq",
+          table: "audit_logs",
+          detail: "Key (chain_key, seq)=(abc, 7) already exists.",
+        }),
+        expect.any(String)
       );
+      expect(res.status).toHaveBeenCalledWith(409);
+      const body = JSON.stringify((res.json as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+      expect(body).toContain("DUPLICATE_VALUE");
+      expect(body).not.toMatch(/constraint|uniq_audit|audit_logs|detail|Key \(/i);
     });
 
     it("maps a Drizzle-wrapped 22P02 (code in cause chain) to 400", () => {

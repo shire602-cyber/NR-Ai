@@ -2,11 +2,13 @@
 //
 // A company/period can hold several VAT return rows: the original, one or more
 // amendments, and drafts of an amendment that has not taken effect yet. The
-// "effective" version for a company + period is the most recently taken-effect
-// row (status submitted or filed), excluding rows marked "amended" (superseded).
-// Draft / pending-review rows never displace an effective version; they only
-// become effective once submitted or filed. Amendment history is preserved —
-// this selects, it never deletes.
+// "effective" version for a company + period is the most recently submitted
+// row. Candidates are rows with status submitted, filed or amended (an amended
+// row was submitted once), ranked by submittedAt (createdAt as fallback); the
+// latest wins. amendVatReturn marks the original "amended" as soon as the
+// amendment DRAFT is created, so an amended original stays effective until a
+// later version is submitted or filed. Draft / pending_review / ready rows never
+// count. Amendment history is preserved � this selects, it never deletes.
 //
 // Summary cards and their drilldowns must use the same selection so a card
 // total always equals the sum of the rows it links to.
