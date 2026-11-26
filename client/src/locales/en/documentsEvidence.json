@@ -208,7 +208,7 @@
   "complianceCalendar.status.in_progress": "In progress",
   "complianceCalendar.status.cancelled": "Cancelled",
   "complianceCalendar.stillLoading": "Deadlines still loading.",
-  "complianceCalendar.waitingForConnection": "Waiting for a connection. Deadlines may be incomplete or stale.",
+  "complianceCalendar.refreshPaused": "Deadline refresh is paused. Deadlines may be incomplete or stale.",
   "complianceCalendar.deadlinesIncomplete": "Deadlines are incomplete.",
   "complianceCalendar.tasksRefreshErrorTitle": "Couldn't refresh tasks. Showing previous data.",
   "complianceCalendar.obligationsRefreshErrorTitle": "Couldn't refresh filing deadlines. Showing previous data."

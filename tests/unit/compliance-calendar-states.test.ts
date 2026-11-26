@@ -2,7 +2,12 @@
 /** Compliance calendar: error, empty and Arabic states (behaviour: renders the real page). */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  focusManager,
+  onlineManager,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import enCopy from "../../client/src/locales/en/documentsEvidence.json";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
@@ -10,6 +15,23 @@ import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
 vi.mock("@/hooks/useDefaultCompany", () => ({
   useDefaultCompany: () => ({ companyId: "c1", isLoading: false }),
 }));
+
+// The task panel writes through the app-wide `queryClient`; point it at this suite's client so
+// the real cancel + invalidate after a create acts on the cache the page is reading.
+const appQuery = vi.hoisted(() => ({
+  client: null as import("@tanstack/react-query").QueryClient | null,
+  apiRequest: vi.fn(async (..._args: unknown[]): Promise<unknown> => null),
+}));
+vi.mock("@/lib/queryClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/queryClient")>();
+  return {
+    ...actual,
+    apiRequest: (...args: unknown[]) => appQuery.apiRequest(...args),
+    get queryClient() {
+      return appQuery.client ?? actual.queryClient;
+    },
+  };
+});
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // jsdom has no ResizeObserver; some List view controls may measure themselves.
@@ -41,6 +63,8 @@ afterEach(() => {
   act(() => root.unmount());
   client.clear();
   onlineManager.setOnline(true);
+  focusManager.setFocused(undefined);
+  appQuery.apiRequest.mockClear();
   container.remove();
 });
 
@@ -59,14 +83,19 @@ async function until(check: () => void) {
   }
 }
 
-async function mount(locale: "en" | "ar", networkMode: "always" | "online" = "always") {
+async function mount(
+  locale: "en" | "ar",
+  options: { networkMode?: "always" | "online"; retry?: number } = {}
+) {
+  const { networkMode = "always", retry = 0 } = options;
   const { useI18n } = await import("../../client/src/lib/i18n");
   act(() => useI18n.getState().setLocale(locale));
   const { default: ComplianceCalendar } = await import("../../client/src/pages/ComplianceCalendar");
   client = new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
+        retry,
+        retryDelay: 0,
         networkMode,
         queryFn: async ({ queryKey }) => {
           const r = responses[String(queryKey[queryKey.length - 1])];
@@ -77,6 +106,7 @@ async function mount(locale: "en" | "ar", networkMode: "always" | "online" = "al
       },
     },
   });
+  appQuery.client = client;
   await act(async () => {
     root.render(createElement(QueryClientProvider, { client }, createElement(ComplianceCalendar)));
   });
@@ -199,14 +229,111 @@ describe("compliance calendar states", () => {
     expect(region?.textContent).not.toBe(first);
   });
 
-  it("says it is waiting for a connection while queries are paused", async () => {
+  it("says the refresh is paused (neutral copy) while queries are offline-paused", async () => {
     onlineManager.setOnline(false);
-    await mount("en", "online");
-    const waiting = enCopy["complianceCalendar.waitingForConnection"];
-    await until(() => expect(text("compliance-sources-status")).toContain(waiting));
+    await mount("en", { networkMode: "online" });
+    const paused = enCopy["complianceCalendar.refreshPaused"];
+    await until(() => expect(text("compliance-sources-status")).toContain(paused));
     await selectDay(10);
-    expect(text("compliance-day-status")).toContain(waiting);
+    expect(text("compliance-day-status")).toContain(paused);
     expect(container.textContent).not.toContain(enCopy["complianceCalendar.noDeadlinesYet"]);
+  });
+
+  it("uses the same neutral copy when a hidden tab pauses a retry while online", async () => {
+    const tasksKey = ["/api/companies", "c1", "compliance-tasks"];
+    const paused = enCopy["complianceCalendar.refreshPaused"];
+    responses["compliance-tasks"] = serverError();
+    onlineManager.setOnline(true);
+    focusManager.setFocused(false);
+    await mount("en", { networkMode: "online", retry: 1 });
+
+    // The first attempt failed; the retry waits for the tab to be visible again.
+    await until(() => {
+      const state = client.getQueryCache().find({ queryKey: tasksKey })?.state;
+      expect(state?.fetchStatus).toBe("paused");
+      expect(state?.status).toBe("pending");
+    });
+    expect(onlineManager.isOnline()).toBe(true);
+    expect(focusManager.isFocused()).toBe(false);
+    await until(() => expect(text("compliance-sources-status")).toContain(paused));
+    await selectDay(10);
+    expect(text("compliance-day-status")).toContain(paused);
+    expect(container.textContent).not.toContain(enCopy["complianceCalendar.noDeadlinesYet"]);
+    expect(container.textContent).not.toContain(enCopy["complianceCalendar.noEventsOnDay"]);
+    expect(q("compliance-calendar-error")).toBeNull();
+
+    // Restoring focus resumes the retry, which now succeeds.
+    responses["compliance-tasks"] = [task("t1", "Manual filing task")];
+    await act(async () => focusManager.setFocused(undefined));
+    await until(() => {
+      expect(client.getQueryCache().find({ queryKey: tasksKey })?.state.fetchStatus).toBe("idle");
+      expect(text("compliance-sources-status")).not.toContain(paused);
+      expect(container.textContent).toContain("Manual filing task");
+    });
+  });
+
+  it("shows a task created in List view even though the first GET is still pending or lands late", async () => {
+    window.history.replaceState(null, "", "/compliance-calendar?view=list");
+    let tasksGets = 0;
+    let resolveFirst: (rows: unknown[]) => void = () => {};
+    responses["compliance-tasks"] = () => {
+      tasksGets += 1;
+      if (tasksGets === 1) {
+        // The initial GET, started before the write: it has not answered yet.
+        return new Promise<unknown[]>((r) => {
+          resolveFirst = r;
+        });
+      }
+      return Promise.resolve([task("t-new", "Created filing")]);
+    };
+    await mount("en");
+    await until(() => expect(q("button-add-task")).not.toBeNull());
+    expect(tasksGets).toBe(1);
+    expect(q("task-t-new")).toBeNull();
+
+    // Open the dialog, fill title and due date, create.
+    await act(async () => q("button-add-task")!.click());
+    await until(() =>
+      expect(document.querySelector('[data-testid="input-task-title"]')).toBeTruthy()
+    );
+    const title = document.querySelector<HTMLInputElement>('[data-testid="input-task-title"]')!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(title, "Created filing");
+      title.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      document.querySelector<HTMLElement>('[data-testid="input-due-date"]')!.click()
+    );
+    const day15 = () =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="grid"] button[name="day"]')).find(
+        (b) => b.textContent?.trim() === "15"
+      );
+    await until(() => expect(day15()).toBeTruthy());
+    await act(async () => day15()!.click());
+    await act(async () =>
+      document.querySelector<HTMLElement>('[data-testid="button-confirm-create"]')!.click()
+    );
+
+    await until(() => expect(appQuery.apiRequest).toHaveBeenCalled());
+    expect(appQuery.apiRequest).toHaveBeenCalledWith(
+      "POST",
+      "/api/companies/c1/compliance-tasks",
+      expect.objectContaining({ title: "Created filing" })
+    );
+
+    // The fresh GET returns the created row while the first one is still unanswered.
+    await until(() => expect(q("task-t-new")).not.toBeNull());
+    expect(tasksGets).toBeGreaterThanOrEqual(2);
+
+    // The stale first GET answers late, without the new task: it must not win.
+    await act(async () => resolveFirst([]));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(q("task-t-new")).not.toBeNull();
+    expect(text("task-t-new")).toContain("Created filing");
+    expect(q("task-list-empty")).toBeNull();
   });
 
   it("keeps the available rows when one source fails", async () => {

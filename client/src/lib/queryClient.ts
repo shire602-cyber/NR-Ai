@@ -275,7 +275,7 @@ const ANONYMOUS_SKIP_KEYS = new Set(["/api/companies", "/api/auth/me"]);
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
+  async ({ queryKey, signal }) => {
     const url = apiUrl(queryKey.join("/") as string);
     // R18-04: anonymous visitors have no session, so skip the bootstrap probes
     // that would only produce 401 console noise. This resolves exactly as the
@@ -290,6 +290,7 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
       (await fetch(url, {
         credentials: "include",
         headers: getAuthHeaders(),
+        signal,
       }));
 
     if (res.status === 401) {
@@ -298,6 +299,7 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
         res = await fetch(url, {
           credentials: "include",
           headers: getAuthHeaders(),
+          signal,
         });
       }
     }

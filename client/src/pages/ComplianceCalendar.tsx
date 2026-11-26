@@ -124,7 +124,7 @@ export default function ComplianceCalendar() {
   const sourcesPaused = tasksQuery.isPaused || obligationsQuery.isPaused;
   const sourcesLoading = tasksQuery.isLoading || obligationsQuery.isLoading;
   const progressText = sourcesPaused
-    ? t["complianceCalendar.waitingForConnection"]
+    ? t["complianceCalendar.refreshPaused"]
     : sourcesLoading
       ? t["complianceCalendar.stillLoading"]
       : null;

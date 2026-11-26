@@ -239,10 +239,12 @@ export function TaskListPanel({
   const createMutation = useMutation({
     mutationFn: (data: typeof newTask) =>
       apiRequest("POST", `/api/companies/${companyId}/compliance-tasks`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "compliance-tasks"],
-      });
+    onSuccess: async () => {
+      // A GET already in flight started before this write: cancel it so its stale (task-less)
+      // response cannot land after the write, then refetch fresh.
+      const tasksKey = ["/api/companies", companyId, "compliance-tasks"];
+      await queryClient.cancelQueries({ queryKey: tasksKey, exact: true });
+      void queryClient.invalidateQueries({ queryKey: tasksKey, exact: true });
       toast({
         title: locale === "ar" ? "تمت الإضافة" : "Task created",
         description:
