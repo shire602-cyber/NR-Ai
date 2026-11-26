@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
-  ACubeEInvoiceProvider,
-  mapACubeStatus,
-} from "../../server/services/einvoice-provider-acube";
+  AcubeEInvoiceProvider,
+  resetAcubeTokenCache,
+} from "../../server/services/einvoice/providers/acube";
+import { ComplyanceEInvoiceProvider } from "../../server/services/einvoice/providers/complyance";
 import {
-  ComplyanceEInvoiceProvider,
-  buildUnifyXmlRequest,
-  mapComplyanceState,
-} from "../../server/services/einvoice-provider-complyance";
+  unifyXmlRequest,
+  ublToGets,
+} from "../../server/services/einvoice/providers/complyance-gets";
+import { mapAcubeDeliveryStatus } from "../../server/services/einvoice/tracks";
 import { getEInvoiceProvider } from "../../server/services/einvoice-provider";
 
 const XML = `<?xml version="1.0" encoding="UTF-8"?>\n<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"><cbc:ID>INV-1</cbc:ID></Invoice>`;
@@ -16,7 +17,7 @@ const submission = {
   invoiceNumber: "INV-1",
   uuid: "u1",
   xml: XML,
-  sellerTrn: "100000000000003",
+  companyId: "11111111-1111-1111-1111-111111111111",
 };
 
 function jsonResponse(status: number, body: unknown) {
@@ -26,7 +27,10 @@ function jsonResponse(status: number, body: unknown) {
   });
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  resetAcubeTokenCache();
+});
 
 describe("provider selection", () => {
   it("selects acube and complyance by name", () => {
@@ -41,54 +45,42 @@ describe("provider selection", () => {
       getEInvoiceProvider({
         EINVOICE_PROVIDER: "complyance",
         COMPLYANCE_API_KEY: "k",
-        COMPLYANCE_SOURCE: "s:v1",
       } as any).name
     ).toBe("complyance");
   });
 
   it("refuses to construct without credentials", () => {
-    expect(() => new ACubeEInvoiceProvider({} as any)).toThrow(/ACUBE_EMAIL and ACUBE_PASSWORD/);
+    expect(() => new AcubeEInvoiceProvider({} as any)).toThrow(/ACUBE_EMAIL and ACUBE_PASSWORD/);
     expect(() => new ComplyanceEInvoiceProvider({} as any)).toThrow(/COMPLYANCE_API_KEY/);
-    expect(() => new ComplyanceEInvoiceProvider({ COMPLYANCE_API_KEY: "k" } as any)).toThrow(
-      /COMPLYANCE_SOURCE/
-    );
-    expect(
-      () =>
-        new ComplyanceEInvoiceProvider({
-          COMPLYANCE_API_KEY: "k",
-          COMPLYANCE_SOURCE: "nocolon",
-        } as any)
-    ).toThrow(/name:version/);
   });
 });
 
 describe("A-Cube status mapping", () => {
-  it("maps in-flight, delivered, rejected and error states", () => {
-    for (const s of ["new", "valid", "sending_started", "sending_queued", "processed"]) {
-      expect(mapACubeStatus(s), s).toBe("submitted");
-    }
-    expect(mapACubeStatus("delivered")).toBe("accepted");
-    expect(mapACubeStatus("rejected")).toBe("rejected");
-    expect(mapACubeStatus("action_required")).toBe("rejected");
-    for (const s of [
-      "sending_failed",
-      "sending_error",
-      "delivery_failed",
-      "delivery_error",
-      "withdrawn",
-    ]) {
-      expect(mapACubeStatus(s), s).toBe("failed");
-    }
+  it("maps in-flight states to queued or sending", () => {
+    for (const s of ["new", "valid", "sending_queued"])
+      expect(mapAcubeDeliveryStatus(s), s).toBe("queued");
+    for (const s of ["sending_started", "processed", "sending_failed", "delivery_failed"])
+      expect(mapAcubeDeliveryStatus(s), s).toBe("sending");
   });
 
-  it("never treats an unknown status as accepted", () => {
+  it("maps terminal states correctly", () => {
+    for (const s of ["delivered", "accepted"])
+      expect(mapAcubeDeliveryStatus(s), s).toBe("delivered");
+    for (const s of ["rejected", "withdrawn"])
+      expect(mapAcubeDeliveryStatus(s), s).toBe("rejected");
+    for (const s of ["sending_error", "delivery_error", "action_required"])
+      expect(mapAcubeDeliveryStatus(s), s).toBe("delivery_failed");
+  });
+
+  it("never treats an unknown status as delivered", () => {
     for (const s of ["", "received", "banana", undefined, null])
-      expect(mapACubeStatus(s)).toBe("failed");
+      expect(mapAcubeDeliveryStatus(s)).toBe("delivery_failed");
   });
 });
 
 describe("A-Cube adapter", () => {
-  const env = { ACUBE_EMAIL: "a@b.c", ACUBE_PASSWORD: "pw", ACUBE_ENVIRONMENT: "sandbox" } as any;
+  // env uses ACUBE_ENV (not ACUBE_ENVIRONMENT) per the new provider.
+  const env = { ACUBE_EMAIL: "a@b.c", ACUBE_PASSWORD: "pw", ACUBE_ENV: "sandbox" } as any;
 
   it("logs in, posts raw XML to the sandbox and tracks the returned invoiceId", async () => {
     const fetchMock = vi
@@ -97,7 +89,7 @@ describe("A-Cube adapter", () => {
       .mockResolvedValueOnce(jsonResponse(201, { invoiceId: "acube-1", status: "sending_queued" }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await new ACubeEInvoiceProvider(env).submit(submission);
+    const result = await new AcubeEInvoiceProvider(env).submit(submission);
     expect(result).toMatchObject({ providerMessageId: "acube-1", status: "submitted" });
 
     const [loginUrl, loginInit] = fetchMock.mock.calls[0];
@@ -109,7 +101,7 @@ describe("A-Cube adapter", () => {
     });
 
     const [sendUrl, sendInit] = fetchMock.mock.calls[1];
-    expect(sendUrl).toBe("https://ae-sandbox.api.acubeapi.com/invoices/outgoing");
+    expect(sendUrl).toBe("https://ae-sandbox.api.acubeapi.com/invoices");
     expect(sendInit.headers.Authorization).toBe("Bearer jwt");
     expect(sendInit.headers["Content-Type"]).toBe("application/xml");
     expect(sendInit.body).toBe(XML);
@@ -123,30 +115,28 @@ describe("A-Cube adapter", () => {
       .mockResolvedValueOnce(jsonResponse(200, { token: "new" }))
       .mockResolvedValueOnce(jsonResponse(201, { invoiceId: "acube-2", status: "new" }));
     vi.stubGlobal("fetch", fetchMock);
-    const result = await new ACubeEInvoiceProvider(env).submit(submission);
+    const result = await new AcubeEInvoiceProvider(env).submit(submission);
     expect(result.providerMessageId).toBe("acube-2");
     expect(fetchMock.mock.calls[3][1].headers.Authorization).toBe("Bearer new");
   });
 
-  it("reports validation violations as rejected and a missing legal entity as failed", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(jsonResponse(200, { token: "jwt" }))
-        .mockResolvedValueOnce(
-          jsonResponse(422, { violations: [{ propertyPath: "cbc:ID", message: "is required" }] })
-        )
-        .mockResolvedValueOnce(jsonResponse(404, {}))
-    );
-    const p = new ACubeEInvoiceProvider(env);
+  it("reports validation violations as rejected and a missing legal entity as rejected", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(200, { token: "jwt" }))
+      .mockResolvedValueOnce(
+        jsonResponse(422, { violations: [{ propertyPath: "cbc:ID", message: "is required" }] })
+      )
+      .mockResolvedValueOnce(jsonResponse(404, {}));
+    vi.stubGlobal("fetch", fetchMock);
+    const p = new AcubeEInvoiceProvider(env);
     expect(await p.submit(submission)).toMatchObject({
       status: "rejected",
-      detail: "cbc:ID: is required",
+      detail: "is required",
     });
     const missing = await p.submit(submission);
-    expect(missing.status).toBe("failed");
-    expect(missing.detail).toMatch(/EmaraTax onboarding/);
+    expect(missing.status).toBe("rejected");
+    expect(missing.errorCode).toBe("ACUBE_LEGAL_ENTITY_NOT_FOUND");
   });
 
   it("routes credit notes to the credit-note endpoint", async () => {
@@ -155,10 +145,12 @@ describe("A-Cube adapter", () => {
       .mockResolvedValueOnce(jsonResponse(200, { token: "jwt" }))
       .mockResolvedValueOnce(jsonResponse(201, { invoiceId: "cn-1", status: "new" }));
     vi.stubGlobal("fetch", fetchMock);
-    await new ACubeEInvoiceProvider(env).submit({ ...submission, xml: "<CreditNote xmlns='x'/>" });
-    expect(fetchMock.mock.calls[1][0]).toBe(
-      "https://ae-sandbox.api.acubeapi.com/credit-notes/outgoing"
-    );
+    await new AcubeEInvoiceProvider(env).submit({
+      ...submission,
+      xml: "<CreditNote xmlns='x'/>",
+      documentType: "381",
+    });
+    expect(fetchMock.mock.calls[1][0]).toBe("https://ae-sandbox.api.acubeapi.com/credit-notes");
   });
 
   it("uses the production host when configured", async () => {
@@ -167,40 +159,25 @@ describe("A-Cube adapter", () => {
       .mockResolvedValueOnce(jsonResponse(200, { token: "jwt" }))
       .mockResolvedValueOnce(jsonResponse(200, { invoiceId: "acube-1", status: "delivered" }));
     vi.stubGlobal("fetch", fetchMock);
-    const result = await new ACubeEInvoiceProvider({
+    // A-Cube "delivered" = recipient receipt only, not MLS; legacy status stays "submitted".
+    const result = await new AcubeEInvoiceProvider({
       ...env,
-      ACUBE_ENVIRONMENT: "production",
+      ACUBE_ENV: "production",
     }).getStatus("acube-1");
-    expect(result.status).toBe("accepted");
+    expect(result.status).toBe("submitted");
     expect(fetchMock.mock.calls[1][0]).toBe("https://ae.api.acubeapi.com/invoices/acube-1");
   });
 });
 
-describe("Complyance state mapping", () => {
-  it("only final_valid counts as accepted; delivery_failed keeps polling", () => {
-    expect(mapComplyanceState("final_valid")).toBe("accepted");
-    for (const s of ["submitted", "processing", "delivery_success", "delivery_failed"]) {
-      expect(mapComplyanceState(s), s).toBe("submitted");
-    }
-    expect(mapComplyanceState("final_invalid")).toBe("rejected");
-    expect(mapComplyanceState("rejected")).toBe("rejected");
-    expect(mapComplyanceState("banana")).toBe("failed");
-  });
-});
-
-describe("Complyance adapter", () => {
-  const env = {
-    COMPLYANCE_API_KEY: "key",
-    COMPLYANCE_SOURCE: "muhasib:v1",
-    COMPLYANCE_SOURCES_BY_TRN: JSON.stringify({ "100000000000003": "client-a:v1" }),
-  } as any;
-
+describe("Complyance XML request builder", () => {
   it("wraps our XML in a Unify envelope without the XML declaration", () => {
-    const xml = buildUnifyXmlRequest({
+    const { documentType } = ublToGets(XML);
+    const xml = unifyXmlRequest({
       xml: XML,
       environment: "sandbox",
       source: "a:v1",
       purpose: "mapping",
+      documentType,
     });
     expect(xml).toContain("<purpose>mapping</purpose>");
     expect(xml).toContain("<base>tax_invoice</base>");
@@ -208,76 +185,86 @@ describe("Complyance adapter", () => {
       '<payload><Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">'
     );
     expect(xml.match(/<\?xml/g)).toHaveLength(1);
-    const cn = buildUnifyXmlRequest({
-      xml: "<Invoice><cbc:InvoiceTypeCode>381</cbc:InvoiceTypeCode></Invoice>",
+
+    const cnXml = "<CreditNote/>";
+    const { documentType: cnType } = ublToGets(cnXml);
+    const cn = unifyXmlRequest({
+      xml: cnXml,
       environment: "sandbox",
       source: "a:v1",
       purpose: "invoicing",
+      documentType: cnType,
     });
     expect(cn).toContain("<base>credit_note</base>");
   });
+});
 
-  it("submits with the seller's own source and tracks documentId", async () => {
+describe("Complyance adapter", () => {
+  const env = {
+    COMPLYANCE_API_KEY: "key",
+    COMPLYANCE_SUBMIT_FORMAT: "xml",
+  } as any;
+  const companySource = { name: "client-a", version: "v1" };
+  const sourceFor = vi.fn().mockResolvedValue(companySource);
+
+  it("submits with the company source and tracks documentId", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(200, { documentId: "doc-1", message: "ok" }));
     vi.stubGlobal("fetch", fetchMock);
-    const result = await new ComplyanceEInvoiceProvider(env).submit(submission);
+    const result = await new ComplyanceEInvoiceProvider(env, { sourceFor }).submit(submission);
     expect(result).toMatchObject({ providerMessageId: "doc-1", status: "submitted" });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://prod.gets.complyance.io/api/v3/unify");
     expect(init.headers.Authorization).toBe("Bearer key");
     expect(init.headers["Content-Type"]).toMatch(/^application\/xml/);
-    // Complyance's WAF rejects requests without a User-Agent (403).
     expect(init.headers["User-Agent"]).toMatch(/^Muhasib-EInvoicing\//);
     expect(init.body).toContain("<source>client-a:v1</source>");
     expect(init.body).toContain("<environment>sandbox</environment>");
   });
 
-  it("falls back to the default source for other sellers", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { documentId: "doc-2" }));
-    vi.stubGlobal("fetch", fetchMock);
-    await new ComplyanceEInvoiceProvider(env).submit({
-      ...submission,
-      sellerTrn: "999999999999999",
-    });
-    expect(fetchMock.mock.calls[0][1].body).toContain("<source>muhasib:v1</source>");
+  it("returns rejected when no source is configured for the company", async () => {
+    const noSource = vi.fn().mockResolvedValue(null);
+    const result = await new ComplyanceEInvoiceProvider(env, { sourceFor: noSource }).submit(
+      submission
+    );
+    expect(result.status).toBe("rejected");
+    expect(result.errorCode).toBe("COMPLYANCE_SOURCE_MISSING");
   });
 
-  it("reports validation errors as rejected and config errors as failed", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          jsonResponse(422, {
-            documentId: "doc-3",
-            errors: [
-              { code: "IBR-015", getsPath: "totals.amountDue", message: "Amount due missing" },
-            ],
-          })
-        )
-        .mockResolvedValueOnce(
-          jsonResponse(412, {
-            code: "failed_precondition",
-            message: "No mapping",
-            reason: "no_mapping",
-          })
-        )
-    );
-    const p = new ComplyanceEInvoiceProvider(env);
+  it("reports validation errors as rejected and mapping errors as rejected", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(422, {
+          documentId: "doc-3",
+          documentNumber: "INV-1",
+          errors: [
+            { code: "IBR-015", getsPath: "totals.amountDue", message: "Amount due missing" },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(412, {
+          code: "failed_precondition",
+          message: "No mapping",
+          reason: "no_mapping",
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const p = new ComplyanceEInvoiceProvider(env, { sourceFor });
     expect(await p.submit(submission)).toMatchObject({
       providerMessageId: "doc-3",
       status: "rejected",
-      detail: "IBR-015 · totals.amountDue · Amount due missing",
+      detail: "Amount due missing",
     });
     expect(await p.submit(submission)).toMatchObject({
-      status: "failed",
-      detail: "No mapping (no_mapping)",
+      status: "rejected",
+      detail: "No mapping — no_mapping",
     });
   });
 
-  it("does not claim a fresh document on a duplicate-number 422", async () => {
+  it("flags a duplicate-number 422 without claiming a document id", async () => {
     vi.stubGlobal(
       "fetch",
       vi
@@ -288,25 +275,16 @@ describe("Complyance adapter", () => {
           })
         )
     );
-    const result = await new ComplyanceEInvoiceProvider(env).submit(submission);
-    expect(result.status).toBe("failed");
-    expect(result.detail).toMatch(/already has invoice INV-1/);
+    const result = await new ComplyanceEInvoiceProvider(env, { sourceFor }).submit(submission);
+    expect(result.status).toBe("rejected");
+    expect(result.errorCode).toBe("COMPLYANCE_DUPLICATE_NUMBER");
+    expect(result.providerMessageId).toBe("");
   });
 
-  it("polls the sales document and maps its state", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        jsonResponse(200, {
-          success: true,
-          data: { state: "final_valid", isTerminal: true, errors: [] },
-        })
-      );
-    vi.stubGlobal("fetch", fetchMock);
-    const result = await new ComplyanceEInvoiceProvider(env).getStatus("doc-1");
-    expect(result).toMatchObject({ status: "accepted", detail: null });
-    expect(fetchMock.mock.calls[0][0]).toBe(
-      "https://prod.gets.complyance.io/api/v3/documents/doc-1?type=sales"
-    );
+  it("returns failed without an outbound identity reference", async () => {
+    const p = new ComplyanceEInvoiceProvider(env, { sourceFor });
+    const result = await p.getStatus("doc-1");
+    expect(result.status).toBe("failed");
+    expect(result.errorCode).toBe("COMPLYANCE_UNAVAILABLE");
   });
 });
