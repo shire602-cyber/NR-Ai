@@ -21,6 +21,7 @@
 // Status is server-owned and moves only through `invoiceMachine`
 // (invoice-state-machine.ts) with conditional transitionRow updates.
 
+import { todayDubai } from "@shared/accounting-date";
 import { type JournalLineKey, journalLine, journalMemo } from "@shared/journal-memo";
 import Decimal from "decimal.js";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -423,7 +424,7 @@ export async function refreshSettlementStatus(tx: LedgerTx, invoiceId: string): 
 
 // ─── Revenue recognition ────────────────────────────────────────────────────
 
-interface RevenueBucket {
+export interface RevenueBucket {
   role: RevenueAccountRole;
   costCenterId: string | null;
   /** X5 (J1 L1): an explicit income account for the bucket (service revenue); else by role. */
@@ -437,7 +438,7 @@ export interface RevenueLineHint {
   revenueAccountId?: string | null;
 }
 
-function revenueBuckets(totals: SalesDocumentTotals, lines: RevenueLineHint[]) {
+export function revenueBuckets(totals: SalesDocumentTotals, lines: RevenueLineHint[]) {
   const map = new Map<string, RevenueBucket>();
   totals.lines.forEach((l, i) => {
     const role = l.classification.revenueAccountRole;
@@ -877,7 +878,7 @@ export async function voidInvoice(
 
 // ─── Credit notes ───────────────────────────────────────────────────────────
 
-interface OriginalLeg {
+export interface OriginalLeg {
   accountId: string;
   costCenterId: string | null;
   kind: "ar" | "vat" | "revenue";
@@ -895,7 +896,11 @@ interface OriginalLeg {
  * the caller's balance check rejects the credit. A centre with no base left keeps
  * zero so its document-currency residual can still be cleared.
  */
-function creditBucketBaseAmounts(buckets: RevenueBucket[], legs: OriginalLeg[], rate: string) {
+export function creditBucketBaseAmounts(
+  buckets: RevenueBucket[],
+  legs: OriginalLeg[],
+  rate: string
+) {
   const rounded = new Map<RevenueBucket, number>();
   const FxDecimal = Decimal.clone({ precision: 40 });
   const fxRate = new FxDecimal(rate).toDecimalPlaces(RATE_DECIMALS, Decimal.ROUND_HALF_UP);
@@ -1297,6 +1302,15 @@ function assertCreditable(original: Invoice) {
   }
 }
 
+/**
+ * F07/F06: a credit note without an explicit date takes the Dubai business date, not the UTC
+ * date (between 20:00 and 24:00 UTC the two differ, which dated the entry a day early and
+ * could land it in a locked period).
+ */
+export function creditNoteDate(date?: string | null): Date {
+  return new Date(`${date || todayDubai()}T00:00:00.000Z`);
+}
+
 /** Insert a credit-note document (status draft) with its lines. */
 export async function insertCreditNoteDocument(
   tx: LedgerTx,
@@ -1380,7 +1394,7 @@ export async function insertCreditNoteDocument(
       };
     }
   }
-  const date = args.date ? new Date(`${args.date}T00:00:00.000Z`) : new Date();
+  const date = creditNoteDate(args.date);
   const number = await allocateInvoiceNumber(args.companyId, "credit_note", date, tx);
   const rate = invoiceRate(original, await loadBaseCurrency(args.companyId, tx));
   const [creditNote] = await tx

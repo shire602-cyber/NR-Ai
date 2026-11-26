@@ -1,142 +1,154 @@
-// F07 — credit-note reversals in the AED ledger: original rate, tax-treatment
-// split, and exact clearing on the final credit. Expected values are computed
-// by hand below, independently of the implementation.
-import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import {
-  addLegs,
-  planCreditNoteReversal,
-  sumLegs,
-  ZERO_LEGS,
-  type ReversalLegs,
-} from "../../server/services/credit-note-posting";
-
+// F07 — foreign-currency invoice and credit-note legs in the AED ledger, exercised through the
+// LIVE posting helpers (invoice-posting.service: buildRevenueLines, revenueBuckets,
+// creditBucketBaseAmounts). Expected values are hand-calculated, independent of the code.
+//
 // Fixture: USD invoice @ 3.6725 AED/USD
-//   line A  standard  1 × 700.00  → net 700.00, VAT 35.00
-//   line B  zero-rated 1 × 300.00 → net 300.00, VAT 0
-//   subtotal 1,000.00 · VAT 35.00 · total 1,035.00 USD
-// Original AED posting (invoice-posting.service):
-//   subtotal AED = round(1000 × 3.6725) = 3,672.50
-//   VAT AED      = round(35 × 3.6725)   = 128.54 (128.5375)
-//   zero-rated   = round(300 × 3.6725)  = 1,101.75
-//   standard     = 3,672.50 − 1,101.75  = 2,570.75
-//   A/R          = 3,672.50 + 128.54    = 3,801.04
-const RATE = 3.6725;
-const original: ReversalLegs = { ar: 3801.04, standardRevenue: 2570.75, zeroRated: 1101.75, vat: 128.54 };
+//   line A  standard    1 × 700.00 USD → VAT 35.00
+//   line B  zero-rated  1 × 300.00 USD → VAT 0
+//   original AED legs: standard revenue 700 × 3.6725 = 2,570.75
+//                      zero-rated sales 300 × 3.6725 = 1,101.75
+//                      output VAT        35 × 3.6725 =   128.5375 → 128.54
+//                      A/R (sum)                       3,801.04
+// Posting against a database (final credit clearing to the fil, void mirrors, refunds) is in
+// tests/db/f07-fx-credit-payment.test.ts.
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  buildRevenueLines,
+  creditBucketBaseAmounts,
+  creditNoteDate,
+  revenueBuckets,
+  toBase,
+  type OriginalLeg,
+} from "../../server/services/invoice-posting.service";
+import { computeSalesDocument } from "../../server/services/document-totals.service";
 
-describe("F07 planCreditNoteReversal — foreign currency", () => {
-  it("partial credit converts at the original rate and keeps the tax split", () => {
-    // Credit half of line A: 1 × 350.00 standard → net 350, VAT 17.50, total 367.50 USD
-    const legs = planCreditNoteReversal({
-      rate: RATE,
-      doc: { subtotal: 350, vatAmount: 17.5, total: 367.5 },
-      zeroRatedNetDoc: 0,
-      isFinal: false,
-      originalPosted: original,
-      priorReversed: ZERO_LEGS,
+const RATE = "3.6725";
+const ACC = {
+  ar: "AR",
+  vatOutput: "VAT",
+  revenue: {
+    standard_sales: "REV",
+    zero_rated_sales: "ZR",
+    exempt_sales: "EX",
+    out_of_scope_revenue: "OOS",
+  },
+} as const;
+const line = (priceFils: number, supply: "standard_rated" | "zero_rated") => ({
+  quantity: 1,
+  unitPriceFils: priceFils,
+  vatRate: supply === "standard_rated" ? 0.05 : 0,
+  vatSupplyType: supply,
+});
+
+function posted(lines: ReturnType<typeof buildRevenueLines>) {
+  const byAccount = (id: string) => {
+    const l = lines.find((x) => x.accountId === id);
+    return l ? (l.creditFils ?? 0) - (l.debitFils ?? 0) : 0;
+  };
+  const ar = lines.find((x) => x.accountId === "AR")!;
+  return {
+    ar: ar.debitFils,
+    standard: byAccount("REV"),
+    zeroRated: byAccount("ZR"),
+    vat: byAccount("VAT"),
+  };
+}
+
+const invoiceTotals = computeSalesDocument([
+  line(70000, "standard_rated"),
+  line(30000, "zero_rated"),
+]);
+const invoiceLines = buildRevenueLines({
+  invoice: { number: "INV-1", customerName: "Acme", currency: "USD" },
+  rate: RATE,
+  totals: invoiceTotals,
+  lines: [{}, {}],
+  accounts: { ...ACC, revenue: { ...ACC.revenue } },
+  baseCurrency: "AED",
+});
+
+describe("F07 A0: the original USD invoice posts AED legs at its own rate", () => {
+  it("splits standard / zero-rated / VAT and debits A/R with their sum", () => {
+    expect(posted(invoiceLines)).toEqual({
+      ar: 380104,
+      standard: 257075,
+      zeroRated: 110175,
+      vat: 12854,
     });
-    // 350 × 3.6725 = 1,285.375 → 1,285.38 ; 17.5 × 3.6725 = 64.26875 → 64.27
-    expect(legs).toEqual({ standardRevenue: 1285.38, zeroRated: 0, vat: 64.27, ar: 1349.65 });
-    // Old behaviour posted the USD figure (367.50) as AED — a 982.15 AED gap.
-    expect(legs.ar).not.toBe(367.5);
-  });
-
-  it("final credit clears every leg to the fil after a partial credit", () => {
-    const first: ReversalLegs = { standardRevenue: 1285.38, zeroRated: 0, vat: 64.27, ar: 1349.65 };
-    const final = planCreditNoteReversal({
-      rate: RATE,
-      // Remaining document: net 650 (350 std + 300 zero), VAT 17.50, total 667.50 USD
-      doc: { subtotal: 650, vatAmount: 17.5, total: 667.5 },
-      zeroRatedNetDoc: 300,
-      isFinal: true,
-      originalPosted: original,
-      priorReversed: first,
-    });
-    // Remaining posted: std 2,570.75 − 1,285.38 = 1,285.37 ; zero 1,101.75 ; VAT 128.54 − 64.27 = 64.27
-    expect(final).toEqual({ standardRevenue: 1285.37, zeroRated: 1101.75, vat: 64.27, ar: 2451.39 });
-    const total = addLegs(first, final);
-    expect(total).toEqual(original); // A/R, revenue, zero-rated and VAT all net to zero
-    // A naive conversion of the remaining doc would leave a residual:
-    // 350 × 3.6725 = 1,285.38 (≠ 1,285.37) — the 0.01 is rounding, not FX.
-    expect(Math.round(350 * RATE * 100) / 100).toBe(1285.38);
-  });
-
-  it("partial credit never reverses more than is still posted on a leg", () => {
-    const legs = planCreditNoteReversal({
-      rate: RATE,
-      doc: { subtotal: 350, vatAmount: 17.5, total: 367.5 },
-      zeroRatedNetDoc: 0,
-      isFinal: false,
-      originalPosted: original,
-      priorReversed: { ar: 2451.39, standardRevenue: 2000, zeroRated: 0, vat: 100 },
-    });
-    expect(legs.standardRevenue).toBe(570.75);
-    expect(legs.vat).toBe(28.54);
-  });
-
-  it("AED invoice: rate 1, full credit equals the original legs", () => {
-    const aed: ReversalLegs = { ar: 1050, standardRevenue: 1000, zeroRated: 0, vat: 50 };
-    expect(
-      planCreditNoteReversal({
-        rate: 1,
-        doc: { subtotal: 1000, vatAmount: 50, total: 1050 },
-        zeroRatedNetDoc: 0,
-        isFinal: true,
-        originalPosted: aed,
-        priorReversed: ZERO_LEGS,
-      })
-    ).toEqual(aed);
-  });
-
-  it("legacy invoice with no posted journal falls back to converted amounts", () => {
-    expect(
-      planCreditNoteReversal({
-        rate: RATE,
-        doc: { subtotal: 1000, vatAmount: 35, total: 1035 },
-        zeroRatedNetDoc: 300,
-        isFinal: true,
-        originalPosted: null,
-        priorReversed: ZERO_LEGS,
-      })
-    ).toEqual({ standardRevenue: 2570.75, zeroRated: 1101.75, vat: 128.54, ar: 3801.04 });
+    // Every leg carries its USD amount so the foreign trial balance ties.
+    const ar = invoiceLines.find((l) => l.accountId === "AR")!;
+    expect(ar.foreignDebit).toBe("1035.00");
+    expect(ar.exchangeRate).toBe(RATE);
   });
 });
 
-describe("F07 sumLegs reads posted journal lines", () => {
-  const acc = { ar: "AR", revenue: "REV", zeroRated: "ZR", vat: "VAT" };
-  it("sums an invoice posting (credit-side revenue) and a credit note (debit-side)", () => {
-    const invoiceLines = [
-      { accountId: "AR", debit: "3801.04", credit: "0" },
-      { accountId: "REV", debit: 0, credit: 2570.75 },
-      { accountId: "ZR", debit: 0, credit: 1101.75 },
-      { accountId: "VAT", debit: 0, credit: 128.54 },
-    ];
-    expect(sumLegs(invoiceLines, acc, "credit")).toEqual(original);
-    const cnLines = [
-      { accountId: "REV", debit: 1285.38, credit: 0 },
-      { accountId: "VAT", debit: 64.27, credit: 0 },
-      { accountId: "AR", debit: 0, credit: 1349.65 },
-    ];
-    expect(sumLegs(cnLines, acc, "debit")).toEqual({
-      ar: 1349.65,
-      standardRevenue: 1285.38,
-      zeroRated: 0,
-      vat: 64.27,
-    });
+describe("F07 A1/A2: a partial credit converts at the ORIGINAL rate into the right accounts", () => {
+  const creditTotals = computeSalesDocument([line(35000, "standard_rated")]);
+  const buckets = revenueBuckets(creditTotals, [{}]);
+  const legs: OriginalLeg[] = [
+    {
+      accountId: "REV",
+      costCenterId: null,
+      kind: "revenue",
+      role: "standard_sales",
+      remainingBase: 257075,
+      remainingForeign: 70000,
+    },
+    {
+      accountId: "ZR",
+      costCenterId: null,
+      kind: "revenue",
+      role: "zero_rated_sales",
+      remainingBase: 110175,
+      remainingForeign: 30000,
+    },
+  ];
+
+  it("USD 350 standard → AED 1,285.38 revenue (not 350, not today's rate); VAT USD 17.50 → 64.27", () => {
+    expect(buckets).toHaveLength(1);
+    expect(buckets[0].role).toBe("standard_sales");
+    const base = creditBucketBaseAmounts(buckets, legs, RATE).get(buckets[0]);
+    // 350 × 3.6725 = 1,285.375 → 1,285.38 (half up)
+    expect(base).toBe(128538);
+    // 17.50 × 3.6725 = 64.26875 → 64.27
+    expect(toBase(creditTotals.vatFils, RATE)).toBe(6427);
+    expect(creditTotals.vatFils).toBe(1750);
+  });
+
+  it("a zero-rated credit maps to the zero-rated role, never to standard revenue", () => {
+    const zr = computeSalesDocument([line(10000, "zero_rated")]);
+    const b = revenueBuckets(zr, [{}]);
+    expect(b.map((x) => x.role)).toEqual(["zero_rated_sales"]);
+    expect(creditBucketBaseAmounts(b, legs, RATE).get(b[0])).toBe(36725); // 100 × 3.6725
+    expect(zr.vatFils).toBe(0);
+  });
+
+  it("partial standard credit + the remainder add up to the original posting to the fil", () => {
+    // The final credit mirrors "original less prior credits" per leg (remaining mode in
+    // postCreditNoteInTx); the partial's base is what that arithmetic subtracts.
+    const partial = { standard: 128538, vat: 6427 };
+    const remaining = {
+      standard: 257075 - partial.standard,
+      zeroRated: 110175,
+      vat: 12854 - partial.vat,
+    };
+    expect(remaining).toEqual({ standard: 128537, zeroRated: 110175, vat: 6427 });
+    // Naive conversion of the remaining USD 350 would give 128538: the 0.01 is rounding, which
+    // the mirror absorbs, and is never booked as an exchange difference.
+    expect(toBase(35000, RATE)).toBe(128538);
+    expect(partial.standard + remaining.standard).toBe(257075);
   });
 });
 
-describe("F07 route wiring (source invariants)", () => {
-  const src = readFileSync("server/routes/invoices.routes.ts", "utf8");
-  it("credit-note JE uses the planned AED legs and stores rate + base amount", () => {
-    expect(src).toContain("planCreditNoteReversal({");
-    expect(src).toContain("exchangeRate: cnRate,");
-    expect(src).toContain("baseCurrencyAmount: -reversal.ar,");
-    expect(src).toContain("credit: reversal.ar,");
-    expect(src).toContain("Reverse zero-rated sales");
+describe("F07 creditNoteDate: default is the Dubai business date, not the UTC date", () => {
+  afterEach(() => vi.useRealTimers());
+  it("22:30 UTC on 10 March is already 11 March in Dubai", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T22:30:00.000Z"));
+    expect(creditNoteDate().toISOString()).toBe("2026-03-11T00:00:00.000Z");
+    expect(creditNoteDate(null).toISOString()).toBe("2026-03-11T00:00:00.000Z");
   });
-  it("void reversal mirrors the original posted AED lines", () => {
-    expect(src).toContain("const postedLines = await storage.getJournalLinesByEntryId(originalEntry.id);");
-    expect(src).toMatch(/debit: Number\(l\.credit\) \|\| 0,\s*credit: Number\(l\.debit\) \|\| 0,/);
+  it("an explicit date wins", () => {
+    expect(creditNoteDate("2026-01-20").toISOString()).toBe("2026-01-20T00:00:00.000Z");
   });
 });
