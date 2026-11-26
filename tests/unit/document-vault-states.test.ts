@@ -400,7 +400,7 @@ describe("query cancellation", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("does not use a boot fetch that answers after the query was cancelled", async () => {
+  it("still adopts a pre-started boot response if the query is cancelled while it answers", async () => {
     const controller = new AbortController();
     let answer!: (response: Response) => void;
     fetchMock.mockReturnValue(
@@ -412,7 +412,8 @@ describe("query cancellation", () => {
     const result = Promise.resolve(run(controller.signal));
     controller.abort();
     answer(json([row]));
-    await expect(result).rejects.toMatchObject({ name: "AbortError" });
+    // takeBootFetch has already consumed the boot entry; rejecting here would force a remount to fetch again.
+    await expect(result).resolves.toEqual([row]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
