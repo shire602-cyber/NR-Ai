@@ -1,6 +1,9 @@
 {
   "activityLogs.loadFailedTitle": "تعذّر تحميل سجلات النشاط",
   "activityLogs.loadFailedDescription": "تحقق من اتصالك وحاول مرة أخرى. لم يتم تغيير أي شيء.",
+  "activityLogs.loadPaused": "التحميل متوقف مؤقتًا لعدم وجود اتصال. سيُستأنف عند عودة الاتصال.",
+  "activityLogs.refreshPaused": "التحديث متوقف مؤقتًا لعدم وجود اتصال. تُعرض آخر بيانات تم تحميلها.",
+  "activityLogs.refreshFailed": "تعذّر التحديث. تُعرض آخر بيانات تم تحميلها.",
   "activityLogs.clearFilters": "مسح عوامل التصفية",
   "activityLogs.chainCheckFailed": "تعذّر إكمال فحص السلامة. حاول مرة أخرى.",
   "activityLogs.chainChecking": "جارٍ فحص السلامة...",

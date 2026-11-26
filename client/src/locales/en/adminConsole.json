@@ -1,6 +1,9 @@
 {
   "activityLogs.loadFailedTitle": "Activity logs could not be loaded",
   "activityLogs.loadFailedDescription": "Check your connection and try again. Nothing has been changed.",
+  "activityLogs.loadPaused": "Loading is paused while you are offline. It will resume when your connection returns.",
+  "activityLogs.refreshPaused": "Refresh is paused while you are offline. Showing the last loaded data.",
+  "activityLogs.refreshFailed": "Could not refresh. Showing the last loaded data.",
   "activityLogs.clearFilters": "Clear filters",
   "activityLogs.chainCheckFailed": "The integrity check could not be completed. Try again.",
   "activityLogs.chainChecking": "Checking integrity...",

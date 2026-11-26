@@ -63,13 +63,18 @@ export default function ActivityLogs() {
   };
 
   const {
-    data: logs = [],
-    isLoading,
-    isError: logsFailed,
+    data: loadedLogs,
+    isPending,
+    isPaused,
+    isLoadingError,
+    isRefetchError,
     refetch: refetchLogs,
   } = useQuery<ActivityLog[]>({
     queryKey: ["/api/admin/activity-logs"],
   });
+  // `undefined` means nothing has loaded yet: only a successful load may be reported as empty.
+  const hasLoadedLogs = loadedLogs !== undefined;
+  const logs = loadedLogs ?? [];
 
   const { data: users = [] } = useQuery<UserType[]>({
     queryKey: ["/api/admin/users"],
@@ -79,8 +84,10 @@ export default function ActivityLogs() {
     queryKey: ["/api/admin/clients"],
   });
 
+  const needle = searchTerm.trim().toLowerCase();
+  const hasActiveFilters = needle !== "" || actionFilter !== "all" || entityFilter !== "all";
+
   const filteredLogs = logs.filter((log) => {
-    const needle = searchTerm.trim().toLowerCase();
     const matchesSearch =
       !needle ||
       activitySearchText(t, log, locale, [
@@ -148,7 +155,8 @@ export default function ActivityLogs() {
     return company?.name || t["activityLog.unknown"];
   };
 
-  if (isLoading) {
+  // A paused first load is pending too, but gets its own status below instead of a spinner.
+  if (isPending && !isPaused) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
@@ -286,16 +294,56 @@ export default function ActivityLogs() {
                   </SelectItem>
                 </SelectContent>
               </Select>
-              <Badge variant="secondary" className="whitespace-nowrap">
-                {formatMessage(t["activityLog.entries"], { count: filteredLogs.length })}
-              </Badge>
+              {hasLoadedLogs && (
+                <Badge
+                  variant="secondary"
+                  className="whitespace-nowrap"
+                  data-testid="badge-log-count"
+                >
+                  {formatMessage(t["activityLog.entries"], { count: filteredLogs.length })}
+                </Badge>
+              )}
             </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
           {/* Fable B13: the activity-feed row (History, admin audit tab): one sentence with no
               ids, actor and client on a second line, a one-line formatted date. */}
-          {logsFailed ? (
+          {hasLoadedLogs && isPaused ? (
+            <p
+              role="status"
+              className="border-b border-border/70 px-4 py-3 text-sm text-muted-foreground sm:px-5"
+              data-testid="status-activity-logs-refresh-paused"
+            >
+              {t["activityLogs.refreshPaused"]}
+            </p>
+          ) : isRefetchError ? (
+            <div
+              className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 px-4 py-3 sm:px-5"
+              data-testid="state-activity-logs-refresh-error"
+            >
+              <p role="alert" className="text-sm text-destructive">
+                {t["activityLogs.refreshFailed"]}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void refetchLogs()}
+                data-testid="button-retry-refresh-logs"
+              >
+                {t["components.errorRetry"]}
+              </Button>
+            </div>
+          ) : null}
+          {!hasLoadedLogs && isPaused ? (
+            <p
+              role="status"
+              className="px-4 py-6 text-small text-muted-foreground sm:px-5"
+              data-testid="status-activity-logs-paused"
+            >
+              {t["activityLogs.loadPaused"]}
+            </p>
+          ) : isLoadingError ? (
             <ErrorState
               compact
               title={t["activityLogs.loadFailedTitle"]}
@@ -303,17 +351,17 @@ export default function ActivityLogs() {
               onRetry={() => void refetchLogs()}
               testId="state-activity-logs-error"
             />
-          ) : filteredLogs.length === 0 ? (
+          ) : hasLoadedLogs && filteredLogs.length === 0 ? (
             <EmptyState
               size="sm"
               className="px-4 py-6 sm:px-5"
               title={
-                searchTerm || actionFilter !== "all" || entityFilter !== "all"
+                hasActiveFilters
                   ? t["activityLogs.noLogsMatchYourFilters"]
                   : t["activityLogs.noActivityLogsYet"]
               }
               action={
-                searchTerm || actionFilter !== "all" || entityFilter !== "all"
+                hasActiveFilters
                   ? {
                       label: t["activityLogs.clearFilters"],
                       onClick: () => {
