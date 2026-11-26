@@ -1,5 +1,6 @@
 import { it, expect } from "vitest";
 import { AcubeEInvoiceProvider } from "../../server/services/einvoice/providers/acube";
+import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 it("includes every inbound invoice across provider pages during reconciliation", async () => {
   const localFetch = (async (resource: string) => {
     const url = new URL(resource);
@@ -28,7 +29,7 @@ it("includes every inbound invoice across provider pages during reconciliation",
     });
   }) as typeof fetch;
   const provider = new AcubeEInvoiceProvider(
-    { ACUBE_EMAIL: "mock@example.invalid", ACUBE_PASSWORD: "fixture" },
+    { ACUBE_EMAIL: "mock@example.invalid", ACUBE_PASSWORD: FAKE_PASSWORD },
     { fetch: localFetch }
   );
   expect(await provider.listInbound()).toHaveLength(31);

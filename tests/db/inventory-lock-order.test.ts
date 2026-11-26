@@ -2,7 +2,9 @@
  * PR175 audit: a stocktake locks its products in id order (zero variance included) while an
  * invoice locked them in line order, so a zero-variance stocktake and a reverse-order invoice
  * deadlocked (40P01). Invoice issue (and the other multi-product entry points) now take the
- * product locks in the same id order first. Demo data only.
+ * product locks in the same id order first. Second case: the invoice's revenue journal (journal-
+ * number lock) must come after the product locks, as a stocktake takes them in that order.
+ * Demo data only.
  */
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
@@ -158,6 +160,111 @@ describe("inventory product lock order", () => {
       [invoiceRow.id]
     );
     expect(movements.map((m) => m.product_id).sort()).toEqual([low, high]);
+    expect(movements.every((m) => m.journal_entry_id)).toBe(true);
+  });
+
+  it("a mixed stocktake (zero variance A, shortage B) and a regular invoice issue do not deadlock", async (ctx) => {
+    // The invoice's revenue journal takes the company/date journal-number lock; the stocktake takes
+    // its product locks and then asks for the same lock. The invoice must therefore lock its
+    // products (id order) BEFORE posting its journal. PGlite is single-connection: real Postgres.
+    if (!h.concurrencySupported) ctx.skip();
+    const t = await h.createTenant();
+    const base = `/api/companies/${t.company.id}`;
+    const [low, high] = [
+      await stockedProduct(t, "Demo item A"),
+      await stockedProduct(t, "Demo item B"),
+    ].sort();
+
+    const date = today(); // captured once so countDate and invoice date agree across UTC midnight
+    const stocktake = await t.as.post(`${base}/stocktakes`, {
+      countDate: date,
+      lines: [
+        { productId: low, countedQty: 10 }, // zero variance
+        { productId: high, countedQty: 9 }, // shortage of 1
+      ],
+    });
+    expect(stocktake.status, stocktake.text).toBe(201);
+
+    const draft = await t.as.post(`${base}/invoices`, {
+      customerName: "Demo Customer LLC",
+      date,
+      // Only the zero-variance product A: the invoice then contends with the stocktake's A lock.
+      lines: [
+        {
+          description: "Demo item",
+          quantity: 1,
+          unitPrice: 100,
+          vatRate: 5,
+          productId: low,
+        },
+      ],
+    });
+    expect(draft.status, draft.text).toBe(200);
+
+    const { withLedgerTx } = await import("../../server/ledger");
+    const { lockProduct, q } = await import("../../server/services/inventory/store");
+    const { postStocktake } = await import("../../server/services/inventory/manual");
+    const { issueInvoice } = await import("../../server/services/invoice-posting.service");
+
+    const locked = deferred<number>();
+    const proceed = deferred<void>();
+    const stocktakeRun = withLedgerTx(async (tx) => {
+      await lockProduct(tx, t.company.id, low); // A, zero variance
+      const [backend] = await q<{ pid: number }>(tx, sql`SELECT pg_backend_pid() AS pid`);
+      locked.resolve(Number(backend.pid));
+      await proceed.promise;
+      return postStocktake(tx, {
+        companyId: t.company.id,
+        stocktakeId: stocktake.body.id,
+        actorId: t.user.id,
+      });
+    });
+    stocktakeRun.catch((err) => locked.reject(err));
+    const stocktakeDone = Promise.allSettled([stocktakeRun]);
+
+    const pid = await locked.promise;
+    // The real issue path: document lock, status change, revenue journal, stock out, COGS journal.
+    const invoiceRun = issueInvoice(draft.body.id, t.company.id, t.user.id);
+    const invoiceDone = Promise.allSettled([invoiceRun]);
+
+    try {
+      await waitUntilBlocking(pid);
+      proceed.resolve();
+    } catch (err) {
+      proceed.reject(err);
+      await Promise.all([stocktakeDone, invoiceDone]);
+      throw err;
+    }
+
+    const [[s], [i]] = await Promise.all([stocktakeDone, invoiceDone]);
+    expect(s.status === "rejected" ? s.reason : null).toBeNull();
+    expect(i.status === "rejected" ? i.reason : null).toBeNull();
+
+    const [posted] = await h.sql<{ status: string; journalEntryId: string | null }>(
+      `SELECT status, journal_entry_id AS "journalEntryId" FROM stocktakes WHERE id = $1`,
+      [stocktake.body.id]
+    );
+    expect(posted.status).toBe("posted");
+    // The shortage on B posts a variance journal, so the stocktake did traverse the journal lock.
+    expect(posted.journalEntryId).toBeTruthy();
+    const [issued] = await h.sql<{ status: string }>(`SELECT status FROM invoices WHERE id = $1`, [
+      draft.body.id,
+    ]);
+    expect(["sent", "posted"]).toContain(issued.status);
+    // A: 10 - 1 sold. B: 10 - 1 stocktake shortage (not on the invoice).
+    const stock = await h.sql<{ id: string; current_stock: number }>(
+      `SELECT id, current_stock FROM products WHERE id IN ($1, $2)`,
+      [low, high]
+    );
+    const byId = new Map(stock.map((p) => [p.id, Number(p.current_stock)]));
+    expect(byId.get(low)).toBe(9);
+    expect(byId.get(high)).toBe(9);
+    const movements = await h.sql<{ product_id: string; journal_entry_id: string | null }>(
+      `SELECT product_id, journal_entry_id FROM inventory_movements
+        WHERE source_type = 'invoice' AND source_id = $1`,
+      [draft.body.id]
+    );
+    expect(movements.map((m) => m.product_id)).toEqual([low]);
     expect(movements.every((m) => m.journal_entry_id)).toBe(true);
   });
 });

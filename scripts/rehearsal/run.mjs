@@ -34,6 +34,13 @@ const historicalHashes = {
   [banking]: "fc545f83c7470e6624251c1d4492a9f6f6a842d2fd20b4afb94fb28e0fbdc7be",
   "0130_cash_sale_numbering": "e4b974423afc431ded0b306efec71f046109ff6dc57d1142f4d41047f8acd8ef",
 };
+// Exact pre-PR SQL for these baseline migrations. A restored current backup carries the
+// current Drizzle hashes, so published-head cases clone a separately built database.
+const publishedBaselineHistorical = {
+  "0039_payroll_state_machine": "0039_payroll_state_machine",
+  "0074_journal_entry_unique_dedup": "0074_journal_entry_unique_dedup",
+};
+const publishedTemplate = "published_seed";
 const baselineCount = journal.entries.findIndex(({ tag }) => tag === baseline) + 1;
 const bankingCount = journal.entries.findIndex(({ tag }) => tag === banking) + 1;
 const historicalCount = journal.entries.findIndex(({ tag }) => tag === historicalTail) + 1;
@@ -335,9 +342,10 @@ function stageMigrations(
     const destination = path.join(folder, file);
     if (historical[tag]) {
       const source = path.join(here, "historical", historical[tag] + ".sql");
-      const sql = tag === banking || tag === historicalPurchases
-        ? gunzipSync(readFileSync(source + ".gz"))
-        : readFileSync(source);
+      const sql =
+        tag === banking || tag === historicalPurchases
+          ? gunzipSync(readFileSync(source + ".gz"))
+          : readFileSync(source);
       if (knownHashes[tag]) {
         assert.equal(
           createHash("sha256").update(sql).digest("hex"),
@@ -357,12 +365,30 @@ async function applyStagedMigrations(database, folder) {
   await withClient(database, (client) => migrate(drizzle(client), { migrationsFolder: folder }));
 }
 
-async function prepareBaseline() {
-  const folder = stageMigrations("baseline", baselineCount);
-  createDatabase("seed");
-  await applyStagedMigrations("seed", folder);
-  await verifyLedger("seed", files.slice(0, baselineCount));
-  fixture("seed", "seed.sql");
+async function prepareBaseline(database = "seed", folderName = "baseline", historical = {}) {
+  const folder = stageMigrations(folderName, baselineCount, historical);
+  createDatabase(database);
+  await applyStagedMigrations(database, folder);
+  const expectedFiles = Object.keys(historical).length
+    ? readMigrationFiles({ migrationsFolder: folder })
+    : files.slice(0, baselineCount);
+  await verifyLedger(database, expectedFiles);
+  fixture(database, "seed.sql");
+}
+
+async function preparePublishedBaseline() {
+  await prepareBaseline(publishedTemplate, "published-baseline", publishedBaselineHistorical);
+  const published = readMigrationFiles({
+    migrationsFolder: path.join(scratch, "published-baseline"),
+  });
+  for (const tag of Object.keys(publishedBaselineHistorical)) {
+    const index = journal.entries.findIndex((entry) => entry.tag === tag);
+    assert.notEqual(
+      published[index].hash,
+      files[index].hash,
+      "Published baseline must carry the pre-PR hash for " + tag
+    );
+  }
 }
 
 async function restore(database) {
@@ -531,11 +557,13 @@ async function applyPublishedBankHead(
   { ref, count, digest, historical, entries = previewEntries.slice(0, count), usesPostCsvPurchases }
 ) {
   const purchases = usesPostCsvPurchases ? "post-csv/" + historicalPurchases : historicalPurchases;
-  const purchasesHash = usesPostCsvPurchases ? postCsvPurchasesHash : historicalHashes[historicalPurchases];
+  const purchasesHash = usesPostCsvPurchases
+    ? postCsvPurchasesHash
+    : historicalHashes[historicalPurchases];
   const folder = stageMigrations(
     database,
     count,
-    { [historicalPurchases]: purchases, ...historical },
+    { [historicalPurchases]: purchases, ...publishedBaselineHistorical, ...historical },
     { [historicalPurchases]: purchasesHash },
     entries
   );
@@ -560,7 +588,7 @@ async function checkRecordedBankAudit({
   currentReceiptFlags,
 }) {
   const database = "recorded_bank_" + ref;
-  await restore(database);
+  createDatabase(database, publishedTemplate);
   fixture(database, "seed-bank-payment-links.sql");
   fixture(database, "seed-bank-receipt-provenance.sql");
   const originalFiles = await applyPublishedBankHead(database, { ref, count, digest, historical });
@@ -670,7 +698,7 @@ function verifyInvoiceJournalFindings(database, expectedCount) {
 async function checkPreviewUpgrade(head) {
   const { ref } = head;
   const database = "preview_" + ref;
-  await restore(database);
+  createDatabase(database, publishedTemplate);
   const originalFiles = await applyPublishedBankHead(database, head);
   const before = fixture(database, "snapshot.sql");
   await timed("Apply release migrations from " + ref, () => applyRelease(database));
@@ -686,7 +714,7 @@ async function checkPreviewUpgrade(head) {
 async function checkRecordedInvoiceProvenance() {
   const { ref } = recordedInvoiceHead;
   const database = "recorded_bank_" + ref;
-  await restore(database);
+  createDatabase(database, publishedTemplate);
   fixture(database, "seed-bank-invoice-provenance.sql");
   const originalFiles = await applyPublishedBankHead(database, recordedInvoiceHead);
   assert.deepEqual(JSON.parse(fixture(database, "bank-invoice-provenance.sql")), [
@@ -928,6 +956,7 @@ async function rehearse() {
   await checkTrackedReplay("upgrade");
   await checkRawReplay();
   await checkHistoricalUpgrade();
+  await timed("Published baseline and seed through " + baseline, preparePublishedBaseline);
   for (const head of recordedBankHeads) {
     await checkRecordedBankAudit(head);
   }
@@ -940,7 +969,9 @@ async function rehearse() {
   });
   const preFirmEntries = [
     ...journal.entries.slice(0, historicalCount),
-    ...JSON.parse(readFileSync(path.join(here, "historical/pre-firm-release-journal-tail.json"), "utf8")),
+    ...JSON.parse(
+      readFileSync(path.join(here, "historical/pre-firm-release-journal-tail.json"), "utf8")
+    ),
   ];
   await checkPreviewUpgrade({
     ref: "0be21c6d",
@@ -952,7 +983,9 @@ async function rehearse() {
   });
   const preReceiptEntries = [
     ...journal.entries.slice(0, historicalCount),
-    ...JSON.parse(readFileSync(path.join(here, "historical/pre-receipt-release-journal-tail.json"), "utf8")),
+    ...JSON.parse(
+      readFileSync(path.join(here, "historical/pre-receipt-release-journal-tail.json"), "utf8")
+    ),
   ];
   await checkPreviewUpgrade({
     ref: "a3eb9a2a",

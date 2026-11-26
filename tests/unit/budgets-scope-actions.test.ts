@@ -5,12 +5,11 @@
  */
 import { createElement, act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, onlineManager } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Budgets from "../../client/src/pages/Budgets";
 import { queryClient } from "../../client/src/lib/queryClient";
-
-const mocks = vi.hoisted(() => ({ toast: vi.fn(), apiRequest: vi.fn() }));
+import { loadLocale, useI18n } from "../../client/src/lib/i18n";
 
 // Demo data only. Hoisted so the queryClient mock factory and the tests share it.
 const demoPlan = vi.hoisted(() => ({
@@ -25,20 +24,34 @@ const demoPlan = vi.hoisted(() => ({
   created_at: "2026-01-01",
 }));
 
+const mocks = vi.hoisted(() => ({
+  toast: vi.fn(),
+  apiRequest: vi.fn(),
+  // Every read goes through this; a test replaces it to pause, fail or answer differently.
+  queryFn: vi.fn(),
+}));
+
+const defaultRead = async ({ queryKey }: { queryKey: readonly unknown[] }) =>
+  String(queryKey[0]).endsWith("/budget-plans") ? [demoPlan] : [];
+
 vi.mock("@/lib/queryClient", async () => {
   const { QueryClient } = await import("@tanstack/react-query");
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: Infinity,
+        queryFn: (ctx) => mocks.queryFn(ctx),
+      },
+    },
+  });
   return {
     apiRequest: mocks.apiRequest,
-    queryClient: new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-          staleTime: Infinity,
-          queryFn: async ({ queryKey }) =>
-            String(queryKey[0]).endsWith("/budget-plans") ? [demoPlan] : [],
-        },
-      },
-    }),
+    queryClient: client,
+    // Same behaviour as the real one: cancel in-flight reads, then invalidate (not awaited).
+    refreshAfterWrite: (queryKey: readonly unknown[]) => {
+      void client.cancelQueries({ queryKey }).then(() => client.invalidateQueries({ queryKey }));
+    },
   };
 });
 vi.mock("@/hooks/use-toast", () => ({
@@ -86,9 +99,26 @@ const button = (text: string) =>
   Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent === text);
 const dialog = () => document.body.querySelector('[data-testid="budget-scope-dialog"]');
 
-beforeEach(() => {
+const byTestId = (id: string) => document.body.querySelector(`[data-testid="${id}"]`);
+
+async function renderBudgets() {
+  await act(async () => {
+    root.render(
+      createElement(QueryClientProvider, { client: queryClient }, createElement(Budgets))
+    );
+  });
+}
+
+beforeEach(async () => {
+  // The page and the acknowledgment dialog read the real English catalogs (same app-wide load
+  // main.tsx awaits); without it they render raw keys and the acknowledge button is not found.
+  await loadLocale("en");
+  await act(async () => {
+    useI18n.setState({ locale: "en" });
+  });
   mocks.toast.mockClear();
   mocks.apiRequest.mockReset();
+  mocks.queryFn.mockReset().mockImplementation(defaultRead);
   queryClient.clear();
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -98,6 +128,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  onlineManager.setOnline(true);
 });
 
 describe("Budgets copy / new version with a changed scope", () => {
@@ -144,4 +175,63 @@ describe("Budgets copy / new version with a changed scope", () => {
     // A cold jsdom mount can exceed the 5s default on a slow Windows machine.
     15_000
   );
+});
+
+describe("Budgets list read states", () => {
+  const plansKey = ["/api/companies/demo-company/budget-plans"];
+  const failPlans = () =>
+    mocks.queryFn.mockImplementation(async (ctx: { queryKey: readonly unknown[] }) => {
+      if (String(ctx.queryKey[0]).endsWith("/budget-plans")) throw new Error("demo read failure");
+      return defaultRead(ctx);
+    });
+  // Neither a count nor the empty state may appear while the rows are not known.
+  const noRowsClaimed = () => {
+    expect(byTestId("budgets-count")).toBeNull();
+    expect(byTestId("budgets-empty")).toBeNull();
+  };
+
+  it("a paused first read is neither empty nor counted", async () => {
+    onlineManager.setOnline(false);
+    await renderBudgets();
+    await until(() => !!byTestId("budgets-load-error-paused"));
+    noRowsClaimed();
+    expect(mocks.queryFn).not.toHaveBeenCalled();
+  });
+
+  it("a failed first read shows an error with a retry that loads the rows", async () => {
+    failPlans();
+    await renderBudgets();
+    await until(() => !!byTestId("budgets-load-error"));
+    noRowsClaimed();
+
+    mocks.queryFn.mockImplementation(defaultRead);
+    await act(async () => {
+      byTestId("budgets-load-error")!.querySelector("button")!.click();
+    });
+    await until(() => !!byTestId("budgets-count"));
+    expect(byTestId("budgets-load-error")).toBeNull();
+    expect(document.body.textContent).toContain(demoPlan.name);
+  });
+
+  it("keeps cached rows, with a retry notice, when a refresh fails", async () => {
+    queryClient.setQueryData(plansKey, [demoPlan]);
+    await renderBudgets();
+    await until(() => !!byTestId("budgets-count"));
+
+    failPlans();
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: plansKey });
+    });
+    await until(() => !!byTestId("budgets-refresh-failed"));
+    expect(byTestId("budgets-count")).not.toBeNull();
+    expect(byTestId("budgets-load-error")).toBeNull();
+    expect(document.body.textContent).toContain(demoPlan.name);
+
+    mocks.queryFn.mockImplementation(defaultRead);
+    await act(async () => {
+      byTestId("budgets-refresh-failed")!.querySelector("button")!.click();
+    });
+    await until(() => !byTestId("budgets-refresh-failed"));
+    expect(document.body.textContent).toContain(demoPlan.name);
+  });
 });

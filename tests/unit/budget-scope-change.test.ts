@@ -1,11 +1,51 @@
 // @vitest-environment jsdom
 import { createElement, act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
-import { budgetScopeChange } from "../../client/src/lib/budget-scope";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { budgetScopeChange, type BudgetScopeChange } from "../../client/src/lib/budget-scope";
 import { BudgetScopeChangeDialog } from "../../client/src/components/budgets/BudgetScopeChangeDialog";
+import { budgetCategoryLabel } from "../../client/src/lib/budget-categories";
+import { formatMessage, loadLocale, t, useI18n, type Locale } from "../../client/src/lib/i18n";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+// The dialog reads the real catalogs through useTranslation(), so each test loads the locale's
+// namespace catalogs (the same app-wide load main.tsx awaits) and sets the store locale before
+// rendering. Without this the dialog renders raw keys such as "budgets.scopeTitleCopy".
+const mounted: { root: ReturnType<typeof createRoot>; container: HTMLElement }[] = [];
+
+async function renderDialog(
+  change: BudgetScopeChange | null,
+  locale: Locale,
+  onAcknowledge: () => void = vi.fn()
+) {
+  await loadLocale(locale);
+  await act(async () => {
+    useI18n.setState({ locale });
+  });
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  mounted.push({ root, container });
+  await act(async () => {
+    root.render(createElement(BudgetScopeChangeDialog, { change, locale, onAcknowledge }));
+  });
+  return { container, root };
+}
+
+afterEach(async () => {
+  for (const { root, container } of mounted.splice(0)) {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  }
+  // Radix portals the dialog into <body>; make sure nothing leaks into the next test.
+  document.body.innerHTML = "";
+  await act(async () => {
+    useI18n.setState({ locale: "en" });
+  });
+});
 
 // Demo data only.
 const response = {
@@ -66,17 +106,30 @@ describe("budget copy / new version scope change", () => {
   ] as const)("shows the dialog for %s in %s until acknowledged", async (action, locale, title) => {
     const change = budgetScopeChange(action, response);
     const onAcknowledge = vi.fn();
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    await act(async () => {
-      root.render(createElement(BudgetScopeChangeDialog, { change, locale, onAcknowledge }));
-    });
+    await renderDialog(change, locale, onAcknowledge);
 
     const dialog = document.body.querySelector('[data-testid="budget-scope-dialog"]');
     expect(dialog).not.toBeNull();
-    expect(dialog!.textContent).toContain(title);
-    expect(dialog!.textContent).toContain("Marketing");
+    const text = dialog!.textContent!;
+    expect(text).toContain(title);
+    // No raw catalog keys or uninterpolated placeholders.
+    expect(text).not.toMatch(/budgets\.scope|forms\.budget\.cat\./);
+    expect(text).not.toMatch(/\{(name|line|scope|category|description)\}/);
+
+    // Description interpolates the plan name.
+    const description = formatMessage(t[locale]["budgets.scopeDescription"], {
+      name: "Demo Budget (FY2027)",
+    });
+    expect(description).toContain("Demo Budget (FY2027)");
+    expect(text).toContain(description);
+
+    // The line shows the translated category (catalog label) plus its description.
+    const category = budgetCategoryLabel(t[locale], "Marketing");
+    expect(category).not.toBe("forms.budget.cat.Marketing");
+    const items = Array.from(dialog!.querySelectorAll('[data-testid="budget-scope-list"] li')).map(
+      (li) => li.textContent ?? ""
+    );
+    expect(items.some((i) => i.includes(category) && i.includes("Demo campaign"))).toBe(true);
     expect(onAcknowledge).not.toHaveBeenCalled();
 
     const button = Array.from(dialog!.querySelectorAll("button")).pop()!;
@@ -84,9 +137,6 @@ describe("budget copy / new version scope change", () => {
       button.click();
     });
     expect(onAcknowledge).toHaveBeenCalledTimes(1);
-
-    act(() => root.unmount());
-    container.remove();
   });
 
   it("keeps the fallback the server reported for each line", () => {
@@ -116,14 +166,7 @@ describe("budget copy / new version scope change", () => {
           { category: "Marketing", description: "Two", costCenterId: "c2", fallback: "all" },
         ],
       });
-      const container = document.createElement("div");
-      document.body.appendChild(container);
-      const root = createRoot(container);
-      await act(async () => {
-        root.render(
-          createElement(BudgetScopeChangeDialog, { change, locale, onAcknowledge: vi.fn() })
-        );
-      });
+      await renderDialog(change, locale);
       const items = Array.from(
         document.body.querySelectorAll('[data-testid="budget-scope-list"] li')
       ).map((li) => li.textContent ?? "");
@@ -137,9 +180,6 @@ describe("budget copy / new version scope change", () => {
         '[data-testid="budget-scope-dialog"]'
       )!.textContent!;
       expect(dialogText).not.toMatch(/widened|اتّسع/);
-
-      act(() => root.unmount());
-      container.remove();
     }
   );
 });

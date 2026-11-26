@@ -581,7 +581,7 @@ export interface SalesLineLike {
   description?: string;
 }
 
-type BundleParts = Map<string, Array<{ productId: string; quantity: number }>>;
+export type BundleParts = Map<string, Array<{ productId: string; quantity: number }>>;
 
 /**
  * Lock every product a sales document will touch (line products and bundle components) in the
@@ -618,6 +618,43 @@ async function lockSalesProducts(
   return bundles;
 }
 
+/**
+ * inventory.lockSalesProducts: the invoice / credit note posting calls this BEFORE it posts its own
+ * revenue journal. That journal takes the company/date journal-number lock, and a stocktake holds
+ * its product locks while it asks for that same lock, so the products must be locked first (id
+ * order) or the two wait on each other (40P01). No product lines: empty snapshot.
+ * Returns the locked bundle snapshot; the caller passes it to onInvoiceIssued /
+ * onCreditNoteIssued (`bundles`) so they move exactly the products that were locked.
+ */
+export async function lockSalesDocumentProducts(
+  tx: LedgerTx,
+  args: { companyId: string; lines: SalesLineLike[] }
+): Promise<BundleParts> {
+  return lockSalesProducts(tx, args.companyId, args.lines);
+}
+
+/**
+ * inventory.lockDocumentProducts: same ordering rule for a void, which mirrors the document's
+ * journal (journal-number lock) before `reverseDocumentStock` locks the products it moved.
+ */
+export async function lockDocumentProducts(
+  tx: LedgerTx,
+  args: {
+    companyId: string;
+    sourceType: string;
+    sourceId: string;
+    /** Extra products the caller is about to move (e.g. a bill revision's new lines). */
+    productIds?: ReadonlyArray<string | null | undefined>;
+  }
+): Promise<void> {
+  const movements = await documentMovements(tx, args.companyId, args.sourceType, args.sourceId);
+  // One query for the union of the document's movement products and the extra ids.
+  await lockProductsOrdered(tx, args.companyId, [
+    ...movements.map((m) => m.product_id),
+    ...(args.productIds ?? []),
+  ]);
+}
+
 /** invoice issue: stock out and post COGS in the invoice's transaction. */
 export async function onInvoiceIssued(
   tx: LedgerTx,
@@ -626,6 +663,8 @@ export async function onInvoiceIssued(
     lines: SalesLineLike[];
     userId: string;
     afterCommit?: MoveContext["afterCommit"];
+    /** Snapshot from lockSalesProducts taken before the journal lock; omitted by direct callers. */
+    bundles?: BundleParts;
   }
 ): Promise<{ entryId: string | null; costFils: number }> {
   const { invoice } = args;
@@ -640,7 +679,7 @@ export async function onInvoiceIssued(
   let costFils = 0;
   // Common lock order (product id, bundle components included) before the line-order loop below:
   // a stocktake locks its products in id order, so line order alone could deadlock with it.
-  const bundles = await lockSalesProducts(tx, invoice.companyId, args.lines);
+  const bundles = args.bundles ?? (await lockSalesProducts(tx, invoice.companyId, args.lines));
   for (const line of args.lines) {
     const p = await productOrNull(tx, invoice.companyId, line.productId);
     if (!p) continue;
@@ -735,6 +774,8 @@ export async function onCreditNoteIssued(
     userId: string;
     /** S1: false = the goods are written off (not returned): no stock in, COGS stays. */
     restock?: boolean;
+    /** Snapshot from lockSalesProducts taken before the journal lock; omitted by direct callers. */
+    bundles?: BundleParts;
   }
 ): Promise<{ entryId: string | null }> {
   const { original, creditNote } = args;
@@ -744,7 +785,7 @@ export async function onCreditNoteIssued(
   const date = isoDate(creditNote.date);
   const draft: DraftLine[] = [];
   const movementIds: string[] = [];
-  const bundles = await lockSalesProducts(tx, creditNote.companyId, args.lines);
+  const bundles = args.bundles ?? (await lockSalesProducts(tx, creditNote.companyId, args.lines));
   for (const line of args.lines) {
     if (!line.productId) continue;
     const p = await productOrNull(tx, creditNote.companyId, line.productId);
@@ -896,6 +937,12 @@ export async function onGoodsReceived(
     const draft: DraftLine[] = [];
     const movementIds: string[] = [];
     const date = isoDate(event.receivedDate);
+    // Id order before the line loop (see lockProductsOrdered), as stocktakes lock.
+    await lockProductsOrdered(
+      tx,
+      event.companyId,
+      event.lines.map((l) => l.productId)
+    );
     const doc: DocRef = { docKind: "poReceipt", ref: po.number };
     const label = docLabel(doc);
     for (const l of event.lines) {

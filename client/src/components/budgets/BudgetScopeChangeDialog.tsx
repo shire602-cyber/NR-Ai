@@ -9,16 +9,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import { budgetCategoryLabel } from "@/lib/budget-categories";
 import type { BudgetScopeChange } from "@/lib/budget-scope";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 
-const tr = (locale: string, en: string, ar: string) => (locale === "ar" ? ar : en);
+type Catalog = Record<string, string>;
 
-const scopeLabel = (locale: string, fallback: "plan" | "all" | undefined) => {
-  if (fallback === "plan")
-    return tr(locale, "now uses the plan's cost centre", "يستخدم الآن مركز تكلفة الخطة");
-  if (fallback === "all")
-    return tr(locale, "now includes all cost centres", "يشمل الآن كل مراكز التكلفة");
-  return tr(locale, "cost centre scope changed", "تغيّر نطاق مركز التكلفة");
+const scopeLabel = (t: Catalog, fallback: "plan" | "all" | undefined) => {
+  if (fallback === "plan") return t["budgets.scopePlan"];
+  if (fallback === "all") return t["budgets.scopeAll"];
+  return t["budgets.scopeChanged"];
 };
 
 /**
@@ -41,47 +39,36 @@ export function BudgetScopeChangeDialog({
       <AlertDialogContent dir={locale === "ar" ? "rtl" : "ltr"} data-testid="budget-scope-dialog">
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {isCopy
-              ? tr(locale, "Budget copied: scope changed", "تم نسخ الموازنة: تغيّر النطاق")
-              : tr(
-                  locale,
-                  "New version created: scope changed",
-                  "تم إنشاء النسخة الجديدة: تغيّر النطاق"
-                )}
+            {isCopy ? t["budgets.scopeTitleCopy"] : t["budgets.scopeTitleVersion"]}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {tr(
-              locale,
-              `The draft "${change?.planName ?? ""}" no longer filters by a deleted cost centre. Each affected line now uses either the plan's cost centre or all cost centres, as labelled below. Review these before you approve it:`,
-              `المسودة "${change?.planName ?? ""}" لم تعد تُرشَّح بمركز تكلفة محذوف. يستخدم كل بند متأثر الآن إما مركز تكلفة الخطة أو كل مراكز التكلفة، كما هو موضح أدناه. راجع ما يلي قبل اعتمادها:`
-            )}
+            {formatMessage(t["budgets.scopeDescription"], { name: change?.planName ?? "" })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <ul
           className="max-h-[40vh] list-disc space-y-1 overflow-y-auto ps-5 text-sm"
           data-testid="budget-scope-list"
         >
-          {change?.planCostCenterCleared && (
-            <li>
-              {tr(
-                locale,
-                "The plan itself (cost centre cleared)",
-                "الخطة نفسها (تم مسح مركز التكلفة)"
-              )}
-            </li>
-          )}
+          {change?.planCostCenterCleared && <li>{t["budgets.scopePlanItself"]}</li>}
           {change?.lines.map((l, i) => (
             <li key={`${l.costCenterId}-${i}`}>
-              {l.category
-                ? `${budgetCategoryLabel(t, l.category)}${l.description ? ` - ${l.description}` : ""}`
-                : tr(locale, "A budget line", "بند موازنة")}
-              {`: ${scopeLabel(locale, l.fallback)}`}
+              {formatMessage(t["budgets.scopeLineDetail"], {
+                line: l.category
+                  ? l.description
+                    ? formatMessage(t["budgets.scopeLineNamed"], {
+                        category: budgetCategoryLabel(t, l.category),
+                        description: l.description,
+                      })
+                    : budgetCategoryLabel(t, l.category)
+                  : t["budgets.scopeLineUnnamed"],
+                scope: scopeLabel(t, l.fallback),
+              })}
             </li>
           ))}
         </ul>
         <AlertDialogFooter>
           <AlertDialogAction onClick={onAcknowledge}>
-            {tr(locale, "I understand, continue", "فهمت، متابعة")}
+            {t["budgets.scopeAcknowledge"]}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

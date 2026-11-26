@@ -3,6 +3,9 @@
  * the service registry (they never import this module):
  *
  *   inventory.onGoodsReceived(event, tx?)         purchase-order receipts (W3-B; in the receipt tx)
+ *   inventory.lockSalesProducts(tx, {companyId, lines}) / inventory.lockDocumentProducts(tx,
+ *     {companyId, sourceType, sourceId}): product locks in id order, called before a document
+ *     posts or reverses its own journal (lock order: products, then the journal-number lock)
  *   inventory.onInvoiceIssued(tx, {invoice, lines, userId})
  *   inventory.onInvoiceVoided(tx, {companyId, invoiceId, number, userId})
  *   inventory.onCreditNoteIssued(tx, {original, creditNote, lines, userId})
@@ -15,6 +18,8 @@ import { emitDomainEventInTx } from "../../platform/event-outbox";
 import { listJobs, registerJob } from "../../platform/job-registry";
 import { has, provide } from "../../platform/service-registry";
 import {
+  lockDocumentProducts,
+  lockSalesDocumentProducts,
   onCreditNoteIssued,
   onCreditNoteVoided,
   onGoodsReceived,
@@ -48,6 +53,10 @@ export async function runReorderScan(): Promise<number> {
 /** Idempotent: tests rebuild the app many times. */
 export function registerInventoryServices(): void {
   if (!has("inventory.onGoodsReceived")) provide("inventory.onGoodsReceived", onGoodsReceived);
+  if (!has("inventory.lockSalesProducts"))
+    provide("inventory.lockSalesProducts", lockSalesDocumentProducts);
+  if (!has("inventory.lockDocumentProducts"))
+    provide("inventory.lockDocumentProducts", lockDocumentProducts);
   if (!has("inventory.onInvoiceIssued")) provide("inventory.onInvoiceIssued", onInvoiceIssued);
   if (!has("inventory.onInvoiceVoided")) provide("inventory.onInvoiceVoided", onInvoiceVoided);
   if (!has("inventory.onCreditNoteIssued"))

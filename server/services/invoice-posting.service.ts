@@ -78,6 +78,22 @@ async function inventoryHook(name: string, tx: LedgerTx, args: Record<string, un
   if (has(name)) await resolve<InventoryHook>(name)(tx, args);
 }
 
+/** Locked bundle-component snapshot returned by inventory.lockSalesProducts (opaque here). */
+type SalesLockSnapshot = Map<string, Array<{ productId: string; quantity: number }>>;
+type SalesLockHook = (
+  tx: LedgerTx,
+  args: { companyId: string; lines: unknown[] }
+) => Promise<SalesLockSnapshot>;
+/** Lock the document's products and return the snapshot (undefined when inventory is absent). */
+async function lockSalesProductsHook(
+  tx: LedgerTx,
+  companyId: string,
+  lines: unknown[]
+): Promise<SalesLockSnapshot | undefined> {
+  if (!has("inventory.lockSalesProducts")) return undefined;
+  return resolve<SalesLockHook>("inventory.lockSalesProducts")(tx, { companyId, lines });
+}
+
 const log = createLogger("invoice-posting");
 
 /**
@@ -627,6 +643,12 @@ async function postRevenueInTx(tx: LedgerTx, invoice: Invoice, userId: string): 
     accounts: acc,
     baseCurrency,
   });
+  // Lock order: products (id order), then the journal-number lock inside postJournal. A stocktake
+  // holds product locks while it asks for that journal lock, so the reverse order deadlocks.
+  const bundles =
+    invoice.invoiceType !== "debit_note"
+      ? await lockSalesProductsHook(tx, invoice.companyId, lines)
+      : undefined;
   const docMemoKey = invoice.invoiceType === "debit_note" ? "debitNote" : "salesInvoice";
   const { replayed, entry } = await postJournal(
     {
@@ -654,7 +676,8 @@ async function postRevenueInTx(tx: LedgerTx, invoice: Invoice, userId: string): 
       userId,
     });
   }
-  if (!replayed) await inventoryHook("inventory.onInvoiceIssued", tx, { invoice, lines, userId });
+  if (!replayed)
+    await inventoryHook("inventory.onInvoiceIssued", tx, { invoice, lines, userId, bundles });
   return !replayed;
 }
 
@@ -835,6 +858,12 @@ export async function voidInvoice(
         "This invoice has credit notes or applied customer credits. Void those first, or credit the remaining balance instead of voiding."
       );
     }
+    // Products before any journal-number lock (see postRevenueInTx).
+    await inventoryHook("inventory.lockDocumentProducts", tx, {
+      companyId,
+      sourceType: "invoice",
+      sourceId: invoiceId,
+    });
     const reversals = await reverseBySource(
       companyId,
       "invoice",
@@ -1640,6 +1669,11 @@ async function issueCreditNoteLocked(
   );
   if (!issued) throw new DomainError("CREDIT_NOTE_NOT_DRAFT", 409);
 
+  // Products before the credit note's journal-number lock (see postRevenueInTx).
+  const bundles =
+    issued.restock !== false
+      ? await lockSalesProductsHook(tx, original.companyId, cnLines)
+      : undefined;
   const posted = await postCreditNoteInTx({
     tx,
     original,
@@ -1667,6 +1701,7 @@ async function issueCreditNoteLocked(
     userId,
     // S1: "return to stock?" — false writes the goods off (no stock in, COGS stays).
     restock: issued.restock !== false,
+    bundles,
   });
   await refreshSettlementStatus(tx, original.id);
   return {
@@ -1769,6 +1804,11 @@ export async function voidCreditNote(
         );
       }
     }
+    await inventoryHook("inventory.lockDocumentProducts", tx, {
+      companyId,
+      sourceType: "credit_note",
+      sourceId: creditNoteId,
+    });
     await reverseBySource(
       companyId,
       "invoice",
