@@ -29,6 +29,7 @@ import {
   trnLine,
   type Bi,
 } from "./pdf-ledger";
+import { computeSalesDocument, storedLineToTotalsInput } from "./document-totals.service";
 
 const PAGE_WIDTH = 595.28;
 const NR_GREEN = "#6F9E3A";
@@ -174,6 +175,42 @@ export function computeInvoicePdfTotals(
   };
 }
 
+
+type PdfLineAmount = { net: number; vat: number; total: number; rate: number };
+
+/**
+ * Line net, VAT and gross from the same engine that priced the stored invoice,
+ * including VAT on a profit-margin scheme line (tax fraction of the margin, not
+ * of the full net selling price).
+ */
+function computePdfLineAmounts(invoice: Invoice, lines: InvoiceLine[]): PdfLineAmount[] {
+  const totals = computeSalesDocument(
+    lines.map((l) =>
+      storedLineToTotalsInput({
+        quantity: Math.abs(Number(l.quantity)),
+        unitPrice: Math.abs(Number(l.unitPrice)),
+        vatRate: l.vatRate,
+        vatSupplyType: l.vatSupplyType,
+        marginScheme: l.marginScheme,
+        marginPurchaseCost: l.marginPurchaseCost,
+        discountType: (l as InvoiceLine & { discountType?: string | null }).discountType ?? null,
+        discountValue: (l as InvoiceLine & { discountValue?: number | null }).discountValue ?? null,
+      })
+    ),
+    {
+      discountType: invoice.discountType ?? null,
+      discountValue: invoice.discountValue ?? null,
+      reverseCharge: invoice.reverseCharge ?? null,
+    }
+  );
+  return totals.lines.map((t) => ({
+    net: t.netFils / 100,
+    vat: t.vatFils / 100,
+    total: (t.netFils + t.vatFils) / 100,
+    rate: t.vatRate,
+  }));
+}
+
 async function generateStandardInvoicePDF(
   invoice: Invoice,
   lines: InvoiceLine[],
@@ -285,6 +322,7 @@ async function generateStandardInvoicePDF(
     },
   ]);
 
+  const lineAmounts = computePdfLineAmounts(invoice, lines);
   ledger.table(
     [
       { key: "desc", label: bi("Description", "الوصف"), weight: 2.7 },
@@ -296,18 +334,10 @@ async function generateStandardInvoicePDF(
       { key: "vat", label: bi("VAT amount", "قيمة الضريبة"), weight: 1.35, align: "end" },
       { key: "total", label: bi("Total", "الإجمالي"), weight: 1.35, align: "end" },
     ],
-    lines.map((line) => {
+    lines.map((line, i) => {
       const treatment = vatTreatmentForLine(line, !!invoice.reverseCharge);
       const label = TREATMENT_LABELS[treatment];
-      // Net after line + allocated document discount (W3-A); legacy rows
-      // without net_amount fall back to quantity × unit price.
-      const storedNet = (line as InvoiceLine & { netAmount?: number | null }).netAmount;
-      const net =
-        storedNet !== null && storedNet !== undefined
-          ? Math.abs(Number(storedNet))
-          : line.quantity * line.unitPrice;
-      const rate = lineVatRate(line);
-      const vat = net * rate;
+      const { net, vat, total, rate } = lineAmounts[i];
       const [primary, secondary] = ledger.pair(label);
       return {
         cells: {
@@ -318,7 +348,7 @@ async function generateStandardInvoicePDF(
           type: { text: `${primary}\n${secondary}`, size: 7, color: LEDGER_COLORS.muted },
           rate: `${(rate * 100).toFixed(0)}%`,
           vat: amount(vat),
-          total: amount(net + vat),
+          total: amount(total),
         },
       };
     }),
@@ -326,7 +356,7 @@ async function generateStandardInvoicePDF(
   );
 
   // VAT breakdown by treatment and rate
-  const buckets = aggregateVatBuckets(lines, !!invoice.reverseCharge);
+  const buckets = aggregateVatBuckets(lines, !!invoice.reverseCharge, lineAmounts);
   if (buckets.length > 1 || (buckets[0] && buckets[0].treatment !== "standard_rated")) {
     ledger.section(bi("VAT breakdown", "تفاصيل ضريبة القيمة المضافة"));
     ledger.table(
@@ -716,17 +746,18 @@ function drawNraTotalBox(doc: PdfDoc, invoice: Invoice) {
 
 type VatBucket = { treatment: VatTreatment; rate: number; taxable: number; vat: number };
 
-function aggregateVatBuckets(lines: InvoiceLine[], reverseCharge: boolean): VatBucket[] {
+function aggregateVatBuckets(
+  lines: InvoiceLine[],
+  reverseCharge: boolean,
+  lineAmounts: PdfLineAmount[]
+): VatBucket[] {
   const buckets = new Map<string, VatBucket>();
-  for (const line of lines) {
-    const rate = lineVatRate(line);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const rate = lineAmounts[i].rate;
     const treatment = vatTreatmentForLine(line, reverseCharge);
-    const storedNet = (line as InvoiceLine & { netAmount?: number | null }).netAmount;
-    const taxable =
-      storedNet !== null && storedNet !== undefined
-        ? Math.abs(Number(storedNet))
-        : line.quantity * line.unitPrice;
-    const vat = taxable * rate;
+    const taxable = lineAmounts[i].net;
+    const vat = lineAmounts[i].vat;
     const key = `${treatment}:${rate}`;
     const existing = buckets.get(key);
     if (existing) {
