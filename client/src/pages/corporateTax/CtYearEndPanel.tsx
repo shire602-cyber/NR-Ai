@@ -16,7 +16,8 @@ import {
 import { MoneyCell } from "@/components/ui/money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
+import { loadFailure } from "./screenState";
 
 interface ExternalReturn {
   id: string;
@@ -47,8 +48,16 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
   const { toast } = useToast();
   const extKey = [`/api/companies/${companyId}/corporate-tax/external-returns`];
   const dtKey = [`/api/companies/${companyId}/corporate-tax/deferred-tax`];
-  const { data: external = [] } = useQuery<ExternalReturn[]>({ queryKey: extKey });
-  const { data: deferred = [] } = useQuery<DeferredTaxRow[]>({ queryKey: dtKey });
+  const externalQuery = useQuery<ExternalReturn[]>({ queryKey: extKey });
+  const deferredQuery = useQuery<DeferredTaxRow[]>({ queryKey: dtKey });
+  const external = externalQuery.data ?? [];
+  const deferred = deferredQuery.data ?? [];
+  const queries = [externalQuery, deferredQuery];
+  const paused = queries.some((q) => q.fetchStatus === "paused");
+  const failures = (["initial", "refresh"] as const).flatMap((kind) => {
+    const failed = queries.filter((q) => loadFailure(q) === kind);
+    return failed.length ? [{ kind, failed }] : [];
+  });
   const [ext, setExt] = useState({ start: "", end: "", revenue: "", loss: "", reference: "" });
   const [dt, setDt] = useState({ asOf: "", asset: "", liability: "", note: "" });
   const onError = (e: Error) =>
@@ -64,7 +73,7 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
         filingReference: ext.reference || null,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: extKey });
+      refreshAfterWrite(extKey);
       setExt({ start: "", end: "", revenue: "", loss: "", reference: "" });
       toast({ title: t["corporateTax.externalSaved"] });
     },
@@ -73,7 +82,7 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
   const removeExternal = useMutation({
     mutationFn: (id: string) =>
       apiRequest("DELETE", `/api/companies/${companyId}/corporate-tax/external-returns/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: extKey }),
+    onSuccess: () => refreshAfterWrite(extKey),
     onError,
   });
   const postDeferred = useMutation({
@@ -85,7 +94,7 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
         note: dt.note || null,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: dtKey });
+      refreshAfterWrite(dtKey);
       setDt({ asOf: "", asset: "", liability: "", note: "" });
       toast({ title: t["corporateTax.deferredPosted"] });
     },
@@ -99,6 +108,38 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
         <CardDescription>{t["corporateTax.yearEndHint"]}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-8">
+        {paused && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {t["corporateTaxScreen.yearEndPaused"]}
+          </p>
+        )}
+        {failures.map(({ kind, failed }) => (
+          <div
+            key={kind}
+            role={kind === "initial" ? "alert" : "status"}
+            data-testid={kind === "initial" ? "ct-yearend-error" : "ct-yearend-refresh-error"}
+            className={`flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm ${
+              kind === "initial"
+                ? "border-destructive/40 bg-destructive/10"
+                : "border-warning/40 bg-warning/10"
+            }`}
+          >
+            <span>
+              {kind === "initial"
+                ? t["corporateTaxScreen.yearEndLoadError"]
+                : t["corporateTaxScreen.yearEndRefreshError"]}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => failed.forEach((q) => void q.refetch())}
+              disabled={failed.every((q) => q.fetchStatus === "fetching")}
+            >
+              {t["components.errorTryAgain"]}
+            </Button>
+          </div>
+        ))}
         <section className="space-y-3">
           <h3 className="text-sm font-semibold">{t["corporateTax.externalTitle"]}</h3>
           <p className="text-xs text-muted-foreground">{t["corporateTax.externalHint"]}</p>

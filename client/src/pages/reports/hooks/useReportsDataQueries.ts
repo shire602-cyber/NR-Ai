@@ -146,7 +146,13 @@ export function useReportsDataQueries({
   const shouldLoadReportDeliveryData =
     Boolean(selectedCompanyId) &&
     ["home", "automation", "delivery", "suites"].includes(activeReportWorkspaceTab);
-  const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
+  const {
+    data: profitLoss,
+    isLoading: plLoading,
+    fetchStatus: plFetchStatus,
+    error: plError,
+    refetch: plRefetch,
+  } = useQuery<ProfitLossReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "pl", dateParams],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("profit-loss"),
@@ -162,12 +168,24 @@ export function useReportsDataQueries({
       ...reportQueryOptions,
       enabled: shouldLoadReportData("cost-center-profitability"),
     });
-  const { data: balanceSheet, isLoading: bsLoading } = useQuery<BalanceSheetReport>({
+  const {
+    data: balanceSheet,
+    isLoading: bsLoading,
+    fetchStatus: bsFetchStatus,
+    error: bsError,
+    refetch: bsRefetch,
+  } = useQuery<BalanceSheetReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "balance-sheet", dateParams],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("balance-sheet"),
   });
-  const { data: vatSummary, isLoading: vatLoading } = useQuery<VATSummaryReport>({
+  const {
+    data: vatSummary,
+    isLoading: vatLoading,
+    fetchStatus: vatFetchStatus,
+    error: vatError,
+    refetch: vatRefetch,
+  } = useQuery<VATSummaryReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "vat-summary", dateParams],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("vat-summary"),
@@ -803,6 +821,15 @@ export function useReportsDataQueries({
     shouldLoadReportDeliveryData,
     profitLoss,
     plLoading,
+    plFetchStatus,
+    bsFetchStatus,
+    vatFetchStatus,
+    /** A failed statement fetch is shown as an error, never as an all-zero statement. */
+    reportLoadErrors: {
+      pl: plError ? { error: plError, retry: () => void plRefetch() } : null,
+      bs: bsError ? { error: bsError, retry: () => void bsRefetch() } : null,
+      vat: vatError ? { error: vatError, retry: () => void vatRefetch() } : null,
+    },
     costCenterProfitability,
     costCenterProfitabilityLoading,
     balanceSheet,

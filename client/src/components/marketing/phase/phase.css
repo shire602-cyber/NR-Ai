@@ -4,6 +4,18 @@
   --phase-paper: #f7f8f4;
   --phase-muted: #475e53;
   --phase-line: #ccd9d1;
+  /* Elevation scale: layered, low-contrast shadows (contact + ambient + long). */
+  --mz-shadow-1: 0 1px 2px rgb(10 23 19 / 0.05), 0 3px 8px -2px rgb(10 23 19 / 0.06);
+  --mz-shadow-2:
+    0 1px 2px rgb(10 23 19 / 0.05), 0 8px 20px -8px rgb(10 23 19 / 0.12),
+    0 22px 48px -22px rgb(10 23 19 / 0.16);
+  --mz-shadow-3:
+    0 2px 4px rgb(10 23 19 / 0.06), 0 18px 38px -14px rgb(10 23 19 / 0.18),
+    0 46px 92px -34px rgb(10 23 19 / 0.28);
+  --mz-shadow-dark:
+    0 2px 4px rgb(0 0 0 / 0.3), 0 24px 50px -16px rgb(0 0 0 / 0.5),
+    0 64px 120px -44px rgb(0 0 0 / 0.62);
+  --mz-ease: cubic-bezier(0.22, 1, 0.36, 1);
   background: var(--phase-paper);
   color: var(--phase-ink);
   min-height: 100vh;
@@ -35,8 +47,16 @@
   position: sticky;
   inset-block-start: 0;
   z-index: 20;
-  background: #fff;
-  border-block-end: 1px solid var(--phase-line);
+  background: rgb(255 255 255 / 0.84);
+  -webkit-backdrop-filter: saturate(1.6) blur(16px);
+  backdrop-filter: saturate(1.6) blur(16px);
+  border-block-end: 1px solid rgb(20 36 30 / 0.09);
+  box-shadow: 0 8px 24px -18px rgb(10 23 19 / 0.3);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .phase-header {
+    background: #fff;
+  }
 }
 .phase-header-inner,
 .phase-header-actions,
@@ -92,9 +112,17 @@
   background: #fff;
   border: 1px solid var(--phase-line);
   border-radius: 16px;
-  box-shadow: 0 18px 35px #14241e22;
+  box-shadow: var(--mz-shadow-3);
   padding: 10px;
   display: grid;
+  transform-origin: top;
+  animation: phase-pop 0.22s var(--mz-ease) both;
+}
+@keyframes phase-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
 }
 .phase-popover[data-wide="true"] {
   grid-template-columns: repeat(3, 1fr);
@@ -105,6 +133,7 @@
   min-height: 44px;
   padding: 8px 14px;
   border-radius: 8px;
+  transition: background-color 0.18s;
 }
 .phase-popover a:hover {
   background: #e9f3ed;
@@ -182,11 +211,35 @@
   gap: 9px;
   min-height: 46px;
   border: 1px solid transparent;
-  padding: 9px 17px;
-  border-radius: 9px;
-  font-weight: 650;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-weight: 600;
   text-align: center;
   line-height: 1.45;
+  transition:
+    transform 0.25s var(--mz-ease),
+    box-shadow 0.25s var(--mz-ease),
+    background-color 0.2s,
+    border-color 0.2s,
+    color 0.2s;
+}
+.phase-button:hover {
+  transform: translateY(-2px);
+}
+.phase-button:active {
+  transform: translateY(0) scale(0.975);
+  transition-duration: 0.08s;
+}
+.phase-button svg,
+.phase-textlink svg {
+  transition: translate 0.25s var(--mz-ease);
+}
+.phase-button:hover svg,
+.phase-textlink:hover svg {
+  translate: 3px 0;
+}
+.phase-site[dir="rtl"] :is(.phase-button, .phase-textlink):hover svg {
+  translate: -3px 0;
 }
 .phase-button svg,
 .phase-textlink svg,
@@ -198,16 +251,25 @@
   transform: scaleX(-1);
 }
 .phase-site .phase-primary {
-  background: var(--phase-green);
+  background: linear-gradient(180deg, #0f7a57, #0a6044);
   color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    0 1px 2px rgb(7 75 53 / 0.35),
+    0 8px 18px -8px rgb(11 106 74 / 0.55);
 }
 .phase-site .phase-primary:hover {
-  background: #07573c;
+  background: linear-gradient(180deg, #0d7150, #08573d);
   color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.22),
+    0 2px 4px rgb(7 75 53 / 0.3),
+    0 16px 30px -10px rgb(11 106 74 / 0.6);
 }
 .phase-outline {
-  border-color: #9eb5a9;
+  border-color: #b4c6bc;
   background: #fff;
+  box-shadow: var(--mz-shadow-1);
 }
 .phase-outline:hover {
   background: #edf5ef;
@@ -240,9 +302,9 @@
 .phase-site h1,
 .phase-site h2,
 .phase-site h3 {
-  font-weight: 700;
-  line-height: 1.09;
-  letter-spacing: -0.045em;
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
   text-wrap: balance;
 }
 .phase-site[dir="rtl"] :is(h1, h2, h3) {
@@ -405,8 +467,19 @@
   display: block;
   background: #fff;
   border: 1px solid var(--phase-line);
-  border-radius: 15px;
+  border-radius: 18px;
   padding: clamp(20px, 3vw, 36px);
+  box-shadow: var(--mz-shadow-1);
+  transition:
+    transform 0.3s var(--mz-ease),
+    box-shadow 0.3s var(--mz-ease),
+    border-color 0.2s,
+    background-color 0.2s;
+}
+a.phase-card:hover,
+.phase-feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--mz-shadow-2);
 }
 .phase-feature-card:hover {
   border-color: var(--phase-green);
@@ -521,12 +594,47 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+/* Inner pages: one page-head scale and the light homepage band behind it. */
 .phase-subpage {
   min-height: 60vh;
+  background:
+    radial-gradient(70% 520px at 85% 0%, rgb(11 106 74 / 0.08), transparent 70%), var(--phase-paper);
 }
-.phase-subpage h1 {
+.phase-site[dir="rtl"] .phase-subpage {
+  background:
+    radial-gradient(70% 520px at 15% 0%, rgb(11 106 74 / 0.08), transparent 70%), var(--phase-paper);
+}
+.phase-site .phase-subpage h1 {
   margin-block-start: 12px;
   max-width: 22ch;
+  font-size: clamp(38px, 5.2vw, 68px);
+  line-height: 1.1;
+}
+.phase-site[dir="rtl"] .phase-subpage h1 {
+  line-height: 1.3;
+}
+/* A heading inside a card, form or tile is a card title, whatever its level. */
+.phase-site :is(.phase-card, .phase-form, .phase-feature-card) :is(h2, h3) {
+  font-size: clamp(20px, 1.9vw, 26px);
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+.phase-site[dir="rtl"] :is(.phase-card, .phase-form, .phase-feature-card) :is(h2, h3) {
+  letter-spacing: 0;
+  line-height: 1.45;
+}
+.phase-card .phase-cta-row {
+  margin-block-start: 18px;
+}
+/* Language switch on pages with one URL for both languages (a button, not a link). */
+.phase-site .phase-lang {
+  display: inline-flex;
+  min-height: 44px;
+  min-width: 32px;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  color: inherit;
 }
 .phase-product-detail {
   margin-block-start: 35px;
@@ -545,7 +653,8 @@
 .phase-form {
   background: #fff;
   border: 1px solid var(--phase-line);
-  border-radius: 16px;
+  border-radius: 18px;
+  box-shadow: var(--mz-shadow-1);
   padding: clamp(16px, 4vw, 32px);
   max-width: 680px;
   margin-block-start: 28px;
@@ -571,7 +680,7 @@
 .phase-form :is(input:not([type="checkbox"]), select) {
   border: 1px solid #859e91;
   min-height: 46px;
-  border-radius: 7px;
+  border-radius: 10px;
   padding: 8px;
   background: #fff;
   color: var(--phase-ink);
@@ -658,7 +767,9 @@
   color: var(--phase-ink);
 }
 .phase-plan-grid .plan-card[data-featured="true"] {
-  background: #09513a;
+  background:
+    radial-gradient(120% 70% at 85% 0%, rgb(93 242 180 / 0.2), transparent 60%),
+    linear-gradient(165deg, #0b6348, #073f2e);
   color: #fff;
 }
 .phase-plan-grid .plan-card[data-featured="true"] :is(p, p span, button) {
@@ -741,4 +852,18 @@
   color: var(--phase-green);
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-site :is(.phase-button, .phase-card, .phase-popover, .phase-textlink),
+  .phase-site :is(.phase-button, .phase-textlink) svg {
+    animation: none;
+    transition: none;
+  }
+  .phase-site :is(.phase-button, .phase-card):is(:hover, :active) {
+    transform: none;
+  }
+  .phase-site :is(.phase-button, .phase-textlink):hover svg {
+    translate: none;
+  }
 }

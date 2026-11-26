@@ -96,7 +96,7 @@ import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { accountDisplayName } from "@/lib/account-name";
 import { parseCalendarDate } from "@/lib/format-date";
@@ -239,6 +239,9 @@ export default function FixedAssets() {
 
   // ─── Queries ────────────────────────────────────────────
 
+  const assetsKey = [`/api/companies/${companyId}/fixed-assets`];
+  const summaryKey = [`/api/companies/${companyId}/fixed-assets/summary`];
+
   const {
     data: assetsData,
     isLoading: isLoadingAssets,
@@ -246,7 +249,7 @@ export default function FixedAssets() {
     isPaused: assetsPaused,
     refetch: refetchAssets,
   } = useQuery<FixedAsset[]>({
-    queryKey: [`/api/companies/${companyId}/fixed-assets`],
+    queryKey: assetsKey,
     enabled: !!companyId,
   });
   const assets = assetsData ?? [];
@@ -257,7 +260,7 @@ export default function FixedAssets() {
     isLoadingError: summaryLoadFailed,
     refetch: refetchSummary,
   } = useQuery<AssetSummary>({
-    queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
+    queryKey: summaryKey,
     enabled: !!companyId,
   });
   const categories = summary?.byCategory ?? [];
@@ -318,6 +321,11 @@ export default function FixedAssets() {
       (a.code === "1010" || a.code === "1020" || /cash|bank/i.test(a.subType ?? ""))
   );
 
+  const refreshAssetReads = () => {
+    refreshAfterWrite(assetsKey);
+    refreshAfterWrite(summaryKey);
+  };
+
   const capitalizeMutation = useMutation({
     mutationFn: ({
       id,
@@ -333,7 +341,7 @@ export default function FixedAssets() {
         ...(inputVat && inputVat > 0 ? { inputVat } : {}),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
+      refreshAssetReads();
       setCapitalizeTarget(null);
       toast({ title: fa.capitalized });
     },
@@ -357,10 +365,7 @@ export default function FixedAssets() {
           : {}),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.assetCreated"),
         description: translateNow("toasts.theFixedAssetHasBeenAddedSuccessfully"),
@@ -383,10 +388,7 @@ export default function FixedAssets() {
       return apiRequest("PATCH", `/api/fixed-assets/${id}`, rest);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.assetUpdated"),
         description: translateNow("toasts.theFixedAssetHasBeenUpdatedSuccessfully"),
@@ -407,10 +409,7 @@ export default function FixedAssets() {
   const deleteAssetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/fixed-assets/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.assetDeleted"),
         description: translateNow("toasts.theFixedAssetHasBeenDeleted"),
@@ -431,10 +430,7 @@ export default function FixedAssets() {
     onSuccess: (data: any) => {
       setDepRunDialogOpen(false);
       setDepAsset(null);
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.depreciationRecorded"),
         description: formatMessage(translateNow("toasts.monthlyDepreciationRecorded"), {
@@ -463,10 +459,7 @@ export default function FixedAssets() {
         notes: data.notes || null,
       }),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       const glType = data.gainLossType === "gain" ? "Gain" : "Loss";
       toast({
         title: translateNow("toasts.assetDisposed"),
@@ -492,10 +485,7 @@ export default function FixedAssets() {
     mutationFn: (data: DepreciationRunData) =>
       apiRequest("POST", `/api/companies/${companyId}/fixed-assets/run-depreciation`, data),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.batchDepreciationComplete"),
         description: formatMessage(translateNow("toasts.processedAssetsFor"), {
