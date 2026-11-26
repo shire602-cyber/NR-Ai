@@ -294,6 +294,22 @@ export function useReportsExports({
   };
   const handleExportGoogleSheets = async () => {
     if (!selectedCompanyId) return;
+    // F03: same guard as Excel — refuse when the active report's data failed to load.
+    const gsReportKeyMap: Record<string, keyof typeof reportLoadErrors> = {
+      pl: "pl",
+      bs: "bs",
+      vat: "vat",
+      trial: "tb",
+    };
+    const gsActiveKey = gsReportKeyMap[activeTab];
+    if (gsActiveKey && reportLoadErrors[gsActiveKey]?.error) {
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.exportFailed"),
+        description: translateNow("reportCenter.dataLoadError"),
+      });
+      return;
+    }
 
     setIsExporting(true);
     const dateRangeStr =
