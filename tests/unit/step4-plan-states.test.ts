@@ -69,6 +69,11 @@ vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
 vi.mock("../../client/src/hooks/useCompanyPermission", () => ({
   useCompanyPermission: () => ({ can: () => sub.canBilling, gate: () => ({}) }),
 }));
+// Onboarding's first screen for an account with no company yet.
+vi.mock("../../client/src/components/ActiveCompanyProvider", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useActiveCompany: () => ({ company: undefined, isLoading: false }),
+}));
 
 let container: HTMLDivElement;
 let root: Root;
@@ -590,6 +595,67 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
     expect(q("button-see-plans-choice")).not.toBeNull();
     expect(q("button-choose-plan")).toBeNull();
     expect(q("button-see-plans")).toBeNull();
+  });
+});
+
+// ── onboarding: the trial caps note ────────────────────────────────────────────────────────
+
+describe.each(["en", "ar"] as const)("onboarding trial note (%s)", (locale) => {
+  beforeEach(async () => setLocale(locale));
+
+  // Warm the heavy onboarding import outside the test timer; reused by both locales.
+  let CustomerOnboarding: typeof import("../../client/src/pages/onboarding/CustomerOnboarding").CustomerOnboarding;
+  beforeAll(async () => {
+    ({ CustomerOnboarding } = await import("../../client/src/pages/onboarding/CustomerOnboarding"));
+  });
+
+  // One stable client with a local demo queryFn, so the industry-template query neither logs a
+  // missing queryFn nor refetches on the paid rerender.
+  const onboardingClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        queryFn: async ({ queryKey }) =>
+          queryKey[0] === "/api/onboarding/coa-templates"
+            ? [{ id: "general", label: { en: "General", ar: "عام" }, accounts: 0 }]
+            : null,
+      },
+    },
+  });
+
+  async function onboarding() {
+    await act(async () => {
+      root.render(
+        createElement(
+          QueryClientProvider,
+          { client: onboardingClient },
+          createElement(CustomerOnboarding)
+        )
+      );
+    });
+    expect(q("express-company-name")).not.toBeNull();
+  }
+
+  it("shows during the trial and not once the chosen plan is paid and active", async () => {
+    sub.state = stateFor("running-chosen");
+    await onboarding();
+    expect(text(q("onboarding-trial-note")!)).toContain(String(aiCreditsPerMonth));
+
+    // Activation keeps the recorded choice; the trial's caps no longer apply.
+    sub.state = {
+      ...stateFor("running-chosen"),
+      planState: "active",
+      trial: null,
+      entitlement: {
+        state: "active",
+        planId: "professional",
+        storedPlanId: "professional",
+        features: planFeatures("professional"),
+        chosenPlan: chosen,
+      },
+    };
+    await onboarding();
+    expect(q("onboarding-trial-note")).toBeNull();
   });
 });
 

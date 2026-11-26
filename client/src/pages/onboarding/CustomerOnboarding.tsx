@@ -154,8 +154,9 @@ function Wizard({
   progress: OnboardingProgress | null;
 }) {
   const { t, locale } = useTranslation();
-  // STEP4: the plan chosen at sign-up, named under the first heading (hidden when none).
-  const { chosenPlan } = useSubscription();
+  // STEP4: the plan chosen at sign-up, named under the first heading (hidden when none, and
+  // outside the trial: a paid plan keeps the recorded choice but not the trial's caps).
+  const { chosenPlan, planState } = useSubscription();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [step, setStepState] = useState<1 | 2 | 3>(() => stepFromProgress(progress));
@@ -361,7 +362,7 @@ function Wizard({
           }
           lead={t["onboarding.v3CompanyLead"]}
         />
-        {chosenPlan ? (
+        {planState === "trial" && chosenPlan ? (
           <p
             className="-mt-4 mb-6 text-caption text-muted-foreground"
             data-testid="onboarding-trial-note"

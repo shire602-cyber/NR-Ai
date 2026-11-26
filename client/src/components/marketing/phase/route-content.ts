@@ -1,4 +1,5 @@
 import { MARKETING_BRAND } from "../../../../../shared/marketing-brand";
+import { TRIAL_LIMITS } from "../../../../../shared/plans";
 import { features, starterPrice, tools, type Bilingual } from "./content";
 import { editorialPages, launchPages } from "./editorial/pages";
 import { metaPair } from "./meta-text";
@@ -15,7 +16,11 @@ export const homeLead: Bilingual = metaPair("hxHeroSub", { price: starterPrice }
 export const demoTitle: Bilingual = metaPair("hxMetaDemoTitle");
 export const demoLead: Bilingual = metaPair("hxMetaDemoLead");
 export const pricingTitle: Bilingual = metaPair("hxMetaPricingTitle", { price: starterPrice });
-export const pricingLead: Bilingual = metaPair("hxMetaPricingLead");
+export const pricingLead: Bilingual = metaPair("hxMetaPricingLead", {
+  companies: TRIAL_LIMITS.maxCompanies,
+  credits: TRIAL_LIMITS.aiCreditsPerMonth,
+  storageGb: TRIAL_LIMITS.maxStorageMb / 1024,
+});
 
 export const hubTitle: Bilingual = metaPair("hxHubH1");
 export const hubLead: Bilingual = metaPair("hxHubLead");
