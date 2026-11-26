@@ -88,6 +88,7 @@ describe("upload dialog", () => {
     async () => {
       const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
       try {
+        await waitFor(() => expect(byId("button-upload-first-document")).not.toBeNull());
         await click(byId("button-upload-first-document")!);
         expect(byId("vault-upload-dialog-error")).not.toBeNull();
         expect(byId("button-upload-first-document")).not.toBeNull();
@@ -113,7 +114,20 @@ describe("upload dialog", () => {
     expect(byId<HTMLInputElement>("input-document-name")!.value).toBe("");
   });
 
-  it("posts the typed name and chosen file, then closes", async () => {
+  it("posts the typed name and chosen file, then keeps the first-upload prompt hidden while the refresh runs and after it fails", async () => {
+    await waitFor(() => expect(byId("button-upload-first-document")).not.toBeNull());
+
+    // The upload is accepted (201); the re-read of the list stays pending, then fails (a 4xx is not retried).
+    let answerRefresh!: (response: Response) => void;
+    const refresh = new Promise<Response>((resolve) => {
+      answerRefresh = resolve;
+    });
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method === "POST"
+        ? new Response("{}", { status: 201, headers: { "content-type": "application/json" } })
+        : refresh
+    );
+
     await openDialog();
     await type(byId<HTMLInputElement>("input-document-name")!, "Licence");
     const fileInput = byId<HTMLInputElement>("input-document-file")!;
@@ -125,10 +139,27 @@ describe("upload dialog", () => {
       fileInput.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await click(byId("button-confirm-upload")!);
+
     await waitFor(() => expect(byId("input-document-name")).toBeNull());
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST")!;
     const form = post[1].body as FormData;
     expect(form.get("name")).toBe("Licence");
     expect((form.get("file") as File).name).toBe("licence.pdf");
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Upload successful" }));
+    // The refresh is still pending: an empty cached list is not proof the vault is empty.
+    expect(queryClient.isFetching({ queryKey: ["/api/companies", "c1", "documents"] })).toBe(1);
+    expect(byId("button-upload-first-document")).toBeNull();
+
+    await act(async () => {
+      answerRefresh(
+        new Response(JSON.stringify({ message: "no" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        })
+      );
+    });
+    await waitFor(() => expect(byId("vault-refresh-error")).not.toBeNull());
+    expect(byId("button-upload-first-document")).toBeNull();
+    expect(byId("button-upload-document")).not.toBeNull();
   });
 });

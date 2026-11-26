@@ -103,7 +103,12 @@ const DOCUMENT_CATEGORIES = [
 export default function DocumentVault() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany, error: companyError } = useDefaultCompany();
+  const {
+    companyId,
+    isLoading: isLoadingCompany,
+    error: companyError,
+    isPaused: isCompanyPaused,
+  } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -129,6 +134,7 @@ export default function DocumentVault() {
     isLoading,
     isLoadingError,
     isError,
+    isSuccess,
     refetch,
   } = useQuery<Document[]>({
     queryKey: ["/api/companies", companyId, "documents"],
@@ -137,8 +143,9 @@ export default function DocumentVault() {
 
   /**
    * Re-read the list after a write. In-flight reads are cancelled first so a response issued
-   * before the write cannot land as the current list. The cache is not edited here: the list
-   * (and the first-upload prompt) changes only when the server answers.
+   * before the write cannot land as the current list. The cache is not edited here. Invalidation
+   * marks the list stale and starts a re-read; the first-upload prompt is shown only for an
+   * empty list from a settled successful read, so it stays hidden while that read runs or fails.
    */
   const refreshDocuments = async () => {
     const queryKey = ["/api/companies", companyId, "documents"];
@@ -345,9 +352,10 @@ export default function DocumentVault() {
 
   // No list yet: a hard error, or still waiting (paused offline or unfocused). Never "empty".
   if (documents === undefined) {
-    // A paused retry is waiting, even if an earlier first load failed.
-    const loadFailed =
-      fetchStatus !== "paused" && (isLoadingError || (!companyId && !!companyError));
+    // A paused retry is waiting, even if an earlier first load failed. Without a company the
+    // documents query is disabled, so the company list's own paused state decides.
+    const retryPaused = companyId ? fetchStatus === "paused" : !!isCompanyPaused;
+    const loadFailed = !retryPaused && (isLoadingError || (!companyId && !!companyError));
     return (
       <SettingsLayout>
         <div className="space-y-6">
@@ -384,11 +392,7 @@ export default function DocumentVault() {
         <PageHeader
           eyebrow={t["documentVault.operations"]}
           title={locale === "ar" ? "خزنة المستندات" : t["shell.moreDocumentVault"]}
-          description={
-            locale === "ar"
-              ? "قم بتخزين وإدارة مستنداتك المهمة مع تنبيهات انتهاء الصلاحية"
-              : t["documentVault.storeAndManageYourImportant"]
-          }
+          description={t["documentVault.storeAndManageYourImportant"]}
           actions={
             <Button onClick={openUploadDialog} data-testid="button-upload-document">
               <Plus className="h-4 w-4" aria-hidden />
@@ -442,17 +446,22 @@ export default function DocumentVault() {
         )}
 
         {activeDocuments.length === 0 ? (
-          <EmptyState
-            icon={FolderOpen}
-            title={locale === "ar" ? "لا توجد مستندات" : t["documentVault.noDocumentsYet"]}
-            description={t["documentVault.emptyBody"]}
-            action={{
-              label: locale === "ar" ? "رفع أول مستند" : t["documentVault.uploadYourFirstDocument"],
-              icon: Plus,
-              onClick: openUploadDialog,
-              testId: "button-upload-first-document",
-            }}
-          />
+          // The first-upload prompt needs a successful, settled empty read. A cached empty list
+          // during a paused, running or failed refresh (e.g. right after an upload) is not proof.
+          isSuccess && fetchStatus === "idle" ? (
+            <EmptyState
+              icon={FolderOpen}
+              title={locale === "ar" ? "لا توجد مستندات" : t["documentVault.noDocumentsYet"]}
+              description={t["documentVault.emptyBody"]}
+              action={{
+                label:
+                  locale === "ar" ? "رفع أول مستند" : t["documentVault.uploadYourFirstDocument"],
+                icon: Plus,
+                onClick: openUploadDialog,
+                testId: "button-upload-first-document",
+              }}
+            />
+          ) : null
         ) : (
           <Card>
             <div role="status" aria-atomic="true" className="sr-only">

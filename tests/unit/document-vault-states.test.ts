@@ -19,6 +19,14 @@ const mocks = vi.hoisted(() => ({
   queueForSync: vi.fn(),
   online: { value: true },
   refreshSession: vi.fn(),
+  company: {
+    value: { companyId: "c1", isLoading: false, error: null, isPaused: false } as {
+      companyId: string | undefined;
+      isLoading: boolean;
+      error: unknown;
+      isPaused: boolean;
+    },
+  },
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -26,7 +34,7 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: mocks.toast }),
 }));
 vi.mock("@/hooks/useDefaultCompany", () => ({
-  useDefaultCompany: () => ({ companyId: "c1", isLoading: false, error: null }),
+  useDefaultCompany: () => mocks.company.value,
 }));
 vi.mock("@/components/layout/SettingsLayout", () => ({
   SettingsLayout: ({ children }: { children: ReactNode }) => children,
@@ -109,6 +117,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   vi.stubGlobal("fetch", fetchMock);
   mocks.online.value = true;
+  mocks.company.value = { companyId: "c1", isLoading: false, error: null, isPaused: false };
 });
 
 afterEach(async () => {
@@ -145,6 +154,27 @@ describe("list states", () => {
     expect(byId("button-upload-first-document")).toBeNull();
   });
 
+  it("shows waiting, not the company failure, while a company retry is paused", async () => {
+    // Company list failed; the retry went offline (isPaused). The documents query is disabled.
+    mocks.company.value = {
+      companyId: undefined,
+      isLoading: false,
+      error: new Error("companies failed"),
+      isPaused: false,
+    };
+    await render();
+    expect(byId("vault-load-error")).not.toBeNull();
+    mocks.company.value = { ...mocks.company.value, isPaused: true };
+    await act(async () =>
+      root!.render(
+        createElement(QueryClientProvider, { client: queryClient }, createElement(DocumentVault))
+      )
+    );
+    expect(byId("vault-waiting")).not.toBeNull();
+    expect(byId("vault-load-error")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("shows the empty state only after an empty list loaded", async () => {
     fetchMock.mockResolvedValue(json([]));
     await render();
@@ -173,15 +203,25 @@ describe("list states", () => {
     expect(byId("vault-load-error")).toBeNull();
   });
 
-  it("keeps a cached empty list as empty when the refresh fails", async () => {
+  it("does not show the first-upload prompt for a cached empty list while the refresh is paused", async () => {
     queryClient.setQueryData(KEY, []);
-    fetchMock.mockImplementation(async () => json({ message: "no" }, 400));
     await render();
-    await act(async () => {
-      await queryClient.refetchQueries({ queryKey: KEY });
-    });
-    await waitFor(() => expect(byId("vault-refresh-error")).not.toBeNull());
     expect(byId("button-upload-first-document")).not.toBeNull();
+
+    onlineManager.setOnline(false);
+    act(() => {
+      void queryClient.refetchQueries({ queryKey: KEY });
+    });
+    await waitFor(() => expect(byId("vault-refresh-paused")).not.toBeNull());
+    expect(byId("button-upload-first-document")).toBeNull();
+    expect(byId("button-upload-document")).not.toBeNull();
+
+    // A fresh, settled empty list brings the prompt back.
+    fetchMock.mockImplementation(async () => json([]));
+    await act(async () => {
+      onlineManager.setOnline(true);
+    });
+    await waitFor(() => expect(byId("button-upload-first-document")).not.toBeNull());
   });
 
   // jsdom has no layout, so overlap cannot be measured. This pins the structure that prevents it:

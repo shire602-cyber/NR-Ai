@@ -65,11 +65,7 @@ export default function DocumentUploadDialog({
           <DialogTitle>
             {locale === "ar" ? "رفع مستند جديد" : t["documentVault.uploadNewDocument"]}
           </DialogTitle>
-          <DialogDescription>
-            {locale === "ar"
-              ? "ارفع مستنداً مهماً مثل الرخصة التجارية أو العقود"
-              : t["documentVault.uploadAnImportantDocumentLike"]}
-          </DialogDescription>
+          <DialogDescription>{t["documentVault.uploadAnImportantDocumentLike"]}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
