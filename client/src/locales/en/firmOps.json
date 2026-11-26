@@ -252,5 +252,11 @@
   "firmOps.intakePurchase": "Purchase",
   "firmOps.intakeSales": "Sales",
   "firmOps.chasingUnexpectedError": "An unexpected error occurred.",
-  "firmOps.chasingSend": "Send"
+  "firmOps.chasingSend": "Send",
+  "firmOps.bulkFilesQueued": "{count, plural, one {# file queued} other {# files queued}}",
+  "firmOps.bulkFilesDone": "{count} done",
+  "firmOps.bulkFilesFailed": "{count} failed",
+  "firmOps.bulkIssuesCount": "{count, plural, one {# issue} other {# issues}}",
+  "firmOps.recurringIntervalUnit": "{count, plural, one {day} other {days}}",
+  "firmOps.chaseBulkSendUnavailable": "The queue could not be refreshed, so it may be out of date. Refresh it before sending all."
 }

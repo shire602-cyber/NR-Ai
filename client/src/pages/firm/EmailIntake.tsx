@@ -407,20 +407,26 @@ function SendersTab({
                           : t["firmOps.intakeStatusPaused"]}
                       </Badge>
                     </TableCell>
-                    <TableCell data-numeric className=" space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => toggleMutation.mutate(s)}>
-                        {s.status === "active"
-                          ? t["firmOps.intakePause"]
-                          : t["firmOps.intakeResume"]}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteMutation.mutate(s.id)}
-                        data-testid={`button-delete-${s.id}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    <TableCell data-numeric>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggleMutation.mutate(s)}
+                        >
+                          {s.status === "active"
+                            ? t["firmOps.intakePause"]
+                            : t["firmOps.intakeResume"]}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteMutation.mutate(s.id)}
+                          data-testid={`button-delete-${s.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

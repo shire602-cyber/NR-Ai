@@ -137,6 +137,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  restoreQueryDefaults?.();
+  restoreQueryDefaults = null;
   onlineManager.setOnline(true);
   focusManager.setFocused(undefined);
   clearAuthHint();
@@ -147,6 +149,18 @@ afterEach(async () => {
   const { useI18n } = await import("../../client/src/lib/i18n");
   useI18n.getState().setLocale("en");
 });
+
+/**
+ * A refresh failure that keeps the cached rows is a server failure (5xx). A 403/404 on a
+ * company-scoped read means access was lost, and the query cache then drops the cached data. The
+ * app retries a 5xx with backoff, so this turns that off and the refresh fails at once.
+ */
+let restoreQueryDefaults: (() => void) | null = null;
+function failRefreshesAtOnce(client: Awaited<ReturnType<typeof mountPage>>) {
+  const previous = client.getDefaultOptions();
+  client.setDefaultOptions({ ...previous, queries: { ...previous.queries, retry: false } });
+  restoreQueryDefaults = () => client.setDefaultOptions(previous);
+}
 
 const flush = async (ticks = 12) => {
   for (let i = 0; i < ticks; i++) await act(async () => new Promise((r) => setTimeout(r, 0)));
@@ -368,8 +382,8 @@ describe("bank reconciliation match dialog states", () => {
     expect(document.body.textContent).toContain("INV-1042 ALPHA TRADING");
     expect(byTestId("match-suggestions-error")).toBeNull();
 
-    // 4xx is not retried by the app's query client, so the refresh fails at once.
-    suggestionsReply = () => json({ message: "boom" }, 404);
+    failRefreshesAtOnce(queryClient);
+    suggestionsReply = () => json({ message: "boom" }, 500);
     await act(async () => {
       await queryClient.refetchQueries({
         queryKey: ["/api/companies", "c-1", "bank-statements", "t-1", "suggestions"],
@@ -393,7 +407,8 @@ describe("bank reconciliation match dialog states", () => {
     suggestionsReply = () => json([suggestion]);
     const queryClient = await mountPage("en");
     await openMatchDialog();
-    suggestionsReply = () => json({ message: "boom" }, 404);
+    failRefreshesAtOnce(queryClient);
+    suggestionsReply = () => json({ message: "boom" }, 500);
     await act(async () => {
       await queryClient.refetchQueries({
         queryKey: ["/api/companies", "c-1", "bank-statements", "t-1", "suggestions"],
@@ -418,6 +433,24 @@ describe("bank reconciliation match dialog states", () => {
     expect(byTestId("match-suggestions-offline")).toBeNull();
     expect(byTestId("match-suggestions-error")).toBeNull();
     expect(document.body.textContent).toContain("BETA");
+  }, 60_000);
+
+  it("drops cached suggestions when a refresh says access was lost (404)", async () => {
+    suggestionsReply = () => json([suggestion]);
+    const queryClient = await mountPage("en");
+    await openMatchDialog();
+    expect(document.body.textContent).toContain("INV-1042 ALPHA TRADING");
+
+    suggestionsReply = () => json({ message: "boom" }, 404);
+    await act(async () => {
+      await queryClient.refetchQueries({
+        queryKey: ["/api/companies", "c-1", "bank-statements", "t-1", "suggestions"],
+      });
+    });
+    await flush(4);
+    expect(byTestId("match-suggestions-error")).not.toBeNull();
+    expect(document.body.textContent).not.toContain("INV-1042 ALPHA TRADING");
+    expect(byTestId("match-suggestions-empty")).toBeNull();
   }, 60_000);
 
   it("shows the error with retry and no empty message when the first fetch fails", async () => {
@@ -1132,7 +1165,8 @@ describe("bank reconciliation report dialog states", () => {
     expect(byTestId("report-load-error")).toBeNull();
     expect(dialogText()).toContain("1,234");
 
-    reportReply = () => json({ message: "boom" }, 404);
+    failRefreshesAtOnce(client);
+    reportReply = () => json({ message: "boom" }, 500);
     await refresh(client);
     expect(byTestId("report-refresh-error")!.textContent).toContain(
       (enBanking as Record<string, string>)["banking.common.refreshFailed"]

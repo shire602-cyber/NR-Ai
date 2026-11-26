@@ -130,9 +130,15 @@ function levelBadgeColor(level: string) {
 }
 
 export default function DocumentChasing() {
-  const { t, locale } = useTranslation();
+  // The documentChasing.* copy lives in documentsEvidence, which the cold /firm scope does not load.
+  const { t, locale } = useTranslation(["documentsEvidence"]);
   const { toast } = useToast();
-  const { companyId, isLoading: companyLoading } = useDefaultCompany();
+  const {
+    companyId,
+    companyListState,
+    retryCompanyList,
+    error: companyError,
+  } = useDefaultCompany();
   const [showAddRequirement, setShowAddRequirement] = useState(false);
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [previewItem, setPreviewItem] = useState<ChaseQueueItem | null>(null);
@@ -249,6 +255,10 @@ export default function DocumentChasing() {
     [requirementsState, requirementsQuery.data]
   );
   const queue = hasReadData(queueState) ? (queueQuery.data ?? []) : [];
+  // Bulk send posts no ids: the server sends its current queue. So the action is only offered
+  // against a queue that is current: not after a failed refresh, not while a refresh is paused.
+  const queuePaused = queueQuery.fetchStatus === "paused";
+  const queueCurrent = queueState === "ready" && !queuePaused;
   const events = hasReadData(eventsState) ? (eventsQuery.data ?? []) : [];
 
   const missingDocs = useMemo(
@@ -267,19 +277,34 @@ export default function DocumentChasing() {
     return { overdue, dueSoon, total: missingDocs.length };
   }, [missingDocs]);
 
-  if (companyLoading) {
+  if (!companyId) {
+    if (companyListState === "error") {
+      return (
+        <div className="p-6">
+          <LoadErrorState
+            error={companyError}
+            onRetry={retryCompanyList}
+            testId="document-chasing-company-error"
+          />
+        </div>
+      );
+    }
+    if (companyListState === "empty") {
+      return (
+        <div className="p-6 text-muted-foreground" data-testid="document-chasing-no-company">
+          <T k="pages.noCompanySelected" />
+        </div>
+      );
+    }
     return (
-      <div className="p-6">
+      <div className="p-6" data-testid="document-chasing-loading">
+        {companyListState === "waiting" && (
+          <p className="mb-4 text-sm text-muted-foreground" data-testid="document-chasing-waiting">
+            {t["banking.query.paused"]}
+          </p>
+        )}
         <Skeleton className="h-8 w-64 mb-6" />
         <Skeleton className="h-32 w-full" />
-      </div>
-    );
-  }
-
-  if (!companyId) {
-    return (
-      <div className="p-6 text-muted-foreground" data-testid="document-chasing-no-company">
-        <T k="pages.noCompanySelected" />
       </div>
     );
   }
@@ -297,7 +322,8 @@ export default function DocumentChasing() {
               <AlertDialogTrigger asChild>
                 <Button
                   variant="default"
-                  disabled={bulkSendMutation.isPending}
+                  disabled={bulkSendMutation.isPending || !queueCurrent}
+                  title={queueCurrent ? undefined : t["firmOps.chaseBulkSendUnavailable"]}
                   data-testid="btn-bulk-send"
                 >
                   <Send className="w-4 h-4 me-2" />
@@ -315,7 +341,10 @@ export default function DocumentChasing() {
                   <AlertDialogCancel>
                     <T k="pages.cancel" />
                   </AlertDialogCancel>
-                  <AlertDialogAction onClick={() => bulkSendMutation.mutate()}>
+                  <AlertDialogAction
+                    disabled={!queueCurrent}
+                    onClick={() => bulkSendMutation.mutate()}
+                  >
                     <T k="pages.sendAll" />
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -473,8 +502,20 @@ export default function DocumentChasing() {
                   <StaleDataNotice onRetry={() => void queueQuery.refetch()} testId="queue-stale" />
                 </div>
               )}
+              {queuePaused && queueState === "ready" && (
+                <p className="mb-3 text-sm text-muted-foreground" data-testid="queue-paused">
+                  {t["banking.query.pausedCached"]}
+                </p>
+              )}
               {queueState === "pending" ? (
-                <Skeleton className="h-24 w-full" data-testid="queue-loading" />
+                <div data-testid="queue-loading">
+                  {queuePaused && (
+                    <p className="mb-3 text-sm text-muted-foreground" data-testid="queue-waiting">
+                      {t["banking.query.paused"]}
+                    </p>
+                  )}
+                  <Skeleton className="h-24 w-full" />
+                </div>
               ) : queueState === "error" ? (
                 <LoadErrorState
                   compact
@@ -887,7 +928,11 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
                   className="w-32"
                   aria-label={t["documentChasing.recurringIntervalInDays"]}
                 />
-                <span className="text-sm text-muted-foreground">days</span>
+                <span className="text-sm text-muted-foreground" data-testid="recurring-interval-unit">
+                  {formatMessage(t["firmOps.recurringIntervalUnit"], {
+                    count: form.recurringIntervalDays,
+                  })}
+                </span>
               </>
             )}
           </div>

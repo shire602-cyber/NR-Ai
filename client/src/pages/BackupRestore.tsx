@@ -58,6 +58,7 @@ import { formatDate, formatDateTime } from "@/lib/format-date";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import type { Backup } from "@shared/schema";
 import { formatMessage, useI18n, useTranslation, translateNow } from "@/lib/i18n";
@@ -172,7 +173,12 @@ const BACKUP_COPY = {
 export default function BackupRestore() {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const { companyId: selectedCompanyId } = useDefaultCompany();
+  const {
+    companyId: selectedCompanyId,
+    companyListState,
+    retryCompanyList,
+    error: companyError,
+  } = useDefaultCompany();
   const { can, known: accessKnown } = useCompanyPermission();
   const canManageBackups = can("backups.manage");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -400,6 +406,31 @@ export default function BackupRestore() {
   };
 
   if (!selectedCompanyId) {
+    if (companyListState === "error") {
+      return (
+        <LoadErrorState
+          error={companyError}
+          onRetry={retryCompanyList}
+          testId="backups-company-error"
+        />
+      );
+    }
+    // "No company" is a successful empty read; until then the list is loading or waiting.
+    if (companyListState !== "empty") {
+      return (
+        <div
+          className="flex h-64 flex-col items-center justify-center gap-2"
+          data-testid="backups-company-loading"
+        >
+          {companyListState === "waiting" && (
+            <p className="text-sm text-muted-foreground" data-testid="backups-company-waiting">
+              {t["banking.query.paused"]}
+            </p>
+          )}
+          <Skeleton className="h-8 w-64" />
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">
@@ -433,7 +464,7 @@ export default function BackupRestore() {
           description={t["backupRestore.safeguardYourFinancialRecordsWith"]}
           actions={
             <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-backup">
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="h-4 w-4 me-2" />
               <T k="pages.createBackup" />
             </Button>
           }
@@ -488,12 +519,12 @@ export default function BackupRestore() {
               >
                 {createBackupMutation.isPending ? (
                   <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    <RefreshCw className="h-4 w-4 me-2 animate-spin" />
                     <T k="pageLabels.creating" />
                   </>
                 ) : (
                   <>
-                    <Database className="h-4 w-4 mr-2" />
+                    <Database className="h-4 w-4 me-2" />
                     <T k="pages.createBackup" />
                   </>
                 )}

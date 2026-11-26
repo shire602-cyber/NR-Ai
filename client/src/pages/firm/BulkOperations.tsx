@@ -1,4 +1,5 @@
 import { formatAedText } from "@/lib/format";
+import { localizeFirmText } from "@shared/server-copy";
 import { T } from "@/components/layout/T";
 import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
@@ -290,15 +291,15 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">
-                {items.length} file{items.length !== 1 ? "s" : ""} queued
+                {formatMessage(t["firmOps.bulkFilesQueued"], { count: items.length })}
                 {successCount > 0 && (
                   <span className="ms-2 text-success text-sm font-normal">
-                    · {successCount} done
+                    · {formatMessage(t["firmOps.bulkFilesDone"], { count: successCount })}
                   </span>
                 )}
                 {errorCount > 0 && (
                   <span className="ms-2 text-destructive text-sm font-normal">
-                    · {errorCount} failed
+                    · {formatMessage(t["firmOps.bulkFilesFailed"], { count: errorCount })}
                   </span>
                 )}
               </CardTitle>
@@ -1006,7 +1007,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
                     </Badge>
                   ) : (
                     <Badge className="bg-warning-subtle text-warning">
-                      {s.issues.length} issue{s.issues.length !== 1 ? "s" : ""}
+                      {formatMessage(t["firmOps.bulkIssuesCount"], { count: s.issues.length })}
                     </Badge>
                   )}
                 </div>
@@ -1029,7 +1030,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
                   <div className="mt-3 bg-warning-subtle border border-warning/30 rounded p-2">
                     {s.issues.map((issue, i) => (
                       <p key={i} className="text-xs text-warning">
-                        · {issue}
+                        · {localizeFirmText(issue, t)}
                       </p>
                     ))}
                   </div>

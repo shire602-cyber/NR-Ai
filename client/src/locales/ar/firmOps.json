@@ -252,5 +252,11 @@
   "firmOps.intakePurchase": "مشتريات",
   "firmOps.intakeSales": "مبيعات",
   "firmOps.chasingUnexpectedError": "حدث خطأ غير متوقع.",
-  "firmOps.chasingSend": "إرسال"
+  "firmOps.chasingSend": "إرسال",
+  "firmOps.bulkFilesQueued": "{count, plural, zero {لا ملفات في الانتظار} one {ملف واحد في الانتظار} two {ملفان في الانتظار} few {# ملفات في الانتظار} many {# ملفًا في الانتظار} other {# ملف في الانتظار}}",
+  "firmOps.bulkFilesDone": "{count, plural, zero {لا ملفات مكتملة} one {ملف واحد مكتمل} two {ملفان مكتملان} few {# ملفات مكتملة} many {# ملفًا مكتملًا} other {# ملف مكتمل}}",
+  "firmOps.bulkFilesFailed": "{count, plural, zero {لا ملفات فاشلة} one {ملف واحد فاشل} two {ملفان فاشلان} few {# ملفات فاشلة} many {# ملفًا فاشلًا} other {# ملف فاشل}}",
+  "firmOps.bulkIssuesCount": "{count, plural, zero {لا ملاحظات} one {ملاحظة واحدة} two {ملاحظتان} few {# ملاحظات} many {# ملاحظة} other {# ملاحظة}}",
+  "firmOps.recurringIntervalUnit": "{count, plural, zero {يوم} one {يوم} two {يومان} few {أيام} many {يومًا} other {يوم}}",
+  "firmOps.chaseBulkSendUnavailable": "تعذّر تحديث قائمة المتابعة، وقد تكون قديمة. حدّثها قبل إرسال الكل."
 }
