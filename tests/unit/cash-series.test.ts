@@ -110,9 +110,9 @@ describe.each(["en", "ar"] as const)("CASH-SERIES (%s)", (locale) => {
     await renderPage(Numbering);
     await flushUntil(() => !!byTestId("numbering-cash_sale"));
     const card = byTestId("numbering-cash_sale")!;
-    expect(card.textContent).toContain(t[locale]["settingsPages.numberingDoc_cash_sale"]);
-    expect(t[locale]["settingsPages.numberingDoc_cash_sale"]).not.toBe(
-      t[locale]["settingsPages.numberingDoc_invoice"]
+    expect(card.textContent).toContain(t[locale]["settingsNumbering.numberingDoc_cash_sale"]);
+    expect(t[locale]["settingsNumbering.numberingDoc_cash_sale"]).not.toBe(
+      t[locale]["settingsNumbering.numberingDoc_invoice"]
     );
     if (locale === "ar") expect(card.textContent).toMatch(/[؀-ۿ]/);
     expect((byTestId("numbering-prefix-cash_sale") as HTMLInputElement).value).toBe("CS");
