@@ -308,10 +308,22 @@ export default function ExchangeRates() {
   const fxShowEmpty = fxLoaded && !fxPaused;
   const fxMaybeStale = fxRefetchFailed || fxPaused;
 
-  const { data: history } = useQuery<Revaluation[]>({
+  // History follows the same rules; it stays on the default queryFn, which forwards the signal.
+  const {
+    data: history,
+    isLoadingError: historyLoadFailed,
+    isRefetchError: historyRefetchFailed,
+    isSuccess: historyLoaded,
+    fetchStatus: historyFetchStatus,
+    refetch: refetchHistory,
+  } = useQuery<Revaluation[]>({
     queryKey: [historyKey],
     enabled: !!companyId,
   });
+  const historyPaused = historyFetchStatus === "paused";
+  const historyRefreshFailed = historyRefetchFailed && !historyPaused;
+  const historyRefreshPaused = historyPaused && history !== undefined;
+  const historyShowEmpty = historyLoaded && historyFetchStatus === "idle";
 
   // W5-C (R14-14): stale-rate banner and feed status.
   const { data: feedStatus } = useQuery<FeedStatus>({
@@ -953,47 +965,106 @@ export default function ExchangeRates() {
 
           <div>
             <p className="mb-2 font-medium">{t["exchangeRates.history"]}</p>
-            {!history || history.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{t["exchangeRates.noHistory"]}</p>
+            {history === undefined ? (
+              historyPaused ? (
+                <Alert
+                  tone="neutral"
+                  title={t["exchangeRates.pausedTitle"]}
+                  data-testid="history-paused"
+                >
+                  {t["exchangeRates.pausedBody"]}
+                </Alert>
+              ) : historyLoadFailed ? (
+                <Alert
+                  tone="danger"
+                  title={t["exchangeRates.historyLoadFailedTitle"]}
+                  data-testid="history-load-error"
+                  action={
+                    <Button size="sm" variant="outline" onClick={() => void refetchHistory()}>
+                      {t["exchangeRates.retry"]}
+                    </Button>
+                  }
+                >
+                  {t["exchangeRates.historyLoadFailedBody"]}
+                </Alert>
+              ) : (
+                <div className="space-y-2" data-testid="history-loading">
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                </div>
+              )
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t["exchangeRates.revalDate"]}</TableHead>
-                    <TableHead>{t["exchangeRates.status"]}</TableHead>
-                    <TableHead className="text-end">{t["exchangeRates.net"]}</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {history.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell>{formatDate(r.asOf, locale)}</TableCell>
-                      <TableCell>
-                        <Badge variant={r.status === "posted" ? "default" : "outline"}>
-                          {groupLabel(t, "status", r.status)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-end font-mono">
-                        {formatCurrency(Number(r.netGainLoss), base, locale)}
-                      </TableCell>
-                      <TableCell className="text-end">
-                        {r.status === "posted" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => undoMutation.mutate(r.id)}
-                            disabled={undoMutation.isPending}
-                          >
-                            <Undo2 className="h-4 w-4 me-1" />
-                            {t["exchangeRates.undo"]}
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <div className="space-y-3">
+                {historyRefreshFailed && (
+                  <Alert
+                    tone="warning"
+                    title={t["exchangeRates.historyRefreshFailedTitle"]}
+                    data-testid="history-refresh-error"
+                    action={
+                      <Button size="sm" variant="outline" onClick={() => void refetchHistory()}>
+                        {t["exchangeRates.retry"]}
+                      </Button>
+                    }
+                  >
+                    {t["exchangeRates.historyRefreshFailedBody"]}
+                  </Alert>
+                )}
+                {historyRefreshPaused && (
+                  <Alert
+                    tone="neutral"
+                    title={t["exchangeRates.refreshPausedTitle"]}
+                    data-testid="history-refresh-paused"
+                  >
+                    {t["exchangeRates.historyRefreshPausedBody"]}
+                  </Alert>
+                )}
+                {history.length === 0 ? (
+                  historyShowEmpty && (
+                    <p className="text-sm text-muted-foreground" data-testid="history-empty">
+                      {t["exchangeRates.noHistory"]}
+                    </p>
+                  )
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t["exchangeRates.revalDate"]}</TableHead>
+                        <TableHead>{t["exchangeRates.status"]}</TableHead>
+                        <TableHead className="text-end">{t["exchangeRates.net"]}</TableHead>
+                        <TableHead />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {history.map((r) => (
+                        <TableRow key={r.id}>
+                          <TableCell>{formatDate(r.asOf, locale)}</TableCell>
+                          <TableCell>
+                            <Badge variant={r.status === "posted" ? "default" : "outline"}>
+                              {groupLabel(t, "status", r.status)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-end font-mono">
+                            {formatCurrency(Number(r.netGainLoss), base, locale)}
+                          </TableCell>
+                          <TableCell className="text-end">
+                            {r.status === "posted" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => undoMutation.mutate(r.id)}
+                                disabled={undoMutation.isPending}
+                              >
+                                <Undo2 className="h-4 w-4 me-1" />
+                                {t["exchangeRates.undo"]}
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
             )}
           </div>
         </CardContent>

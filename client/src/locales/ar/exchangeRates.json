@@ -130,5 +130,10 @@
   "exchangeRates.fxRefreshFailedBody": "تُعرض آخر الأرقام التي جرى تحميلها، وقد تكون قديمة، لذا تم إيقاف التصدير إلى أن تُحدَّث.",
   "exchangeRates.refreshPausedTitle": "التحديث متوقف مؤقتًا",
   "exchangeRates.refreshPausedBody": "تُعرض آخر الأسعار التي جرى تحميلها. سيُستأنف التحديث تلقائيًا.",
-  "exchangeRates.fxRefreshPausedBody": "تُعرض آخر الأرقام التي جرى تحميلها. سيُستأنف التحديث تلقائيًا، والتصدير متوقف حتى ذلك الحين."
+  "exchangeRates.fxRefreshPausedBody": "تُعرض آخر الأرقام التي جرى تحميلها. سيُستأنف التحديث تلقائيًا، والتصدير متوقف حتى ذلك الحين.",
+  "exchangeRates.historyLoadFailedTitle": "تعذر تحميل سجل إعادة التقييم",
+  "exchangeRates.historyLoadFailedBody": "تحقق من اتصالك وحاول مرة أخرى.",
+  "exchangeRates.historyRefreshFailedTitle": "تعذر تحديث سجل إعادة التقييم",
+  "exchangeRates.historyRefreshFailedBody": "يُعرض آخر سجل جرى تحميله، وقد يكون غير محدَّث.",
+  "exchangeRates.historyRefreshPausedBody": "يُعرض آخر سجل جرى تحميله. سيُستأنف التحديث تلقائيًا."
 }

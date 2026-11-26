@@ -130,5 +130,10 @@
   "exchangeRates.fxRefreshFailedBody": "Showing the last figures that loaded. They may be out of date, so export is turned off until they refresh.",
   "exchangeRates.refreshPausedTitle": "Refresh on hold",
   "exchangeRates.refreshPausedBody": "Showing the last rates that loaded. Refresh will resume automatically.",
-  "exchangeRates.fxRefreshPausedBody": "Showing the last figures that loaded. Refresh will resume automatically, and export is turned off until then."
+  "exchangeRates.fxRefreshPausedBody": "Showing the last figures that loaded. Refresh will resume automatically, and export is turned off until then.",
+  "exchangeRates.historyLoadFailedTitle": "Could not load revaluation history",
+  "exchangeRates.historyLoadFailedBody": "Check your connection and try again.",
+  "exchangeRates.historyRefreshFailedTitle": "Could not refresh revaluation history",
+  "exchangeRates.historyRefreshFailedBody": "Showing the last history that loaded. It may be out of date.",
+  "exchangeRates.historyRefreshPausedBody": "Showing the last history that loaded. Refresh will resume automatically."
 }

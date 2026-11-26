@@ -24,6 +24,7 @@ import ExchangeRates from "../../client/src/pages/ExchangeRates";
 
 const BASE = "/api/companies/c1";
 const RATES = `${BASE}/exchange-rates`;
+const HISTORY = `${BASE}/fx-revaluations`;
 const FX = `${BASE}/reports/fx-gains-losses`;
 const serverError = () => Object.assign(new Error("500: boom"), { status: 500 });
 const rate = (id: string, from: string, to: string, r: number) => ({
@@ -90,7 +91,7 @@ async function render(
   ratesRequest: () => Promise<unknown>,
   fxRequest: () => Promise<unknown>,
   test: (node: HTMLDivElement, client: QueryClient) => Promise<void>,
-  options: { offline?: boolean } = {}
+  options: { offline?: boolean; history?: () => Promise<unknown> } = {}
 ) {
   await loadNamespaces(locale, ["common", "components", "pages", "exchangeRates"]);
   const prior = useI18n.getState().locale;
@@ -118,7 +119,7 @@ async function render(
         retry: false,
         queryFn: async ({ queryKey }) => {
           const path = queryKey.join("/");
-          if (path === `${BASE}/fx-revaluations`) return [];
+          if (path === HISTORY) return options.history ? options.history() : [];
           if (path === `${RATES}/feed-status`) return null;
           return null;
         },
@@ -185,12 +186,17 @@ describe.each(["en", "ar"] as const)("exchange rates screen (%s)", (locale) => {
         expect(q(node, "rates-empty")).toBeNull();
         expect(q(node, "fx-exposure-empty")).toBeNull();
         expect(q(node, "rates-load-error")).toBeNull();
+        expect(q(node, "history-paused")?.getAttribute("role")).toBe("status");
+        expect(q(node, "history-empty")).toBeNull();
+        expect(q(node, "history-load-error")).toBeNull();
         await act(async () => onlineManager.setOnline(true));
         await vi.waitFor(() => {
           expect(q(node, "rates-paused")).toBeNull();
           expect(q(node, "fx-paused")).toBeNull();
+          expect(q(node, "history-paused")).toBeNull();
           expect(q(node, "rates-empty")).not.toBeNull();
           expect(q(node, "fx-exposure-empty")).not.toBeNull();
+          expect(q(node, "history-empty")).not.toBeNull();
         });
       },
       { offline: true }
@@ -269,6 +275,119 @@ describe.each(["en", "ar"] as const)("exchange rates screen (%s)", (locale) => {
           expect(exportButton.disabled).toBe(false);
         });
       }
+    );
+  });
+
+  it("shows a history error with Retry, then the empty copy only after success", async () => {
+    const historyRequest = vi.fn().mockRejectedValueOnce(serverError()).mockResolvedValue([]);
+    await render(
+      locale,
+      async () => [],
+      async () => emptyFx,
+      async (node) => {
+        await vi.waitFor(() => expect(q(node, "history-load-error")).not.toBeNull());
+        const error = q(node, "history-load-error");
+        expect(error?.getAttribute("role")).toBe("alert");
+        expect(error?.textContent).not.toContain("boom");
+        expect(q(node, "history-empty")).toBeNull();
+        await act(async () => error?.querySelector("button")?.click());
+        await vi.waitFor(() => {
+          expect(q(node, "history-load-error")).toBeNull();
+          expect(q(node, "history-empty")).not.toBeNull();
+        });
+        expect(historyRequest).toHaveBeenCalledTimes(2);
+      },
+      { history: historyRequest }
+    );
+  });
+
+  it("shows a history skeleton while loading, with no empty copy", async () => {
+    let release: (value: unknown) => void = () => undefined;
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    await render(
+      locale,
+      async () => [],
+      async () => emptyFx,
+      async (node) => {
+        expect(q(node, "history-loading")).not.toBeNull();
+        expect(q(node, "history-empty")).toBeNull();
+        await act(async () => release([]));
+        await vi.waitFor(() => {
+          expect(q(node, "history-loading")).toBeNull();
+          expect(q(node, "history-empty")).not.toBeNull();
+        });
+      },
+      { history: () => pending }
+    );
+  });
+
+  it("keeps cached history through a failed and then paused refresh", async () => {
+    const rows = [
+      { id: "r1", asOf: "2026-10-31", status: "posted", netGainLoss: 12, createdAt: "2026-11-01" },
+    ];
+    const historyRequest = vi
+      .fn()
+      .mockResolvedValueOnce(rows)
+      .mockRejectedValueOnce(serverError())
+      .mockResolvedValue(rows);
+    await render(
+      locale,
+      async () => [],
+      async () => emptyFx,
+      async (node, client) => {
+        await vi.waitFor(() => expect(node.querySelectorAll("tbody tr").length).toBe(1));
+        await act(async () => {
+          await client.refetchQueries({ queryKey: [HISTORY] });
+        });
+        await vi.waitFor(() =>
+          expect(q(node, "history-refresh-error")?.getAttribute("role")).toBe("alert")
+        );
+        expect(q(node, "history-refresh-error")?.querySelector("button")).not.toBeNull();
+        expect(q(node, "history-load-error")).toBeNull();
+        expect(node.querySelectorAll("tbody tr").length).toBe(1);
+        // Pause wins over the earlier failure.
+        await act(async () => onlineManager.setOnline(false));
+        await act(async () => {
+          void client.invalidateQueries({ queryKey: [HISTORY] });
+        });
+        await vi.waitFor(() => {
+          expect(q(node, "history-refresh-paused")?.getAttribute("role")).toBe("status");
+          expect(q(node, "history-refresh-error")).toBeNull();
+        });
+        expect(node.querySelectorAll("tbody tr").length).toBe(1);
+        await act(async () => onlineManager.setOnline(true));
+        await vi.waitFor(() => {
+          expect(q(node, "history-refresh-paused")).toBeNull();
+          expect(q(node, "history-refresh-error")).toBeNull();
+        });
+        expect(node.querySelectorAll("tbody tr").length).toBe(1);
+      },
+      { history: historyRequest }
+    );
+  });
+
+  it("hides the history empty copy while a refresh is in flight", async () => {
+    let release: (value: unknown) => void = () => undefined;
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    const historyRequest = vi.fn().mockResolvedValueOnce([]).mockReturnValueOnce(pending);
+    await render(
+      locale,
+      async () => [],
+      async () => emptyFx,
+      async (node, client) => {
+        await vi.waitFor(() => expect(q(node, "history-empty")).not.toBeNull());
+        await act(async () => {
+          void client.invalidateQueries({ queryKey: [HISTORY] });
+        });
+        await vi.waitFor(() => expect(q(node, "history-empty")).toBeNull());
+        await act(async () => release([]));
+        await vi.waitFor(() => expect(q(node, "history-empty")).not.toBeNull());
+      },
+      { history: historyRequest }
     );
   });
 
