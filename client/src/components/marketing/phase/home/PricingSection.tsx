@@ -18,13 +18,10 @@ export function PlanCards({
   tr,
   immediate = false,
   cycle = "monthly",
-  compareHref = "#compare",
 }: SectionProps & {
   tr: Translate;
   immediate?: boolean;
   cycle?: BillingCycle;
-  /** Where "Compare with Wafeq and Zoho" jumps: the homepage table, or /pricing's own anchor. */
-  compareHref?: string;
 }) {
   const text = useMarketingText(locale);
   return (
@@ -34,9 +31,9 @@ export function PlanCards({
         {text("hxPriceTrialNote")}
       </p>
       <p className="mz-price-links">
-        <a href={compareHref} data-testid="link-price-compare">
+        <Link href={`${base}/compare`} data-testid="link-price-compare">
           {text("hxPriceCompareLink")}
-        </a>
+        </Link>
         <Link href={`${base}/pricing`} data-testid="link-price-full">
           {text("hxPriceCompare")} <ArrowRight aria-hidden="true" />
         </Link>

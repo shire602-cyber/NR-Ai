@@ -62,7 +62,10 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
       muhasib: { key: "hxCmpPrice", vars: { price: PLAN_MONTHLY_PRICES.starter } },
       wafeq: wafeq({
         key: "hxCmpPriceYearly",
-        vars: { monthly: includingVat(WAFEQ_ENTRY.monthly), yearly: includingVat(WAFEQ_ENTRY.yearly) },
+        vars: {
+          monthly: includingVat(WAFEQ_ENTRY.monthly),
+          yearly: includingVat(WAFEQ_ENTRY.yearly),
+        },
       }),
       zoho: zoho({ key: "hxCmpZohoEntry", vars: { price: includingVat(ZOHO_ENTRY_PAID.annual) } }),
     },
@@ -136,11 +139,23 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
 ];
 
 export const COMPARISON_SOURCES = {
-  wafeq: { url: WAFEQ_SRC, labelKey: "hxCmpSrcWafeq", pageKey: "hxCmpLinkWafeq", path: "wafeq" },
-  zoho: { url: ZOHO_SRC, labelKey: "hxCmpSrcZoho", pageKey: "hxCmpLinkZoho", path: "zoho" },
+  wafeq: {
+    url: WAFEQ_SRC,
+    labelKey: "hxCmpSrcWafeq",
+    pageKey: "hxCmpLinkWafeq",
+    vsKey: "hxFootCompareWafeq",
+    path: "wafeq",
+  },
+  zoho: {
+    url: ZOHO_SRC,
+    labelKey: "hxCmpSrcZoho",
+    pageKey: "hxCmpLinkZoho",
+    vsKey: "hxFootCompareZoho",
+    path: "zoho",
+  },
 } as const satisfies Record<
   Exclude<ComparisonColumn, "muhasib">,
-  { url: string; labelKey: MarketingKey; pageKey: MarketingKey; path: string }
+  { url: string; labelKey: MarketingKey; pageKey: MarketingKey; vsKey: MarketingKey; path: string }
 >;
 
 /** Vendor names are brand data: shown as-is, never translated. */

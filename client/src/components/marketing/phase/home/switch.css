@@ -1,0 +1,87 @@
+/* "Switching from Wafeq or Zoho Books?" strip (id="switch"). Prefix mz-switch-. Logical properties only. */
+/* A pale mint wash sets it apart from the sand band above and the white showcase header below. */
+.phase-site .mz-band.mz-switch {
+  --mz-bg: #eaf3ee;
+  padding-block: clamp(32px, 4.4vw, 56px);
+  border-block: 1px solid #d3e3da;
+}
+.phase-site .mz-switch-row {
+  display: grid;
+  gap: 24px;
+}
+.phase-site .mz-switch-title {
+  font-size: clamp(24px, 2.6vw, 34px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.phase-site[lang="ar"] .mz-switch-title {
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+.phase-site .mz-switch-lead {
+  margin-block-start: 10px;
+  max-inline-size: 60ch;
+  font-size: 17px;
+  line-height: 1.55;
+}
+.phase-site[lang="ar"] .mz-switch-lead {
+  line-height: 1.8;
+}
+.phase-site .mz-switch-points {
+  display: grid;
+  gap: 10px 28px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.phase-site .mz-switch-points li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--mz-ink-soft);
+}
+.phase-site[lang="ar"] .mz-switch-points li {
+  line-height: 1.6;
+}
+.phase-site .mz-switch-points svg {
+  inline-size: 22px;
+  block-size: 22px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--mz-emerald);
+  color: #fff;
+  stroke-width: 3;
+}
+.phase-site .mz-switch-links {
+  display: grid;
+  gap: 12px;
+}
+.phase-site .mz-switch-links .phase-button {
+  justify-content: space-between;
+  min-block-size: 52px;
+  text-align: start;
+}
+
+@media (min-width: 640px) {
+  .phase-site .mz-switch-points {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .phase-site .mz-switch-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .phase-site .mz-switch-row {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+    align-items: center;
+    gap: clamp(32px, 5vw, 72px);
+  }
+  .phase-site .mz-switch-links {
+    grid-template-columns: 1fr;
+  }
+}
