@@ -12,16 +12,20 @@ import {
   flush,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
+  pickDate,
   renderPage,
   setFixtures,
   type,
   unmountPage,
 } from "./helpers/form-harness";
 import TaxReturnArchive from "../../client/src/pages/TaxReturnArchive";
-import { queryClient } from "../../client/src/lib/queryClient";
+import { apiRequest, queryClient } from "../../client/src/lib/queryClient";
 
 /** When set, replaces the fixture-backed archive loader so a test can control each response. */
 const archive = vi.hoisted(() => ({ load: null as null | (() => Promise<unknown>) }));
+
+/** When `missing`, the company lookup has no company cached (loading, or paused when offline). */
+const companyLookup = vi.hoisted(() => ({ missing: false, paused: false }));
 
 vi.mock("../../client/src/lib/i18n", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../client/src/lib/i18n")>();
@@ -39,7 +43,24 @@ vi.mock("../../client/src/lib/queryClient", () => {
       archive.load ? archive.load() : fromFixtures(context),
   };
 });
-vi.mock("../../client/src/hooks/useDefaultCompany", () => formHarnessCompanyMock());
+vi.mock("../../client/src/hooks/useDefaultCompany", () => {
+  const base = formHarnessCompanyMock();
+  return {
+    useDefaultCompany: () => {
+      const company = base.useDefaultCompany();
+      return companyLookup.missing
+        ? {
+            ...company,
+            company: undefined,
+            companyId: undefined,
+            companies: [],
+            isLoading: !companyLookup.paused,
+            isPaused: companyLookup.paused,
+          }
+        : { ...company, isPaused: false };
+    },
+  };
+});
 
 const URL = `/api/companies/${COMPANY_ID}/tax-returns-archive`;
 const row = (over: object) => ({
@@ -85,7 +106,89 @@ describe("tax return archive page (Arabic)", () => {
     await unmountPage();
     onlineManager.setOnline(true);
     archive.load = null;
+    companyLookup.missing = false;
+    companyLookup.paused = false;
     vi.unstubAllGlobals();
+  });
+
+  it("shows waiting instead of the skeleton while the company lookup is paused", async () => {
+    const load = vi.fn(async () => [row({})]);
+    archive.load = load;
+    companyLookup.missing = true;
+    companyLookup.paused = true;
+    await renderPage(TaxReturnArchive);
+    expect(byTestId("tax-archive-waiting")?.textContent).toContain(
+      ar["compliance.taxArchiveWaitingTitle"]
+    );
+    expect(document.querySelector(".skeleton-shimmer")).toBeNull();
+    expect(byTestId("button-add-return")).toBeNull();
+    expect(addFirstButton()).toBeUndefined();
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it("keeps the skeleton while the company lookup is loading and not paused", async () => {
+    companyLookup.missing = true;
+    await renderPage(TaxReturnArchive);
+    expect(byTestId("tax-archive-waiting")).toBeNull();
+    expect(document.querySelector(".skeleton-shimmer")).not.toBeNull();
+  });
+
+  it("keeps cached rows usable and shows waiting when a refresh is paused", async () => {
+    archive.load = async () => [row({ fileUrl: "/uploads/a.pdf", fileName: "a.pdf" })];
+    await renderPage(TaxReturnArchive);
+    onlineManager.setOnline(false);
+    await refresh();
+    expect(byTestId("tax-archive-waiting")?.textContent).toContain(
+      ar["compliance.taxArchiveWaitingTitle"]
+    );
+    expect(byTestId("row-return-r1")).not.toBeNull();
+    expect(byTestId("input-search-returns")).not.toBeNull();
+    expect(byTestId("button-view-r1")).not.toBeNull();
+    expect(byTestId("button-download-r1")).not.toBeNull();
+
+    archive.load = async () => [row({ periodLabel: "Q2 2026" })];
+    await act(async () => onlineManager.setOnline(true));
+    await flush();
+    expect(byTestId("tax-archive-waiting")).toBeNull();
+    expect(document.body.textContent).toContain("Q2 2026");
+  });
+
+  it("hides 'add your first return' after a first save until the paused refresh resolves", async () => {
+    archive.load = async () => [];
+    await renderPage(TaxReturnArchive);
+    expect(addFirstButton()).toBeDefined();
+
+    await click(byTestId("button-add-return"));
+    await type(byTestId("input-period-label"), "Q1 2026");
+    await pickDate(byTestId("input-period-start"), 1);
+    await pickDate(byTestId("input-period-end"), 28);
+    await pickDate(byTestId("input-filing-date"), 28);
+    // The save succeeds, then the connection drops before the refresh can start.
+    vi.mocked(apiRequest).mockImplementationOnce(async () => {
+      onlineManager.setOnline(false);
+      return new Response(JSON.stringify({ id: "r1" }));
+    });
+    await click(byTestId("button-confirm-add"));
+    expect(apiRequest).toHaveBeenCalledWith("POST", URL, expect.anything());
+    // The save completed: the dialog closed even though the refresh is paused.
+    expect(byTestId("input-period-label")).toBeNull();
+
+    expect(byTestId("tax-archive-waiting")).not.toBeNull();
+    expect(addFirstButton()).toBeUndefined();
+    expect(document.querySelector("table")).toBeNull();
+
+    // Back online: the resumed GET is in flight, so the list is still unresolved.
+    let finish!: (rows: unknown[]) => void;
+    archive.load = () => new Promise((resolve) => (finish = resolve));
+    await act(async () => onlineManager.setOnline(true));
+    await flush();
+    expect(byTestId("tax-archive-waiting")).toBeNull();
+    expect(addFirstButton()).toBeUndefined();
+
+    await act(async () => finish([row({ periodLabel: "Saved return" })]));
+    await flush();
+    expect(addFirstButton()).toBeUndefined();
+    expect(document.body.textContent).toContain("Saved return");
   });
 
   it("shows waiting (no add-first CTA) when offline, then loads on reconnect", async () => {

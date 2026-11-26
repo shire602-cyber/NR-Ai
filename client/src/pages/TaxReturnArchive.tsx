@@ -85,7 +85,12 @@ const RETURN_TYPES = [
 export default function TaxReturnArchive() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany, error: companyError } = useDefaultCompany();
+  const {
+    companyId,
+    isLoading: isLoadingCompany,
+    error: companyError,
+    isPaused: isCompanyPaused,
+  } = useDefaultCompany();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -218,9 +223,14 @@ export default function TaxReturnArchive() {
   const isBlocked = errorKind === "forbidden" || errorKind === "notFound";
   const refreshFailed = isRefetchError && !isBlocked;
   const blockingError = !companyId ? companyError : isLoadingError || isBlocked ? error : null;
-  const isWaiting = !!companyId && isPending && fetchStatus === "paused";
-  // A cached empty list whose refresh failed is not known to be empty any more.
-  const showCard = !!taxReturns && !blockingError && !(refreshFailed && taxReturns.length === 0);
+  // Waiting for the connection: the company lookup (no company cached, archive query disabled) or
+  // the archive fetch (initial load, or a refresh behind cached rows, which stay usable).
+  const isWaiting = !blockingError && (companyId ? fetchStatus === "paused" : !!isCompanyPaused);
+  // A cached empty list is not known to be empty while its refresh is running, paused or failed
+  // (e.g. right after a save): hide the empty card instead of offering "add your first return".
+  const emptyUnresolved =
+    !!taxReturns && taxReturns.length === 0 && (refreshFailed || fetchStatus !== "idle");
+  const showCard = !!taxReturns && !blockingError && !emptyUnresolved;
 
   const hasNoMatches = showCard && filteredReturns.length === 0 && taxReturns.length > 0;
 
@@ -235,7 +245,7 @@ export default function TaxReturnArchive() {
         .reduce((sum, r) => sum + (r.taxAmount || 0), 0) || 0,
   };
 
-  if (isLoadingCompany || (isPending && fetchStatus !== "paused" && !blockingError)) {
+  if (!isWaiting && (isLoadingCompany || (isPending && !blockingError))) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
@@ -256,10 +266,12 @@ export default function TaxReturnArchive() {
         title={t["compliance.filedReturnsTitle"]}
         description={t["compliance.taxArchiveViewAllTaxReturnsFiledWith"]}
         primaryAction={
-          <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-return">
-            <Plus className="w-4 h-4 me-2" />
-            {t["compliance.taxArchiveAddReturn"]}
-          </Button>
+          companyId ? (
+            <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-return">
+              <Plus className="w-4 h-4 me-2" />
+              {t["compliance.taxArchiveAddReturn"]}
+            </Button>
+          ) : undefined
         }
       />
 
