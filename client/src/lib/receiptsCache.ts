@@ -25,6 +25,21 @@ export function receiptsReadState(query: {
 }
 
 /**
+ * Whether the saved-receipts card shows the waiting status: a paused first load, or a paused
+ * refresh with no visible rows while an unconfirmed removal withholds the empty/no-match claim.
+ * Visible rows stay on screen, and a failed refresh keeps its own "stale" presentation.
+ */
+export function receiptsShowsWaiting(view: {
+  state: ReceiptsReadState;
+  isPaused: boolean;
+  confirmed: boolean;
+  visibleCount: number;
+}): boolean {
+  if (view.state === "waiting") return true;
+  return view.state === "ready" && view.isPaused && !view.confirmed && view.visibleCount === 0;
+}
+
+/**
  * Refresh the receipt list after a write. A read already in flight may have started before the
  * write and would land stale data, so cancel it first, then refetch (also when there is no data
  * yet). Resolves once the refetch settles; it never rejects.

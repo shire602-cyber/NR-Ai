@@ -3,6 +3,8 @@ import { focusManager, onlineManager, QueryClient, QueryObserver } from "@tansta
 import {
   hasUnconfirmedRowRemoval,
   receiptsReadState,
+  receiptsShowsWaiting,
+  refreshReceiptsAfterWrite,
   rollbackReceipts,
   updateReceiptsOptimistically,
 } from "../../client/src/lib/receiptsCache";
@@ -251,6 +253,59 @@ describe("receipts unconfirmed row removal gate (PR143)", () => {
     expect(observer.getCurrentResult().data).toEqual([]);
     expect(client.getQueryState(queryKey)?.dataUpdateCount).toBeGreaterThan(countBefore);
     expect(gate(client, observer)).toBe(true);
+  });
+
+  it("shows waiting when the refresh after the last visible row is removed pauses, then resumes", async () => {
+    const client = makeClient();
+    client.setQueryData<Row[]>(queryKey, [{ id: "a" }]);
+    let serverRows: Row[] = [{ id: "a" }];
+    const observer = observe(client, async () => serverRows);
+    await vi.waitFor(() => expect(observer.getCurrentResult().isFetching).toBe(false));
+
+    // The same inputs the page derives for its JSX.
+    const view = () => {
+      const result = observer.getCurrentResult();
+      const state = receiptsReadState(result);
+      const confirmed = gate(client, observer);
+      const visibleCount = result.data?.length ?? 0;
+      return {
+        state,
+        confirmed,
+        visibleCount,
+        waiting: receiptsShowsWaiting({
+          state,
+          isPaused: result.isPaused,
+          confirmed,
+          visibleCount,
+        }),
+      };
+    };
+
+    await updateReceiptsOptimistically(client, queryKey, removeA);
+    serverRows = [];
+    onlineManager.setOnline(false);
+    const refresh = refreshReceiptsAfterWrite(client, queryKey);
+    await vi.waitFor(() => expect(observer.getCurrentResult().isPaused).toBe(true));
+
+    // Not confirmed, so neither the empty state nor "no matches" is claimed.
+    expect(view()).toEqual({ state: "ready", confirmed: false, visibleCount: 0, waiting: true });
+
+    await refresh;
+    onlineManager.setOnline(true);
+    // The test client is not mounted, so deliver the reconnect to its cache directly.
+    client.getQueryCache().onOnline();
+
+    await vi.waitFor(() =>
+      expect(view()).toEqual({ state: "ready", confirmed: true, visibleCount: 0, waiting: false })
+    );
+  });
+
+  it("keeps visible rows and a failed refresh as they are while paused", () => {
+    const paused = { isPaused: true, confirmed: false };
+
+    expect(receiptsShowsWaiting({ ...paused, state: "ready", visibleCount: 1 })).toBe(false);
+    expect(receiptsShowsWaiting({ ...paused, state: "stale", visibleCount: 0 })).toBe(false);
+    expect(receiptsShowsWaiting({ ...paused, state: "failed", visibleCount: 0 })).toBe(false);
   });
 
   it("keeps a failed refresh stale through the post and rollback, then clears after a read", async () => {

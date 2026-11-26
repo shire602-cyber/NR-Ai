@@ -33,6 +33,7 @@ import {
   hasUnconfirmedRowRemoval,
   openReceiptById,
   receiptsReadState,
+  receiptsShowsWaiting,
   refreshReceiptsAfterWrite,
   rollbackReceipts,
   updateReceiptsOptimistically,
@@ -1626,6 +1627,12 @@ function CompanyReceipts({
 
   const hasReceiptSearch = receiptSearch.trim().length > 0;
   const hasNoReceiptMatches = receiptsConfirmed && hasReceiptSearch && !filteredReceipts.length;
+  const showReceiptsWaiting = receiptsShowsWaiting({
+    state: receiptsState,
+    isPaused: receiptsPaused,
+    confirmed: receiptsConfirmed,
+    visibleCount: filteredReceipts.length,
+  });
 
   function canExportReceipts(origin: string) {
     try {
@@ -2611,7 +2618,7 @@ function CompanyReceipts({
                 <div className="p-4">
                   <CardListSkeleton count={4} />
                 </div>
-              ) : receiptsState === "waiting" ? (
+              ) : showReceiptsWaiting ? (
                 <div className="px-4 py-8 text-center" role="status" data-testid="receipts-waiting">
                   <p className="text-sm font-semibold text-foreground">
                     {t["screens.receiptsWaitingTitle"]}
@@ -2849,7 +2856,7 @@ function CompanyReceipts({
             <div className="flex items-center justify-center bg-muted/30 rounded-md p-2 max-h-[75vh] overflow-auto">
               <img
                 src={imagePreview.src}
-                alt="Source receipt"
+                alt={t["pageLabels.sourceReceiptImage"]}
                 className="max-w-full h-auto rounded"
                 data-testid="image-preview-full"
               />
