@@ -32,8 +32,7 @@ const ZOHO_SRC = COMPETITOR_PRICES.zoho.source;
 const ZOHO_EINVOICING_SRC = "https://www.zoho.com/ae/books/e-invoicing/";
 const ZOHO_EINVOICING_HELP_SRC = "https://www.zoho.com/ae/books/help/e-invoicing/";
 const ZOHO_SIGNUP_SRC = "https://www.zoho.com/ae/books/signup/";
-const WAFEQ_TEMPLATES_SRC =
-  "https://help.wafeq.com/hc/en-ae/articles/21821665791900-Standard-Document-Template-Editor";
+const WAFEQ_INVOICE_SRC = "https://www.wafeq.com/en-ae/create-invoice-online";
 const WAFEQ_ACCOUNTANTS_SRC = "https://www.wafeq.com/en-ae/accountants";
 
 const wafeq = (cell: ComparisonCell = {}): ComparisonCell => ({
@@ -55,8 +54,9 @@ function includingVat(aed: number): number {
 /*
  * Vendor pricing pages cover prices. Zoho's sign-up page covers its trial; its e-invoicing page
  * covers the included allowance and packs, and its e-invoicing help page the bilingual PDF for
- * Peppol invoices. Wafeq's document-template help covers bilingual invoice layouts, and its
- * accountants page covers the multi-client workspace. Cells with no `key` render as a dash.
+ * Peppol invoices. Wafeq's UAE invoice page covers invoices in Arabic, English, or both, and
+ * its accountants page covers concurrent multi-client management (not a client portal).
+ * Cells with no `key` render as a dash.
  */
 export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
@@ -119,8 +119,8 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
       muhasib: yes,
       wafeq: wafeq({
         ...yes,
-        source: WAFEQ_TEMPLATES_SRC,
-        sourceLabelKey: "hxCmpSrcWafeqTemplates",
+        source: WAFEQ_INVOICE_SRC,
+        sourceLabelKey: "hxCmpSrcWafeqInvoices",
       }),
       zoho: zoho({
         key: "hxCmpBilingualZoho",
@@ -145,7 +145,7 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
     cells: {
       muhasib: yes,
       wafeq: wafeq({
-        ...yes,
+        key: "hxCmpFirmWafeq",
         source: WAFEQ_ACCOUNTANTS_SRC,
         sourceLabelKey: "hxCmpSrcWafeqAccountants",
       }),

@@ -79,11 +79,9 @@ describe("comparison config", () => {
     const bilingual = COMPARISON_ROWS.find((r) => r.id === "bilingual")!;
     const firm = COMPARISON_ROWS.find((r) => r.id === "firm")!;
     expect(bilingual.cells.wafeq.key).toBe("hxCmpYes");
-    expect(bilingual.cells.wafeq.source).toBe(
-      "https://help.wafeq.com/hc/en-ae/articles/21821665791900-Standard-Document-Template-Editor"
-    );
-    expect(bilingual.cells.wafeq.sourceLabelKey).toBe("hxCmpSrcWafeqTemplates");
-    expect(firm.cells.wafeq.key).toBe("hxCmpYes");
+    expect(bilingual.cells.wafeq.source).toBe("https://www.wafeq.com/en-ae/create-invoice-online");
+    expect(bilingual.cells.wafeq.sourceLabelKey).toBe("hxCmpSrcWafeqInvoices");
+    expect(firm.cells.wafeq.key).toBe("hxCmpFirmWafeq");
     expect(firm.cells.wafeq.source).toBe("https://www.wafeq.com/en-ae/accountants");
     expect(firm.cells.wafeq.sourceLabelKey).toBe("hxCmpSrcWafeqAccountants");
   });
@@ -193,13 +191,13 @@ describe("comparison render", () => {
     expect(wafeqBilingual.getAttribute("data-dash")).not.toBe("true");
     expect(wafeqBilingual.textContent).toContain("Yes");
     expect(
-      wafeqBilingual.querySelector(
-        'a[href="https://help.wafeq.com/hc/en-ae/articles/21821665791900-Standard-Document-Template-Editor"]'
-      )?.textContent
-    ).toBe("Document template help");
+      wafeqBilingual.querySelector('a[href="https://www.wafeq.com/en-ae/create-invoice-online"]')
+        ?.textContent
+    ).toBe("Create invoice online");
     const wafeqFirm = container.querySelector('tr[data-row="firm"] td[data-column="wafeq"]')!;
     expect(wafeqFirm.getAttribute("data-dash")).not.toBe("true");
-    expect(wafeqFirm.textContent).toContain("Yes");
+    expect(wafeqFirm.textContent).toContain("Multi-client management");
+    expect(wafeqFirm.textContent).not.toContain("client portal");
     expect(
       wafeqFirm.querySelector('a[href="https://www.wafeq.com/en-ae/accountants"]')?.textContent
     ).toBe("For accountants");
@@ -255,10 +253,10 @@ describe("comparison render", () => {
     )!;
     expect(arBilingualWafeq.getAttribute("data-dash")).not.toBe("true");
     expect(arBilingualWafeq.textContent).toContain("نعم");
-    expect(arBilingualWafeq.querySelector("a")?.textContent).toBe("مساعدة قوالب المستندات");
+    expect(arBilingualWafeq.querySelector("a")?.textContent).toBe("إنشاء فاتورة عبر الإنترنت");
     const arFirmWafeq = container.querySelector('tr[data-row="firm"] td[data-column="wafeq"]')!;
     expect(arFirmWafeq.getAttribute("data-dash")).not.toBe("true");
-    expect(arFirmWafeq.textContent).toContain("نعم");
+    expect(arFirmWafeq.textContent).toContain("إدارة متعددة العملاء");
     expect(arFirmWafeq.querySelector("a")?.textContent).toBe("للمحاسبين");
     expect(container.querySelector('a[href="/ar/compare/wafeq"]')).not.toBeNull();
     expect(container.textContent).not.toMatch(/[٠-٩۰-۹]/);
