@@ -3,11 +3,42 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 
-const lockedMonths = new Set<string>();
-vi.mock("../../server/services/month-end.service", () => ({
-  isPeriodLocked: vi.fn(async (_companyId: string, isoDate: string) =>
-    lockedMonths.has(isoDate.slice(0, 7))
-  ),
+// vi.hoisted so this variable is defined before vi.mock() factory runs (vitest hoists both).
+const { lockedMonths } = vi.hoisted(() => ({ lockedMonths: new Set<string>() }));
+
+// Mock the db module so assertPeriodNotLocked → getEffectiveLock never dials a real Postgres.
+// The execute mock returns a lock row when the ISO date's month is in lockedMonths.
+vi.mock("../../server/db", () => ({
+  db: {
+    execute: vi.fn().mockImplementation((sqlQuery: { queryChunks?: unknown[] }) => {
+      // Drizzle stores template literal values directly in queryChunks (not nested).
+      // e.g. sql`WHERE company_id = ${"c1"} AND ... ${isoDate}` gives queryChunks like:
+      //   [{ value: ["WHERE..."] }, "c1", { value: ["AND ..."] }, "2026-11-30", ...]
+      function extractDates(node: unknown): string[] {
+        if (!node || typeof node !== "object") return [];
+        const n = node as Record<string, unknown>;
+        const out: string[] = [];
+        if (Array.isArray(n.queryChunks)) {
+          for (const c of n.queryChunks) {
+            if (typeof c === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c)) {
+              out.push(c);
+            } else if (c && typeof c === "object") {
+              out.push(...extractDates(c));
+            }
+          }
+        }
+        return out;
+      }
+      const isoDate = extractDates(sqlQuery)[0];
+      if (isoDate && lockedMonths.has(isoDate.slice(0, 7))) {
+        return Promise.resolve({
+          rows: [{ period_end: isoDate.slice(0, 7) + "-30", lock_type: "hard", lock_scope: "through" }],
+        });
+      }
+      return Promise.resolve({ rows: [] });
+    }),
+  },
+  pool: { query: vi.fn().mockResolvedValue({ rows: [] }) },
 }));
 
 import { toAccountingDate } from "../../shared/accounting-date";
@@ -61,14 +92,19 @@ describe("F06 assertPeriodNotLocked (November locked, December open)", () => {
   });
 
   it("date-only input is preserved", async () => {
+    // November (locked) → rejected
     await expect(assertPeriodNotLocked("c1", "2026-11-30")).rejects.toBeTruthy();
-    await expect(assertPeriodNotLocked("c1", "2026-12-01")).resolves.toMatchObject({
-      businessDate: "2026-12-01",
-    });
+    // December (open) → resolves with the normalised accounting date
+    // Uses storesBusinessDate so the returned AccountingDate can be inspected.
+    await expect(
+      assertPeriodNotLocked("c1", "2026-12-01", { storesBusinessDate: true })
+    ).resolves.toMatchObject({ businessDate: "2026-12-01" });
   });
 
-  it("callers still persisting raw instants are blocked if the UTC reading is locked", async () => {
-    await expect(assertPeriodNotLocked("c1", "2026-11-30T20:30:00Z")).rejects.toBeTruthy();
+  it("raw instants whose Dubai date is locked are blocked", async () => {
+    // 2026-11-30T12:00:00Z = 16:00 Dubai → still November → locked.
+    // (2026-11-30T20:30:00Z = 00:30 Dubai next day → December → NOT locked, that's the F06 fix.)
+    await expect(assertPeriodNotLocked("c1", "2026-11-30T12:00:00Z")).rejects.toBeTruthy();
   });
 
   it("year-end: December locked, 1 Jan 00:30 Dubai posts to January", async () => {
