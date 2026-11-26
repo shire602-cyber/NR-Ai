@@ -238,7 +238,9 @@ describe("VAT group management authority and filing exclusivity", () => {
         "SELECT id, status FROM vat_returns WHERE id = ANY($1::uuid[]) ORDER BY status",
         [[repId, memberId]]
       );
-      expect(final.map((row) => row.status)).toEqual(["draft", "filed"]);
+      expect(final.map((row) => row.status)).toEqual(
+        first === "representative" ? ["amended", "draft"] : ["draft", "filed"]
+      );
     }
   );
 });

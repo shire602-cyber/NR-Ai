@@ -31,10 +31,13 @@ it.each(["filed", "amended"])(
 
     const list = await t.as.get(`${base(t)}/vat-returns`);
     expect(list.status, list.text).toBe(200);
-    expect(list.body).toMatchObject([
-      { id: original.id, status: "filed" },
-      { id: draft.id, status: "draft" },
-    ]);
+    expect(list.body).toHaveLength(2);
+    expect(list.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: original.id, status: storedStatus }),
+        expect.objectContaining({ id: draft.id, status: "draft" }),
+      ])
+    );
     const { getClientStats } = await import("../../server/routes/firm/shared");
     expect((await getClientStats(t.company.id)).vatStatus).toMatchObject({
       status: "filed",

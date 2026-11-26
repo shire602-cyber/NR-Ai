@@ -11,7 +11,7 @@ const periodMatches = sql`related.company_id = ${vatReturns.companyId}
   AND related.period_start::date = ${vatReturns.periodStart}::date
   AND related.period_end::date = ${vatReturns.periodEnd}::date`;
 
-/** Older versions marked the predecessor amended as soon as an amendment draft was created. */
+/** A predecessor recorded as amended still represents the filing while its amendment is open. */
 export const effectiveVatFilingStatus = sql<string>`CASE
   WHEN ${vatReturns.status} = 'amended'
     AND EXISTS (

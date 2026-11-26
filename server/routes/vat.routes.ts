@@ -61,7 +61,6 @@ import {
 import {
   amendVatReturn,
   generateVatReturn,
-  listReturns,
   markVatReturnReady,
   submitVatReturn,
 } from "../tax/vat-returns.service";
@@ -642,7 +641,7 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       if (!(await requireCompanyAccess(req, res, companyId))) return;
-      res.json(await listReturns(companyId));
+      res.json(await storage.getVatReturnsByCompanyId(companyId));
     })
   );
 

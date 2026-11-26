@@ -643,7 +643,7 @@ describe("W4-E purchases, adjustments and amendments", () => {
           gen.body.id,
         ])
       )[0].status;
-    expect(await originalStatus()).toBe("submitted");
+    expect(await originalStatus()).toBe("amended");
     const issued = await t.as.patch(`/api/invoices/${lateDraft.body.id}/status`, {
       status: "sent",
     });
@@ -657,7 +657,7 @@ describe("W4-E purchases, adjustments and amendments", () => {
     );
     expect(d).toEqual({ box: "box1cSharjahVat", previous: 50, amended: 70, difference: 20 });
     expect(refreshed.body.amendmentDiff.netChange).toBe(20);
-    expect(await originalStatus()).toBe("submitted");
+    expect(await originalStatus()).toBe("amended");
     const submitted = await t.as.post(`/api/vat-returns/${amend.body.id}/submit`, {});
     expect(submitted.status, submitted.text).toBe(200);
     expect(await originalStatus()).toBe("amended");

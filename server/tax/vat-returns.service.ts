@@ -532,14 +532,19 @@ async function transitionReturn(
     .set({ ...values, updatedAt: new Date() })
     .where(eq(vatReturns.id, existing.id))
     .returning();
-  // When an amendment becomes effective (submitted or filed), mark its
-  // predecessor 'amended' so it is no longer counted in the effective total.
+  // Finish the recorded transition for amendments created with a filed or submitted predecessor.
   const amendsId = existing.amendsReturnId;
   if (amendsId && (values.status === "submitted" || values.status === "filed")) {
     await tx
       .update(vatReturns)
       .set({ status: "amended", updatedAt: new Date() })
-      .where(and(eq(vatReturns.id, amendsId), eq(vatReturns.companyId, existing.companyId)));
+      .where(
+        and(
+          eq(vatReturns.id, amendsId),
+          eq(vatReturns.companyId, existing.companyId),
+          sql`${vatReturns.status} IN ('submitted', 'filed')`
+        )
+      );
   }
   await recordAudit({
     userId: input.userId,
@@ -813,24 +818,21 @@ export async function amendVatReturn(input: {
         createdBy: input.userId,
       })
       .returning();
-    // Keep the predecessor in its current status (submitted/filed) so it
-    // remains effective while the amendment is in draft.  It is marked
-    // 'amended' atomically when the amendment is itself submitted (see
-    // submitVatReturn → transitionReturn, below).  Any group-authority
-    // metadata is recorded as a pending update here so the full history
-    // is available to the submission path.
-    if (
-      getFilingVatGroup(original.reconciliationSnapshot)?.memberAuthority !== group?.memberAuthority
-    ) {
-      await tx
-        .update(vatReturns)
-        .set({
-          vatGroupId: group?.groupId ?? null,
-          reconciliationSnapshot: withFilingVatGroup(original.reconciliationSnapshot, group),
-          updatedAt: new Date(),
-        })
-        .where(and(eq(vatReturns.id, original.id), eq(vatReturns.companyId, original.companyId)));
-    }
+    // Record the amendment now. The predecessor still represents the filing while this draft is open.
+    await tx
+      .update(vatReturns)
+      .set({
+        status: "amended",
+        updatedAt: new Date(),
+        ...(getFilingVatGroup(original.reconciliationSnapshot)?.memberAuthority !==
+        group?.memberAuthority
+          ? {
+              vatGroupId: group?.groupId ?? null,
+              reconciliationSnapshot: withFilingVatGroup(original.reconciliationSnapshot, group),
+            }
+          : {}),
+      })
+      .where(and(eq(vatReturns.id, original.id), eq(vatReturns.companyId, original.companyId)));
     await recordAudit({
       userId: input.userId,
       companyId: original.companyId,
@@ -844,14 +846,6 @@ export async function amendVatReturn(input: {
     });
     return { vatReturn: created, diff, computation };
   });
-}
-
-export async function listReturns(companyId: string) {
-  return db
-    .select({ ...getTableColumns(vatReturns), status: effectiveVatFilingStatus })
-    .from(vatReturns)
-    .where(eq(vatReturns.companyId, companyId))
-    .orderBy(desc(sql`${vatReturns.periodEnd}::date`), ...vatFilingVersionOrder);
 }
 
 export { DERIVED_BOX_KEYS };

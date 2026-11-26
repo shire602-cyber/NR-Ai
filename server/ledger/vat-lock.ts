@@ -34,6 +34,7 @@ import {
   depositApplicationVatDateSql,
   salesTaxPointSql,
 } from "../tax/sales-tax-point";
+import { effectiveVatFilingStatus } from "../tax/vat-filing-filter";
 import { ledgerQueryable, rowsOf } from "./tx";
 import type { LedgerTx } from "./types";
 import {
@@ -208,7 +209,7 @@ export async function findFiledVatPeriod(
   const withMember = sql`jsonb_build_array(${memberId}::text, g.representative_company_id::text)`;
   const auditMembers = sql`jsonb_build_array(${memberId}::text, a.company_id::text)`;
   const excludeReturns = options.excludeReturnIds?.length
-    ? sql`AND r.id NOT IN (${sql.join(
+    ? sql`AND vat_returns.id NOT IN (${sql.join(
         options.excludeReturnIds.map((id) => sql`${id}::uuid`),
         sql`, `
       )})`
@@ -217,10 +218,11 @@ export async function findFiledVatPeriod(
   // Dated snapshot evidence includes amended ancestors, which keep the original period.
   const res = await tx.execute(sql`
     WITH own_return AS (
-      SELECT r.* FROM vat_returns r
+      SELECT vat_returns.*, ${effectiveVatFilingStatus} AS effective_status FROM vat_returns
        WHERE company_id = ${companyId}
          ${excludeReturns}
-         AND status IN ('submitted', 'filed')
+         AND status IN ('submitted', 'filed', 'amended')
+         AND ${effectiveVatFilingStatus} IN ('submitted', 'filed')
          AND period_end >= ${from}::date
          AND period_start < ${to}::date + interval '1 day'
     ),
@@ -273,22 +275,23 @@ export async function findFiledVatPeriod(
            jsonb_build_object('filingVatGroup', reconciliation_snapshot -> 'filingVatGroup') AS "reconciliationSnapshot",
            period_start::date::text AS ps, period_end::date::text AS pe
       FROM (
-        SELECT id, status, company_id, amends_return_id, vat_group_id, reconciliation_snapshot,
+        SELECT id, effective_status AS status, company_id, amends_return_id, vat_group_id, reconciliation_snapshot,
                period_start, period_end, false AS authorized_member
           FROM own_return
         UNION ALL
-        SELECT r.id, r.status, r.company_id, r.amends_return_id, r.vat_group_id,
+        SELECT r.id, r.effective_status, r.company_id, r.amends_return_id, r.vat_group_id,
                r.reconciliation_snapshot, r.period_start, r.period_end,
                COALESCE(g.authorized_since <= r.created_at, false)
           FROM linked_groups g
           CROSS JOIN LATERAL (
-            SELECT * FROM vat_returns r
-             WHERE r.company_id = g.representative_company_id
+            SELECT vat_returns.*, ${effectiveVatFilingStatus} AS effective_status FROM vat_returns
+             WHERE company_id = g.representative_company_id
                ${excludeReturns}
-               AND (r.vat_group_id = g.id OR (r.vat_group_id IS NULL AND r.amends_return_id IS NOT NULL))
-               AND r.status IN ('submitted', 'filed')
-               AND r.period_end >= ${from}::date
-               AND r.period_start < ${to}::date + interval '1 day'
+               AND (vat_group_id = g.id OR (vat_group_id IS NULL AND amends_return_id IS NOT NULL))
+               AND status IN ('submitted', 'filed', 'amended')
+               AND ${effectiveVatFilingStatus} IN ('submitted', 'filed')
+               AND period_end >= ${from}::date
+               AND period_start < ${to}::date + interval '1 day'
              OFFSET 0
           ) r
       ) candidate
