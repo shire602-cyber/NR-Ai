@@ -316,6 +316,27 @@ Run (UTC): 2026-11-26T14:09:57.049Z; staging commit 9e5fa7264c41d1c4e4d6b64527ea
 
 - SIF structure (identifiers are fixture/fictional): EDR=EDR,10012345678901,600310101,AE070331234567890123456,2026-06-01,2026-06-30,30,6250.00,0.00,0  SCR=SCR,1000000000123,600310101,2026-11-26,1409,062026,1,6250.00,AED,062026; EDR fields=10, SCR fields=10
 
+## O03 staging timing
+
+Run (UTC): 2026-11-26T14:13:46.807Z; staging commit 9e5fa7264c41d1c4e4d6b64527eae6e519e3e1a8; company 15943f48-7ab9-4a57-af69-552d24a4d8cb; client = this PC to Railway staging over the public internet (wall-clock includes network + TLS).
+
+Dataset seeded: 50 approved AED bills, vendor "Perf Vendor", bill numbers PF-MWXMU0YJ-000..049, vat 0 (bill ids 14cb1977-9fc5-46e0-b424-53f8ec31d17c .. 2bb26131-571f-4446-86c4-7af7273eb8ff). Aging totals before seeding: [0,0,0,0].
+
+| Measure | Expected | Observed | Result |
+|---|---|---|---|
+| Bucket totals current / 1-30 / 31-60 / 90+ (delta vs before) | 5000 / 15000 / 22500 / 20000 | 5000 / 15000 / 22500 / 20000 (absolute 5000 / 15000 / 22500 / 20000) | PASS |
+| Bucket counts (cur/1-30/31-60/90+) | 10 / 15 / 15 / 10 | 10 / 15 / 15 / 10 | info |
+| bills/aging wall-clock p50 (n=20, after 2 warm-ups) | n/a | 247.2 ms | info |
+| bills/aging wall-clock p95 | n/a | 313.2 ms (max 536.7) | info |
+| /health/live wall-clock p50 (n=20, interleaved) | baseline | 210.7 ms | info |
+| /health/live wall-clock p95 | baseline | 236.0 ms | info |
+| approximate server cost = p95(aging) - p95(health/live) | Postgres budget 101 ms (test) | 77.2 ms | within 101 ms |
+| p50 difference | n/a | 36.5 ms | info |
+| Server-Timing / X-Response-Time header | n/a | not present on the response | info |
+
+Samples aging (ms): 536.7, 251.3, 239.7, 256.1, 240.0, 237.6, 240.0, 240.8, 233.4, 237.1, 231.9, 245.5, 313.2, 304.4, 295.4, 265.7, 274.4, 247.2, 248.6, 237.5
+Samples health/live (ms): 201.8, 210.7, 201.6, 218.9, 218.5, 200.4, 208.0, 236.0, 206.6, 214.8, 199.7, 1393.6, 226.5, 234.6, 206.5, 209.1, 201.5, 210.7, 211.0, 205.8
+
 ## Public site sweep (council, browser pane, 2026-11-26 ~13:45 UTC)
 
 All 88 sitemap URLs (`/en/*` and `/ar/*`) rendered in the SPA and scanned for: ZATCA, Saudi (EN/AR), A-Cube, Complyance, OFX, QIF, MT940, "PDF statement", AED 49/149/299. **0 hits.**

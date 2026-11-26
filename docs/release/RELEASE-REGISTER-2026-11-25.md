@@ -85,7 +85,7 @@ S4 = ops/evidence.
 | ID | Disposition | Note |
 |---|---|---|
 | O05 | open (partial) | Candidate pinned 2026-11-26: staging `448dcac1`, migration head 0158, PRs 104/116/125/137/167 merged and contained (section 1). Still blocked: Railway build ID, worker versions, provider env. |
-| O03 | **test written; CI-only** | Benchmark probe written: `tests/db/bills-aging-perf.test.ts` seeds 50 bills across four aging buckets and measures `GET /bills/aging` over 20 consecutive requests (2 warm-up). Budget: 101 ms p95 (Postgres), 800 ms p95 (PGlite). Dataset defined: 10 current × AED 500, 15 days_1_30 × AED 1,000, 15 days_31_60 × AED 1,500, 10 days_90_plus × AED 2,000. PGlite startup exceeds the 300 s harness timeout on this machine (Node 18.16, Windows); test runs against Postgres in CI. Postgres baseline from `scripts/qa/perf-baseline.json`: 67 ms p95. |
+| O03 | **verified fixed** (CI DB harness on real Postgres 16 green, incl. `tests/db/bills-aging-perf.test.ts` within the 101 ms p95 budget; staging `9e5fa726` 2026-11-26: 50-bill dataset buckets exactly 5,000 / 15,000 / 22,500 / 20,000, approx server cost p95(aging) − p95(/health/live) = 77 ms over the public internet, rough estimate, no Server-Timing header; [STAGING-VERIFY-2026-11-26.md](STAGING-VERIFY-2026-11-26.md)). Earlier: | Benchmark probe written: `tests/db/bills-aging-perf.test.ts` seeds 50 bills across four aging buckets and measures `GET /bills/aging` over 20 consecutive requests (2 warm-up). Budget: 101 ms p95 (Postgres), 800 ms p95 (PGlite). Dataset defined: 10 current × AED 500, 15 days_1_30 × AED 1,000, 15 days_31_60 × AED 1,500, 10 days_90_plus × AED 2,000. PGlite startup exceeds the 300 s harness timeout on this machine (Node 18.16, Windows); test runs against Postgres in CI. Postgres baseline from `scripts/qa/perf-baseline.json`: 67 ms p95. |
 | O04 | **verified fixed** (staging `448dcac1`, demo tenant, 2026-11-26; [STAGING-VERIFY-2026-11-26.md](STAGING-VERIFY-2026-11-26.md)). | Import preview default: `POST /api/companies/:companyId/bank-statements/import-preview` registers a parse-only endpoint (no DB write). `BankReconciliation.tsx` auto-calls it when a CSV is selected and shows a `data-testid="import-preview-panel"` with row count, skipped-row warning and a 5-row mini-table before the user clicks Import. importPreview resets on dialog close and successful import in both PDF and CSV paths. Test: `tests/unit/bank-import-ux.test.ts` extended with preview-panel assertion. |
 | O01 | blocked (partly) | Provider sandbox credentials/references needed; F01 changes the tax-subtotal derivation, so revalidate |
 | O02 | blocked (partly) | OCR provider sandbox needed |
@@ -102,10 +102,9 @@ Update (GitHub API, read 2026-11-26): the CI workflow run on `ad9163cb` conclude
 
 ## 3. Counts
 
-- Original items: 32. Verified dispositions: **20** on staging `448dcac1` (2026-11-26): S06 (verified unaffected), F01, F03, F04, F05 (incl. scheduled items and company switch), F06, F07, S01, S02, S03, O07, S05, O04, W01–W06, W08 (verified fixed). Evidence: [STAGING-VERIFY-2026-11-26.md](STAGING-VERIFY-2026-11-26.md).
+- Original items: 32. Verified dispositions: **21** on staging `448dcac1` (2026-11-26): S06 (verified unaffected), O03, F01, F03, F04, F05 (incl. scheduled items and company switch), F06, F07, S01, S02, S03, O07, S05, O04, W01–W06, W08 (verified fixed). Evidence: [STAGING-VERIFY-2026-11-26.md](STAGING-VERIFY-2026-11-26.md).
 - Fixed awaiting verification: F02 (needs a filed return, FTA boundary), S08 (needs a firm-side account), plus ENV-01.
-- Test written, CI-only: **1** (O03 — bills-aging benchmark; PGlite startup timeout locally).
-- Open (partial): 1 (O05) · Blocked or partly blocked: 8 (W07, W09, W10; S04, S07, O01, O02, O06). Total: 20 verified + 2 awaiting (F02, S08) + 1 CI-only (O03) + 1 open + 8 blocked = 32.
+- Open (partial): 1 (O05) · Blocked or partly blocked: 8 (W07, W09, W10; S04, S07, O01, O02, O06). Total: 21 verified + 2 awaiting (F02, S08) + 1 open + 8 blocked = 32.
 - Handoff to Astra 6.2: **not eligible**.
 
 ## 4. Commands run (local, Node 18.16, Windows)
