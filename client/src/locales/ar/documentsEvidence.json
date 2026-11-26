@@ -1,5 +1,5 @@
 {
-  "complianceCalendar.viewAllTaxAndCompliance": "اطّلع على جميع المواعيد الضريبية ومواعيد الامتثال",
+  "complianceCalendar.viewAllTaxAndCompliance": "كل المواعيد الضريبية ومواعيد الامتثال",
   "complianceCalendar.upcomingDeadlines": "المواعيد القادمة",
   "cookiePolicy.theseRememberChoicesYouMake": "تتذكّر هذه الملفات خياراتك لتوفير تجربة أكثر تخصيصًا، مثل شركتك الافتراضية وتخطيط لوحة التحكم وتفضيلات الإشعارات.",
   "cookiePolicy.weDoNotCurrentlySet": "لا نضبط حاليًا ملفات تعريف ارتباط تسويقية أو إعلانية. إذا تغيّر ذلك فسنحدّث هذه السياسة ونطلب موافقتك عند الحاجة.",
@@ -196,8 +196,8 @@
   "complianceCalendar.eyebrow": "الامتثال",
   "complianceCalendar.next30Days": "خلال 30 يومًا",
   "complianceCalendar.overdue": "متأخرة",
-  "complianceCalendar.noEventsOnDay": "لا توجد مواعيد في هذا اليوم.",
-  "complianceCalendar.noDeadlinesYet": "لا توجد مواعيد بعد. أضف بيانات ضريبة القيمة المضافة وضريبة الشركات والرخصة في الإعدادات وستظهر مواعيد تقديمك هنا.",
+  "complianceCalendar.noEventsOnDay": "لا مواعيد في هذا اليوم.",
+  "complianceCalendar.noDeadlinesYet": "لا توجد مواعيد بعد. أضف في الإعدادات بيانات ضريبتي القيمة المضافة والشركات والرخصة.",
   "complianceCalendar.loadErrorTitle": "تعذّر تحميل مهام الامتثال",
   "complianceCalendar.obligationsErrorTitle": "تعذّر تحميل بعض مواعيد التقديم",
   "complianceCalendar.status.upcoming": "قادم",
@@ -207,9 +207,9 @@
   "complianceCalendar.status.pending": "قيد الانتظار",
   "complianceCalendar.status.in_progress": "قيد التنفيذ",
   "complianceCalendar.status.cancelled": "ملغى",
-  "complianceCalendar.stillLoading": "لا يزال تحميل المواعيد جاريًا.",
-  "complianceCalendar.waitingForConnection": "في انتظار الاتصال. قد تكون المواعيد ناقصة أو غير محدَّثة.",
-  "complianceCalendar.deadlinesIncomplete": "ليست كل المواعيد متاحة.",
-  "complianceCalendar.tasksRefreshErrorTitle": "تعذّر تحديث مهامك. تُعرض آخر بيانات تم تحميلها.",
-  "complianceCalendar.obligationsRefreshErrorTitle": "تعذّر تحديث مواعيد التقديم. تُعرض آخر بيانات تم تحميلها."
+  "complianceCalendar.stillLoading": "المواعيد قيد التحميل.",
+  "complianceCalendar.waitingForConnection": "بانتظار الاتصال. قد تكون المواعيد ناقصة أو قديمة.",
+  "complianceCalendar.deadlinesIncomplete": "المواعيد غير مكتملة.",
+  "complianceCalendar.tasksRefreshErrorTitle": "تعذّر تحديث المهام. تُعرض آخر بيانات محمّلة.",
+  "complianceCalendar.obligationsRefreshErrorTitle": "تعذّر تحديث مواعيد التقديم. تُعرض آخر بيانات محمّلة."
 }
