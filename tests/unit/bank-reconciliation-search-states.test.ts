@@ -212,6 +212,10 @@ async function openReport() {
   await flush();
 }
 
+async function openMatchDialogFor(id: string) {
+  await act(async () => byTestId(`button-match-${id}`)!.click());
+  await flush();
+}
 const dialogText = () => document.querySelector('[role="dialog"]')!.textContent ?? "";
 
 describe("bank reconciliation search no-match state", () => {
@@ -680,6 +684,91 @@ describe("bank reconciliation match and unmatch cache writes", () => {
 
     await act(async () => respond(json({})));
     await flush();
+  }, 60_000);
+
+  const writes = () =>
+    vi
+      .mocked(fetch)
+      .mock.calls.filter(([, init]) => (init?.method ?? "GET") !== "GET")
+      .map(([url, init]) => `${init!.method} ${String(url).replace(/^.*bank-statements/, "")}`);
+  const closeDialog = async () => {
+    const { translateNow } = await import("../../client/src/lib/i18n");
+    const close = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+      (b) => b.textContent?.trim() === translateNow("banking.common.close")
+    )!;
+    await act(async () => close.click());
+    await flush(4);
+  };
+
+  it("keeps both Match controls shut while Unmatch is held, then restores the row after a failure", async () => {
+    transactions = [reconciled, { ...baseTx, id: "t-2" }];
+    const client = await mountPage("en");
+    await showReconciledRows();
+    const { translateNow } = await import("../../client/src/lib/i18n");
+    transactionsReply = () => new Promise<Response>(() => {});
+    let respond!: (response: Response) => void;
+    matchReply = () => new Promise<Response>((resolve) => (respond = resolve));
+
+    // Two events in one tick (before any rerender) reach the server once.
+    const unmatch = mobileButton(translateNow("pageLabels.unmatch"));
+    await act(async () => {
+      unmatch.click();
+      unmatch.click();
+    });
+    await flush();
+    expect(writes()).toEqual(["DELETE /t-1/match"]);
+
+    // The optimistic row shows Match on desktop and mobile, but neither can open the actions.
+    for (const id of ["button-match-t-1", "mobile-button-match-t-1"]) {
+      const match = byTestId(id) as HTMLButtonElement;
+      expect(match.disabled).toBe(true);
+      await act(async () => match.click());
+      await flush(4);
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    }
+
+    // A different row still opens its actions.
+    await openMatchDialogFor("t-2");
+    expect(byTestId("bank-line-actions")).not.toBeNull();
+    await closeDialog();
+
+    await act(async () => respond(json({ message: "nope" }, 409)));
+    await flush();
+    expect(client.getQueryData<Rows>(TRANSACTIONS_KEY)![0]).toEqual(reconciled);
+    expect(byTestId("button-match-t-1")).toBeNull();
+    expect(byTestId("mobile-button-match-t-1")).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(writes()).toEqual(["DELETE /t-1/match"]);
+  }, 60_000);
+  it("hides create-entry, split, transfer and exclude while a dialog match is pending, and restores them after a failure", async () => {
+    suggestionsReply = () => json([suggestion]);
+    const client = await mountPage("en");
+    await openMatchDialogFor("t-1");
+    expect(byTestId("bank-line-actions")).not.toBeNull();
+    transactionsReply = () => new Promise<Response>(() => {});
+    let respond!: (response: Response) => void;
+    matchReply = () => new Promise<Response>((resolve) => (respond = resolve));
+    const card = () =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"] p')).find((p) =>
+        p.textContent?.includes("INV-1042")
+      )!;
+    await act(async () => {
+      card().click();
+      card().click();
+    });
+    await flush();
+    expect(writes()).toEqual(["POST /t-1/match"]);
+    expect(byTestId("bank-line-actions")).toBeNull();
+    expect(byTestId("button-create-entry")).toBeNull();
+
+    await act(async () => respond(json({ message: "nope" }, 409)));
+    await flush();
+    expect(client.getQueryData<Rows>(TRANSACTIONS_KEY)![0]).toMatchObject({
+      isReconciled: false,
+      matchStatus: "unmatched",
+    });
+    expect(byTestId("bank-line-actions")).not.toBeNull();
+    expect(writes()).toEqual(["POST /t-1/match"]);
   }, 60_000);
 });
 

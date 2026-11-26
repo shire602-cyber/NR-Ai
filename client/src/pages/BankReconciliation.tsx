@@ -568,6 +568,40 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     },
   });
   const isRowBusy = (id: string) => pendingRowIds.includes(id);
+  // Event-time guard. TanStack dispatches "pending" synchronously inside mutate(), before onMutate
+  // is awaited, so this sees a write started earlier in the same tick (before React rerenders).
+  const hasRowWriteInFlight = (id: string) =>
+    queryClient.isMutating({
+      mutationKey: rowWriteKey,
+      exact: true,
+      predicate: (m) => {
+        const v = m.state.variables as string | { transactionId: string } | undefined;
+        return (typeof v === "string" ? v : v?.transactionId) === id;
+      },
+    }) > 0;
+  // A new write needs no write in flight on the row and the row's current cached state (never a
+  // copy a dialog captured earlier) to fit: Match/dialog actions need an unreconciled line,
+  // Unmatch a reconciled one. With no cached list there is no state to contradict the request.
+  const canWriteRow = (id: string, reconciled: boolean) => {
+    if (hasRowWriteInFlight(id)) return false;
+    const rows = queryClient.getQueryData<BankTransaction[]>(transactionsKey);
+    if (!rows) return true;
+    const row = rows.find((x) => x.id === id);
+    return !!row && !!row.isReconciled === reconciled;
+  };
+  const startUnmatch = (id: string) => {
+    if (!canWriteRow(id, true)) return;
+    // A dialog left open on this line must not come back to life with the optimistic row.
+    if (selectedTransaction?.id === id) {
+      setMatchDialogOpen(false);
+      setSelectedTransaction(null);
+    }
+    unmatchMutation.mutate(id);
+  };
+  const startMatch = (vars: { transactionId: string; matchedId: string; matchedType: string }) => {
+    if (!canWriteRow(vars.transactionId, false)) return;
+    matchMutation.mutate(vars);
+  };
   const refreshAfterLastRowWrite = () => {
     // The tally is kept by us, not read from the mutation cache: two writes settling together
     // would each still see the other as pending. Runs after any rollback in onError.
@@ -858,7 +892,16 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
 
   // ─── Render helpers ───────────────────────────────────────────────────────
 
+  // The dialog's line is read from the current list, not the row captured when it opened, so a
+  // rolled-back or optimistic row is never resurrected from a stale copy.
+  const dialogLine = selectedTransaction
+    ? (transactions?.find((x) => x.id === selectedTransaction.id) ?? null)
+    : null;
+
   const handleOpenMatch = (transaction: BankTransaction) => {
+    // Checked against the current list: a line with a write in flight (e.g. an optimistic Unmatch),
+    // or one rolled back to reconciled since this handler rendered, does not open.
+    if (!canWriteRow(transaction.id, false)) return;
     setSelectedTransaction(transaction);
     setMatchDialogOpen(true);
   };
@@ -876,8 +919,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
       : tx.matchedInvoiceId
         ? "invoice"
         : "receipt";
-    if (isRowBusy(tx.id)) return;
-    matchMutation.mutate({ transactionId: tx.id, matchedId, matchedType });
+    startMatch({ transactionId: tx.id, matchedId, matchedType });
   };
 
   if (isLoadingCompany || isLoadingBankAccounts) {
@@ -1195,7 +1237,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => unmatchMutation.mutate(tx.id)}
+                            onClick={() => startUnmatch(tx.id)}
                             disabled={isRowBusy(tx.id)}
                           >
                             <Unlink aria-hidden />
@@ -1203,7 +1245,12 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                           </Button>
                         ) : tx.matchStatus === "suggested" ? (
                           <div className="flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => handleOpenMatch(tx)}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenMatch(tx)}
+                              disabled={isRowBusy(tx.id)}
+                            >
                               <T k="pages.review" />
                             </Button>
                             <Button
@@ -1220,6 +1267,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                             size="sm"
                             variant="outline"
                             onClick={() => handleOpenMatch(tx)}
+                            disabled={isRowBusy(tx.id)}
                             data-testid={`mobile-button-match-${tx.id}`}
                           >
                             <Link2 aria-hidden />
@@ -1304,7 +1352,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                                 <RowActionButton
                                   label={t["pageLabels.unmatch"]}
                                   icon={Unlink}
-                                  onClick={() => unmatchMutation.mutate(tx.id)}
+                                  onClick={() => startUnmatch(tx.id)}
                                   disabled={isRowBusy(tx.id)}
                                 />
                               ) : tx.matchStatus === "suggested" ? (
@@ -1313,6 +1361,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                                     label={t["screens.reviewMatch"]}
                                     icon={Eye}
                                     onClick={() => handleOpenMatch(tx)}
+                                    disabled={isRowBusy(tx.id)}
                                   />
                                   <Button
                                     size="sm"
@@ -1329,6 +1378,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                                   size="sm"
                                   variant="outline"
                                   onClick={() => handleOpenMatch(tx)}
+                                  disabled={isRowBusy(tx.id)}
                                   data-testid={`button-match-${tx.id}`}
                                 >
                                   <Link2 aria-hidden />
@@ -1480,14 +1530,15 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                       <div
                         key={`${s.matchedType}-${s.matchedId}`}
                         className="rounded-lg border bg-card p-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
-                        onClick={() =>
-                          !isRowBusy(selectedTransaction!.id) &&
-                          matchMutation.mutate({
-                            transactionId: selectedTransaction!.id,
+                        onClick={() => {
+                          const id = selectedTransaction?.id;
+                          if (!id) return;
+                          startMatch({
+                            transactionId: id,
                             matchedId: s.matchedId,
                             matchedType: s.matchedType,
-                          })
-                        }
+                          });
+                        }}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
@@ -1559,10 +1610,11 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
             </div>
           </div>
 
-          {selectedTransaction && !selectedTransaction.isReconciled && companyId && (
+          {dialogLine && !dialogLine.isReconciled && !isRowBusy(dialogLine.id) && companyId && (
             <BankLineActions
               companyId={companyId}
-              transaction={selectedTransaction}
+              transaction={dialogLine}
+              canSubmit={() => canWriteRow(dialogLine.id, false)}
               bankAccounts={bankAccounts ?? []}
               transactions={transactions ?? []}
               onDone={() => {
@@ -2131,10 +2183,12 @@ function BankLineActions({
   transaction,
   bankAccounts,
   transactions,
+  canSubmit,
   onDone,
 }: {
   companyId: string;
   transaction: BankTransaction;
+  canSubmit: () => boolean;
   bankAccounts: BankAccount[];
   transactions: BankTransaction[];
   onDone: () => void;
@@ -2233,6 +2287,12 @@ function BankLineActions({
     onError,
   });
 
+  // Re-checked at submission against the current list and in-flight writes, not render time.
+  const submit = (m: { mutate: () => void }) => {
+    if (!canSubmit()) return;
+    m.mutate();
+  };
+
   const modes: Array<[LineMode, string]> = [
     ["entry", "banking.line.createEntry"],
     ...(inflow ? ([["split", "banking.line.split"]] as Array<[LineMode, string]>) : []),
@@ -2308,7 +2368,7 @@ function BankLineActions({
           <div className="flex justify-end">
             <Button
               size="sm"
-              onClick={() => entryMutation.mutate()}
+              onClick={() => submit(entryMutation)}
               disabled={!accountId || entryMutation.isPending}
               data-testid="button-create-entry"
             >
@@ -2368,7 +2428,7 @@ function BankLineActions({
           <div className="flex justify-end">
             <Button
               size="sm"
-              onClick={() => splitMutation.mutate()}
+              onClick={() => submit(splitMutation)}
               disabled={allocatedFils !== bankFils || splitMutation.isPending}
             >
               {tr("banking.line.applySplit")}
@@ -2415,7 +2475,7 @@ function BankLineActions({
           <div className="sm:col-span-2 flex justify-end">
             <Button
               size="sm"
-              onClick={() => transferMutation.mutate()}
+              onClick={() => submit(transferMutation)}
               disabled={!otherAccount || transferMutation.isPending}
             >
               {tr("banking.line.applyTransfer")}
@@ -2433,7 +2493,7 @@ function BankLineActions({
           <Button
             size="sm"
             variant="destructive"
-            onClick={() => excludeMutation.mutate()}
+            onClick={() => submit(excludeMutation)}
             disabled={reason.trim().length < 3 || excludeMutation.isPending}
           >
             {tr("banking.line.excludeApply")}
