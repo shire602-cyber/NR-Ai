@@ -328,8 +328,12 @@ function CompanyVatFiling({ workspace }: { workspace: ReturnType<typeof useDefau
         periodStart,
         periodEnd,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vat-returns"] });
+    onSuccess: async () => {
+      const returnsKey = ["/api/companies", companyId, "vat-returns"];
+      // With no cached data, invalidate alone can reuse the pending initial GET (sent before the
+      // new row existed). Cancel it so the refetch is a fresh request.
+      await queryClient.cancelQueries({ queryKey: returnsKey });
+      void queryClient.invalidateQueries({ queryKey: returnsKey });
       toast({
         title: translateNow("toasts.vatReturnGenerated2"),
         description: translateNow("toasts.reviewTheCalculatedAmountsBeforeSubmitting"),

@@ -446,6 +446,85 @@ describe("VAT filing: no active company", () => {
   });
 });
 
+describe("VAT filing: draft generation with the first returns load in flight", () => {
+  it("cancels the pending initial GET and renders the new row from a fresh response", async () => {
+    const answered = vi.mocked(fetch).getMockImplementation()!;
+    const generated = {
+      ...vatReturn,
+      id: "r0000000-0000-4000-8000-000000000126",
+      box14PayableTax: 4321,
+    };
+    const GENERATE_PATH = `${RETURNS_PATH}/generate`;
+    const returnsSignals: (AbortSignal | undefined)[] = [];
+    let releaseFirst!: () => void;
+    const held = new Promise<void>((resolve) => (releaseFirst = resolve));
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const path = new URL(String(input), "http://localhost").pathname;
+      // The POST is only sent once the CSRF token has been issued.
+      if (path === "/api/csrf-token") {
+        return new Response(JSON.stringify({ csrfToken: "test-token" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (path === GENERATE_PATH) {
+        return new Response(JSON.stringify(generated), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (path === RETURNS_PATH && init?.method !== "POST") {
+        returnsSignals.push(init?.signal ?? undefined);
+        if (returnsSignals.length === 1) {
+          // The first GET predates the new row: it would answer with no returns.
+          await held;
+          return new Response("[]", {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify([generated]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return answered(input, init);
+    });
+    // The dialog offers the current quarter and only an ended period can be generated, so the
+    // clock sits on a quarter's last day (Date only; timers stay real).
+    vi.setSystemTime(new Date(2026, 8, 30, 12));
+    try {
+      // beforeEach cached the list at wall time; re-seed it on this clock, or its refetch timer
+      // overflows (TimeoutOverflowWarning).
+      queryClient.setQueryData([LIST_PATH], [{ ...COMPANY }]);
+      queryClient.setQueryData(PROFILE_KEY, { ...COMPANY });
+      await mount(() => !!byId("button-create-return"));
+      expect(returnsSignals).toHaveLength(1);
+
+      await act(async () => byId("button-create-return")!.click());
+      await settle();
+      // The dialog is portalled to document.body, outside the page container.
+      const confirm = document.querySelector<HTMLButtonElement>(
+        '[data-testid="button-confirm-generate"]'
+      )!;
+      expect(confirm.disabled).toBe(false);
+      await act(async () => confirm.click());
+      await settle();
+
+      expect(returnsSignals).toHaveLength(2);
+      expect(returnsSignals[0]?.aborted).toBe(true);
+      expect(returnsSignals[1]?.aborted).toBeFalsy();
+      expect(text()).toContain("4,321.00");
+      expect(text()).not.toContain("No VAT returns yet");
+    } finally {
+      vi.useRealTimers();
+      await act(async () => releaseFirst());
+      await settle();
+    }
+    expect(text()).toContain("4,321.00");
+  });
+});
+
 describe("VAT filing: cached profile of a company that is not VAT registered", () => {
   const unregistered = { ...COMPANY, taxRegistrationType: "Non-registered", trnVatNumber: null };
   beforeEach(() => {
