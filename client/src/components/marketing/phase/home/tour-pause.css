@@ -1,0 +1,10 @@
+/*
+ * Explicit Pause on the homepage tour ("mz-tour-"). The shell carries data-paused="true" only after
+ * the visitor pressed Pause (not on hover or interaction), and every running CSS animation inside it
+ * (scan line, live dots, pipeline pulses) holds where it is and resumes from there.
+ */
+.phase-site .mz-tour-shell[data-paused="true"] *,
+.phase-site .mz-tour-shell[data-paused="true"] *::before,
+.phase-site .mz-tour-shell[data-paused="true"] *::after {
+  animation-play-state: paused !important;
+}

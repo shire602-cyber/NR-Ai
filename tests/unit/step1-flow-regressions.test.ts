@@ -233,10 +233,17 @@ describe("F11 item 11: invitations form validates in the app, not the browser", 
     await act(async () =>
       (document.querySelector('[data-testid="button-send-invite"]') as HTMLElement).click()
     );
-    await flush();
-    await act(async () =>
-      (document.querySelector('[data-testid="button-submit-invite"]') as HTMLElement).click()
+    // The dialog is lazy and portaled: poll until its submit button is mounted.
+    const submit = await vi.waitFor(
+      async () => {
+        await act(async () => {});
+        const el = document.querySelector('[data-testid="button-submit-invite"]');
+        expect(el, "submit button").not.toBeNull();
+        return el as HTMLElement;
+      },
+      { timeout: 5000, interval: 25 }
     );
+    await act(async () => submit.click());
     await flush();
     const error = document.querySelector("#invite-email-error");
     expect(error, "inline validation message").not.toBeNull();

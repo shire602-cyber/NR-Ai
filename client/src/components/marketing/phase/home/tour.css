@@ -1,0 +1,661 @@
+/*
+ * Homepage product tour ("See it work"). Classes are prefixed mz-tour-. Logical properties only so
+ * the whole mini-app mirrors in Arabic. Tokens come from home.css.
+ */
+.phase-site .mz-tour-shell {
+  border: 1px solid var(--mz-line-light);
+  border-radius: calc(var(--mz-radius) + 4px);
+  background: #f4f8f5;
+  overflow: hidden;
+}
+
+/* ---------- Tab list: scrolls sideways on small screens ---------- */
+.phase-site .mz-tour-tabs {
+  display: flex;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: inline proximity;
+  background: var(--mz-paper);
+  border-block-end: 1px solid var(--mz-line-light);
+  scrollbar-width: thin;
+}
+.phase-site .mz-tour-tabs button {
+  flex: 1 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-block-size: 56px;
+  padding-inline: 18px;
+  font-weight: 650;
+  font-size: 15px;
+  white-space: nowrap;
+  color: var(--mz-muted-light);
+  border-block-end: 3px solid transparent;
+  scroll-snap-align: start;
+  transition:
+    background-color 0.2s var(--mz-ease),
+    color 0.2s var(--mz-ease);
+}
+.phase-site .mz-tour-tabs button:hover {
+  background: #eef5f0;
+}
+.phase-site .mz-tour-tabs button[aria-selected="true"] {
+  color: var(--mz-emerald-deep);
+  background: #e5f3e9;
+  border-block-end-color: var(--mz-emerald);
+}
+.phase-site .mz-tour-tabs button svg {
+  inline-size: 20px;
+  block-size: 20px;
+  flex: none;
+}
+.phase-site .mz-tour-tabs button:focus-visible {
+  outline: 3px solid var(--mz-focus);
+  outline-offset: -4px;
+}
+
+/* ---------- Panel ---------- */
+.phase-site .mz-tour-panel:not([hidden]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(18px, 3vw, 36px);
+  padding: clamp(16px, 3.4vw, 40px);
+}
+@media (min-width: 1100px) {
+  .phase-site .mz-tour-panel:not([hidden]) {
+    grid-template-columns: minmax(0, 0.55fr) minmax(0, 1.7fr);
+    align-items: start;
+  }
+}
+.phase-site .mz-tour-copy h3 {
+  font-size: clamp(22px, 2.4vw, 30px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin-block-end: 12px;
+}
+.phase-site[lang="ar"] .mz-tour-copy h3 {
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+.phase-site .mz-tour-copy p {
+  line-height: 1.6;
+  margin-block-end: 16px;
+}
+.phase-site .mz-tour-copy .phase-textlink svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+[dir="rtl"] .phase-site .mz-tour-copy .phase-textlink svg,
+.phase-site[dir="rtl"] .mz-tour-copy .phase-textlink svg {
+  transform: scaleX(-1);
+}
+
+.phase-site .mz-tour-window {
+  position: relative;
+  padding: clamp(14px, 2.2vw, 28px);
+  min-inline-size: 0;
+}
+.phase-site .mz-tour-sample {
+  inline-size: fit-content;
+  margin-block-end: 14px;
+}
+/* Reserved height: the stage never collapses while the chunk loads, so the page does not jump. */
+.phase-site .mz-tour-stage {
+  container-type: inline-size;
+  min-block-size: 560px;
+}
+@media (max-width: 700px) {
+  .phase-site .mz-tour-stage {
+    min-block-size: 700px;
+  }
+}
+.phase-site .mz-tour-skeleton {
+  block-size: 520px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #eef3ef, #f7faf8, #eef3ef);
+  background-size: 200% 100%;
+  animation: mz-tour-shimmer 1.6s linear infinite;
+}
+@keyframes mz-tour-shimmer {
+  to {
+    background-position-x: -200%;
+  }
+}
+
+/* ---------- Shared pieces ---------- */
+.phase-site .mz-tour-num {
+  font-variant-numeric: tabular-nums;
+  unicode-bidi: isolate;
+}
+.phase-site .mz-tour-sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.phase-site .mz-tour-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-block-start: 16px;
+}
+.phase-site .mz-tour-actions button:disabled,
+.phase-site .mz-tour-export button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.phase-site .mz-tour-control {
+  display: flex;
+  justify-content: flex-end;
+  margin-block-end: 10px;
+}
+.phase-site .mz-tour-pause {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 44px;
+  padding-block: 0;
+  padding-inline: 14px;
+  border: 1px solid var(--mz-line, #d6e0d9);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--mz-ink, #10241a);
+  font-weight: 650;
+  cursor: pointer;
+}
+.phase-site .mz-tour-pause svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+.phase-site .mz-tour-pause:focus-visible {
+  outline: 2px solid var(--mz-emerald);
+  outline-offset: 2px;
+}
+.phase-site .mz-tour-link {
+  color: var(--mz-emerald);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  min-block-size: 44px;
+}
+.phase-site .mz-tour-bar {
+  display: block;
+  block-size: 10px;
+  inline-size: 100%;
+  max-inline-size: 140px;
+  border-radius: 999px;
+  background: #dfe8e2;
+}
+.phase-site .mz-tour-bar--short {
+  inline-size: 60%;
+}
+.phase-site .mz-tour-bar--tiny {
+  inline-size: 40px;
+}
+.phase-site .mz-tour-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 28px;
+  margin-block-start: 14px;
+  font-weight: 650;
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-band p.mz-tour-done {
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-tour-done svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+.phase-site .mz-tour-scroll {
+  overflow-x: auto;
+}
+.phase-site .mz-tour-window table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.phase-site .mz-tour-window th,
+.phase-site .mz-tour-window td {
+  padding: 10px 8px;
+  text-align: start;
+  border-block-end: 1px solid var(--mz-line-light);
+  vertical-align: middle;
+}
+.phase-site .mz-tour-window thead th {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-tour-input {
+  inline-size: 100%;
+  min-inline-size: 76px;
+  min-block-size: 44px;
+  padding: 8px 10px;
+  border: 1px solid #aebdb4;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--mz-ink-soft);
+  font: inherit;
+  text-align: end;
+}
+.phase-site .mz-tour-input:focus-visible {
+  outline: 3px solid var(--mz-focus);
+  outline-offset: 1px;
+}
+.phase-site .mz-tour-seg {
+  display: inline-flex;
+  margin-block-start: 16px;
+  border: 1px solid #aebdb4;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.phase-site .mz-tour-seg button {
+  min-block-size: 44px;
+  padding-inline: 16px;
+  font-weight: 600;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-tour-seg button[aria-pressed="true"] {
+  background: var(--mz-emerald);
+  color: #fff;
+}
+.phase-site .mz-tour-seg button:focus-visible {
+  outline: 3px solid var(--mz-focus);
+  outline-offset: -3px;
+}
+
+/* ---------- 1. Invoice ---------- */
+.phase-site .mz-tour-invoice {
+  display: grid;
+  gap: 24px;
+}
+@container (min-width: 760px) {
+  .phase-site .mz-tour-invoice {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: start;
+  }
+}
+.phase-site .mz-tour-sums {
+  margin-block-start: 14px;
+  display: grid;
+  gap: 6px;
+}
+.phase-site .mz-tour-sums div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.phase-site .mz-tour-sums dd {
+  margin: 0;
+  unicode-bidi: isolate;
+  direction: ltr;
+}
+.phase-site .mz-tour-sums-total {
+  padding-block-start: 8px;
+  border-block-start: 2px solid var(--mz-ink-soft);
+  font-size: 20px;
+  font-weight: 750;
+}
+.phase-site .mz-tour-doc {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--mz-line-light);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgb(10 23 19 / 0.08);
+  overflow: hidden;
+  container-type: inline-size;
+}
+.phase-site .mz-tour-doc--both {
+  grid-template-columns: minmax(0, 1fr);
+}
+@container (min-width: 440px) {
+  .phase-site .mz-tour-doc--both {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.phase-site .mz-tour-doc-col {
+  padding: 16px;
+}
+.phase-site .mz-tour-doc--both .mz-tour-doc-col + .mz-tour-doc-col {
+  border-inline-start: 1px dashed var(--mz-line-light);
+}
+.phase-site .mz-tour-doc-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+}
+.phase-site .mz-tour-doc-bill {
+  margin-block: 8px 6px;
+  font-size: 13px;
+}
+.phase-site .mz-tour-doc-total th,
+.phase-site .mz-tour-doc-total td {
+  font-weight: 750;
+  border-block-end: 0;
+}
+.phase-site .mz-tour-pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.phase-site .mz-tour-pipeline li {
+  display: flex;
+  align-items: center;
+}
+.phase-site .mz-tour-pipeline li:not(:last-child)::after {
+  content: "";
+  inline-size: 14px;
+  block-size: 2px;
+  margin-inline-start: 8px;
+  background: var(--mz-line-light);
+}
+.phase-site .mz-tour-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--mz-line-light);
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--mz-muted-light);
+  background: #fff;
+  transition:
+    background-color 0.3s var(--mz-ease),
+    color 0.3s var(--mz-ease);
+}
+.phase-site .mz-tour-pipeline li[data-state="done"] .mz-tour-dot {
+  background: #e3f1e9;
+  color: var(--mz-emerald-deep);
+  border-color: transparent;
+}
+.phase-site .mz-tour-pipeline li[data-state="current"] .mz-tour-dot {
+  border-color: var(--mz-emerald);
+  color: var(--mz-emerald-deep);
+  box-shadow: 0 0 0 3px rgb(11 106 74 / 0.14);
+}
+
+/* ---------- 2. Receipt ---------- */
+.phase-site .mz-tour-receipt {
+  display: grid;
+  gap: 28px;
+}
+@container (min-width: 640px) {
+  .phase-site .mz-tour-receipt {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  }
+}
+.phase-site .mz-tour-paper {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  max-inline-size: 280px;
+  margin-inline: auto;
+  padding: 22px 20px 28px;
+  background: #fffef9;
+  border: 1px solid #e3dccb;
+  box-shadow: 0 10px 26px rgb(10 23 19 / 0.12);
+  overflow: hidden;
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% calc(100% - 8px),
+    92% 100%,
+    84% calc(100% - 8px),
+    76% 100%,
+    68% calc(100% - 8px),
+    60% 100%,
+    52% calc(100% - 8px),
+    44% 100%,
+    36% calc(100% - 8px),
+    28% 100%,
+    20% calc(100% - 8px),
+    12% 100%,
+    4% calc(100% - 8px),
+    0 100%
+  );
+}
+.phase-site .mz-tour-paper-title {
+  font-weight: 750;
+  text-align: center;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-tour-paper-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-tour-paper-total {
+  padding-block-start: 8px;
+  border-block-start: 1px dashed #b8ad92;
+  font-weight: 750;
+}
+.phase-site .mz-tour-scanline {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 0;
+  block-size: 3px;
+  background: var(--mz-mint);
+  box-shadow: 0 0 18px 6px rgb(93 242 180 / 0.55);
+  opacity: 0;
+}
+.phase-site .mz-tour-paper.is-scanning .mz-tour-scanline {
+  opacity: 1;
+  animation: mz-tour-sweep 1.4s ease-in-out infinite alternate;
+}
+@keyframes mz-tour-sweep {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(280px);
+  }
+}
+.phase-site .mz-tour-fields {
+  display: grid;
+  gap: 4px;
+}
+.phase-site .mz-tour-field {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: 12px;
+  min-block-size: 46px;
+  padding-inline: 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+.phase-site .mz-tour-field dt {
+  font-size: 13px;
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-tour-field dd {
+  margin: 0;
+  font-weight: 700;
+}
+.phase-site .mz-tour-field[data-filled="true"] {
+  background: #eef7f1;
+  border-color: #cfe6d8;
+  animation: mz-tour-pop 0.4s var(--mz-ease);
+}
+@keyframes mz-tour-pop {
+  from {
+    opacity: 0.4;
+    transform: translateY(6px);
+  }
+}
+
+/* ---------- 3. Bank CSV and 4. VAT 201 ---------- */
+.phase-site .mz-tour-bank-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.phase-site .mz-tour-bank-head .mz-tour-actions {
+  margin-block-start: 0;
+}
+.phase-site .mz-tour-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border: 1px solid var(--mz-line-light);
+  border-radius: 999px;
+  background: #fff;
+  font-weight: 650;
+}
+.phase-site .mz-tour-chip svg {
+  inline-size: 18px;
+  block-size: 18px;
+  color: var(--mz-emerald);
+}
+.phase-site .mz-tour-chip-meta {
+  color: var(--mz-muted-light);
+  font-weight: 500;
+  font-size: 13px;
+}
+.phase-site .mz-tour-bank-table,
+.phase-site .mz-tour-vat-table {
+  margin-block-start: 14px;
+  min-inline-size: 520px;
+}
+.phase-site .mz-tour-bank-table tr[data-state="matched"],
+.phase-site .mz-tour-vat-table tr[data-filled="true"] {
+  background: #eef7f1;
+}
+.phase-site .mz-tour-bank-table tr[data-state="review"] {
+  background: #fdf3df;
+}
+.phase-site .mz-tour-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.phase-site .mz-tour-state svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+.phase-site .mz-tour-state--matched {
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-tour-state--review {
+  color: #7a4a00;
+}
+.phase-site .mz-tour-state--waiting {
+  color: var(--mz-muted-light);
+  font-weight: 500;
+}
+.phase-site .mz-tour-vat-table th[scope="row"] {
+  inline-size: 56px;
+}
+.phase-site .mz-tour-export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-block-start: 16px;
+}
+.phase-site .mz-tour-export button svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+.phase-site .mz-tour-note {
+  flex: 1 1 260px;
+  font-size: 14px;
+}
+
+/* ---------- 5. Accountant view ---------- */
+.phase-site .mz-tour-clients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.phase-site .mz-tour-clients button {
+  min-block-size: 44px;
+  padding-inline: 18px;
+  border: 1px solid #aebdb4;
+  border-radius: 999px;
+  font-weight: 650;
+  color: var(--mz-ink-soft);
+  background: #fff;
+}
+.phase-site .mz-tour-clients button[aria-pressed="true"] {
+  background: var(--mz-emerald);
+  border-color: var(--mz-emerald);
+  color: #fff;
+}
+.phase-site .mz-tour-clients button:focus-visible {
+  outline: 3px solid var(--mz-focus);
+  outline-offset: 2px;
+}
+.phase-site .mz-tour-summary {
+  margin-block-start: 22px;
+  padding: 20px;
+  border: 1px solid var(--mz-line-light);
+  border-radius: 14px;
+  background: #fff;
+}
+.phase-site .mz-tour-summary h4 {
+  font-size: 20px;
+  margin-block-end: 14px;
+}
+.phase-site .mz-tour-summary dl {
+  display: grid;
+  gap: 14px;
+}
+@container (min-width: 620px) {
+  .phase-site .mz-tour-summary dl {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.phase-site .mz-tour-summary dt {
+  font-size: 13px;
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-tour-summary dd {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.phase-site[lang="ar"] .mz-tour-tabs button {
+  font-size: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-site .mz-tour-skeleton,
+  .phase-site .mz-tour-paper.is-scanning .mz-tour-scanline,
+  .phase-site .mz-tour-field[data-filled="true"],
+  .phase-site .mz-live::before {
+    animation: none;
+  }
+  .phase-site .mz-tour-tabs,
+  .phase-site .mz-tour-tabs button,
+  .phase-site .mz-tour-dot {
+    scroll-behavior: auto;
+    transition: none;
+  }
+}
