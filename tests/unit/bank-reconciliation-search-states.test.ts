@@ -15,6 +15,7 @@ import enBanking from "../../client/src/locales/en/banking.json";
 import arBanking from "../../client/src/locales/ar/banking.json";
 import enCommon from "../../client/src/locales/en/common.json";
 import arCommon from "../../client/src/locales/ar/common.json";
+import arScreens from "../../client/src/locales/ar/screens.json";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -85,6 +86,7 @@ let suggestionsReply: () => Response;
 let transactionsReply: (init?: RequestInit) => Response | Promise<Response>;
 let reportReply: (init?: RequestInit) => Response | Promise<Response>;
 let matchReply: () => Response | Promise<Response>;
+let scanMatches: Array<Record<string, unknown>>;
 
 beforeAll(async () => {
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= class {
@@ -106,6 +108,7 @@ beforeEach(() => {
   transactionsReply = () => json(transactions);
   reportReply = () => json(report);
   matchReply = () => json({});
+  scanMatches = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -115,6 +118,14 @@ beforeEach(() => {
       if (url.endsWith("/bank-statements/transactions")) return transactionsReply(init);
       if (url.includes("/bank-statements/report?")) return reportReply(init);
       if (url.endsWith("/match")) return matchReply();
+      if (url.endsWith("/auto-reconcile/apply")) return json({ message: "applied" });
+      if (url.endsWith("/auto-reconcile"))
+        return json({
+          matches: scanMatches,
+          autoMatchedCount: 0,
+          manualReviewCount: scanMatches.length,
+          totalUnreconciled: scanMatches.length,
+        });
       if (url.endsWith("/bank-accounts")) return json(bankAccounts);
       if (url.endsWith("/suggestions")) return suggestionsReply();
       return json([]);
@@ -857,6 +868,196 @@ describe("bank reconciliation match and unmatch cache writes", () => {
     expect(byTestId("bank-line-actions")).not.toBeNull();
     expect(writes()).toEqual(["POST /t-1/match"]);
   }, 60_000);
+
+  /** The bodies of every apply request the Suggestions tab sent. */
+  const applies = () =>
+    vi
+      .mocked(fetch)
+      .mock.calls.filter(([url]) => String(url).endsWith("/auto-reconcile/apply"))
+      .map(([, init]) => JSON.parse(String(init!.body)) as { matches: unknown[] });
+  const scanMatch = (id: string) => ({
+    ...suggestion,
+    bankTransactionId: id,
+    matchedId: `inv-${id}`,
+  });
+  const sent = (id: string) => ({
+    bankTransactionId: id,
+    matchedType: "invoice",
+    matchedId: `inv-${id}`,
+  });
+  const click = async (id: string) => {
+    const button = byTestId(id) as HTMLButtonElement;
+    // The guard under test is the submit-time one: the control itself is clickable.
+    expect(button.disabled).toBe(false);
+    await act(async () => button.click());
+    await flush();
+  };
+
+  for (const [held, row, label] of [
+    ["Unmatch", reconciled, "pageLabels.unmatch"],
+    ["Match", suggested, "pages.accept"],
+  ] as const) {
+    /** Holds a row write on t-1 from the list, then runs "Find matches" on the real page. */
+    const holdThenScan = async () => {
+      const client = await mountPage("en");
+      if (row.isReconciled) await showReconciledRows();
+      const { translateNow } = await import("../../client/src/lib/i18n");
+      transactionsReply = () => new Promise<Response>(() => {});
+      let respond!: (response: Response) => void;
+      matchReply = () => new Promise<Response>((resolve) => (respond = resolve));
+      await act(async () => mobileButton(translateNow(label)).click());
+      await flush();
+      expect(client.isMutating()).toBe(1);
+      await act(async () => byTestId("button-auto-reconcile")!.click());
+      await flush();
+      expect(byTestId("suggestion-t-1")).not.toBeNull();
+      return async () => {
+        await act(async () => respond(json({})));
+        await flush();
+      };
+    };
+
+    it(`Accept and Accept confident send no apply while the only row's ${held} is held`, async () => {
+      transactions = [row];
+      scanMatches = [scanMatch("t-1")];
+      const settle = await holdThenScan();
+
+      await click("button-accept-t-1");
+      expect(applies()).toEqual([]);
+      await click("button-accept-confident");
+      expect(applies()).toEqual([]);
+
+      // The same control writes once the held request has settled.
+      await settle();
+      await click("button-accept-t-1");
+      expect(applies()).toEqual([{ matches: [sent("t-1")] }]);
+    }, 60_000);
+
+    it(`Accept confident applies only the eligible row while another row's ${held} is held`, async () => {
+      transactions = [row, { ...baseTx, id: "t-2" }];
+      scanMatches = [scanMatch("t-1"), scanMatch("t-2")];
+      const settle = await holdThenScan();
+
+      await click("button-accept-t-1");
+      expect(applies()).toEqual([]);
+      await click("button-accept-confident");
+      expect(applies()).toEqual([{ matches: [sent("t-2")] }]);
+
+      await settle();
+    }, 60_000);
+  }
+
+  for (const [failedName, failed] of [
+    ["match", 0],
+    ["unmatch", 1],
+  ] as const) {
+    it(`cancels a read started during pending writes before rolling back a failed ${failedName}, and ignores its late reply`, async () => {
+      const originals = [suggested, { ...reconciled, id: "t-2" }];
+      transactions = originals;
+      const client = await mountPage("en");
+      await showReconciledRows();
+      const { translateNow } = await import("../../client/src/lib/i18n");
+      const responders: Array<(response: Response) => void> = [];
+      matchReply = () => new Promise<Response>((resolve) => responders.push(resolve));
+      for (const label of ["pages.accept", "pageLabels.unmatch"]) {
+        await act(async () => mobileButton(translateNow(label)).click());
+        await flush();
+      }
+      expect(responders).toHaveLength(2);
+      const optimistic = structuredClone(client.getQueryData<Rows>(TRANSACTIONS_KEY)!);
+      expect(optimistic[failed]).not.toEqual(originals[failed]);
+
+      // A read that starts while both writes are pending. The transport ignores the signal.
+      let reads = 0;
+      let signal!: AbortSignal;
+      let late!: (response: Response) => void;
+      transactionsReply = (init) => {
+        reads += 1;
+        signal = init!.signal!;
+        return new Promise<Response>((resolve) => (late = resolve));
+      };
+      await act(async () => {
+        void client.refetchQueries({ queryKey: TRANSACTIONS_KEY, exact: true });
+      });
+      await flush(4);
+      expect(reads).toBe(1);
+      expect(signal.aborted).toBe(false);
+      let rowAtAbort: unknown;
+      signal.addEventListener("abort", () => {
+        rowAtAbort = client.getQueryData<Rows>(TRANSACTIONS_KEY)![failed];
+      });
+
+      await act(async () => responders[failed]!(json({ message: "nope" }, 409)));
+      await flush();
+      // Cancelled first (the row was still optimistic then), rolled back afterwards.
+      expect(signal.aborted).toBe(true);
+      expect(rowAtAbort).toEqual(optimistic[failed]);
+      const rolledBack = optimistic.map((r, i) => (i === failed ? originals[i] : r));
+      expect(client.getQueryData(TRANSACTIONS_KEY)).toEqual(rolledBack);
+
+      await act(async () => late(json(optimistic)));
+      await flush();
+      expect(client.getQueryData(TRANSACTIONS_KEY)).toEqual(rolledBack);
+      // The other write is still pending, so no refresh has run to paper over a bad value.
+      expect(client.isMutating()).toBe(1);
+      expect(reads).toBe(1);
+
+      transactionsReply = () => json(originals);
+      await act(async () => responders[1 - failed]!(json({})));
+      await flush();
+    }, 60_000);
+  }
+});
+
+describe("bank reconciliation match dialog in Arabic", () => {
+  const banking = arBanking as Record<string, string>;
+  const screens = arScreens as Record<string, string>;
+  const types = [
+    ["journal_entry", 90, "screens.confidenceHigh"],
+    ["invoice", 85, "screens.confidenceHigh"],
+    ["receipt", 70, "screens.confidenceMedium"],
+    ["bill", 40, "screens.confidenceLow"],
+  ] as const;
+
+  for (const [direction, amount] of [
+    ["credit", 42],
+    ["debit", -42],
+  ] as const) {
+    it(`shows the ${direction} direction, suggestion types and confidence in Arabic`, async () => {
+      transactions = [{ ...baseTx, id: "t-1", amount }];
+      suggestionsReply = () =>
+        json(
+          types.map(([matchedType, confidence]) => ({
+            ...suggestion,
+            matchedType,
+            matchedId: `id-${matchedType}`,
+            matchedDescription: `DOC ${matchedType}`,
+            confidence,
+          }))
+        );
+      await mountPage("ar");
+      await openMatchDialog();
+      const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+      const texts = Array.from(dialog.querySelectorAll("*")).map((el) => el.textContent?.trim());
+      const other = direction === "credit" ? "debit" : "credit";
+      expect(texts).toContain(banking[`banking.line.direction.${direction}`]);
+      expect(texts).not.toContain(banking[`banking.line.direction.${other}`]);
+
+      for (const [matchedType, confidence, confidenceKey] of types) {
+        const description = Array.from(dialog.querySelectorAll("p")).find(
+          (p) => p.textContent === `DOC ${matchedType}`
+        )!;
+        // The type label sits directly above the matched document's description.
+        expect(description.previousElementSibling!.textContent).toBe(
+          banking[`banking.suggest.type.${matchedType}`]
+        );
+        const adjective = `${confidence}% ${screens[confidenceKey]}`;
+        expect(texts).toContain(adjective);
+        expect(dialog.querySelector(`[aria-label="${adjective}"]`)).not.toBeNull();
+      }
+      expect(dialog.textContent).not.toMatch(/Journal entry|Invoice|Receipt|High|Medium|Low/);
+    }, 60_000);
+  }
 });
 
 describe("read cancellation reaches fetch", () => {

@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { MatchSuggestions } from "./AutoReconcile";
 import { translateMatchReasons } from "./auto-reconcile-match-reasons";
+import { bankRowWriteKey, hasBankRowWriteInFlight } from "./bank-row-writes";
 import { ReconciliationRulesPanel } from "./ReconciliationRules";
 import {
   Select,
@@ -149,25 +150,21 @@ interface ReportData {
 const matchTypeConfig = {
   journal_entry: {
     icon: BookOpen,
-    label: "Journal entry",
     color: "text-muted-foreground",
     bg: "bg-muted",
   },
   invoice: {
     icon: FileText,
-    label: "Invoice",
     color: "text-muted-foreground",
     bg: "bg-muted",
   },
   receipt: {
     icon: Receipt,
-    label: "Receipt",
     color: "text-success",
     bg: "bg-success-subtle",
   },
   bill: {
     icon: FileText,
-    label: "Bill",
     color: "text-muted-foreground",
     bg: "bg-muted",
   },
@@ -180,27 +177,23 @@ const SAMPLE_BANK_CSV = `Date,Description,Debit,Credit,Balance,Reference
 `;
 
 function confidenceLabel(score: number): {
-  label: string;
   labelKey: string;
   color: string;
   bg: string;
 } {
   if (score >= 80)
     return {
-      label: "High",
       labelKey: "screens.confidenceHigh",
       color: "text-success",
       bg: "bg-success-subtle",
     };
   if (score >= 60)
     return {
-      label: "Medium",
       labelKey: "screens.confidenceMedium",
       color: "text-warning",
       bg: "bg-warning-subtle",
     };
   return {
-    label: "Low",
     labelKey: "screens.confidenceLow",
     color: "text-destructive",
     bg: "bg-danger-subtle",
@@ -559,7 +552,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
 
   // Match and unmatch share one key so the last outstanding write refreshes the list, and so a
   // row with a write in flight rejects the opposite write (other rows may still overlap).
-  const rowWriteKey = ["bank-statements", "row-write", companyId];
+  const rowWriteKey = bankRowWriteKey(companyId);
   const pendingRowIds = useMutationState({
     filters: { mutationKey: rowWriteKey, status: "pending" },
     select: (m) => {
@@ -568,22 +561,11 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     },
   });
   const isRowBusy = (id: string) => pendingRowIds.includes(id);
-  // Event-time guard. TanStack dispatches "pending" synchronously inside mutate(), before onMutate
-  // is awaited, so this sees a write started earlier in the same tick (before React rerenders).
-  const hasRowWriteInFlight = (id: string) =>
-    queryClient.isMutating({
-      mutationKey: rowWriteKey,
-      exact: true,
-      predicate: (m) => {
-        const v = m.state.variables as string | { transactionId: string } | undefined;
-        return (typeof v === "string" ? v : v?.transactionId) === id;
-      },
-    }) > 0;
   // A new write needs no write in flight on the row and the row's current cached state (never a
   // copy a dialog captured earlier) to fit: Match/dialog actions need an unreconciled line,
   // Unmatch a reconciled one. With no cached list there is no state to contradict the request.
   const canWriteRow = (id: string, reconciled: boolean) => {
-    if (hasRowWriteInFlight(id)) return false;
+    if (hasBankRowWriteInFlight(companyId, id)) return false;
     const rows = queryClient.getQueryData<BankTransaction[]>(transactionsKey);
     if (!rows) return true;
     const row = rows.find((x) => x.id === id);
@@ -635,11 +617,14 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     );
     return { queryKey, previousRow };
   };
-  const restoreTransactionRow = (
+  const restoreTransactionRow = async (
     context: Awaited<ReturnType<typeof patchTransactionRow>> | undefined
   ) => {
     const previousRow = context?.previousRow;
     if (!context || !previousRow) return;
+    // A read started during the write must not land on top of the rollback. The final refresh
+    // may be deferred by another pending write, so nothing else would correct it for a while.
+    await queryClient.cancelQueries({ queryKey: context.queryKey, exact: true });
     queryClient.setQueryData<BankTransaction[]>(context.queryKey, (old) =>
       old?.map((tx) => (tx.id === previousRow.id ? previousRow : tx))
     );
@@ -681,8 +666,8 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
       setMatchDialogOpen(false);
       setSelectedTransaction(null);
     },
-    onError: (error: any, _vars, context) => {
-      restoreTransactionRow(context);
+    onError: async (error: any, _vars, context) => {
+      await restoreTransactionRow(context);
       toast({
         variant: "destructive",
         title: translateNow("toasts.reconciliationFailed"),
@@ -712,8 +697,8 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
         description: translateNow("toasts.transactionResetToUnmatched"),
       });
     },
-    onError: (error: any, _id, context) => {
-      restoreTransactionRow(context);
+    onError: async (error: any, _id, context) => {
+      await restoreTransactionRow(context);
       toast({
         variant: "destructive",
         title: translateNow("toasts.error"),
@@ -1474,7 +1459,9 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                       <T k="pageLabels.direction" />
                     </p>
                     <Badge variant="outline" className="text-xs">
-                      {selectedTransaction.amount >= 0 ? "↑ Credit / Inflow" : "↓ Debit / outflow"}
+                      {selectedTransaction.amount >= 0
+                        ? t["banking.line.direction.credit"]
+                        : t["banking.line.direction.debit"]}
                     </Badge>
                   </div>
                 </div>
@@ -1547,7 +1534,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                             </div>
                             <div className="min-w-0">
                               <p className="text-xs font-medium text-muted-foreground">
-                                {typeCfg.label}
+                                {t[`banking.suggest.type.${s.matchedType}`]}
                               </p>
                               <p className="text-sm font-medium truncate">
                                 {s.matchedDescription || s.matchedId.slice(0, 8)}
@@ -1559,14 +1546,14 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                               {s.matchedAmount != null ? formatCurrency(s.matchedAmount) : "—"}
                             </p>
                             <span className={`text-xs font-medium ${confMeta.color}`}>
-                              {s.confidence}% {confMeta.label}
+                              {s.confidence}% {t[confMeta.labelKey]}
                             </span>
                           </div>
                         </div>
                         <div className="mt-2">
                           <Progress
                             value={s.confidence}
-                            aria-label={`${s.confidence}% ${confMeta.label}`}
+                            aria-label={`${s.confidence}% ${t[confMeta.labelKey]}`}
                             className="h-1"
                           />
                         </div>

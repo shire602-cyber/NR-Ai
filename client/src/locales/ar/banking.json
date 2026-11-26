@@ -84,6 +84,8 @@
   "banking.line.excludeApply": "استبعاد الحركة",
   "banking.line.excluded": "تم استبعاد الحركة",
   "banking.line.matched": "تمت تسوية الحركة",
+  "banking.line.direction.credit": "↑ دائن / وارد",
+  "banking.line.direction.debit": "↓ مدين / صادر",
   "banking.emptyTransactionsTitle": "لا توجد معاملات بنكية",
   "banking.emptyTransactionsDescription": "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
   "banking.importStatementAction": "استيراد كشف حساب بنكي",

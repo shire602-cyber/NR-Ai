@@ -12,6 +12,7 @@ import { formatDate } from "@/lib/format-date";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
 import { translateMatchReasons } from "./auto-reconcile-match-reasons";
+import { hasBankRowWriteInFlight } from "./bank-row-writes";
 
 /**
  * Bank reconciliation → Suggestions (spec 3.9; the former /auto-reconcile page). "Find matches"
@@ -108,6 +109,15 @@ export function MatchSuggestions({
       }),
   });
 
+  // Checked at submit, not at render: a scan can already see a line the server has unmatched
+  // while the Unmatch response is still outstanding. Other lines in the batch still apply.
+  const submitApply = (matches: ReconcileMatch[]) => {
+    const eligible = matches.filter(
+      (m) => !hasBankRowWriteInFlight(companyId, m.bankTransactionId)
+    );
+    if (eligible.length > 0) apply.mutate(eligible);
+  };
+
   useEffect(() => {
     if (scanRequest > 0 && companyId) scan.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -199,7 +209,7 @@ export function MatchSuggestions({
           size="sm"
           variant="outline"
           disabled={confident.length === 0 || apply.isPending}
-          onClick={() => apply.mutate(confident)}
+          onClick={() => submitApply(confident)}
           data-testid="button-accept-confident"
         >
           {apply.isPending ? (
@@ -252,7 +262,7 @@ export function MatchSuggestions({
                 size="sm"
                 variant="outline"
                 disabled={apply.isPending}
-                onClick={() => apply.mutate([match])}
+                onClick={() => submitApply([match])}
                 data-testid={`button-accept-${match.bankTransactionId}`}
               >
                 {tt["banking.suggest.accept"]}

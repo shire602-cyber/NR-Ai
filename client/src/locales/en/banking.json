@@ -84,6 +84,8 @@
   "banking.line.excludeApply": "Exclude line",
   "banking.line.excluded": "Line excluded",
   "banking.line.matched": "Line reconciled",
+  "banking.line.direction.credit": "↑ Credit / Inflow",
+  "banking.line.direction.debit": "↓ Debit / outflow",
   "banking.emptyTransactionsTitle": "No bank transactions",
   "banking.emptyTransactionsDescription": "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
   "banking.importStatementAction": "Import bank statement",
