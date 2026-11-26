@@ -383,15 +383,17 @@ describe("year-end close", () => {
         reason: "Draft correction",
       });
       expect(request.status, request.text).toBe(201);
+      const lockRow = () =>
+        h.sql("SELECT * FROM month_end_close WHERE id = $1", [month.body.id]);
+      const originalLock = await lockRow();
+      expect(originalLock).toHaveLength(1);
       const close = await tenant.as.post(`${url}/year-end-close`, {
         fiscalYearEnd: end,
         hardClose: true,
         reason: "Annual review completed",
       });
       expect(close.status, close.text).toBe(201);
-      const lockRow = () =>
-        h.sql("SELECT * FROM month_end_close WHERE id = $1", [close.body.lock.id]);
-      const originalLock = await lockRow();
+      expect(close.body.lock.id).toBe(month.body.id);
 
       const weakening = await tenant.as.post(`${url}/lock-period`, { periodEnd: end, ...weaker });
       expect(weakening.status, weakening.text).toBe(403);
@@ -418,8 +420,13 @@ describe("year-end close", () => {
       const period = await tenant.as.get(`${companyUrl}/period-lock`);
       expect(period.status, period.text).toBe(200);
       expect(period.body.locks).toEqual([
-        expect.objectContaining({ id: close.body.lock.id, lockType: "hard", lockScope: "through" }),
+        expect.objectContaining({ id: month.body.id, lockType: "soft", lockScope: "through" }),
       ]);
+      const { getEffectiveLock } = await import("../../server/services/period-lock.service");
+      expect(await getEffectiveLock(companyId, "2025-06-15")).toMatchObject({
+        lockType: "hard",
+        lockScope: "through",
+      });
       expect(period.body.fiscalYears).toEqual([
         expect.objectContaining({ id: close.body.record.id, status: "closed", hardClosed: true }),
       ]);
@@ -430,6 +437,7 @@ describe("year-end close", () => {
         reason: "Restatement authorized",
       });
       expect(reopen.status, reopen.text).toBe(200);
+      expect(await lockRow()).toEqual(originalLock);
       const ordinaryLock = await tenant.as.post(`${url}/lock-period`, {
         periodEnd: end,
         ...weaker,

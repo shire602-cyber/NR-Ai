@@ -31,6 +31,8 @@
   "statements.colCode": "Code",
   "statements.operatingExpenses": "Operating expenses",
   "statements.tabShortPl": "P&L",
+  "statements.retry": "Try again",
+  "statements.retryWaitingForConnection": "Waiting for your connection to come back. The statement will reload automatically.",
   "statements.tabShortBs": "Balance",
   "statements.tabShortCf": "Cash flow"
 }

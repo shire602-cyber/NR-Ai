@@ -66,7 +66,9 @@ describe("Public banking copy", () => {
       expect(faq?.querySelector("p")?.textContent).toBe(copy);
       expect(catalog["marketing.faq3Q"]).toBe(question);
       expect(catalog["marketing.faq3A"]).toBe(copy);
-    }
+    },
+    // The first render cold-imports the whole phase site and lazy-loads both catalogs.
+    30_000
   );
 
   it.each(bankCopyCases)(

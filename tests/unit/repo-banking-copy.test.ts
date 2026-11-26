@@ -47,8 +47,10 @@ const archivedBankImportMentions = [
 function findProseMention(copy: string): string | undefined {
   // The historical adapter filename is a literal technical reference in the archive.
   const text = copy.replaceAll("`open-banking.service.ts`", "").replace(/\*/g, "");
-  return findPublicBankingMention(text) ??
-    archivedBankImportMentions.map((pattern) => text.match(pattern)?.[0]).find(Boolean);
+  return (
+    findPublicBankingMention(text) ??
+    archivedBankImportMentions.map((pattern) => text.match(pattern)?.[0]).find(Boolean)
+  );
 }
 
 function findJsonProseMention(copy: string): string | undefined {
@@ -131,10 +133,22 @@ describe("CSV banking wording in the repository", () => {
       ["Only 7 of 267 UAE banks are ", "reachable through ", "any aggregator", "."],
       ["reachable through ", "any aggregator"],
     ],
-    [["Bank transaction imports | ", "Yodlee", " + ", "Wio", " |"], ["Yodlee", " + ", "Wio"]],
-    [["Historical banking plan: ", "bank-data", " access", " through aggregators."], ["bank-data", " access"]],
-    [["Access ", "bank data ", "via regional ", "aggregators."], ["Access ", "bank data ", "via regional ", "aggregators"]],
-    [["| Settings / Connections | ", "Bank", " connections", ", team management |"], ["Bank", " connections"]],
+    [
+      ["Bank transaction imports | ", "Yodlee", " + ", "Wio", " |"],
+      ["Yodlee", " + ", "Wio"],
+    ],
+    [
+      ["Historical banking plan: ", "bank-data", " access", " through aggregators."],
+      ["bank-data", " access"],
+    ],
+    [
+      ["Access ", "bank data ", "via regional ", "aggregators."],
+      ["Access ", "bank data ", "via regional ", "aggregators"],
+    ],
+    [
+      ["| Settings / Connections | ", "Bank", " connections", ", team management |"],
+      ["Bank", " connections"],
+    ],
   ])("rejects archived banking descriptions %j", (parts, expected) => {
     expect(findProseMention(parts.join(""))).toBe(expected.join(""));
   });
@@ -230,7 +244,10 @@ describe("CSV banking wording in the repository", () => {
 
   it("keeps repository prose, translation catalogs and operator copy aligned", () => {
     const prosePaths = [
-      ...filesIn(".", ".md"),
+      // The marketing rebuild brief and audit quote the banned phrases in order to forbid them.
+      ...filesIn(".", ".md").filter(
+        (file) => !file.replaceAll("\\", "/").startsWith("docs/site-rebuild/")
+      ),
       ...readdirSync(".", { withFileTypes: true })
         .filter((entry) => entry.isFile() && entry.name.endsWith(".txt"))
         .map((entry) => entry.name),

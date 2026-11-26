@@ -66,6 +66,8 @@
   "screens.searchVendorOrBill": "Search vendor or bill number",
   "screens.billsEmptyBody": "Add your first vendor bill to start tracking what you owe.",
   "screens.billsNoMatchBody": "No bills match these filters.",
+  "screens.billsSearchNoMatchTitle": "No matching bills",
+  "screens.billsSearchNoMatchBody": "No vendor or bill number matches your search. Try a different term or clear the search.",
   "screens.billNumber": "Bill no.",
   "screens.paid": "Paid",
   "screens.confirmDeleteBill": "Delete this bill? This cannot be undone.",

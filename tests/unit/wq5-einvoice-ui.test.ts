@@ -393,6 +393,73 @@ describe("no-login approver page", () => {
     expect(container.querySelector('[data-testid="approve-completed"]')).not.toBeNull();
   });
 
+  it("Done on a link that expired meanwhile shows the expired state, not a retry error", async () => {
+    let expired = false;
+    routes["GET /api/portal/einvoicing-approve/"] = () =>
+      expired
+        ? { status: 410, body: { state: "expired" } }
+        : {
+            body: {
+              state: "active",
+              companyName: "Pearl Trading",
+              approverName: null,
+              expiresAt: "2026-12-02T00:00:00Z",
+              completedAt: null,
+              partner: null,
+            },
+          };
+    routes["POST /done"] = () => {
+      expired = true;
+      return { status: 410, body: { state: "expired" } };
+    };
+    const { default: Page } = await import("../../client/src/pages/EInvoicingApprove");
+    await mount(createElement(Page));
+    await act(async () =>
+      (container.querySelector('[data-testid="approve-done"]') as HTMLButtonElement).click()
+    );
+    await flush();
+    expect(container.querySelector('[data-testid="approve-expired"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="approve-done"]')).toBeNull();
+  });
+
+  it.each([
+    ["expired", "LINK_EXPIRED", "This link has expired"],
+    ["revoked", "LINK_REVOKED", "This link was withdrawn"],
+  ] as const)(
+    "Done applies the %s response immediately when a follow-up read fails",
+    async (state, code, heading) => {
+      let reads = 0;
+      routes["GET /api/portal/einvoicing-approve/"] = () => {
+        reads += 1;
+        if (reads > 1) return { status: 500, body: { message: "unavailable" } };
+        return {
+          body: {
+            state: "active",
+            companyName: "Pearl Trading",
+            approverName: null,
+            expiresAt: "2026-12-02T00:00:00Z",
+            completedAt: null,
+            partner: null,
+          },
+        };
+      };
+      routes["POST /done"] = () => ({ status: 410, body: { code, state } });
+      const { default: Page } = await import("../../client/src/pages/EInvoicingApprove");
+      await mount(createElement(Page));
+      await act(async () =>
+        (container.querySelector('[data-testid="approve-done"]') as HTMLButtonElement).click()
+      );
+      await flush();
+      expect(container.querySelector(`[data-testid="approve-${state}"]`)?.textContent).toContain(
+        heading
+      );
+      expect(container.querySelector('[data-testid="approve-done"]')).toBeNull();
+      expect(container.querySelector('[data-testid="approve-retry"]')).toBeNull();
+      expect(container.textContent).not.toContain("We could not record that");
+      expect(reads).toBe(1);
+    }
+  );
+
   it("an expired link says so (Arabic)", async () => {
     await setLocale("ar");
     routes["GET /api/portal/einvoicing-approve/"] = () => ({

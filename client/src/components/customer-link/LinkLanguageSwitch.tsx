@@ -7,7 +7,7 @@ const LINK_NAMESPACES = ["customerLink"];
 
 /**
  * Language switch for the no-login pages. It names the target language in that language and
- * marks it as such (`lang`), as the site's LocaleToggle does, and remembers the choice.
+ * marks it as such (`lang`), as the site header's switch does, and remembers the choice.
  */
 export function LinkLanguageSwitch({ testId }: { testId: string }) {
   const { t, locale } = useTranslation(LINK_NAMESPACES);

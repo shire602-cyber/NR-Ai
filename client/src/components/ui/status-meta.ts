@@ -106,6 +106,11 @@ export function statusBadgeText(status: string, t: Record<string, string | undef
   const key = statusLabelKey(status);
   return key ? (t[key] ?? status) : status;
 }
+
+export function getStatusLabel(status: string, t: Readonly<Record<string, string>>): string {
+  return statusBadgeText(status, t);
+}
+
 /** Dot colour inside a document-status badge. */
 export function statusDotClass(variant: string | null | undefined): string {
   return cn(
