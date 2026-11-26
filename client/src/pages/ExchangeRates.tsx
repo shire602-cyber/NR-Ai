@@ -37,7 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { pegRatePrefill } from "@/lib/document-currency";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -83,223 +83,19 @@ const STALE_DAYS = 7;
 const ratesQueryFn = getQueryFn<ExchangeRate[]>({ on401: "throw" });
 const fxQueryFn = getQueryFn<FxGainsLossesReport>({ on401: "throw" });
 
-const STRINGS = {
-  en: {
-    eyebrow: "Accounting",
-    title: "Exchange rates",
-    description: "Your company's exchange rates, currency conversion and period-end FX revaluation",
-    backLabel: "Back to reports",
-    addRate: "Add rate",
-    adding: "Adding...",
-    fxTitle: "FX Gains and Losses",
-    fxBasis:
-      "Outstanding balances of posted foreign-currency invoices, vendor bills and linked bank accounts, remeasured at the closing rate (spot when no closing rate exists). Drafts are excluded.",
-    asOf: "As of",
-    today: "today",
-    valuesIn: "Values in",
-    openExposures: "Open exposures",
-    unrealizedGains: "Unrealised gains",
-    unrealizedLosses: "Unrealised losses",
-    net: "Net gain / loss",
-    type: "Type",
-    foreignAmount: "Foreign amount",
-    transactionRate: "Booked rate",
-    currentRate: "Current rate",
-    gainLoss: "Gain / loss",
-    noExposure: "No open foreign-currency exposures for the selected as-of date.",
-    kinds: {
-      invoice: "Invoice",
-      bill: "Bill",
-      bank: "Bank account" /* i18n-ignore: English half of the bilingual s object, Arabic below */,
-    } as Record<string, string>,
-    converterTitle: "Currency converter",
-    converterDesc: "Convert amounts using your company's rates (system rates as fallback)",
-    from: "From",
-    to: "To",
-    enterAmount: "Enter amount",
-    convert: "Convert",
-    rateLabel: "Rate",
-    asOfShort: "as of",
-    savedRates: "Saved rates",
-    savedRatesDesc:
-      "Company rates apply only to this company. System rates are platform reference rates (for example FTA-published) used when the company has none.",
-    noRates: "No exchange rates configured yet.",
-    noRatesHint: "Add your first rate to get started.",
-    rateType: "Rate type",
-    scope: "Scope",
-    scopeCompany: "Company",
-    scopeSystem: "System",
-    stale: "Stale",
-    staleHint: `Older than ${STALE_DAYS} days`,
-    staleBannerTitle: "Some exchange rates are out of date",
-    staleBannerBody:
-      "These pairs have no rate in the last {days} days. Documents and revaluations will warn until a newer rate is added:",
-    feedOffTitle: "Rates are entered manually",
-    feedOffBody: "AED to USD uses the fixed peg. Add rates for other currencies here.",
-    rewritten: "Corrected",
-    rewrittenHint: "Stored inverted by an earlier version; corrected by migration",
-    rateTypes: { spot: "Spot", closing: "Closing", average: "Average" } as Record<RateType, string>,
-    delete: "Delete",
-    addTitle: "Add exchange rate",
-    addDesc: "Rates are stored as units of your base currency per 1 unit of the foreign currency.",
-    fromCurrency: "From currency",
-    toCurrency: "To currency",
-    rateHelp: (from: string, to: string) => `1 ${from} = ? ${to}`,
-    cancel: "Cancel",
-    added: "Exchange rate saved",
-    addFailed: "Failed to add rate",
-    deleted: "Exchange rate deleted",
-    invalidRate: "Please enter a valid rate",
-    sameCurrency: "Currencies must be different",
-    invalidAmount: "Please enter a valid amount",
-    convertFailed: "Conversion failed",
-    largeMoveTitle: "Large rate change",
-    largeMoveConfirm: "Save anyway",
-    reval: "Period-end revaluation",
-    revalDesc:
-      "Posts one balanced unrealised FX entry dated the as-of date and an automatic reversal dated the next day. Running the same date twice does nothing.",
-    revalDate: "Revaluation date",
-    preview: "Preview",
-    run: "Run revaluation",
-    running: "Posting...",
-    previewTitle: "Revaluation preview",
-    account: "Account",
-    debit: "Debit",
-    credit: "Credit",
-    nothingToPost: "Nothing to revalue on this date.",
-    alreadyPosted: "A revaluation is already posted for this date.",
-    reversalOn: "Automatic reversal on",
-    warnings: "Warnings",
-    missingRates: "Missing rates",
-    staleConfirmTitle: "Some rates are stale",
-    staleConfirm: "Post with these rates",
-    bandTitle: "A rate is far from the reference rate",
-    bandReason: "Why is this rate right?",
-    bandReasonHint:
-      "Owner, admin, accountant or CFO only. The reason is kept with the revaluation and in the audit log.",
-    bandConfirm: "Post with this rate",
-    posted: "Revaluation posted",
-    noop: "Nothing posted",
-    revalFailed: "Revaluation failed",
-    history: "Revaluation history",
-    noHistory: "No revaluations yet.",
-    status: "Status",
-    statuses: { posted: "Posted", undone: "Undone", pending: "Pending" } as Record<string, string>,
-    undo: "Undo",
-    undone: "Revaluation undone",
-    exportEmpty: "No report data",
-    exportEmptyDesc: "FX Gains and Losses is still loading or has no rows to export.",
-    exported: "Report exported",
-    exportedDesc: "FX Gains and Losses has been downloaded.",
-    exportFailed: "Export failed",
-  },
-  ar: {
-    eyebrow: "المحاسبة",
-    title: "أسعار الصرف",
-    description: "أسعار صرف شركتك وتحويل العملات وإعادة تقييم العملات الأجنبية في نهاية الفترة",
-    backLabel: "العودة إلى التقارير",
-    addRate: "إضافة سعر",
-    adding: "جارٍ الإضافة...",
-    fxTitle: "أرباح وخسائر الصرف",
-    fxBasis:
-      "الأرصدة القائمة للفواتير وفواتير الموردين المرحّلة بالعملات الأجنبية والحسابات البنكية المرتبطة، مُعاد قياسها بسعر الإقفال (أو السعر الفوري عند عدم توفره). المسودات مستبعدة.",
-    asOf: "كما في",
-    today: "اليوم",
-    valuesIn: "القيم بعملة",
-    openExposures: "التعرضات القائمة",
-    unrealizedGains: "أرباح غير محققة",
-    unrealizedLosses: "خسائر غير محققة",
-    net: "صافي الربح / الخسارة",
-    type: "النوع",
-    foreignAmount: "المبلغ بالعملة الأجنبية",
-    transactionRate: "سعر القيد",
-    currentRate: "السعر الحالي",
-    gainLoss: "الربح / الخسارة",
-    noExposure: "لا توجد تعرضات قائمة بالعملات الأجنبية في التاريخ المحدد.",
-    kinds: { invoice: "فاتورة", bill: "فاتورة مورد", bank: "حساب بنكي" } as Record<string, string>,
-    converterTitle: "محول العملات",
-    converterDesc: "حوّل المبالغ باستخدام أسعار شركتك (وأسعار النظام كبديل)",
-    from: "من",
-    to: "إلى",
-    enterAmount: "أدخل المبلغ",
-    convert: "تحويل",
-    rateLabel: "السعر",
-    asOfShort: "بتاريخ",
-    savedRates: "الأسعار المحفوظة",
-    savedRatesDesc:
-      "أسعار الشركة تخص هذه الشركة فقط. أسعار النظام أسعار مرجعية للمنصة (مثل أسعار الهيئة الاتحادية للضرائب) تُستخدم عند عدم وجود سعر للشركة.",
-    noRates: "لم تتم إضافة أي أسعار صرف بعد.",
-    noRatesHint: "أضف أول سعر للبدء.",
-    rateType: "نوع السعر",
-    scope: "النطاق",
-    scopeCompany: "الشركة",
-    scopeSystem: "النظام",
-    stale: "قديم",
-    staleHint: `أقدم من ${STALE_DAYS} أيام`,
-    staleBannerTitle: "بعض أسعار الصرف قديمة",
-    staleBannerBody:
-      "لا يوجد سعر لهذه الأزواج خلال آخر {days} يوماً. ستظهر تنبيهات في المستندات وإعادة التقييم حتى تتم إضافة سعر أحدث:",
-    feedOffTitle: "تُدخل الأسعار يدويًا",
-    feedOffBody:
-      "يستخدم سعر الدرهم مقابل الدولار الأمريكي سعر الربط الثابت. أضف أسعار العملات الأخرى هنا.",
-    rewritten: "مُصحَّح",
-    rewrittenHint: "خُزّن معكوساً في إصدار سابق وصُحّح أثناء الترحيل",
-    rateTypes: { spot: "فوري", closing: "إقفال", average: "متوسط" } as Record<RateType, string>,
-    delete: "حذف",
-    addTitle: "إضافة سعر صرف",
-    addDesc: "تُخزّن الأسعار كعدد وحدات عملتك الأساسية مقابل وحدة واحدة من العملة الأجنبية.",
-    fromCurrency: "العملة المصدر",
-    toCurrency: "العملة الهدف",
-    rateHelp: (from: string, to: string) => `1 ${from} = ؟ ${to}`,
-    cancel: "إلغاء",
-    added: "تم حفظ سعر الصرف",
-    addFailed: "تعذرت إضافة السعر",
-    deleted: "تم حذف سعر الصرف",
-    invalidRate: "يرجى إدخال سعر صحيح",
-    sameCurrency: "يجب أن تكون العملتان مختلفتين",
-    invalidAmount: "يرجى إدخال مبلغ صحيح",
-    convertFailed: "فشل التحويل",
-    largeMoveTitle: "تغيّر كبير في السعر",
-    largeMoveConfirm: "حفظ على أي حال",
-    reval: "إعادة التقييم في نهاية الفترة",
-    revalDesc:
-      "يرحّل قيداً متوازناً واحداً لفروقات الصرف غير المحققة بتاريخ التقييم وقيداً عكسياً تلقائياً في اليوم التالي. تكرار التشغيل لنفس التاريخ لا يُحدث أي أثر.",
-    revalDate: "تاريخ إعادة التقييم",
-    preview: "معاينة",
-    run: "تشغيل إعادة التقييم",
-    running: "جارٍ الترحيل...",
-    previewTitle: "معاينة إعادة التقييم",
-    account: "الحساب",
-    debit: "مدين",
-    credit: "دائن",
-    nothingToPost: "لا يوجد ما يُعاد تقييمه في هذا التاريخ.",
-    alreadyPosted: "تم ترحيل إعادة تقييم لهذا التاريخ مسبقاً.",
-    reversalOn: "القيد العكسي التلقائي بتاريخ",
-    warnings: "تنبيهات",
-    missingRates: "أسعار مفقودة",
-    staleConfirmTitle: "بعض الأسعار قديمة",
-    staleConfirm: "الترحيل بهذه الأسعار",
-    bandTitle: "سعر بعيد عن السعر المرجعي",
-    bandReason: "لماذا هذا السعر صحيح؟",
-    bandReasonHint:
-      "للمالك أو المدير أو المحاسب أو المدير المالي فقط. يُحفظ السبب مع إعادة التقييم وفي سجل التدقيق.",
-    bandConfirm: "الترحيل بهذا السعر",
-    posted: "تم ترحيل إعادة التقييم",
-    noop: "لم يتم ترحيل شيء",
-    revalFailed: "فشلت إعادة التقييم",
-    history: "سجل إعادة التقييم",
-    noHistory: "لا توجد عمليات إعادة تقييم بعد.",
-    status: "الحالة",
-    statuses: { posted: "مرحّل", undone: "ملغى", pending: "قيد التنفيذ" } as Record<string, string>,
-    undo: "تراجع",
-    undone: "تم التراجع عن إعادة التقييم",
-    exportEmpty: "لا توجد بيانات للتقرير",
-    exportEmptyDesc: "تقرير أرباح وخسائر الصرف قيد التحميل أو لا يحتوي على صفوف للتصدير.",
-    exported: "تم تصدير التقرير",
-    exportedDesc: "تم تنزيل تقرير أرباح وخسائر الصرف.",
-    exportFailed: "فشل التصدير",
-  },
-};
+/** Page copy lives in locales/{en,ar}/exchangeRates.json (`exchangeRates.<key>`). */
+type Catalog = Record<string, string | undefined>;
+
+/**
+ * A grouped label (`exchangeRates.<group>.<value>`); an unknown value shows as it is. Only the
+ * source group lowercases its value (as the legacy source label did); the rest match exactly.
+ */
+function groupLabel(t: Catalog, group: string, value: string | null | undefined): string {
+  const raw = value ?? "";
+  const key = `exchangeRates.${group}.${group === "src" ? raw.toLowerCase() : raw}`;
+  const text = t[key];
+  return text && text !== key ? text : (value ?? "");
+}
 
 interface ExchangeRate {
   id: string;
@@ -392,53 +188,52 @@ interface Revaluation {
 const yesterdayIso = () => new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-/** G8: rate source as a label, never the raw value. */
-const SOURCE_LABELS: Record<string, { en: string; ar: string }> = {
-  manual: { en: "Manual", ar: "يدوي" },
-  cbuae: { en: "Central Bank", ar: "المصرف المركزي" },
-  identity: { en: "Fixed", ar: "ثابت" },
-  peg: { en: "Fixed peg", ar: "الربط الثابت" },
-  import: { en: "Imported", ar: "مستورد" },
-  system: { en: "System", ar: "النظام" },
-};
-
-function sourceLabel(source: string | null | undefined, locale: string): string {
-  const key = (source ?? "").toLowerCase();
-  const label = SOURCE_LABELS[key];
-  if (!label) return source ?? "";
-  return locale === "ar" ? label.ar : label.en;
-}
-
 /**
- * G9: the FX service words its warnings in English. Known shapes are re-worded in Arabic here
- * (pairs and dates stay as they are); anything else is shown unchanged.
+ * G9: the FX service words its warnings in English. Known shapes are re-worded in Arabic from
+ * the catalog (pairs and dates stay as they are); anything else is shown unchanged.
  */
-function localizeFxWarning(warning: string, locale: string): string {
+function localizeFxWarning(warning: string, locale: string, t: Catalog): string {
   if (locale !== "ar") return warning;
   const fallback = /^No (\w+) rate for ([A-Z]{3})\/([A-Z]{3}); the spot rate was used\.$/.exec(
     warning
   );
   if (fallback) {
-    const kind = { closing: "إقفال", average: "متوسط" }[fallback[1]] ?? fallback[1];
-    return `لا يوجد سعر ${kind} للزوج ${fallback[2]}/${fallback[3]}؛ استُخدم السعر الفوري.`;
+    const kind =
+      fallback[1] === "closing" || fallback[1] === "average"
+        ? groupLabel(t, "rt", fallback[1])
+        : fallback[1];
+    return formatMessage(t["exchangeRates.warnFallback"], {
+      kind,
+      from: fallback[2],
+      to: fallback[3],
+    });
   }
   const missing = /^No ([A-Z]{3})→([A-Z]{3}) exchange rate on or before (\S+)$/.exec(warning);
   if (missing) {
-    return `لا يوجد سعر صرف ${missing[1]}→${missing[2]} في ${missing[3]} أو قبله`;
+    return formatMessage(t["exchangeRates.warnMissing"], {
+      from: missing[1],
+      to: missing[2],
+      date: missing[3],
+    });
   }
   const stale =
     /^Rate ([A-Z]{3})\/([A-Z]{3}) is (\d+) days old \(dated (\S+)\); the proximity limit is (\d+) days\.$/.exec(
       warning
     );
   if (stale) {
-    return `عمر سعر ${stale[1]}/${stale[2]} ${stale[3]} يومًا (بتاريخ ${stale[4]})؛ الحد المسموح ${stale[5]} يومًا.`;
+    return formatMessage(t["exchangeRates.warnStale"], {
+      from: stale[1],
+      to: stale[2],
+      age: stale[3],
+      date: stale[4],
+      limit: stale[5],
+    });
   }
   return warning;
 }
 
 export default function ExchangeRates() {
   const { locale, t } = useTranslation();
-  const s = locale === "ar" ? STRINGS.ar : STRINGS.en;
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -534,15 +329,15 @@ export default function ExchangeRates() {
         r.toCurrency,
         `${r.fromCurrency}/${r.toCurrency}`,
         r.rateType,
-        s.rateTypes[r.rateType],
+        groupLabel(t, "rt", r.rateType),
         r.source,
-        sourceLabel(r.source, locale),
+        groupLabel(t, "src", r.source),
       ]
         .join(" ")
         .toLowerCase()
         .includes(q)
     );
-  }, [rates, rateSearch, s, locale]);
+  }, [rates, rateSearch, t]);
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: [ratesKey] });
@@ -579,14 +374,18 @@ export default function ExchangeRates() {
       setShowAddDialog(false);
       setLargeMove(null);
       setFormRate(pegRatePrefill(formFromCurrency, formToCurrency));
-      toast({ title: s.added });
+      toast({ title: t["exchangeRates.added"] });
     },
     onError: (error: Error) => {
       if (error instanceof ApiError && error.status === 409) {
         setLargeMove(error.message);
         return;
       }
-      toast({ title: s.addFailed, description: error?.message, variant: "destructive" });
+      toast({
+        title: t["exchangeRates.addFailed"],
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -603,11 +402,11 @@ export default function ExchangeRates() {
         old ? old.filter((r) => r.id !== id) : old
       );
       invalidateAll();
-      toast({ title: s.deleted });
+      toast({ title: t["exchangeRates.deleted"] });
     },
     onError: (error: Error) => {
       toast({
-        title: t["pages.exchangeRatesDeleteFailed"],
+        title: t["exchangeRates.deleteFailed"],
         description: error?.message,
         variant: "destructive",
       });
@@ -625,7 +424,11 @@ export default function ExchangeRates() {
     },
     onSuccess: (data: ConvertResult) => setConvertResult(data),
     onError: (error: Error) => {
-      toast({ title: s.convertFailed, description: error?.message, variant: "destructive" });
+      toast({
+        title: t["exchangeRates.convertFailed"],
+        description: error?.message,
+        variant: "destructive",
+      });
       setConvertResult(null);
     },
   });
@@ -636,7 +439,11 @@ export default function ExchangeRates() {
     onSuccess: (data) => setPreview(data),
     onError: (error: Error) => {
       setPreview(null);
-      toast({ title: s.revalFailed, description: error?.message, variant: "destructive" });
+      toast({
+        title: t["exchangeRates.revalFailed"],
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -651,12 +458,15 @@ export default function ExchangeRates() {
       setBandReason("");
       invalidateAll();
       if (data.posted) {
-        toast({ title: s.posted, description: data.netGainLoss });
+        toast({ title: t["exchangeRates.posted"], description: data.netGainLoss });
         setPreview(null);
       } else {
         toast({
-          title: s.noop,
-          description: data.reason === "ALREADY_POSTED" ? s.alreadyPosted : s.nothingToPost,
+          title: t["exchangeRates.noop"],
+          description:
+            data.reason === "ALREADY_POSTED"
+              ? t["exchangeRates.alreadyPosted"]
+              : t["exchangeRates.nothingToPost"],
         });
       }
     },
@@ -670,7 +480,11 @@ export default function ExchangeRates() {
         setStaleConfirm(error.message);
         return;
       }
-      toast({ title: s.revalFailed, description: error?.message, variant: "destructive" });
+      toast({
+        title: t["exchangeRates.revalFailed"],
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -679,10 +493,14 @@ export default function ExchangeRates() {
     onSuccess: () => {
       invalidateAll();
       setPreview(null);
-      toast({ title: s.undone });
+      toast({ title: t["exchangeRates.undone"] });
     },
     onError: (error: Error) => {
-      toast({ title: s.revalFailed, description: error?.message, variant: "destructive" });
+      toast({
+        title: t["exchangeRates.revalFailed"],
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -701,11 +519,11 @@ export default function ExchangeRates() {
   const submitRate = (confirmLargeMove: boolean) => {
     const rate = parseFloat(formRate);
     if (isNaN(rate) || rate <= 0) {
-      toast({ title: s.invalidRate, variant: "destructive" });
+      toast({ title: t["exchangeRates.invalidRate"], variant: "destructive" });
       return;
     }
     if (formFromCurrency === formToCurrency) {
-      toast({ title: s.sameCurrency, variant: "destructive" });
+      toast({ title: t["exchangeRates.sameCurrency"], variant: "destructive" });
       return;
     }
     createMutation.mutate({
@@ -721,7 +539,7 @@ export default function ExchangeRates() {
   const handleConvert = () => {
     const amount = parseFloat(convertAmount);
     if (isNaN(amount) || amount <= 0) {
-      toast({ title: s.invalidAmount, variant: "destructive" });
+      toast({ title: t["exchangeRates.invalidAmount"], variant: "destructive" });
       return;
     }
     convertMutation.mutate();
@@ -729,15 +547,22 @@ export default function ExchangeRates() {
 
   const handleExportFxReport = async () => {
     if (!fxReport || fxMaybeStale) {
-      toast({ title: s.exportEmpty, description: s.exportEmptyDesc, variant: "destructive" });
+      toast({
+        title: t["exchangeRates.exportEmpty"],
+        description: t["exchangeRates.exportEmptyDesc"],
+        variant: "destructive",
+      });
       return;
     }
     try {
       await exportToExcel(prepareFxGainsLossesForExport(fxReport), `fx_gains_losses_${todayIso()}`);
-      toast({ title: s.exported, description: s.exportedDesc });
+      toast({
+        title: t["exchangeRates.exported"],
+        description: t["exchangeRates.exportedDesc"],
+      });
     } catch (error) {
       toast({
-        title: s.exportFailed,
+        title: t["exchangeRates.exportFailed"],
         description: error instanceof Error ? error.message : undefined,
         variant: "destructive",
       });
@@ -770,6 +595,7 @@ export default function ExchangeRates() {
   }
 
   const base = fxReport?.baseCurrency || "AED";
+  const staleHint = formatMessage(t["exchangeRates.staleHint"], { days: STALE_DAYS });
   const exposureRows = [
     ...(fxReport?.receivables ?? []),
     ...(fxReport?.payables ?? []),
@@ -794,11 +620,11 @@ export default function ExchangeRates() {
   return (
     <div className="p-6 space-y-6">
       <PageHeader
-        eyebrow={s.eyebrow}
-        title={s.title}
-        description={s.description}
+        eyebrow={t["exchangeRates.eyebrow"]}
+        title={t["exchangeRates.title"]}
+        description={t["exchangeRates.description"]}
         backHref="/reports"
-        backLabel={s.backLabel}
+        backLabel={t["exchangeRates.backLabel"]}
         actions={
           <>
             <Button
@@ -816,59 +642,59 @@ export default function ExchangeRates() {
               {...gate("documents.write")}
             >
               <Plus className="h-4 w-4 me-2" />
-              {s.addRate}
+              {t["exchangeRates.addRate"]}
             </Button>
           </>
         }
       />
 
       {feedStatus && feedStatus.stale.length > 0 && (
-        <Alert tone="warning" title={s.staleBannerTitle} data-testid="banner-stale-rates">
-          {s.staleBannerBody.replace("{days}", String(feedStatus.maxAgeDays))}{" "}
+        <Alert
+          tone="warning"
+          title={t["exchangeRates.staleBannerTitle"]}
+          data-testid="banner-stale-rates"
+        >
+          {formatMessage(t["exchangeRates.staleBannerBody"], { days: feedStatus.maxAgeDays })}{" "}
           {feedStatus.stale
             .map(
-              (p) =>
-                `${p.pair} (${s.rateTypes[p.rateType as RateType] ?? p.rateType}, ${formatDate(p.date, locale)})`
+              (p) => `${p.pair} (${groupLabel(t, "rt", p.rateType)}, ${formatDate(p.date, locale)})`
             )
             .join(", ")}
         </Alert>
       )}
       {feedStatus && feedStatus.feed.capability !== "live" && (
-        <SetupNotice title={s.feedOffTitle} testId="banner-feed-off">
-          {s.feedOffBody}
+        <SetupNotice title={t["exchangeRates.feedOffTitle"]} testId="banner-feed-off">
+          {t["exchangeRates.feedOffBody"]}
         </SetupNotice>
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle>{s.fxTitle}</CardTitle>
+          <CardTitle>{t["exchangeRates.fxTitle"]}</CardTitle>
           <CardDescription>
-            {s.asOf} {fxReport?.asOf ? formatDate(fxReport.asOf, locale) : s.today} · {s.fxBasis}{" "}
-            {s.valuesIn} {base}.
+            {t["exchangeRates.asOf"]}{" "}
+            {fxReport?.asOf ? formatDate(fxReport.asOf, locale) : t["exchangeRates.today"]} ·{" "}
+            {t["exchangeRates.fxBasis"]} {t["exchangeRates.valuesIn"]} {base}.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {fxReport === undefined ? (
             fxPaused ? (
-              <Alert
-                tone="neutral"
-                title={t["pages.exchangeRatesPausedTitle"]}
-                data-testid="fx-paused"
-              >
-                {t["pages.exchangeRatesPausedBody"]}
+              <Alert tone="neutral" title={t["exchangeRates.pausedTitle"]} data-testid="fx-paused">
+                {t["exchangeRates.pausedBody"]}
               </Alert>
             ) : fxLoadFailed ? (
               <Alert
                 tone="danger"
-                title={t["pages.exchangeRatesFxLoadFailedTitle"]}
+                title={t["exchangeRates.fxLoadFailedTitle"]}
                 data-testid="fx-load-error"
                 action={
                   <Button size="sm" variant="outline" onClick={() => void refetchFx()}>
-                    {t["pages.exchangeRatesRetry"]}
+                    {t["exchangeRates.retry"]}
                   </Button>
                 }
               >
-                {t["pages.exchangeRatesFxLoadFailedBody"]}
+                {t["exchangeRates.fxLoadFailedBody"]}
               </Alert>
             ) : (
               <div className="space-y-3">
@@ -881,31 +707,31 @@ export default function ExchangeRates() {
               {fxRefreshFailed && (
                 <Alert
                   tone="warning"
-                  title={t["pages.exchangeRatesFxRefreshFailedTitle"]}
+                  title={t["exchangeRates.fxRefreshFailedTitle"]}
                   data-testid="fx-refresh-error"
                   action={
                     <Button size="sm" variant="outline" onClick={() => void refetchFx()}>
-                      {t["pages.exchangeRatesRetry"]}
+                      {t["exchangeRates.retry"]}
                     </Button>
                   }
                 >
-                  {t["pages.exchangeRatesFxRefreshFailedBody"]}
+                  {t["exchangeRates.fxRefreshFailedBody"]}
                 </Alert>
               )}
               {fxRefreshPaused && (
                 <Alert
                   tone="neutral"
-                  title={t["pages.exchangeRatesRefreshPausedTitle"]}
+                  title={t["exchangeRates.refreshPausedTitle"]}
                   data-testid="fx-refresh-paused"
                 >
-                  {t["pages.exchangeRatesFxRefreshPausedBody"]}
+                  {t["exchangeRates.fxRefreshPausedBody"]}
                 </Alert>
               )}
               {(fxReport?.warnings ?? []).length > 0 && (
-                <Alert tone="warning" title={s.warnings}>
+                <Alert tone="warning" title={t["exchangeRates.warnings"]}>
                   <ul className="list-disc ps-5">
                     {fxReport?.warnings?.map((w) => (
-                      <li key={w}>{localizeFxWarning(w, locale)}</li>
+                      <li key={w}>{localizeFxWarning(w, locale, t)}</li>
                     ))}
                   </ul>
                 </Alert>
@@ -913,22 +739,29 @@ export default function ExchangeRates() {
               {/* Spec 2.6: no KPI tiles or empty table while nothing is exposed. */}
               {exposureRows.length === 0 ? (
                 fxShowEmpty ? (
-                  <EmptyState size="sm" title={s.noExposure} testId="fx-exposure-empty" />
+                  <EmptyState
+                    size="sm"
+                    title={t["exchangeRates.noExposure"]}
+                    testId="fx-exposure-empty"
+                  />
                 ) : null
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-                    <StatCard label={s.openExposures} value={exposureRows.length} />
                     <StatCard
-                      label={s.unrealizedGains}
+                      label={t["exchangeRates.openExposures"]}
+                      value={exposureRows.length}
+                    />
+                    <StatCard
+                      label={t["exchangeRates.unrealizedGains"]}
                       value={<Money amount={fxReport?.totalUnrealizedGain ?? 0} currency={base} />}
                     />
                     <StatCard
-                      label={s.unrealizedLosses}
+                      label={t["exchangeRates.unrealizedLosses"]}
                       value={<Money amount={fxReport?.totalUnrealizedLoss ?? 0} currency={base} />}
                     />
                     <StatCard
-                      label={s.net}
+                      label={t["exchangeRates.net"]}
                       value={
                         <Money amount={fxReport?.netUnrealizedGainLoss ?? 0} currency={base} />
                       }
@@ -939,7 +772,7 @@ export default function ExchangeRates() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>{s.type}</TableHead>
+                          <TableHead>{t["exchangeRates.type"]}</TableHead>
                           <TableHead>
                             <T k="pages.reference" />
                           </TableHead>
@@ -949,10 +782,16 @@ export default function ExchangeRates() {
                           <TableHead>
                             <T k="pages.currency" />
                           </TableHead>
-                          <TableHead className="text-end">{s.foreignAmount}</TableHead>
-                          <TableHead className="text-end">{s.transactionRate}</TableHead>
-                          <TableHead className="text-end">{s.currentRate}</TableHead>
-                          <TableHead className="text-end">{s.gainLoss}</TableHead>
+                          <TableHead className="text-end">
+                            {t["exchangeRates.foreignAmount"]}
+                          </TableHead>
+                          <TableHead className="text-end">
+                            {t["exchangeRates.transactionRate"]}
+                          </TableHead>
+                          <TableHead className="text-end">
+                            {t["exchangeRates.currentRate"]}
+                          </TableHead>
+                          <TableHead className="text-end">{t["exchangeRates.gainLoss"]}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -962,13 +801,13 @@ export default function ExchangeRates() {
                               colSpan={8}
                               className="py-8 text-center text-muted-foreground"
                             >
-                              {s.noExposure}
+                              {t["exchangeRates.noExposure"]}
                             </TableCell>
                           </TableRow>
                         ) : (
                           exposureRows.map((row) => (
                             <TableRow key={`${row.entityType}-${row.entityId}`}>
-                              <TableCell>{s.kinds[row.entityType] ?? row.entityType}</TableCell>
+                              <TableCell>{groupLabel(t, "kind", row.entityType)}</TableCell>
                               <TableCell className="font-mono text-sm">
                                 {row.entityNumber}
                               </TableCell>
@@ -983,8 +822,8 @@ export default function ExchangeRates() {
                               <TableCell className="text-end font-mono">
                                 {formatNumber(row.currentRate, locale)}
                                 {row.stale && (
-                                  <Badge variant="outline" className="ms-2" title={s.staleHint}>
-                                    {s.stale}
+                                  <Badge variant="outline" className="ms-2" title={staleHint}>
+                                    {t["exchangeRates.stale"]}
                                   </Badge>
                                 )}
                               </TableCell>
@@ -1011,13 +850,13 @@ export default function ExchangeRates() {
       {/* Period-end revaluation */}
       <Card>
         <CardHeader>
-          <CardTitle>{s.reval}</CardTitle>
-          <CardDescription>{s.revalDesc}</CardDescription>
+          <CardTitle>{t["exchangeRates.reval"]}</CardTitle>
+          <CardDescription>{t["exchangeRates.revalDesc"]}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-end">
             <div className="space-y-2">
-              <Label htmlFor="reval-date">{s.revalDate}</Label>
+              <Label htmlFor="reval-date">{t["exchangeRates.revalDate"]}</Label>
               <DatePicker
                 id="reval-date"
                 max={todayIso()}
@@ -1035,7 +874,7 @@ export default function ExchangeRates() {
               data-testid="button-reval-preview"
             >
               <Eye className="h-4 w-4 me-2" />
-              {s.preview}
+              {t["exchangeRates.preview"]}
             </Button>
             <Button
               onClick={() => runMutation.mutate({ acknowledgeStale: false })}
@@ -1049,41 +888,41 @@ export default function ExchangeRates() {
               data-testid="button-reval-run"
             >
               <PlayCircle className="h-4 w-4 me-2" />
-              {runMutation.isPending ? s.running : s.run}
+              {runMutation.isPending ? t["exchangeRates.running"] : t["exchangeRates.run"]}
             </Button>
           </div>
 
           {preview && (
             <div className="space-y-3 rounded-md border p-4">
               <p className="font-medium">
-                {s.previewTitle} · {formatDate(preview.asOf, locale)} · {s.reversalOn}{" "}
-                {formatDate(preview.reversalDate, locale)}
+                {t["exchangeRates.previewTitle"]} · {formatDate(preview.asOf, locale)} ·{" "}
+                {t["exchangeRates.reversalOn"]} {formatDate(preview.reversalDate, locale)}
               </p>
               {preview.alreadyPosted && (
-                <p className="text-sm text-muted-foreground">{s.alreadyPosted}</p>
+                <p className="text-sm text-muted-foreground">{t["exchangeRates.alreadyPosted"]}</p>
               )}
               {preview.missingRates.length > 0 && (
                 <p className="text-sm text-destructive">
-                  {s.missingRates}:{" "}
+                  {t["exchangeRates.missingRates"]}:{" "}
                   {[...new Set(preview.missingRates.map((m) => m.currency))].join(", ")}
                 </p>
               )}
               {preview.warnings.length > 0 && (
                 <ul className="list-disc ps-5 text-sm text-muted-foreground">
                   {preview.warnings.map((w) => (
-                    <li key={w}>{localizeFxWarning(w, locale)}</li>
+                    <li key={w}>{localizeFxWarning(w, locale, t)}</li>
                   ))}
                 </ul>
               )}
               {preview.lines.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{s.nothingToPost}</p>
+                <p className="text-sm text-muted-foreground">{t["exchangeRates.nothingToPost"]}</p>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>{s.account}</TableHead>
-                      <TableHead className="text-end">{s.debit}</TableHead>
-                      <TableHead className="text-end">{s.credit}</TableHead>
+                      <TableHead>{t["exchangeRates.account"]}</TableHead>
+                      <TableHead className="text-end">{t["exchangeRates.debit"]}</TableHead>
+                      <TableHead className="text-end">{t["exchangeRates.credit"]}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1101,7 +940,7 @@ export default function ExchangeRates() {
                       </TableRow>
                     ))}
                     <TableRow>
-                      <TableCell className="font-medium">{s.net}</TableCell>
+                      <TableCell className="font-medium">{t["exchangeRates.net"]}</TableCell>
                       <TableCell colSpan={2} className="text-end font-mono font-medium">
                         {formatCurrency(Number(preview.netGainLoss), preview.baseCurrency, locale)}
                       </TableCell>
@@ -1113,16 +952,16 @@ export default function ExchangeRates() {
           )}
 
           <div>
-            <p className="mb-2 font-medium">{s.history}</p>
+            <p className="mb-2 font-medium">{t["exchangeRates.history"]}</p>
             {!history || history.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{s.noHistory}</p>
+              <p className="text-sm text-muted-foreground">{t["exchangeRates.noHistory"]}</p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{s.revalDate}</TableHead>
-                    <TableHead>{s.status}</TableHead>
-                    <TableHead className="text-end">{s.net}</TableHead>
+                    <TableHead>{t["exchangeRates.revalDate"]}</TableHead>
+                    <TableHead>{t["exchangeRates.status"]}</TableHead>
+                    <TableHead className="text-end">{t["exchangeRates.net"]}</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
@@ -1132,7 +971,7 @@ export default function ExchangeRates() {
                       <TableCell>{formatDate(r.asOf, locale)}</TableCell>
                       <TableCell>
                         <Badge variant={r.status === "posted" ? "default" : "outline"}>
-                          {s.statuses[r.status] ?? r.status}
+                          {groupLabel(t, "status", r.status)}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-end font-mono">
@@ -1147,7 +986,7 @@ export default function ExchangeRates() {
                             disabled={undoMutation.isPending}
                           >
                             <Undo2 className="h-4 w-4 me-1" />
-                            {s.undo}
+                            {t["exchangeRates.undo"]}
                           </Button>
                         )}
                       </TableCell>
@@ -1165,18 +1004,18 @@ export default function ExchangeRates() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ArrowRightLeft className="h-5 w-5" />
-            {s.converterTitle}
+            {t["exchangeRates.converterTitle"]}
           </CardTitle>
-          <CardDescription>{s.converterDesc}</CardDescription>
+          <CardDescription>{t["exchangeRates.converterDesc"]}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
             <div className="space-y-2">
-              <Label>{s.from}</Label>
+              <Label>{t["exchangeRates.from"]}</Label>
               {currencySelect(convertFrom, setConvertFrom, "select-convert-from")}
             </div>
             <div className="space-y-2">
-              <Label>{s.to}</Label>
+              <Label>{t["exchangeRates.to"]}</Label>
               {currencySelect(convertTo, setConvertTo, "select-convert-to")}
             </div>
             <div className="space-y-2">
@@ -1187,7 +1026,7 @@ export default function ExchangeRates() {
                 type="number"
                 step="0.01"
                 min="0"
-                placeholder={s.enterAmount}
+                placeholder={t["exchangeRates.enterAmount"]}
                 value={convertAmount}
                 onChange={(e) => {
                   setConvertAmount(e.target.value);
@@ -1201,7 +1040,7 @@ export default function ExchangeRates() {
               ) : (
                 <ArrowRightLeft className="h-4 w-4 me-2" />
               )}
-              {s.convert}
+              {t["exchangeRates.convert"]}
             </Button>
           </div>
           {convertResult && (
@@ -1211,12 +1050,13 @@ export default function ExchangeRates() {
                 {formatNumber(convertResult.convertedAmount, locale)} {convertResult.to}
               </p>
               <p className="text-sm text-muted-foreground">
-                {s.rateLabel}: 1 {convertResult.from} = {convertResult.rate.toFixed(6)}{" "}
-                {convertResult.to}
+                {t["exchangeRates.rateLabel"]}: 1 {convertResult.from} ={" "}
+                {convertResult.rate.toFixed(6)} {convertResult.to}
                 {convertResult.effectiveDate && (
                   <>
                     {" "}
-                    ({s.asOfShort} {formatDate(convertResult.effectiveDate, locale)})
+                    ({t["exchangeRates.asOfShort"]}{" "}
+                    {formatDate(convertResult.effectiveDate, locale)})
                   </>
                 )}
               </p>
@@ -1234,31 +1074,31 @@ export default function ExchangeRates() {
       {/* Saved rates */}
       <Card>
         <CardHeader>
-          <CardTitle>{s.savedRates}</CardTitle>
-          <CardDescription>{s.savedRatesDesc}</CardDescription>
+          <CardTitle>{t["exchangeRates.savedRates"]}</CardTitle>
+          <CardDescription>{t["exchangeRates.savedRatesDesc"]}</CardDescription>
         </CardHeader>
         <CardContent>
           {rates === undefined ? (
             ratesPaused ? (
               <Alert
                 tone="neutral"
-                title={t["pages.exchangeRatesPausedTitle"]}
+                title={t["exchangeRates.pausedTitle"]}
                 data-testid="rates-paused"
               >
-                {t["pages.exchangeRatesPausedBody"]}
+                {t["exchangeRates.pausedBody"]}
               </Alert>
             ) : ratesLoadFailed ? (
               <Alert
                 tone="danger"
-                title={t["pages.exchangeRatesLoadFailedTitle"]}
+                title={t["exchangeRates.loadFailedTitle"]}
                 data-testid="rates-load-error"
                 action={
                   <Button size="sm" variant="outline" onClick={() => void refetchRates()}>
-                    {t["pages.exchangeRatesRetry"]}
+                    {t["exchangeRates.retry"]}
                   </Button>
                 }
               >
-                {t["pages.exchangeRatesLoadFailedBody"]}
+                {t["exchangeRates.loadFailedBody"]}
               </Alert>
             ) : (
               <div className="space-y-2">
@@ -1272,32 +1112,32 @@ export default function ExchangeRates() {
               {ratesRefreshFailed && (
                 <Alert
                   tone="warning"
-                  title={t["pages.exchangeRatesRefreshFailedTitle"]}
+                  title={t["exchangeRates.refreshFailedTitle"]}
                   data-testid="rates-refresh-error"
                   action={
                     <Button size="sm" variant="outline" onClick={() => void refetchRates()}>
-                      {t["pages.exchangeRatesRetry"]}
+                      {t["exchangeRates.retry"]}
                     </Button>
                   }
                 >
-                  {t["pages.exchangeRatesRefreshFailedBody"]}
+                  {t["exchangeRates.refreshFailedBody"]}
                 </Alert>
               )}
               {ratesRefreshPaused && (
                 <Alert
                   tone="neutral"
-                  title={t["pages.exchangeRatesRefreshPausedTitle"]}
+                  title={t["exchangeRates.refreshPausedTitle"]}
                   data-testid="rates-refresh-paused"
                 >
-                  {t["pages.exchangeRatesRefreshPausedBody"]}
+                  {t["exchangeRates.refreshPausedBody"]}
                 </Alert>
               )}
               {rates.length === 0 ? (
                 ratesShowEmpty && (
                   <div className="text-center py-8 text-muted-foreground" data-testid="rates-empty">
                     <ArrowRightLeft className="h-12 w-12 mx-auto mb-2 opacity-30" />
-                    <p>{s.noRates}</p>
-                    <p className="text-sm">{s.noRatesHint}</p>
+                    <p>{t["exchangeRates.noRates"]}</p>
+                    <p className="text-sm">{t["exchangeRates.noRatesHint"]}</p>
                   </div>
                 )
               ) : (
@@ -1306,8 +1146,8 @@ export default function ExchangeRates() {
                     type="search"
                     value={rateSearch}
                     onChange={(e) => setRateSearch(e.target.value)}
-                    placeholder={t["pages.exchangeRatesSearchPlaceholder"]}
-                    aria-label={t["pages.exchangeRatesSearchLabel"]}
+                    placeholder={t["exchangeRates.searchPlaceholder"]}
+                    aria-label={t["exchangeRates.searchLabel"]}
                     data-testid="input-rate-search"
                     className="max-w-sm"
                   />
@@ -1316,9 +1156,9 @@ export default function ExchangeRates() {
                       className="py-8 text-center text-muted-foreground"
                       data-testid="rates-no-match"
                     >
-                      <p>{t["pages.exchangeRatesNoMatch"]}</p>
+                      <p>{t["exchangeRates.noMatch"]}</p>
                       <Button variant="link" size="sm" onClick={() => setRateSearch("")}>
-                        {t["pages.exchangeRatesClearSearch"]}
+                        {t["exchangeRates.clearSearch"]}
                       </Button>
                     </div>
                   ) : (
@@ -1326,14 +1166,16 @@ export default function ExchangeRates() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>{s.from}</TableHead>
-                            <TableHead>{s.to}</TableHead>
-                            <TableHead className="text-end">{s.rateLabel}</TableHead>
-                            <TableHead>{s.rateType}</TableHead>
+                            <TableHead>{t["exchangeRates.from"]}</TableHead>
+                            <TableHead>{t["exchangeRates.to"]}</TableHead>
+                            <TableHead className="text-end">
+                              {t["exchangeRates.rateLabel"]}
+                            </TableHead>
+                            <TableHead>{t["exchangeRates.rateType"]}</TableHead>
                             <TableHead>
                               <T k="pages.effectiveDate" />
                             </TableHead>
-                            <TableHead>{s.scope}</TableHead>
+                            <TableHead>{t["exchangeRates.scope"]}</TableHead>
                             <TableHead>
                               <T k="pages.source" />
                             </TableHead>
@@ -1348,32 +1190,38 @@ export default function ExchangeRates() {
                               <TableCell className="text-end font-mono">
                                 {Number(rate.rate).toFixed(6)}
                               </TableCell>
-                              <TableCell>{s.rateTypes[rate.rateType] ?? rate.rateType}</TableCell>
+                              <TableCell>{groupLabel(t, "rt", rate.rateType)}</TableCell>
                               <TableCell>
                                 {formatDate(rate.effectiveDate, locale)}
                                 {staleIds.has(rate.id) && (
-                                  <Badge variant="outline" className="ms-2" title={s.staleHint}>
-                                    {s.stale}
+                                  <Badge variant="outline" className="ms-2" title={staleHint}>
+                                    {t["exchangeRates.stale"]}
                                   </Badge>
                                 )}
                               </TableCell>
                               <TableCell>
                                 <Badge variant={rate.scope === "company" ? "secondary" : "outline"}>
-                                  {rate.scope === "company" ? s.scopeCompany : s.scopeSystem}
+                                  {rate.scope === "company"
+                                    ? t["exchangeRates.scopeCompany"]
+                                    : t["exchangeRates.scopeSystem"]}
                                 </Badge>
                                 {rate.legacyInverted && (
-                                  <Badge variant="outline" className="ms-2" title={s.rewrittenHint}>
-                                    {s.rewritten}
+                                  <Badge
+                                    variant="outline"
+                                    className="ms-2"
+                                    title={t["exchangeRates.rewrittenHint"]}
+                                  >
+                                    {t["exchangeRates.rewritten"]}
                                   </Badge>
                                 )}
                               </TableCell>
-                              <TableCell>{sourceLabel(rate.source, locale)}</TableCell>
+                              <TableCell>{groupLabel(t, "src", rate.source)}</TableCell>
                               <TableCell className="text-end">
                                 {rate.scope === "company" && (
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    aria-label={s.delete}
+                                    aria-label={t["exchangeRates.delete"]}
                                     onClick={() => deleteMutation.mutate(rate.id)}
                                     disabled={deleteMutation.isPending}
                                   >
@@ -1404,23 +1252,23 @@ export default function ExchangeRates() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{s.addTitle}</DialogTitle>
-            <DialogDescription>{s.addDesc}</DialogDescription>
+            <DialogTitle>{t["exchangeRates.addTitle"]}</DialogTitle>
+            <DialogDescription>{t["exchangeRates.addDesc"]}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{s.fromCurrency}</Label>
+                <Label>{t["exchangeRates.fromCurrency"]}</Label>
                 {currencySelect(formFromCurrency, changePair("from"), "select-rate-from")}
               </div>
               <div className="space-y-2">
-                <Label>{s.toCurrency}</Label>
+                <Label>{t["exchangeRates.toCurrency"]}</Label>
                 {currencySelect(formToCurrency, changePair("to"), "select-rate-to")}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{s.rateLabel}</Label>
+                <Label>{t["exchangeRates.rateLabel"]}</Label>
                 <Input
                   type="number"
                   step="0.000001"
@@ -1434,11 +1282,14 @@ export default function ExchangeRates() {
                   data-testid="input-rate"
                 />
                 <p className="text-xs text-muted-foreground">
-                  {s.rateHelp(formFromCurrency, formToCurrency)}
+                  {formatMessage(t["exchangeRates.rateHelp"], {
+                    from: formFromCurrency,
+                    to: formToCurrency,
+                  })}
                 </p>
               </div>
               <div className="space-y-2">
-                <Label>{s.rateType}</Label>
+                <Label>{t["exchangeRates.rateType"]}</Label>
                 <Select value={formRateType} onValueChange={(v) => setFormRateType(v as RateType)}>
                   <SelectTrigger>
                     <SelectValue />
@@ -1446,7 +1297,7 @@ export default function ExchangeRates() {
                   <SelectContent>
                     {RATE_TYPES.map((rt) => (
                       <SelectItem key={rt} value={rt}>
-                        {s.rateTypes[rt]}
+                        {groupLabel(t, "rt", rt)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1464,22 +1315,22 @@ export default function ExchangeRates() {
               />
             </div>
             {largeMove && (
-              <Alert tone="warning" title={s.largeMoveTitle}>
+              <Alert tone="warning" title={t["exchangeRates.largeMoveTitle"]}>
                 {largeMove}
               </Alert>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>
-              {s.cancel}
+              {t["exchangeRates.cancel"]}
             </Button>
             {largeMove ? (
               <Button onClick={() => submitRate(true)} disabled={createMutation.isPending}>
-                {s.largeMoveConfirm}
+                {t["exchangeRates.largeMoveConfirm"]}
               </Button>
             ) : (
               <Button onClick={() => submitRate(false)} disabled={createMutation.isPending}>
-                {createMutation.isPending ? s.adding : s.addRate}
+                {createMutation.isPending ? t["exchangeRates.adding"] : t["exchangeRates.addRate"]}
               </Button>
             )}
           </DialogFooter>
@@ -1490,18 +1341,18 @@ export default function ExchangeRates() {
       <Dialog open={!!staleConfirm} onOpenChange={(open) => !open && setStaleConfirm(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{s.staleConfirmTitle}</DialogTitle>
+            <DialogTitle>{t["exchangeRates.staleConfirmTitle"]}</DialogTitle>
             <DialogDescription>{staleConfirm}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStaleConfirm(null)}>
-              {s.cancel}
+              {t["exchangeRates.cancel"]}
             </Button>
             <Button
               onClick={() => runMutation.mutate({ acknowledgeStale: true })}
               disabled={runMutation.isPending}
             >
-              {s.staleConfirm}
+              {t["exchangeRates.staleConfirm"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1511,22 +1362,22 @@ export default function ExchangeRates() {
       <Dialog open={!!bandConfirm} onOpenChange={(open) => !open && setBandConfirm(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{s.bandTitle}</DialogTitle>
+            <DialogTitle>{t["exchangeRates.bandTitle"]}</DialogTitle>
             <DialogDescription>{bandConfirm}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="reval-band-reason">{s.bandReason}</Label>
+            <Label htmlFor="reval-band-reason">{t["exchangeRates.bandReason"]}</Label>
             <Input
               id="reval-band-reason"
               value={bandReason}
               onChange={(e) => setBandReason(e.target.value)}
               data-testid="input-reval-band-reason"
             />
-            <p className="text-sm text-muted-foreground">{s.bandReasonHint}</p>
+            <p className="text-sm text-muted-foreground">{t["exchangeRates.bandReasonHint"]}</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBandConfirm(null)}>
-              {s.cancel}
+              {t["exchangeRates.cancel"]}
             </Button>
             <Button
               onClick={() =>
@@ -1535,7 +1386,7 @@ export default function ExchangeRates() {
               disabled={runMutation.isPending || bandReason.trim().length < 5}
               data-testid="button-reval-band-confirm"
             >
-              {s.bandConfirm}
+              {t["exchangeRates.bandConfirm"]}
             </Button>
           </DialogFooter>
         </DialogContent>

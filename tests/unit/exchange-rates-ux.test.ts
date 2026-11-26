@@ -92,7 +92,7 @@ async function render(
   test: (node: HTMLDivElement, client: QueryClient) => Promise<void>,
   options: { offline?: boolean } = {}
 ) {
-  await loadNamespaces(locale, ["common", "components", "pages"]);
+  await loadNamespaces(locale, ["common", "components", "pages", "exchangeRates"]);
   const prior = useI18n.getState().locale;
   const env = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
   const priorEnv = env.IS_REACT_ACT_ENVIRONMENT;
