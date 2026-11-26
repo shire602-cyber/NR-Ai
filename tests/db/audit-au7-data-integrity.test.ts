@@ -54,6 +54,67 @@ it("AU7 preserves the cost centre referenced by a budget plan", async () => {
   expect(row.code).toBe("P01");
 });
 
+it.each([
+  { route: "new-version", body: {} },
+  { route: "copy", body: { fiscalYear: 2027 } },
+])(
+  "AU7 budget $route clears only dangling cost centres and leaves the approved source",
+  async ({ route, body }) => {
+    const tenant = await h.createTenant({ planId: "enterprise" });
+    const base = `/api/companies/${tenant.company.id}`;
+    const center = await tenant.as.post(`${base}/cost-centers`, {
+      code: "P01",
+      name: "Project 01",
+    });
+    expect(center.status, center.text).toBe(201);
+    const valid: string = center.body.id;
+    const gonePlan = "11111111-1111-4111-8111-111111111111";
+    const goneLine = "22222222-2222-4222-8222-222222222222";
+
+    for (const planCenter of [gonePlan, valid]) {
+      const plan = await tenant.as.post(`${base}/budget-plans`, budgetPeriod);
+      expect(plan.status, plan.text).toBe(201);
+      // Historical rows: the API refuses to write a missing cost centre, so seed them directly.
+      await h.sql(
+        "UPDATE budget_plans SET cost_center_id = $2, status = 'approved' WHERE id = $1",
+        [plan.body.id, planCenter]
+      );
+      const lineCenter = planCenter === valid ? valid : goneLine;
+      await h.sql(
+        `INSERT INTO budget_lines (budget_id, category, jan, cost_center_id)
+         VALUES ($1, 'A', 100, $2), ($1, 'B', 200, $3), ($1, 'C', 300, NULL)`,
+        [plan.body.id, lineCenter, valid]
+      );
+      const snapshot = async () => ({
+        plan: await h.sql("SELECT * FROM budget_plans WHERE id = $1", [plan.body.id]),
+        lines: await h.sql("SELECT * FROM budget_lines WHERE budget_id = $1 ORDER BY category", [
+          plan.body.id,
+        ]),
+      });
+      const before = await snapshot();
+
+      const draft = await tenant.as.post(`/api/budget-plans/${plan.body.id}/${route}`, body);
+      expect(draft.status, draft.text).toBe(201);
+      expect(draft.body).toMatchObject({
+        status: "draft",
+        cost_center_id: planCenter === valid ? valid : null,
+      });
+      expect(draft.body.clearedPlanCostCenterIds).toEqual(planCenter === valid ? [] : [gonePlan]);
+      expect(draft.body.clearedLineCostCenterIds).toEqual(planCenter === valid ? [] : [goneLine]);
+      const lines = await h.sql(
+        "SELECT category, cost_center_id FROM budget_lines WHERE budget_id = $1 ORDER BY category",
+        [draft.body.id]
+      );
+      expect(lines).toEqual([
+        { category: "A", cost_center_id: planCenter === valid ? valid : null },
+        { category: "B", cost_center_id: valid },
+        { category: "C", cost_center_id: null },
+      ]);
+      expect(await snapshot()).toEqual(before);
+    }
+  }
+);
+
 it("AU7 retains the lines of a posted zero-variance stocktake after product deletion is requested", async () => {
   const tenant = await h.createTenant();
   const base = `/api/companies/${tenant.company.id}`;

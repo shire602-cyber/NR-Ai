@@ -53,33 +53,4 @@ describe("AU7 durable delivery", () => {
       bill_count: 1,
     });
   });
-  it("preserves a delivered acknowledgement received before the sender records the provider result", async () => {
-    const mail = await import("../../server/outbox");
-    mail.setEmailTransportOverride({
-      name: "test",
-      send: async (message) => {
-        await mail.applyProviderEvent({
-          provider: "test",
-          type: "delivered",
-          outboxId: message.outboxId,
-        });
-        return { providerMessageId: "au7-local-id" };
-      },
-    });
-    try {
-      const row = await mail.enqueueEmail({
-        to: "fixture@example.invalid",
-        subject: "fixture",
-        html: "<p>fixture</p>",
-      });
-      await mail.deliverOutboxMessage(row.id);
-      const [state] = await h.sql(
-        "SELECT status, delivered_at IS NOT NULL AS acknowledged FROM email_outbox WHERE id = $1",
-        [row.id]
-      );
-      expect(state).toEqual({ status: "delivered", acknowledged: true });
-    } finally {
-      mail.setEmailTransportOverride(null);
-    }
-  });
 });

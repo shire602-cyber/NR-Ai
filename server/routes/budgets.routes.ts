@@ -166,46 +166,66 @@ async function lockPlanFamily(tx: Queryable, plan: BudgetPlanRow) {
   return current as BudgetPlanRow;
 }
 
-/** Lock the referenced cost centres so none can be deleted before this write commits. */
-async function lockCostCenters(
+/**
+ * Lock the referenced cost centres (in id order) so none can be deleted before this write
+ * commits. Returns the ids that are not cost centres of this company.
+ */
+async function lockExistingCostCenters(
   tx: Queryable,
   companyId: string,
   ids: Array<string | null | undefined>
-) {
+): Promise<Set<string>> {
   const sorted = [...new Set(ids.filter((id): id is string => !!id).map((id) => id.toLowerCase()))];
   sorted.sort();
+  const missing = new Set<string>();
   for (const id of sorted) {
     const { rows } = await tx.query(
       `SELECT 1 FROM cost_centers WHERE id = $1 AND company_id = $2 FOR UPDATE`,
       [id, companyId]
     );
-    if (!rows[0]) {
-      throw new DomainError(
-        "COST_CENTER_NOT_FOUND",
-        400,
-        { id },
-        "Cost centre not found in this company"
-      );
-    }
+    if (!rows[0]) missing.add(id);
+  }
+  return missing;
+}
+
+/** As above, but a write that names a missing cost centre is refused. */
+async function lockCostCenters(
+  tx: Queryable,
+  companyId: string,
+  ids: Array<string | null | undefined>
+) {
+  const [id] = await lockExistingCostCenters(tx, companyId, ids);
+  if (id) {
+    throw new DomainError(
+      "COST_CENTER_NOT_FOUND",
+      400,
+      { id },
+      "Cost centre not found in this company"
+    );
   }
 }
 
 /**
  * Insert a new plan with `insertPlan` and copy a locked plan's lines into it, after locking the
- * cost centres of the plan and of its lines.
+ * cost centres of the plan and of its lines. A historical reference to a cost centre that no
+ * longer exists is cleared on the new draft (the source is left as it is) and reported.
  */
 async function copyLines<TCreated extends { id: string }>(
   tx: Queryable,
   from: BudgetPlanRow,
-  insertPlan: () => Promise<TCreated>,
+  insertPlan: (costCenterId: string | null) => Promise<TCreated>,
   factor = 1
 ) {
   const { rows } = await tx.query(`SELECT * FROM budget_lines WHERE budget_id = $1`, [from.id]);
-  await lockCostCenters(tx, from.company_id, [
+  const lineCenters = rows.map((l) => l.cost_center_id as string | null);
+  const missing = await lockExistingCostCenters(tx, from.company_id, [
     from.cost_center_id,
-    ...rows.map((l) => l.cost_center_id as string | null),
+    ...lineCenters,
   ]);
-  const created = await insertPlan();
+  // Not a type predicate: that would narrow a kept id to null in `keep`.
+  const isMissing = (id: string | null | undefined) => !!id && missing.has(id.toLowerCase());
+  const keep = (id: string | null | undefined) => (isMissing(id) ? null : (id ?? null));
+  const created = await insertPlan(keep(from.cost_center_id));
   for (const l of rows) {
     const months = {} as LineMonths;
     for (const m of BUDGET_MONTHS) months[m] = Math.round(Number(l[m] ?? 0) * factor * 100) / 100;
@@ -218,14 +238,18 @@ async function copyLines<TCreated extends { id: string }>(
         l.account_id,
         l.category,
         l.description,
-        l.cost_center_id,
+        keep(l.cost_center_id as string | null),
         l.is_contra === true,
         ...BUDGET_MONTHS.map((m) => months[m]),
         annualOf(months),
       ]
     );
   }
-  return { created, lines: rows.length };
+  const cleared = {
+    clearedPlanCostCenterIds: isMissing(from.cost_center_id) ? [from.cost_center_id] : [],
+    clearedLineCostCenterIds: [...new Set(lineCenters.filter(isMissing))].sort(),
+  };
+  return { created, lines: rows.length, cleared };
 }
 
 /** Variance alert scan for one approved plan: records new breaches and emits a domain event. */
@@ -729,9 +753,9 @@ export function registerBudgetRoutes(app: Express) {
       const plan = await accessiblePlan(req, req.params.id);
       const userId = req.user!.id as string;
       const rootId = plan.parent_budget_id ?? plan.id;
-      const { created } = await withTx(async (tx) => {
+      const { created, cleared } = await withTx(async (tx) => {
         const source = await lockPlanFamily(tx, plan);
-        return copyLines(tx, source, async () => {
+        return copyLines(tx, source, async (costCenterId) => {
           const next = await tx.query(
             `SELECT COALESCE(MAX(version), 0) + 1 AS v FROM budget_plans WHERE id = $1 OR parent_budget_id = $1`,
             [rootId]
@@ -741,14 +765,14 @@ export function registerBudgetRoutes(app: Express) {
                (company_id, name, fiscal_year, start_date, end_date, notes, created_by, version,
                 parent_budget_id, cost_center_id, class_tag, alert_threshold_pct)
              SELECT company_id, name, fiscal_year, start_date, end_date, notes, $2, $3, $4,
-                    cost_center_id, class_tag, alert_threshold_pct
+                    $5::uuid, class_tag, alert_threshold_pct
                FROM budget_plans WHERE id = $1 RETURNING *`,
-            [source.id, userId, Number(next.rows[0].v), rootId]
+            [source.id, userId, Number(next.rows[0].v), rootId, costCenterId]
           );
           return inserted.rows[0] as BudgetPlanRow;
         });
       });
-      res.status(201).json(created);
+      res.status(201).json({ ...created, ...cleared });
     })
   );
 
@@ -780,18 +804,18 @@ export function registerBudgetRoutes(app: Express) {
       const userId = req.user!.id as string;
       const b = parsedBody<z.output<typeof budgetCopyBody>>(req);
       const iso = (v: Date | string) => new Date(v).toISOString().slice(0, 10);
-      const { created, lines } = await withTx(async (tx) => {
+      const { created, lines, cleared } = await withTx(async (tx) => {
         const source = await lockPlan(tx, plan);
         const shiftMonths = (b.fiscalYear - source.fiscal_year) * 12;
         return copyLines(
           tx,
           source,
-          async () => {
+          async (costCenterId) => {
             const inserted = await tx.query(
               `INSERT INTO budget_plans
                  (company_id, name, fiscal_year, start_date, end_date, notes, created_by,
                   cost_center_id, class_tag, alert_threshold_pct)
-               SELECT company_id, $2, $3, $4::date, $5::date, notes, $6, cost_center_id, class_tag, alert_threshold_pct
+               SELECT company_id, $2, $3, $4::date, $5::date, notes, $6, $7::uuid, class_tag, alert_threshold_pct
                  FROM budget_plans WHERE id = $1 RETURNING *`,
               [
                 source.id,
@@ -800,6 +824,7 @@ export function registerBudgetRoutes(app: Express) {
                 addMonths(iso(source.start_date), shiftMonths),
                 addMonths(iso(source.end_date), shiftMonths),
                 userId,
+                costCenterId,
               ]
             );
             return inserted.rows[0] as BudgetPlanRow;
@@ -807,7 +832,7 @@ export function registerBudgetRoutes(app: Express) {
           1 + (b.adjustPct ?? 0) / 100
         );
       });
-      res.status(201).json({ ...created, copiedLines: lines });
+      res.status(201).json({ ...created, copiedLines: lines, ...cleared });
     })
   );
 

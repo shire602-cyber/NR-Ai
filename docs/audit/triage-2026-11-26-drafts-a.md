@@ -6,7 +6,8 @@ The initial local PGlite run discovered 21 cases across 6 files but ran only nin
 passed). It did not reach all 21, and 12 were blocked in startup (#86 and #88 data integrity).
 
 Final totals: 2 unit tests and 24 distinct targeted database cases passed using PGlite. Two existing
-expanded billing race cases are Postgres-only and were skipped locally. Standalone `tsc`, started
+expanded billing race cases are Postgres-only and were skipped locally. These totals predate the
+outbox revert (see "Open findings not landed") and the budget copy cases added with it. Standalone `tsc`, started
 before the last edits, returned exit 0. `npm run check` passed on the remediation changes (typecheck,
 API contracts and all three guards). See "Local runtime notes".
 
@@ -63,7 +64,7 @@ The 13 DB cases:
 | #88 | `tests/db/audit-au7-data-integrity.test.ts`: "AU7 retains the lines of a posted zero-variance stocktake after product deletion is requested" | Defect confirmed in code. Blocked in startup on the first run. Failed before the storage fix was loaded (posted line fields null after cascade). | Fixed, posted zero-variance stocktakes are protected in the existing product-deletion storage seam, without the #169 route list. Passed in the isolated rerun with the guard loaded |
 | #88 | `tests/db/audit-au7-data-integrity.test.ts`: "AU7 omits soft-deleted bank transactions from the period close checklist" | Defect confirmed in code. Blocked in startup on the first run, passed on rerun. | Fixed, month-end excludes rows with `deleted_at` |
 | #88 | `tests/db/audit-au7-delivery.test.ts`: "reconciles a transient draft-creation error when an inbound document is delivered again" | First run, the call resolved because the test mocked the old registry key. Passed on rerun. | Test now mocks the current `bills.prepareDraftFromInbound` seam, same assertion |
-| #88 | `tests/db/audit-au7-delivery.test.ts`: "preserves a delivered acknowledgement received before the sender records the provider result" | First run failed, status ended `sent` despite a delivered timestamp. Passed on rerun. | Fixed, provider states are preserved atomically |
+| #88 | `tests/db/audit-au7-delivery.test.ts`: "preserves a delivered acknowledgement received before the sender records the provider result" | First run failed, status ended `sent` despite a delivered timestamp. | Not landed. The fix and this case were reverted (see "Open findings not landed") |
 | #88 | `tests/db/audit-au7-migrations.test.ts`: "0039 preserves a paid payroll run and its payslip when a newer draft exists" | Reduced in-memory PGlite baseline reproduced 0039 removing the paid row item. After the fix, a probe verified payroll preserved, with an explicit reconcile error. Passed on rerun. | Fix covers unapplied upgrade paths only (see "Migration fix scope") |
 | #88 | `tests/db/audit-au7-migrations.test.ts`: "0074 renumbers a duplicate beyond 999 without colliding with an existing journal" | Reduced in-memory PGlite baseline reproduced a unique index error from 0074. After the fix, a probe verified journal 1000 applied. Passed on rerun. | Fix covers unapplied upgrade paths only (see "Migration fix scope") |
 | #88 | `tests/db/audit-au7-receipts.test.ts`: "preserves the retained receipt's image after a split sibling is deleted" | Baseline case, the sibling DELETE succeeded, then the retained sibling's image GET returned 404. Passed on rerun. | Fixed, scoped reference check after row deletion |
@@ -77,6 +78,41 @@ The 13 DB cases:
 Only unapplied upgrade paths are fixed. The documented precedent in
 `docs/release/PLATFORM-OWNER.md` is that the migrator goes by journal timestamps, not hashes, so
 already-applied scripts do not re-run. These changes cannot recover past losses.
+
+## Open findings not landed
+
+The outbox early-event reconciliation from this PR was reverted in full: `server/outbox/outbox.ts`
+is back to its pre-PR content, `tests/db/audit-au7-outbox.test.ts` is removed, and the early
+acknowledgement case is removed from `tests/db/audit-au7-delivery.test.ts`. The owner authorized
+this fallback. Review found that the reconciliation could not tell one send attempt from another: a
+manual retry keeps the prior provider message id, so an old failure arriving during the retry could
+mark the row `dead` although the new transport call was accepted. An outbox id alone cannot identify
+an attempt, claim leases can overlap, and a manual retry resets `attempts`. A full fix needs a
+distinct id per attempt, carried through each transport and webhook parser.
+
+These scenarios stay open on the restored code.
+
+Early events (the webhook arrives before the sender records the provider result):
+
+- Matched by provider message id only: no row has the id yet. The event is stored with no
+  `outbox_id` and is never applied, so a delivered, bounced, complained or failed message ends as
+  `sent`.
+- Matched by outbox id (SMTP webhooks): the event is applied, then the sender's update overwrites
+  `status` with `sent` (or `retrying` / `dead` if the transport call throws). A delivery or bounce
+  timestamp can remain beside a status that contradicts it.
+
+Stale events (the webhook belongs to an earlier attempt):
+
+- A manual or automatic retry keeps the row's outbox id, and a manual retry keeps the prior provider
+  message id until the new send is recorded. An old bounce, complaint or failure can therefore mark
+  the row `bounced`, `complained` or `dead` during or after a later attempt. If it lands during the
+  send, a successful result overwrites the status with `sent`; if it lands afterwards and still
+  matches (by outbox id), the old outcome stays.
+- A message-id match is not scoped to the provider, so another provider's event with the same id can
+  change the row.
+
+The revert does not fix the stale-event cases; they predate this PR. Historical events stay in
+`email_delivery_events`.
 
 ## #82 portal exclusions
 
