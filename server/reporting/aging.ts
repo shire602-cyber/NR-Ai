@@ -129,21 +129,24 @@ const CONTROL_ACCOUNT = {
   payable: ["2010", "liability", "payable"],
 } as const;
 
-// Prefer the standard account code and fall back to the first matching non-tax account.
+// Look up the standard code by (company_id, code). The fallback chart search
+// only runs when the standard account is missing.
 // Closing entries are excluded from the control balance and FX totals. The manual
 // adjustments include all posted entries with an adjustment reason. The asOf cutoff is the
 // sargable form of the Gulf-local date test ((je.date + 4h)::date <= asOf), so journal_entries
 // date indexes stay usable; the selected entries are identical. An account with no journal
 // lines takes the zero branch of the CASE, so the ledger join is never executed. OFFSET 0 stops
 // the planner flattening the subquery and repeating the aggregate once per output column.
-const CONTROL_BALANCE_SQL = `WITH acct AS (
-       SELECT a.id, a.code, a.name_en
-         FROM accounts a
-        WHERE a.company_id = $1
-          AND (a.code = $3
-               OR (a.type = $4 AND a.name_en ~* $5 AND a.name_en !~* 'vat|tax'))
-        ORDER BY (a.code = $3) DESC, a.code, a.name_en
-        LIMIT 1)
+const CONTROL_BALANCE_SQL = `WITH standard_account AS (
+       SELECT id, code, name_en FROM accounts WHERE company_id = $1 AND code = $3
+     ), acct AS (
+       SELECT id, code, name_en FROM standard_account
+       UNION ALL
+       (SELECT id, code, name_en FROM accounts
+         WHERE company_id = $1 AND type = $4 AND name_en ~* $5 AND name_en !~* 'vat|tax'
+           AND NOT EXISTS (SELECT 1 FROM standard_account)
+         ORDER BY code, name_en
+         LIMIT 1))
      SELECT acct.id, acct.code, acct.name_en,
             s.v->>'d' AS d, s.v->>'c' AS c, s.v->>'fx' AS fx, s.v->>'adj' AS adj
        FROM acct
@@ -194,11 +197,7 @@ async function controlBalance(
   kind: keyof typeof CONTROL_ACCOUNT,
   q: Queryable
 ) {
-  const { rows } = await q.query(CONTROL_BALANCE_SQL, [
-    companyId,
-    asOf,
-    ...CONTROL_ACCOUNT[kind],
-  ]);
+  const { rows } = await q.query(CONTROL_BALANCE_SQL, [companyId, asOf, ...CONTROL_ACCOUNT[kind]]);
   return readControlBalance(rows[0] as ControlBalanceRow | undefined, kind);
 }
 

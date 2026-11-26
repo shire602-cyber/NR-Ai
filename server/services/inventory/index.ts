@@ -7,9 +7,11 @@
  *   inventory.onInvoiceVoided(tx, {companyId, invoiceId, number, userId})
  *   inventory.onCreditNoteIssued(tx, {original, creditNote, lines, userId})
  *   inventory.onCreditNoteVoided(tx, {companyId, creditNoteId, number, userId})
+ *   inventory.onDebitNoteVoided(tx, {companyId, debitNoteId, number, userId})
  *
  * and the daily reorder scan (domain event task.due per product at or below its reorder point).
  */
+import { todayDubai } from "@shared/accounting-date";
 import { pool } from "../../db";
 import { emitDomainEventInTx } from "../../platform/event-outbox";
 import { listJobs, registerJob } from "../../platform/job-registry";
@@ -17,6 +19,7 @@ import { has, provide } from "../../platform/service-registry";
 import {
   onCreditNoteIssued,
   onCreditNoteVoided,
+  onDebitNoteVoided,
   onGoodsReceived,
   onInvoiceIssued,
   onInvoiceVoided,
@@ -34,7 +37,7 @@ export async function runReorderScan(): Promise<number> {
       WHERE is_active AND product_type = 'inventory' AND track_inventory
         AND reorder_point IS NOT NULL AND current_stock <= reorder_point`
   );
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayDubai();
   for (const r of rows) {
     await emitDomainEventInTx(null, "task.due", {
       companyId: r.company_id,
@@ -54,6 +57,8 @@ export function registerInventoryServices(): void {
     provide("inventory.onCreditNoteIssued", onCreditNoteIssued);
   if (!has("inventory.onCreditNoteVoided"))
     provide("inventory.onCreditNoteVoided", onCreditNoteVoided);
+  if (!has("inventory.onDebitNoteVoided"))
+    provide("inventory.onDebitNoteVoided", onDebitNoteVoided);
   if (!listJobs().some((j) => j.name === "inventory.reorderScan")) {
     registerJob({
       name: "inventory.reorderScan",

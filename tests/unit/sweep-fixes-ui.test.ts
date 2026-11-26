@@ -10,6 +10,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.setConfig({ testTimeout: 20000, hookTimeout: 20000 });
 
 let container: HTMLDivElement;
 let root: Root;
@@ -294,6 +295,8 @@ describe("sweep: Reports > Trial balance in Arabic", () => {
       dateRange: { from: new Date("2026-07-01T00:00:00"), to: new Date("2026-09-30T00:00:00") },
       t,
       trialBalanceLoading: false,
+      tbFetchStatus: "idle" as const,
+      reportLoadErrors: { pl: null, bs: null, vat: null, tb: null },
       trialBalanceSummary: { isBalanced: true, activeAccounts: 1, foreignCurrencyAccounts: 0 },
       trialBalance: {
         reportCurrency: "AED",

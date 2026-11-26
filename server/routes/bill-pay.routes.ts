@@ -46,6 +46,7 @@ import {
 import {
   applyBillRevision,
   applyDebitNote,
+  voidDebitNote,
   applyPrepayment,
   batchPaymentCsv,
   createBill,
@@ -81,6 +82,7 @@ import {
   billReviseSchema,
   billUpdateSchema,
   debitNoteCreateSchema,
+  debitNoteVoidSchema,
   inboundBillSchema,
   inboundVendorCreditSchema,
   prepaymentCreateSchema,
@@ -648,14 +650,10 @@ export function registerBillPayRoutes(app: Express) {
             "This bill was posted to the ledger; void it instead of deleting it"
           );
         }
-        // FTA 5-year retention applies to posted documents.
-        assertRetentionExpired(
-          {
-            createdAt: bill.created_at as string,
-            retentionExpiresAt: bill.retention_expires_at as string | null,
-          },
-          "Vendor bill"
-        );
+        // FTA 5-year retention: use bill_date (document date), not created_at.
+        // The generated retention_expires_at column uses created_at; we override
+        // here so the guard reflects when the document was issued, not entered.
+        assertRetentionExpired({ createdAt: bill.bill_date as string }, "Vendor bill");
       }
       await pool.query("DELETE FROM vendor_bills WHERE id = $1 AND company_id = $2", [
         bill.id,
@@ -1024,7 +1022,7 @@ export function registerBillPayRoutes(app: Express) {
       const netFils = toFils(String(receipt.amount ?? 0), { rounding: "halfUp" });
       if (netFils <= 0) throw new DomainError("RECEIPT_AMOUNT_INVALID", 422);
       const vatFils = toFils(String(receipt.vatAmount ?? 0), { rounding: "halfUp" });
-      const date = (receipt.date ?? new Date()).toISOString().slice(0, 10);
+      const date = receipt.date ? receipt.date.toISOString().slice(0, 10) : uaeToday();
       const result = await createDraftFromParsedInbound(companyId, req.user!.id, {
         vendorName: receipt.merchant || "Unknown vendor",
         vendorTrn:
@@ -1146,6 +1144,26 @@ export function registerBillPayRoutes(app: Express) {
         bill_status: out.billStatus,
         amount_paid: out.amountPaid,
       });
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/debit-notes/:debitNoteId/void",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("ledger.post"),
+    strictBody(debitNoteVoidSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, debitNoteId } = req.params;
+      if (!zUuid.safeParse(debitNoteId).success) throw new DomainError("DEBIT_NOTE_NOT_FOUND", 404);
+      const out = await voidDebitNote({
+        companyId,
+        debitNoteId,
+        actorId: req.user!.id,
+        reason: req.body.reason,
+        req,
+      });
+      res.json(out.debitNote);
     })
   );
 

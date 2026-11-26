@@ -1,9 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { captureException, monitoringConfigured } from "../../server/services/monitoring";
+import {
+  captureException,
+  monitoringConfigured,
+  monitoringDsnIgnored,
+} from "../../server/services/monitoring";
 
 describe("monitoring.captureException", () => {
   it("does not throw on an Error instance", () => {
-    expect(() => captureException(new Error("boom"), { requestId: "r1", method: "GET" })).not.toThrow();
+    expect(() =>
+      captureException(new Error("boom"), { requestId: "r1", method: "GET" })
+    ).not.toThrow();
   });
 
   it("does not throw on a non-Error value (string)", () => {
@@ -25,11 +31,19 @@ describe("monitoring.monitoringConfigured", () => {
     expect(monitoringConfigured({} as NodeJS.ProcessEnv)).toBe(false);
   });
 
-  it("is true when SENTRY_DSN is set", () => {
-    expect(monitoringConfigured({ SENTRY_DSN: "https://x@y/1" } as unknown as NodeJS.ProcessEnv)).toBe(true);
+  it("stays false when SENTRY_DSN is set, because nothing forwards errors", () => {
+    const env = { SENTRY_DSN: "https://x@y/1" } as unknown as NodeJS.ProcessEnv;
+    expect(monitoringConfigured(env)).toBe(false);
+    expect(monitoringDsnIgnored(env)).toBe(true);
   });
 
-  it("is true when MONITORING_DSN is set", () => {
-    expect(monitoringConfigured({ MONITORING_DSN: "x" } as unknown as NodeJS.ProcessEnv)).toBe(true);
+  it("stays false when MONITORING_DSN is set", () => {
+    const env = { MONITORING_DSN: "x" } as unknown as NodeJS.ProcessEnv;
+    expect(monitoringConfigured(env)).toBe(false);
+    expect(monitoringDsnIgnored(env)).toBe(true);
+  });
+
+  it("reports no ignored DSN when none is set", () => {
+    expect(monitoringDsnIgnored({} as NodeJS.ProcessEnv)).toBe(false);
   });
 });

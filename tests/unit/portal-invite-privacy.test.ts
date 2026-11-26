@@ -31,6 +31,19 @@ it("keeps invite credentials out of request logs, throttling, error reports and 
       throw new Error(`A downstream error echoed ${req.body.token} and ${link}`);
     })
   );
+  app.post(
+    `${invitePath}/:legacyToken/record`,
+    asyncHandler(async (req) => {
+      req.id = "pg-privacy";
+      const cause = Object.assign(new Error("duplicate value"), {
+        code: "23505",
+        constraint: "invite_unique",
+        table: "portal_invitations",
+        detail: "Key (email)=(private@example.test) already exists.",
+      });
+      throw new Error("Failed query", { cause });
+    })
+  );
   app.get(
     `${invitePath}/:legacyToken/limited`,
     buildLimiter("portal-invite-test", { windowMs: 60_000, max: 1, message: "Slow down" }),
@@ -52,6 +65,29 @@ it("keeps invite credentials out of request logs, throttling, error reports and 
     });
     expect(failed.status).toBe(500);
     expect(await failed.text()).not.toContain(token);
+    const duplicate = await fetch(`${base}${invitePath}/${token}/record?key=query-secret`, {
+      method: "POST",
+    });
+    expect(duplicate.status).toBe(409);
+    expect(await duplicate.json()).toEqual({
+      code: "DUPLICATE_VALUE",
+      message: "A record with this value already exists",
+      requestId: "pg-privacy",
+    });
+    for (const secret of [token, "query-secret", "private@example.test"]) {
+      expect(JSON.stringify(logs.warn.mock.calls)).not.toContain(secret);
+    }
+    expect(logs.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: "pg-privacy",
+        pgCode: "23505",
+        constraint: "invite_unique",
+        table: "portal_invitations",
+        route: `${invitePath}/:legacyToken/record`,
+      }),
+      "postgres error mapped to client response"
+    );
+
     const legacy = await fetch(`${base}${invitePath}/${token}?value=javascript:bad`);
     expect(legacy.status).toBe(404);
     expect(await legacy.text()).not.toContain(token);

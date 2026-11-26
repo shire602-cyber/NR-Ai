@@ -9,6 +9,7 @@
  * record "filed on" + the FTA reference number here. Nothing in this module
  * submits anything to the FTA.
  */
+import { todayDubai } from "@shared/accounting-date";
 import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
@@ -353,7 +354,7 @@ export async function recordFiling(
   }
 ) {
   if (input.periodEnd < input.periodStart) throw new DomainError("INVALID_PERIOD", 400);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayDubai();
   if (input.filedOn > today) throw new DomainError("FILED_ON_IN_FUTURE", 400);
   const [row] = await db
     .insert(firmFilingRecords)

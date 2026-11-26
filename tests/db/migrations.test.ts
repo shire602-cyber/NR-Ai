@@ -45,7 +45,7 @@ describe("migrations", () => {
       breakpoints: true,
     });
     expect(sqlFile(auditTag)).toContain("--> statement-breakpoint");
-    const allocationTag = "0158_preserve_invoice_line_document_discounts";
+    const allocationTag = "0159_preserve_invoice_line_document_discounts";
     expect(journal.entries.find((x) => x.tag === allocationTag)).toMatchObject({
       version: "7",
       breakpoints: true,

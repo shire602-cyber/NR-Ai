@@ -14,6 +14,7 @@
  *   PO goods received    stock in at the PO price, Dr Inventory / Cr GRNI (own transaction:
  *                        the purchase-order module calls it after its commit).
  */
+import { todayDubai } from "@shared/accounting-date";
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { DomainError } from "../../errors";
@@ -62,7 +63,7 @@ const isoDate = (v: unknown): string => {
   const s = String(v ?? "");
   return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : new Date(s).toISOString().slice(0, 10);
 };
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => todayDubai();
 
 function wholeQty(raw: unknown, context: Record<string, unknown>): number {
   const n = Math.abs(Number(raw ?? 1));
@@ -99,7 +100,9 @@ const reversalDoc = (d: DocRef): DocRef => ({
       ? "reversalBill"
       : d.docKind === "invoice"
         ? "reversalInvoice"
-        : "reversalCreditNote",
+        : d.docKind === "debitNote"
+          ? "reversalDebitNote"
+          : "reversalCreditNote",
   ref: d.ref,
 });
 
@@ -110,7 +113,7 @@ export async function reverseDocumentStock(
     sourceType: string;
     sourceId: string;
     actorId: string;
-    doc: DocRef & { docKind: "bill" | "invoice" | "creditNote" };
+    doc: DocRef & { docKind: "bill" | "invoice" | "creditNote" | "debitNote" };
   }
 ): Promise<{ reversed: number; adjustmentEntryId: string | null }> {
   const movements = await documentMovements(tx, args.companyId, args.sourceType, args.sourceId);
@@ -770,7 +773,12 @@ export async function onCreditNoteIssued(
         costCenterId: line.costCenterId ?? null,
         ...journalLine("creditNoteReverseCogs", { ref: creditNote.number }),
       });
-      draft.push(...trueUpLines(r, value, line.costCenterId, { docKind: "creditNote", ref: creditNote.number }));
+      draft.push(
+        ...trueUpLines(r, value, line.costCenterId, {
+          docKind: "creditNote",
+          ref: creditNote.number,
+        })
+      );
     }
   }
   const entryId = await postInventoryJournal(tx, {
@@ -804,6 +812,23 @@ export async function onCreditNoteVoided(
     sourceId: args.creditNoteId,
     actorId: args.userId,
     doc: { docKind: "creditNote", ref: args.number ?? args.creditNoteId.slice(0, 8) },
+  });
+}
+
+/**
+ * Debit-note void: the caller has mirrored the note's journal (which credited Inventory for the
+ * returned goods); put the units back at the cost they left at, trueing any drift up to COGS.
+ */
+export async function onDebitNoteVoided(
+  tx: LedgerTx,
+  args: { companyId: string; debitNoteId: string; number?: string | null; userId: string }
+): Promise<void> {
+  await reverseDocumentStock(tx, {
+    companyId: args.companyId,
+    sourceType: "vendor_debit_note",
+    sourceId: args.debitNoteId,
+    actorId: args.userId,
+    doc: { docKind: "debitNote", ref: args.number ?? args.debitNoteId.slice(0, 8) },
   });
 }
 
