@@ -260,6 +260,62 @@ Run (UTC): 2026-11-26T14:06:38.132Z; company A Demo Trading LLC 15943f48-7ab9-4a
 | F05 sched | ar: server no longer lists the item | absent in API | absent | PASS | f05-sched-ar-after-refetch.png |
 | F05 sched | cleanup: no UI-verify scheduled items left | 0 | 0 | PASS |  |
 
+## API checks (3)
+
+Run (UTC): 2026-11-26T14:09:36.247Z; staging commit 9e5fa7264c41d1c4e4d6b64527eae6e519e3e1a8; company A 15943f48-7ab9-4a57-af69-552d24a4d8cb.
+
+| Check | Item | Expected | Observed | Result | Record ids |
+|---|---|---|---|---|---|
+| F06-utc | lock Jan 2026 (hard, month scope); Feb open | 200 | 200  | PASS | period lock c8fffefa-0349-48c9-ad26-569bcc784938 |
+| F06-utc | journal date 2026-01-31T20:30:00.000Z (1 Feb 00:30 Dubai) accepted | 200/201 | 200  | PASS | journal 5dccf35a-5e7a-4f5d-bd2f-e0925d764ffa |
+| F06-utc | stored date of the 20:30Z instant | 2026-02-01 | 2026-02-01 | PASS | journal 5dccf35a-5e7a-4f5d-bd2f-e0925d764ffa |
+| F06-utc | journal date 2026-01-31T19:59:00.000Z (31 Jan 23:59 Dubai) refused PERIOD_LOCKED | 4xx PERIOD_LOCKED | 403 PERIOD_LOCKED | PASS |  |
+| F06-utc | reverse the posted journal | 200/201 | 200  | PASS |  |
+| F06-utc | stored date of the reversal entry = today (Dubai) | 2026-11-26 | 2026-02-01 | FAIL | reversal journal a9304655-5403-466a-89d4-9c9f2f1c3a4c |
+| S02-setup | create / update / issue invoice | 200 / 200 / 200 | 200 / 200 / 200 | PASS | invoice de2ea3e3-f9ec-4556-a6ec-b67705b45aed (INV-2026-00018) |
+| S02-setup | create / update / post journal | 2xx x3 | 200 / 200 / 200  | PASS | journal 780d51fa-4b1d-4ad9-accc-b7ddad0dcafe |
+| S01 | DELETE issued invoice refused | 4xx with reason, record kept | 409 RETENTION_NOT_EXPIRED "Record cannot be deleted before 2031-11-26 (UAE FTA 5-year retention)."; GET after=200 | PASS | invoice de2ea3e3-f9ec-4556-a6ec-b67705b45aed |
+| S01 | DELETE posted journal refused | 4xx with reason, record kept | 409 ENTRY_POSTED "Posted entries cannot be deleted. Reverse or void the entry instead."; still listed=true | PASS | journal 780d51fa-4b1d-4ad9-accc-b7ddad0dcafe |
+| S01-setup | create non-system account 9991 | 200/201 | 201  | PASS | account b1f12b92-b3ff-4ef3-94b8-92fb8fd1809f |
+| S01 | DELETE account with transactions refused | 4xx ACCOUNT_HAS_TRANSACTIONS, account kept | 400 ACCOUNT_HAS_TRANSACTIONS; still present=true; (journal 200) | PASS | account b1f12b92-b3ff-4ef3-94b8-92fb8fd1809f; journal 87d0779e-fe62-49b7-a11f-26347c57e6be |
+| S02-S03 | GET audit-log | 200 | 200 63 events | PASS |  |
+| S02-S03 | invoice: audit entries exist with user + timestamp | >=2 entries (create/update/issue-post), user + at set | 3 entries: invoice.status_change@2026-11-26T14:09:25 by muhasib-demo-6e0a9f6a@example.com before=yes after=yes / invoice.update@2026-11-26T14:09:25 by muhasib-demo-6e0a9f6a@example.com before=yes after=yes / invoice.create@2026-11-26T14:09:24 by muhasib-demo-6e0a9f6a@example.com before=no after=yes | PASS | invoice de2ea3e3-f9ec-4556-a6ec-b67705b45aed |
+| S02-S03 | invoice: update entry carries before and after | before and after present | invoice.update@2026-11-26T14:09:25 by muhasib-demo-6e0a9f6a@example.com before=yes after=yes | PASS | invoice de2ea3e3-f9ec-4556-a6ec-b67705b45aed |
+| S02-S03 | journal: audit entries exist with user + timestamp | >=2 entries (create/update/issue-post), user + at set | 3 entries: journal.post@2026-11-26T14:09:26 by muhasib-demo-6e0a9f6a@example.com before=yes after=yes / journal.update@2026-11-26T14:09:26 by muhasib-demo-6e0a9f6a@example.com before=yes after=yes / journal.create_draft@2026-11-26T14:09:26 by muhasib-demo-6e0a9f6a@example.com before=no after=yes | PASS | journal 780d51fa-4b1d-4ad9-accc-b7ddad0dcafe |
+| S02-S03 | journal: update entry carries before and after | before and after present | journal.update@2026-11-26T14:09:26 by muhasib-demo-6e0a9f6a@example.com before=yes after=yes | PASS | journal 780d51fa-4b1d-4ad9-accc-b7ddad0dcafe |
+| O07 | set WPS employer settings to fixture values (13-digit establishment 1000000000123, routing 600310101) | 200 | 200  | PASS |  |
+| O07 | create sample employee | 201 | 400 {"message":"Validation error","code":"VALIDATION_ERROR","fields":{"contractType":["Invalid enum value. Expected 'full_time' / 'part_time' / 'temporary' / 'flexible' / 'remote' / 'job_sharing', received 'unlimited'"]},"errors":{"contractType":["Invalid enum val | FAIL |  |
+| O07 | create payroll run Jun 2026 | 201 (or 409 existing) | 201  | PASS | payroll run 531a7367-8cd8-41bc-9cc1-0fe5c9df3ae2 |
+| O07 | calculate run | 200 | 422 {"message":"No active employees found for this company","code":"NO_ACTIVE_EMPLOYEES","requestId":"2c014c00-4bf1-4df8-905a-5707bd534b97"} | FAIL |  |
+| O07 | SIF pre-validation ready | ready true | 409 {"message":"Calculate the payroll run before generating the SIF","code":"PAYROLL_RUN_NOT_CALCULATED","details":{"status":"draft"},"requestId":"5f1c8059-1e6f-4908-9356-2c12bbfcd1c7"} | FAIL |  |
+| O07 | generate SIF | 204 | 409 | FAIL |  |
+| O07 | download SIF; CRLF separators | CRLF, no bare LF | status 409; CRLF=false; bare LF=false; records=1 | FAIL |  |
+| O07 | SCR line length (brief expects 165) | 165 | no SCR | FAIL |  |
+| O07 | EDR line length (brief expects 229) | 229 | no EDR | FAIL |  |
+
+- unlock Jan 2026: 200 open
+- audit-log/verify: 200 {"chainKey":"15943f48-7ab9-4a57-af69-552d24a4d8cb","ok":true,"checked":63,"legacyRows":0,"headSeq":63,"headHash":"5108e3aae3114aa15aab4c68966dbedc98e49ebd9dbe451fe384a9baa43951e9","firstBroken":null,"pendingRows":0,"verifiedAt":"2026-11-26T14:09:33.065Z"}
+- SIF structure (identifiers are fixture/fictional): EDR=undefined  SCR=undefined; EDR fields=undefined, SCR fields=undefined
+
+## API checks (3) - rerun of O07 plus reversal-date probe
+
+Run (UTC): 2026-11-26T14:09:57.049Z; staging commit 9e5fa7264c41d1c4e4d6b64527eae6e519e3e1a8; company A 15943f48-7ab9-4a57-af69-552d24a4d8cb.
+
+| Check | Item | Expected | Observed | Result | Record ids |
+|---|---|---|---|---|---|
+| F06-utc | reverse with explicit date=today (Dubai): stored reversal date | 2026-11-26 | 2026-11-26 | PASS | journal bb8f00e7-9957-49e6-9d3e-f9029a1a0e08; reversal 844ea1a6-7aaa-4fb0-a58a-ed82d7c4976d |
+| O07 | set WPS employer settings to fixture values (13-digit establishment 1000000000123, routing 600310101) | 200 | 200  | PASS |  |
+| O07 | create sample employee | 201 | 201  | PASS | employee 4f8820b6-4d30-47a7-81d8-fb7fb597afd3 |
+| O07 | create payroll run Jun 2026 | 201 (or 409 existing) | 409 {"message":"A payroll run already exists for this period","code":"PAYROLL_RUN_EXISTS","requestId":"6dd5ccbe-ae64-4c01-b0ef-6f4cd8b73404"} | PASS | payroll run 531a7367-8cd8-41bc-9cc1-0fe5c9df3ae2 |
+| O07 | calculate run | 200 | 200  | PASS |  |
+| O07 | SIF pre-validation ready | ready true | 200 {"ready":true,"issues":[]} | PASS |  |
+| O07 | generate SIF | 204 | 204 | PASS |  |
+| O07 | download SIF; CRLF separators | CRLF, no bare LF | status 200; CRLF=true; bare LF=false; records=2 | PASS |  |
+| O07 | SCR line length (brief expects 165) | 165 | 71 | FAIL |  |
+| O07 | EDR line length (brief expects 229) | 229 | 92 | FAIL |  |
+
+- SIF structure (identifiers are fixture/fictional): EDR=EDR,10012345678901,600310101,AE070331234567890123456,2026-06-01,2026-06-30,30,6250.00,0.00,0  SCR=SCR,1000000000123,600310101,2026-11-26,1409,062026,1,6250.00,AED,062026; EDR fields=10, SCR fields=10
+
 ## Public site sweep (council, browser pane, 2026-11-26 ~13:45 UTC)
 
 All 88 sitemap URLs (`/en/*` and `/ar/*`) rendered in the SPA and scanned for: ZATCA, Saudi (EN/AR), A-Cube, Complyance, OFX, QIF, MT940, "PDF statement", AED 49/149/299. **0 hits.**
