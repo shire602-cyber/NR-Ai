@@ -51,6 +51,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { hasReadData, queryReadState } from "@/lib/queryReadState";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
 import { apiUrl } from "@/lib/api";
 import { formatDate, formatDateTime } from "@/lib/format-date";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -187,12 +189,7 @@ export default function BackupRestore() {
   const [selectedBackupForRestore, setSelectedBackupForRestore] =
     useState<BackupWithoutData | null>(null);
 
-  const {
-    data: backups = [],
-    isLoading,
-    isError: backupsFailed,
-    refetch: refetchBackups,
-  } = useQuery<BackupWithoutData[]>({
+  const backupsQuery = useQuery<BackupWithoutData[]>({
     queryKey: ["/api/companies", selectedCompanyId, "backups"],
     queryFn: async () => {
       if (!selectedCompanyId) return [];
@@ -206,6 +203,9 @@ export default function BackupRestore() {
     enabled: !!selectedCompanyId && canManageBackups,
     retry: false,
   });
+  const backupsState = queryReadState(backupsQuery);
+  const backups = hasReadData(backupsState) ? (backupsQuery.data ?? []) : [];
+  const refetchBackups = () => void backupsQuery.refetch();
 
   const createBackupMutation = useMutation({
     mutationFn: async (data: { name: string; description: string }) => {
@@ -536,16 +536,17 @@ export default function BackupRestore() {
             )}
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {backupsState === "stale" && (
+              <div className="mb-3">
+                <StaleDataNotice onRetry={refetchBackups} testId="state-backups-stale" />
+              </div>
+            )}
+            {backupsState === "pending" ? (
               <div className="flex items-center justify-center h-32">
                 <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-            ) : backupsFailed ? (
-              <ErrorState
-                compact
-                onRetry={() => void refetchBackups()}
-                testId="state-backups-error"
-              />
+            ) : backupsState === "error" ? (
+              <ErrorState compact onRetry={refetchBackups} testId="state-backups-error" />
             ) : backups.length === 0 ? (
               <EmptyState
                 icon={Database}

@@ -245,6 +245,8 @@
   "firmOps.intakeDkimOff": "Off",
   "firmOps.intakePause": "Pause",
   "firmOps.intakeResume": "Resume",
+  "firmOps.intakeStatusActive": "Active",
+  "firmOps.intakeStatusPaused": "Paused",
   "firmOps.intakeCoverage": "Coverage {percent}% · {count, plural, one {# gap} other {# gaps}}",
   "firmOps.intakePurchase": "Purchase",
   "firmOps.intakeSales": "Sales",

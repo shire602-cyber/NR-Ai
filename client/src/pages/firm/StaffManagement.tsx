@@ -13,6 +13,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Company } from "@shared/schema";
+import { Skeleton } from "@/components/ui/skeleton";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { hasReadData, queryReadState } from "@/lib/queryReadState";
 
 interface StaffMember {
   id: string;
@@ -55,13 +59,17 @@ export default function StaffManagement() {
   >(new Map());
   const [saving, setSaving] = useState(false);
 
-  const { data: staff = [], isLoading: loadingStaff } = useQuery<StaffMember[]>({
+  const staffQuery = useQuery<StaffMember[]>({
     queryKey: ["/api/firm/staff"],
   });
-
-  const { data: clients = [] } = useQuery<ClientWithStats[]>({
+  const clientsQuery = useQuery<ClientWithStats[]>({
     queryKey: ["/api/firm/clients"],
   });
+  const staffState = queryReadState(staffQuery);
+  const clientsState = queryReadState(clientsQuery);
+  const staff = hasReadData(staffState) ? (staffQuery.data ?? []) : [];
+  const clientsReady = hasReadData(clientsState);
+  const clients = clientsReady ? (clientsQuery.data ?? []) : [];
 
   const filteredStaff = staff.filter(
     (s) =>
@@ -142,10 +150,27 @@ export default function StaffManagement() {
     }
   };
 
-  if (loadingStaff) {
+  if (staffState === "pending") {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
         <T k="pages.loadingStaff" />
+      </div>
+    );
+  }
+
+  if (staffState === "error") {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow={t["firm.eyebrowFirm"]}
+          title={t["firm.staffManagementTitle"]}
+          description={t["firm.staffManagementDescription"]}
+        />
+        <LoadErrorState
+          error={staffQuery.error}
+          onRetry={() => void staffQuery.refetch()}
+          testId="staff-load-error"
+        />
       </div>
     );
   }
@@ -173,6 +198,21 @@ export default function StaffManagement() {
         }
       />
 
+      {staffState === "stale" && (
+        <StaleDataNotice onRetry={() => void staffQuery.refetch()} testId="staff-stale" />
+      )}
+      {clientsState === "stale" && (
+        <StaleDataNotice onRetry={() => void clientsQuery.refetch()} testId="staff-clients-stale" />
+      )}
+      {clientsState === "error" && (
+        <LoadErrorState
+          compact
+          error={clientsQuery.error}
+          onRetry={() => void clientsQuery.refetch()}
+          testId="staff-clients-error"
+        />
+      )}
+
       {/* Search */}
       <div className="relative w-full sm:max-w-sm">
         <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -199,7 +239,9 @@ export default function StaffManagement() {
             <p className="text-xs text-muted-foreground">
               <T k="pages.clientCompanies" />
             </p>
-            <p className="text-2xl font-bold mt-0.5">{clients.length}</p>
+            <p className="text-2xl font-bold mt-0.5" data-testid="staff-client-count">
+              {clientsReady ? clients.length : "—"}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -208,7 +250,7 @@ export default function StaffManagement() {
               <T k="pages.unassignedClients" />
             </p>
             <p className="text-2xl font-bold mt-0.5">
-              {clients.filter((c) => c.assignedStaff?.length === 0).length}
+              {clientsReady ? clients.filter((c) => c.assignedStaff?.length === 0).length : "—"}
             </p>
           </CardContent>
         </Card>
@@ -294,7 +336,9 @@ export default function StaffManagement() {
                       <p className="text-xs font-medium text-muted-foreground mb-3">
                         <T k="pages.clientAssignments" />
                       </p>
-                      {clients.length === 0 ? (
+                      {clientsState === "pending" ? (
+                        <Skeleton className="h-16 w-full" data-testid="staff-clients-loading" />
+                      ) : clientsState === "error" ? null : clients.length === 0 ? (
                         <p className="text-sm text-muted-foreground">
                           <T k="pages.noClientCompaniesYet" />
                         </p>

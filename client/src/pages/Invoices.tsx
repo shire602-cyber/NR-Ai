@@ -118,6 +118,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
 import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { queryReadState } from "@/lib/queryReadState";
 import {
   downloadServerFile,
   exportToExcel,
@@ -505,6 +507,12 @@ export default function Invoices() {
     [invoicePages.data]
   );
   const isLoading = invoicePages.isLoading;
+  const invoiceReadState = queryReadState(invoicePages);
+  // A failed next page keeps the loaded rows; Retry asks for that page again.
+  const retryInvoicePages = () =>
+    void (invoicePages.isFetchNextPageError
+      ? invoicePages.fetchNextPage()
+      : invoicePages.refetch());
   const loadMoreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = loadMoreRef.current;
@@ -513,7 +521,9 @@ export default function Invoices() {
       if (
         entries[0]?.isIntersecting &&
         invoicePages.hasNextPage &&
-        !invoicePages.isFetchingNextPage
+        !invoicePages.isFetchingNextPage &&
+        // After a failure the reader retries; scrolling must not loop on it.
+        !invoicePages.isError
       ) {
         invoicePages.fetchNextPage();
       }
@@ -2586,7 +2596,7 @@ export default function Invoices() {
 
           {isLoading ? (
             <TableSkeleton rows={8} columns={6} />
-          ) : invoicePages.isError ? (
+          ) : invoiceReadState === "error" ? (
             <LoadErrorState
               error={invoicePages.error}
               onRetry={() => void invoicePages.refetch()}
@@ -2596,6 +2606,9 @@ export default function Invoices() {
             />
           ) : (
             <>
+              {invoiceReadState === "stale" && (
+                <StaleDataNotice onRetry={retryInvoicePages} testId="invoices-stale" />
+              )}
               {/* Mobile row-cards (CTO 3/8): line 1 name + amount, line 2 number · date + status. */}
               <Card
                 className="divide-hairline overflow-hidden md:hidden"

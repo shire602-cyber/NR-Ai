@@ -24,6 +24,7 @@
   "components.errorSectionCouldNotLoad": "تعذر تحميل هذا القسم",
   "components.errorSomethingWrong": "حدث خطأ ما",
   "components.errorTryAgain": "حاول مرة أخرى",
+  "components.staleDataNotice": "تعذّر التحديث. تُعرض آخر بيانات تم تحميلها.",
   "components.errorUnexpected": "حدث خطأ غير متوقع. يمكنك المحاولة مرة أخرى أو العودة إلى لوحة التحكم.",
   "components.launchAccountantHandoff": "تسليم المحاسب",
   "components.launchAutomationStarters": "بدايات الأتمتة",

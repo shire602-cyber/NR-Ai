@@ -245,6 +245,8 @@
   "firmOps.intakeDkimOff": "متوقف",
   "firmOps.intakePause": "إيقاف مؤقت",
   "firmOps.intakeResume": "استئناف",
+  "firmOps.intakeStatusActive": "نشط",
+  "firmOps.intakeStatusPaused": "متوقف مؤقتًا",
   "firmOps.intakeCoverage": "التغطية {percent}% · {count, plural, zero {لا فجوات} one {فجوة واحدة} two {فجوتان} few {# فجوات} many {# فجوة} other {# فجوة}}",
   "firmOps.intakePurchase": "مشتريات",
   "firmOps.intakeSales": "مبيعات",

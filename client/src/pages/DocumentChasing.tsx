@@ -49,6 +49,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { hasReadData, queryReadState } from "@/lib/queryReadState";
 import { DOCUMENT_TYPES, COMPLIANCE_EVENT_TYPES } from "@shared/schema-values";
 
 // ── Types echoed from server response shape ───────────────────────────
@@ -225,8 +228,13 @@ export default function DocumentChasing() {
       }),
   });
 
-  const requirements = useMemo(() => requirementsQuery.data ?? [], [requirementsQuery.data]);
-  const queue = queueQuery.data ?? [];
+  const requirementsState = queryReadState(requirementsQuery);
+  const queueState = queryReadState(queueQuery);
+  const requirements = useMemo(
+    () => (hasReadData(requirementsState) ? (requirementsQuery.data ?? []) : []),
+    [requirementsState, requirementsQuery.data]
+  );
+  const queue = hasReadData(queueState) ? (queueQuery.data ?? []) : [];
   const events = eventsQuery.data ?? [];
 
   const missingDocs = useMemo(
@@ -258,35 +266,6 @@ export default function DocumentChasing() {
     return (
       <div className="p-6 text-muted-foreground" data-testid="document-chasing-no-company">
         <T k="pages.noCompanySelected" />
-      </div>
-    );
-  }
-
-  if (requirementsQuery.isError || queueQuery.isError) {
-    const err = requirementsQuery.error ?? queueQuery.error;
-    return (
-      <div
-        role="alert"
-        className="m-6 rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm"
-        data-testid="document-chasing-error"
-      >
-        <div className="font-medium mb-1">
-          <T k="pages.failedToLoadDocumentChasingData" />
-        </div>
-        <div className="text-muted-foreground">
-          {err instanceof Error ? err.message : t["firmOps.chasingUnexpectedError"]}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-3"
-          onClick={() => {
-            requirementsQuery.refetch();
-            queueQuery.refetch();
-          }}
-        >
-          <T k="pages.retry" />
-        </Button>
       </div>
     );
   }
@@ -334,21 +313,25 @@ export default function DocumentChasing() {
 
       {/* Top stats. Fable P-g: hidden until something is missing or has been chased, so an
           empty workspace does not open on four zero tiles. */}
-      {(stats.total > 0 || (effectivenessQuery.data?.totalChased ?? 0) > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4" data-testid="document-chasing-stats">
-          <StatCard label={t["pages.missingDocuments"]} value={stats.total} />
-          <StatCard label={t["components.statusOverdue"]} value={stats.overdue} />
-          <StatCard label={t["documentChasing.dueIn14Days"]} value={stats.dueSoon} />
-          <StatCard
-            label={t["documentChasing.responseRate2"]}
-            value={
-              effectivenessQuery.data
-                ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
-                : "—"
-            }
-          />
-        </div>
-      )}
+      {hasReadData(requirementsState) &&
+        (stats.total > 0 || (effectivenessQuery.data?.totalChased ?? 0) > 0) && (
+          <div
+            className="grid grid-cols-1 md:grid-cols-4 gap-4"
+            data-testid="document-chasing-stats"
+          >
+            <StatCard label={t["pages.missingDocuments"]} value={stats.total} />
+            <StatCard label={t["components.statusOverdue"]} value={stats.overdue} />
+            <StatCard label={t["documentChasing.dueIn14Days"]} value={stats.dueSoon} />
+            <StatCard
+              label={t["documentChasing.responseRate2"]}
+              value={
+                effectivenessQuery.data
+                  ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
+                  : "—"
+              }
+            />
+          </div>
+        )}
 
       <Tabs defaultValue="missing" className="w-full">
         <TabsList>
@@ -356,7 +339,11 @@ export default function DocumentChasing() {
             <T k="pages.missing" />
           </TabsTrigger>
           <TabsTrigger value="queue">
-            {formatMessage(t["documentChasing.chaseQueueCount"], { count: queue.length })}
+            {hasReadData(queueState) ? (
+              formatMessage(t["documentChasing.chaseQueueCount"], { count: queue.length })
+            ) : (
+              <T k="pages.chaseQueue" />
+            )}
           </TabsTrigger>
           <TabsTrigger value="calendar">
             <T k="pages.complianceCalendar" />
@@ -383,8 +370,21 @@ export default function DocumentChasing() {
               </Button>
             </CardHeader>
             <CardContent>
-              {requirementsQuery.isLoading ? (
-                <Skeleton className="h-24 w-full" />
+              {requirementsState === "stale" && (
+                <StaleDataNotice
+                  onRetry={() => void requirementsQuery.refetch()}
+                  testId="requirements-stale"
+                />
+              )}
+              {requirementsState === "pending" ? (
+                <Skeleton className="h-24 w-full" data-testid="requirements-loading" />
+              ) : requirementsState === "error" ? (
+                <LoadErrorState
+                  compact
+                  error={requirementsQuery.error}
+                  onRetry={() => void requirementsQuery.refetch()}
+                  testId="requirements-error"
+                />
               ) : missingDocs.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-6 text-center">
                   {t["documentChasing.nothingMissingAllCaughtUp"]}
@@ -450,8 +450,20 @@ export default function DocumentChasing() {
               <CardDescription>{t["documentChasing.autoBuiltFromDueDates"]}</CardDescription>
             </CardHeader>
             <CardContent>
-              {queueQuery.isLoading ? (
-                <Skeleton className="h-24 w-full" />
+              {queueState === "stale" && (
+                <div className="mb-3">
+                  <StaleDataNotice onRetry={() => void queueQuery.refetch()} testId="queue-stale" />
+                </div>
+              )}
+              {queueState === "pending" ? (
+                <Skeleton className="h-24 w-full" data-testid="queue-loading" />
+              ) : queueState === "error" ? (
+                <LoadErrorState
+                  compact
+                  error={queueQuery.error}
+                  onRetry={() => void queueQuery.refetch()}
+                  testId="queue-error"
+                />
               ) : queue.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-6 text-center">
                   <T k="pages.noPendingChasesRightNow" />

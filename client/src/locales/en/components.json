@@ -24,6 +24,7 @@
   "components.errorSectionCouldNotLoad": "This section couldn't load",
   "components.errorSomethingWrong": "Something went wrong",
   "components.errorTryAgain": "Try again",
+  "components.staleDataNotice": "Couldn't refresh. Showing the last loaded data.",
   "components.errorUnexpected": "An unexpected error occurred. You can try again or return to the dashboard.",
   "components.launchAccountantHandoff": "Accountant handoff",
   "components.launchAutomationStarters": "Automation starters",

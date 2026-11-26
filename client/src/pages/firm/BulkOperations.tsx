@@ -42,6 +42,9 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { SERVER_ERROR_NAMESPACES, serverErrorCopy } from "@/lib/validation-messages";
 import type { Company } from "@shared/schema";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { queryReadState } from "@/lib/queryReadState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1053,25 +1056,45 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
 
 export default function BulkOperations() {
   const { t } = useTranslation();
-  const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
+  const clientsQuery = useQuery<ClientWithStats[]>({
     queryKey: ["/api/firm/clients"],
   });
+  const clientsState = queryReadState(clientsQuery);
 
-  if (isLoading) {
+  if (clientsState === "pending") {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex items-center justify-center h-64" data-testid="bulk-clients-loading">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
+  // The tabs seed their client selection from this list, so they mount only once it has loaded.
+  if (clientsState === "error") {
+    return (
+      <div className="space-y-6">
+        <PageHeader eyebrow={t["firm.eyebrowFirm"]} title={t["bulkOperations.bulkOperations"]} />
+        <LoadErrorState
+          error={clientsQuery.error}
+          onRetry={() => void clientsQuery.refetch()}
+          testId="bulk-clients-error"
+        />
+      </div>
+    );
+  }
+  const clients = clientsQuery.data ?? [];
+
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
+        eyebrow={t["firm.eyebrowFirm"]}
         title={t["bulkOperations.bulkOperations"]}
         description={t["bulkOperations.batchActionsAcrossAllManaged"]}
       />
+
+      {clientsState === "stale" && (
+        <StaleDataNotice onRetry={() => void clientsQuery.refetch()} testId="bulk-clients-stale" />
+      )}
 
       <Tabs defaultValue="ocr">
         <div className="overflow-x-auto">

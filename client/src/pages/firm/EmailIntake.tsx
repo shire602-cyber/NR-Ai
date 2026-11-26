@@ -31,6 +31,10 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { Plus, Trash2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { hasReadData, queryReadState, type QueryReadState } from "@/lib/queryReadState";
 
 // ─── Types (mirror the firm email-intake API) ──────────────────────────────
 interface EmailSource {
@@ -94,14 +98,21 @@ export default function EmailIntake() {
   const { t } = useTranslation();
   const { toast } = useToast();
 
-  const { data: sourcesData } = useQuery<SourcesResponse>({
+  const sourcesQuery = useQuery<SourcesResponse>({
     queryKey: ["/api/firm/email-intake/sources"],
     queryFn: () => apiRequest("GET", "/api/firm/email-intake/sources"),
   });
-  const { data: clients = [] } = useQuery<ClientCompany[]>({
+  const clientsQuery = useQuery<ClientCompany[]>({
     queryKey: ["/api/firm/clients"],
     queryFn: () => apiRequest("GET", "/api/firm/clients"),
   });
+  const sourcesState = queryReadState(sourcesQuery);
+  const clientsState = queryReadState(clientsQuery);
+  const sourcesData = hasReadData(sourcesState) ? sourcesQuery.data : undefined;
+  const clients = useMemo(
+    () => (hasReadData(clientsState) ? (clientsQuery.data ?? []) : []),
+    [clientsState, clientsQuery.data]
+  );
 
   const clientName = useMemo(() => {
     const m = new Map(clients.map((c) => [c.id, c.name]));
@@ -130,6 +141,24 @@ export default function EmailIntake() {
         </SetupNotice>
       )}
 
+      {clientsState === "pending" && (
+        <Skeleton className="h-8 w-full" data-testid="email-intake-clients-loading" />
+      )}
+      {clientsState === "error" && (
+        <LoadErrorState
+          compact
+          error={clientsQuery.error}
+          onRetry={() => void clientsQuery.refetch()}
+          testId="email-intake-clients-error"
+        />
+      )}
+      {clientsState === "stale" && (
+        <StaleDataNotice
+          onRetry={() => void clientsQuery.refetch()}
+          testId="email-intake-clients-stale"
+        />
+      )}
+
       <Tabs defaultValue="senders">
         <TabsList>
           <TabsTrigger value="senders" data-testid="tab-senders">
@@ -146,6 +175,9 @@ export default function EmailIntake() {
         <TabsContent value="senders" className="mt-4">
           <SendersTab
             sources={sourcesData?.sources ?? []}
+            readState={sourcesState}
+            error={sourcesQuery.error}
+            onRetry={() => void sourcesQuery.refetch()}
             clients={clients}
             clientName={clientName}
             toast={toast}
@@ -167,11 +199,17 @@ export default function EmailIntake() {
 // ─── Sender mappings ────────────────────────────────────────────────────────
 function SendersTab({
   sources,
+  readState,
+  error,
+  onRetry,
   clients,
   clientName,
   toast,
 }: {
   sources: EmailSource[];
+  readState: QueryReadState;
+  error: unknown;
+  onRetry: () => void;
   clients: ClientCompany[];
   clientName: (id: string) => string;
   toast: ReturnType<typeof useToast>["toast"];
@@ -299,11 +337,27 @@ function SendersTab({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            {formatMessage(t["emailIntake.linkedSendersCount"], { count: sources.length })}
+            {hasReadData(readState) ? (
+              formatMessage(t["emailIntake.linkedSendersCount"], { count: sources.length })
+            ) : (
+              <T k="pages.senderMappings" />
+            )}
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {sources.length === 0 ? (
+        <CardContent className="space-y-3">
+          {readState === "stale" && (
+            <StaleDataNotice onRetry={onRetry} testId="email-intake-sources-stale" />
+          )}
+          {readState === "pending" ? (
+            <Skeleton className="h-24 w-full" data-testid="email-intake-sources-loading" />
+          ) : readState === "error" ? (
+            <LoadErrorState
+              compact
+              error={error}
+              onRetry={onRetry}
+              testId="email-intake-sources-error"
+            />
+          ) : sources.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               <T k="pages.noSendersLinkedYet" />
             </p>
@@ -342,7 +396,9 @@ function SendersTab({
                     </TableCell>
                     <TableCell>
                       <Badge variant={s.status === "active" ? "default" : "secondary"}>
-                        {s.status}
+                        {s.status === "active"
+                          ? t["firmOps.intakeStatusActive"]
+                          : t["firmOps.intakeStatusPaused"]}
                       </Badge>
                     </TableCell>
                     <TableCell data-numeric className=" space-x-2">
@@ -590,11 +646,12 @@ function EmailTasksTab({
   const { t, locale } = useTranslation();
   const [companyId, setCompanyId] = useState("");
   const messagesKey = [`/api/firm/email-intake/messages/${companyId}`];
-  const { data, isLoading } = useQuery<{ messages: IntakeMessage[] }>({
+  const messagesQuery = useQuery<{ messages: IntakeMessage[] }>({
     queryKey: messagesKey,
     queryFn: () => apiRequest("GET", `/api/firm/email-intake/messages/${companyId}`),
     enabled: !!companyId,
   });
+  const messagesState = queryReadState(messagesQuery);
   const createTask = useMutation({
     mutationFn: (messageId: string) =>
       apiRequest("POST", `/api/firm/email-intake/messages/${messageId}/task`, {}),
@@ -605,7 +662,7 @@ function EmailTasksTab({
     onError: (e: Error) =>
       toast({ title: t["firm.emailTaskFailed"], description: e.message, variant: "destructive" }),
   });
-  const messages = data?.messages ?? [];
+  const messages = hasReadData(messagesState) ? (messagesQuery.data?.messages ?? []) : [];
 
   return (
     <div className="space-y-4">
@@ -646,7 +703,24 @@ function EmailTasksTab({
               </SelectContent>
             </Select>
           </div>
-          {companyId && !isLoading && messages.length === 0 && (
+          {companyId && messagesState === "pending" && (
+            <Skeleton className="h-24 w-full" data-testid="email-intake-messages-loading" />
+          )}
+          {companyId && messagesState === "error" && (
+            <LoadErrorState
+              compact
+              error={messagesQuery.error}
+              onRetry={() => void messagesQuery.refetch()}
+              testId="email-intake-messages-error"
+            />
+          )}
+          {companyId && messagesState === "stale" && (
+            <StaleDataNotice
+              onRetry={() => void messagesQuery.refetch()}
+              testId="email-intake-messages-stale"
+            />
+          )}
+          {companyId && hasReadData(messagesState) && messages.length === 0 && (
             <p className="text-sm text-muted-foreground">
               <T k="firm.emailTasksNoMessages" />
             </p>
