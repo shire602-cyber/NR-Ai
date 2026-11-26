@@ -7,6 +7,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { TRIAL_LIMITS } from "../../shared/plans";
+import { formatMessage } from "../../client/src/lib/i18n";
 
 const LOCALES = ["en", "ar"] as const;
 type Locale = (typeof LOCALES)[number];
@@ -54,7 +55,13 @@ describe("trial copy states the trial's real limits", () => {
       "marketing.prFaqTrialTopA",
       "onboarding.trialStartedNote",
     ]) {
-      expect(disclosesCaps(locale, all[key] ?? ""), `${locale} ${key}: ${all[key]}`).toBe(true);
+      const copy = all[key] ?? "";
+      const values = { companies: maxCompanies, credits: aiCreditsPerMonth, storageGb };
+      for (const name of Object.keys(values)) {
+        expect(copy, `${locale} ${key}`).toContain(`{${name}}`);
+      }
+      const rendered = formatMessage(copy, values);
+      expect(disclosesCaps(locale, rendered), `${locale} ${key}: ${rendered}`).toBe(true);
     }
   });
 

@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useSubscription } from "@/hooks/useSubscription";
+import { TRIAL_LIMITS } from "@shared/plans";
 import type { Company } from "@shared/schema";
 import {
   Field,
@@ -367,6 +368,9 @@ function Wizard({
           >
             {formatMessage(t["onboarding.trialStartedNote"], {
               days: TRIAL_DAYS,
+              companies: TRIAL_LIMITS.maxCompanies,
+              credits: TRIAL_LIMITS.aiCreditsPerMonth,
+              storageGb: TRIAL_LIMITS.maxStorageMb / 1024,
               plan: t[planPhraseKey(chosenPlan.planId)],
               billing: t["components.ui.settingsNav.billing"],
             })}
