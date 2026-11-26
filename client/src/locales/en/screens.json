@@ -1,4 +1,8 @@
 {
+  "screens.receiptsWaitingTitle": "Waiting to load your expenses",
+  "screens.receiptsWaitingBody": "Your list will appear here once loading resumes.",
+  "screens.receiptsRefreshFailedTitle": "Couldn't refresh your expenses",
+  "screens.receiptsRefreshFailedBody": "You're seeing the last loaded list, which may be out of date.",
   "screens.billHistoryTypeAndStatus": "Type and status",
   "screens.billHistoryKind.payment": "Payment",
   "screens.billHistoryKind.reversal": "Reversal",

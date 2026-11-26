@@ -1,4 +1,8 @@
 {
+  "screens.receiptsWaitingTitle": "في انتظار تحميل المصروفات",
+  "screens.receiptsWaitingBody": "ستظهر القائمة هنا عند استئناف التحميل.",
+  "screens.receiptsRefreshFailedTitle": "تعذّر تحديث المصروفات",
+  "screens.receiptsRefreshFailedBody": "تظهر آخر قائمة تم تحميلها، وقد لا تكون محدّثة.",
   "screens.billHistoryTypeAndStatus": "النوع والحالة",
   "screens.billHistoryKind.payment": "دفعة",
   "screens.billHistoryKind.reversal": "قيد عكسي",

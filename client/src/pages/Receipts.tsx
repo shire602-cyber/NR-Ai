@@ -16,7 +16,7 @@ import {
   formSpanFull,
 } from "@/components/ui/form-layout";
 import { T } from "@/components/layout/T";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { isCancelledError, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useOpenInvoiceParam } from "@/hooks/use-open-invoice-param";
 import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
@@ -29,6 +29,13 @@ import {
   receiptCategoryLabel,
   receiptMerchantLabel,
 } from "@/lib/receiptSearch";
+import {
+  receiptsReadState,
+  refreshReceiptsAfterWrite,
+  rollbackReceipts,
+  updateReceiptsOptimistically,
+  type ReceiptsSnapshot,
+} from "@/lib/receiptsCache";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -495,12 +502,19 @@ function CompanyReceipts({
   // Fetch receipts
   const {
     data: receipts,
-    isLoading,
-    error: receiptsError,
+    isSuccess: receiptsSucceeded,
+    isLoadingError: receiptsLoadFailed,
+    isPaused: receiptsPaused,
     refetch: refetchReceipts,
   } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "receipts"],
     enabled: !!companyId,
+  });
+  const receiptsState = receiptsReadState({
+    data: receipts,
+    isSuccess: receiptsSucceeded,
+    isLoadingError: receiptsLoadFailed,
+    isPaused: receiptsPaused,
   });
 
   // Fetch accounts for posting
@@ -537,7 +551,7 @@ function CompanyReceipts({
     mutationFn: ({ id, data }: { id: string; data: ReceiptFormData }) =>
       apiRequest("PUT", `/api/receipts/${id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+      void refreshReceiptsAfterWrite(queryClient, ["/api/companies", companyId, "receipts"]);
       toast({
         title: tr("Receipt updated successfully", "تم تحديث الإيصال"),
         description: tr("Your receipt has been updated.", "تم تحديث إيصالك."),
@@ -564,16 +578,12 @@ function CompanyReceipts({
       accountId: string;
       paymentAccountId: string;
     }) => apiRequest("POST", `/api/receipts/${id}/post`, { accountId, paymentAccountId }),
-    onMutate: async ({ id }) => {
-      const queryKey = ["/api/companies", companyId, "receipts"] as const;
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(
-        queryKey,
-        (old) => old?.map((r: any) => (r.id === id ? { ...r, posted: true } : r)) ?? []
-      );
-      return { previous, queryKey };
-    },
+    onMutate: ({ id }) =>
+      updateReceiptsOptimistically<any>(
+        queryClient,
+        ["/api/companies", companyId, "receipts"],
+        (rows) => rows.map((r: any) => (r.id === id ? { ...r, posted: true } : r))
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "journal-entries"] });
       toast({
@@ -585,10 +595,8 @@ function CompanyReceipts({
       setSelectedExpenseAccount("");
       setSelectedPaymentAccount("");
     },
-    onError: (error: any, _vars, context: any) => {
-      if (context?.previous && context?.queryKey) {
-        queryClient.setQueryData(context.queryKey, context.previous);
-      }
+    onError: async (error: any, _vars, context: ReceiptsSnapshot<any> | undefined) => {
+      await rollbackReceipts(queryClient, context);
       toast({
         variant: "destructive",
         title: tr("Failed to post expense", "تعذّر ترحيل المصروف"),
@@ -596,7 +604,7 @@ function CompanyReceipts({
       });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+      void refreshReceiptsAfterWrite(queryClient, ["/api/companies", companyId, "receipts"]);
     },
   });
 
@@ -616,7 +624,7 @@ function CompanyReceipts({
     onSuccess: (_created, { draft }) => {
       if (draft.source) removeReceipt(draft.source.id);
       setManualDraft(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", draft.companyId, "receipts"] });
+      void refreshReceiptsAfterWrite(queryClient, ["/api/companies", draft.companyId, "receipts"]);
       toast({
         title: tr("Expense created successfully", "تم إنشاء المصروف"),
         description: tr(
@@ -668,26 +676,20 @@ function CompanyReceipts({
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/receipts/${id}`),
-    onMutate: async (id: string) => {
-      const queryKey = ["/api/companies", companyId, "receipts"] as const;
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(
-        queryKey,
-        (old) => old?.filter((r: any) => r.id !== id) ?? []
-      );
-      return { previous, queryKey };
-    },
+    onMutate: (id: string) =>
+      updateReceiptsOptimistically<any>(
+        queryClient,
+        ["/api/companies", companyId, "receipts"],
+        (rows) => rows.filter((r: any) => r.id !== id)
+      ),
     onSuccess: () => {
       toast({
         title: tr("Expense deleted", "تم حذف المصروف"),
         description: tr("The expense has been deleted successfully.", "تم حذف المصروف."),
       });
     },
-    onError: (error: any, _id, context: any) => {
-      if (context?.previous && context?.queryKey) {
-        queryClient.setQueryData(context.queryKey, context.previous);
-      }
+    onError: async (error: any, _id, context: ReceiptsSnapshot<any> | undefined) => {
+      await rollbackReceipts(queryClient, context);
       toast({
         variant: "destructive",
         title: tr("Failed to delete expense", "تعذّر حذف المصروف"),
@@ -695,7 +697,7 @@ function CompanyReceipts({
       });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+      void refreshReceiptsAfterWrite(queryClient, ["/api/companies", companyId, "receipts"]);
     },
   });
 
@@ -728,10 +730,17 @@ function CompanyReceipts({
       void (async () => {
         let target = (receipts ?? []).find((r) => r.id === id);
         if (!target && companyId) {
-          const fresh: any[] = await queryClient.fetchQuery({
-            queryKey: ["/api/companies", companyId, "receipts"],
-            staleTime: 0,
-          });
+          let fresh: any[];
+          try {
+            fresh = await queryClient.fetchQuery({
+              queryKey: ["/api/companies", companyId, "receipts"],
+              staleTime: 0,
+            });
+          } catch (error) {
+            // A write refresh cancelled this lookup; the refetch it started replaces it.
+            if (isCancelledError(error)) return;
+            throw error;
+          }
           target = fresh.find((r) => r.id === id);
         }
         if (target) handleEditReceipt(target);
@@ -1531,7 +1540,7 @@ function CompanyReceipts({
       }
 
       // Wait for queries to invalidate and refresh
-      await queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+      await refreshReceiptsAfterWrite(queryClient, ["/api/companies", companyId, "receipts"]);
 
       if (successCount > 0) {
         toast({
@@ -1601,7 +1610,7 @@ function CompanyReceipts({
 
   const hasReceiptSearch = receiptSearch.trim().length > 0;
   const hasNoReceiptMatches =
-    hasReceiptSearch && !isLoading && !(receiptsError && !receipts) && !filteredReceipts.length;
+    receiptsState === "ready" && hasReceiptSearch && !filteredReceipts.length;
 
   function canExportReceipts(origin: string) {
     try {
@@ -2573,13 +2582,32 @@ function CompanyReceipts({
               {hasNoReceiptMatches ? t["screens.receiptsNoMatchTitle"] : ""}
             </p>
             <Card className="overflow-hidden">
-              {isLoading ? (
+              {receiptsState === "stale" && (
+                <ErrorState
+                  compact
+                  className="border-b border-border/70"
+                  title={t["screens.receiptsRefreshFailedTitle"]}
+                  description={t["screens.receiptsRefreshFailedBody"]}
+                  onRetry={() => void refetchReceipts()}
+                  testId="receipts-refresh-error"
+                />
+              )}
+              {receiptsState === "loading" ? (
                 <div className="p-4">
                   <CardListSkeleton count={4} />
                 </div>
-              ) : receiptsError && !receipts ? (
+              ) : receiptsState === "waiting" ? (
+                <div className="px-4 py-8 text-center" role="status" data-testid="receipts-waiting">
+                  <p className="text-sm font-semibold text-foreground">
+                    {t["screens.receiptsWaitingTitle"]}
+                  </p>
+                  <p className="mt-1 text-small text-muted-foreground">
+                    {t["screens.receiptsWaitingBody"]}
+                  </p>
+                </div>
+              ) : receiptsState === "failed" ? (
                 <ErrorState compact onRetry={() => void refetchReceipts()} />
-              ) : filteredReceipts && filteredReceipts.length > 0 ? (
+              ) : filteredReceipts.length > 0 ? (
                 <VirtualList
                   items={filteredReceipts as any[]}
                   estimateSize={64}
@@ -2721,7 +2749,7 @@ function CompanyReceipts({
                     </div>
                   )}
                 />
-              ) : (
+              ) : receiptsState === "ready" ? (
                 <EmptyState
                   icon={hasReceiptSearch ? Search : Upload}
                   title={
@@ -2768,7 +2796,7 @@ function CompanyReceipts({
                   }
                   testId="empty-state-receipts"
                 />
-              )}
+              ) : null}
             </Card>
           </section>
         </TabsContent>
@@ -2784,7 +2812,7 @@ function CompanyReceipts({
         receipt={linesDialog?.receipt ?? null}
         accounts={accounts ?? []}
         onSaved={() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+          void refreshReceiptsAfterWrite(queryClient, ["/api/companies", companyId, "receipts"]);
           toast({ title: t["purchases.receiptSaved"] });
         }}
       />
