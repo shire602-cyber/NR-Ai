@@ -4,6 +4,7 @@ import { CreditCard, FileCode2, FileDown, FileText, Loader2, Search } from "luci
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { PortalLoadNotice } from "@/components/portal/PortalLoadNotice";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
@@ -69,18 +70,33 @@ const matches = (inv: PortalInvoice, f: Filter): boolean =>
           ? inv.paymentStatus === "paid"
           : inv.paymentStatus === "credit";
 
+const EMPTY_INVOICES: PortalInvoice[] = [];
+
 /**
  * The customer's invoices and credit notes: filter tabs with counts, search by number, a table on
  * wide screens and cards on phones, PDF and e-invoice XML downloads with a spinner on the row, and
  * Pay now only when the supplier has an online gateway and the document has an open balance.
  */
 export function PortalInvoiceList({
-  invoices,
+  invoices: data,
   loading,
+  error,
+  paused,
+  retrying,
+  retryPending,
+  onRetry,
   onlinePayment,
 }: {
-  invoices: PortalInvoice[];
+  invoices: PortalInvoice[] | undefined;
   loading?: boolean;
+  /** A failed load or refresh. */
+  error?: unknown;
+  /** The request is waiting for the browser to come back online. */
+  paused?: boolean;
+  retrying?: boolean;
+  /** A manual retry has not settled, fetching or queued. */
+  retryPending?: boolean;
+  onRetry?: () => void;
   onlinePayment: boolean;
 }) {
   const supplier = usePortalAccountScope();
@@ -91,6 +107,9 @@ export function PortalInvoiceList({
   const [busy, setBusy] = useState<string | null>(null);
   const filters = useRef<HTMLDivElement>(null);
   const filterFade = useEdgeFade(filters);
+  const invoices = data ?? EMPTY_INVOICES;
+  // Counts and empty states are claims about the data: only make them once a result has arrived.
+  const hasData = data !== undefined;
 
   const counts = useMemo(
     () => Object.fromEntries(FILTERS.map((f) => [f, invoices.filter((i) => matches(i, f)).length])),
@@ -153,9 +172,11 @@ export function PortalInvoiceList({
               data-testid={`portal-filter-${f}`}
             >
               {t[`portal.list.filter.${f}`]}
-              <span className="rounded-full bg-background px-1.5 text-caption tabular-nums">
-                {formatInteger(counts[f], locale)}
-              </span>
+              {hasData && (
+                <span className="rounded-full bg-background px-1.5 text-caption tabular-nums">
+                  {formatInteger(counts[f], locale)}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -179,13 +200,24 @@ export function PortalInvoiceList({
 
       <Card>
         <CardContent className="p-0">
+          {!loading && (
+            <PortalLoadNotice
+              error={error}
+              paused={paused}
+              retrying={retrying}
+              retryPending={retryPending}
+              onRetry={onRetry}
+              compact={data !== undefined}
+              resource="invoices"
+            />
+          )}
           {loading ? (
             <div className="space-y-2 p-4" aria-busy="true">
               <Skeleton className="h-12" />
               <Skeleton className="h-12" />
               <Skeleton className="h-12" />
             </div>
-          ) : invoices.length === 0 ? (
+          ) : !hasData ? null : invoices.length === 0 ? (
             <EmptyState
               icon={FileText}
               title={t["portal.doc.noInvoicesTitle"]}
@@ -363,7 +395,7 @@ export function PortalInvoiceList({
         </CardContent>
       </Card>
       <p className="sr-only" role="status">
-        {formatMessage(t["portal.list.resultCount"], { count: rows.length })}
+        {hasData ? formatMessage(t["portal.list.resultCount"], { count: rows.length }) : null}
       </p>
     </div>
   );

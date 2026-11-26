@@ -85,6 +85,7 @@ beforeAll(async () => {
 beforeEach(() => {
   resetHarness();
   setFixtures({
+    [`${C}/accounts`]: [{ id: "cash-account", code: "1010", type: "asset", subType: "cash" }],
     [`${C}/numbering`]: NUMBERING,
     [`${C}/team/me`]: {
       role: "owner",
@@ -109,9 +110,9 @@ describe.each(["en", "ar"] as const)("CASH-SERIES (%s)", (locale) => {
     await renderPage(Numbering);
     await flushUntil(() => !!byTestId("numbering-cash_sale"));
     const card = byTestId("numbering-cash_sale")!;
-    expect(card.textContent).toContain(t[locale]["settingsPages.numberingDoc_cash_sale"]);
-    expect(t[locale]["settingsPages.numberingDoc_cash_sale"]).not.toBe(
-      t[locale]["settingsPages.numberingDoc_invoice"]
+    expect(card.textContent).toContain(t[locale]["settingsNumbering.numberingDoc_cash_sale"]);
+    expect(t[locale]["settingsNumbering.numberingDoc_cash_sale"]).not.toBe(
+      t[locale]["settingsNumbering.numberingDoc_invoice"]
     );
     if (locale === "ar") expect(card.textContent).toMatch(/[؀-ۿ]/);
     expect((byTestId("numbering-prefix-cash_sale") as HTMLInputElement).value).toBe("CS");
@@ -139,5 +140,29 @@ describe.each(["en", "ar"] as const)("CASH-SERIES (%s)", (locale) => {
       expect(t.ar["invoices.cashSale.numberHint"]).toMatch(/[؀-ۿ]/);
     }
     expect(box.querySelector('a[href="/settings/numbering"]')).not.toBeNull();
+  });
+
+  it("explains incomplete line items beside Record and clears the message when the line is valid", async () => {
+    const { default: CashSale } = await import("../../client/src/pages/sales/CashSale");
+    await renderPage(CashSale);
+    const message = t[locale]["invoices.cashSale.linesIncomplete"];
+    await flushUntil(() => byTestId("cash-sale-blocker")?.textContent === message);
+    const status = byTestId("cash-sale-blocker")!;
+    const btn = byTestId("button-record-cash-sale") as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(status.getAttribute("role")).toBe("status");
+    expect(status.closest('[data-testid="editor-shell-footer"]')).toBe(
+      btn.closest('[data-testid="editor-shell-footer"]')
+    );
+    expect(status.textContent).toBe(message);
+    expect(status.textContent).not.toContain("invoices.cashSale");
+    if (locale === "ar") expect(status.textContent).toMatch(/[؀-ۿ]/);
+
+    await type(byTestId("input-cash-line-description-0"), "Counter sale");
+    await type(byTestId("input-cash-line-quantity-0"), "2");
+    await type(byTestId("input-cash-line-price-0"), "25");
+    expect(btn.disabled).toBe(false);
+    expect(byTestId("cash-sale-blocker")).toBe(status);
+    expect(status.textContent).toBe("");
   });
 });

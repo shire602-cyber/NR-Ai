@@ -1,16 +1,18 @@
 // Reports > vat tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { useTranslation } from "@/lib/i18n";
 import { formatDateRange } from "@/lib/format-date";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
+import { reportQueryState } from "../model/reportQueryState";
+import { ReportBody } from "../ReportQueryNotice";
 
 export default function VatTab() {
-  const { dateRange, t, vatLoading, vatSummary } = useReportsPageContext();
+  const { dateRange, reportLoadErrors, t, vatFetchStatus, vatSummary } = useReportsPageContext();
   const { locale } = useTranslation();
+  const state = reportQueryState(vatSummary, vatFetchStatus, reportLoadErrors.vat?.error);
   return (
     <>
       <Card>
@@ -23,9 +25,12 @@ export default function VatTab() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {vatLoading ? (
-            <Skeleton className="h-64" />
-          ) : (
+          <ReportBody
+            state={state}
+            error={reportLoadErrors.vat}
+            testId="report-vat"
+            skeletonClassName="h-64"
+          >
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-4">
@@ -90,7 +95,7 @@ export default function VatTab() {
                 </p>
               </div>
             </div>
-          )}
+          </ReportBody>
         </CardContent>
       </Card>
     </>

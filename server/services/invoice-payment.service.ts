@@ -45,11 +45,12 @@ import {
   type LedgerTx,
   type PostJournalLineInput,
 } from "../ledger";
+import { ledgerQueryable } from "../ledger/tx";
 import { assertInvoicePaymentTaxPointOpen } from "../ledger/vat-lock";
 import { lockPeriodPolicy } from "./period-lock.service";
 import type { undoReliefRecoveryOnPayment } from "../tax/vat-adjustments.service";
 import { fromFils, toFils } from "../../shared/money";
-import { emitDomainEvent } from "../platform/domain-events";
+import { emitDomainEvent, trackDomainEventWork } from "../platform/domain-events";
 import { has, provide, resolve } from "../platform/service-registry";
 import { createLogger } from "../config/logger";
 import {
@@ -213,7 +214,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
   // then system rate via fx.getRate) so realised FX is booked; with no rate on
   // file it settles at the invoice rate (no FX), as before.
   let paymentExchangeRate = input.paymentExchangeRate ?? null;
-  const baseCurrency = await loadBaseCurrency(input.companyId);
+  const baseCurrency = await loadBaseCurrency(input.companyId, input.tx);
   const currency = documentCurrency(invoice.currency, baseCurrency);
   if (!paymentExchangeRate && currency !== baseCurrency) {
     try {
@@ -221,7 +222,8 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
         input.companyId,
         currency,
         baseCurrency,
-        input.date.toISOString().slice(0, 10)
+        input.date.toISOString().slice(0, 10),
+        { tx: input.tx }
       );
       if (!r.stale) paymentExchangeRate = r.rate;
     } catch {
@@ -231,7 +233,9 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
   const receivableAccountId = await getArAccount(exec, input.companyId);
   // A2 (C4, IAS 21): a bank account holds only its own currency. Receipts into a base-currency
   // account carry no foreign tag; into a third-currency account they are converted explicitly.
-  const bankCur = (await bankCurrencyOf(input.companyId, input.paymentAccountId)) ?? baseCurrency;
+  const bankCur =
+    (await bankCurrencyOf(input.companyId, input.paymentAccountId, ledgerQueryable(input.tx))) ??
+    baseCurrency;
   const cashLeg =
     bankCur === baseCurrency
       ? { currency: null, rate: null }
@@ -244,7 +248,8 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
               bankCur,
               baseCurrency,
               input.date.toISOString().slice(0, 10),
-              currency
+              currency,
+              input.tx
             ),
           };
   let result;
@@ -291,8 +296,9 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
     // the relief check still runs after the commit.
     const settled = result;
     await withLedgerTx(async (_tx, hooks) => {
-      hooks.afterCommit(async () => {
-        await afterPaymentRecorded(input, settled, amountFils);
+      // Tracked work: drainDomainEvents waits for the VAT lookup and the emitted handlers.
+      hooks.afterCommit(() => {
+        trackDomainEventWork(() => afterPaymentRecorded(input, settled, amountFils));
       });
     }, input.tx);
     return result;
@@ -900,22 +906,38 @@ export async function refundCustomerCredit(args: {
     if (args.amountFils > remaining) {
       throw new DomainError("CREDIT_EXCEEDS_REMAINING", 409, { remaining: fromFils(remaining) });
     }
-    const foreign = isForeignCurrency(credit.currency, await loadBaseCurrency(args.companyId, tx));
+    const base = await loadBaseCurrency(args.companyId, tx);
+    const foreign = isForeignCurrency(credit.currency, base);
     const creditRate = foreign ? String(credit.exchangeRate) : "1";
-    const refundRate = foreign
-      ? String(args.exchangeRate && args.exchangeRate > 0 ? args.exchangeRate : credit.exchangeRate)
-      : "1";
+    let refundRate = creditRate;
+    if (foreign && args.exchangeRate && args.exchangeRate > 0) {
+      refundRate = String(args.exchangeRate);
+    } else if (foreign) {
+      try {
+        const spot = await getRate(args.companyId, credit.currency, base, args.date, {
+          tx,
+          pegDefault: false,
+        });
+        if (!spot.stale) refundRate = spot.rateText;
+      } catch (error) {
+        if (!(error instanceof DomainError && error.code === "NO_EXCHANGE_RATE")) throw error;
+      }
+    }
     const liabBase = toBase(args.amountFils, creditRate);
     // A2 (C4): the bank line is measured in the bank account's own currency.
-    const base = await loadBaseCurrency(args.companyId, tx);
     const leg = await cashLegFor({
       companyId: args.companyId,
       base,
-      bankCurrency: await bankCurrencyOf(args.companyId, args.paymentAccountId),
+      bankCurrency: await bankCurrencyOf(
+        args.companyId,
+        args.paymentAccountId,
+        ledgerQueryable(tx)
+      ),
       docCurrency: foreign ? credit.currency : base,
       docAmountFils: args.amountFils,
       docRate: refundRate,
       date: args.date,
+      tx,
     });
     const cashBase = leg.cashBaseFils;
     const fxAcc = liabBase !== cashBase ? await getFxAccounts(tx, args.companyId) : null;

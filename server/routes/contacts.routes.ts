@@ -16,6 +16,7 @@ import { errorMessage } from "../errors";
 import type { InsertCustomerContact } from "@shared/schema";
 import { contactIdentityFields } from "../../shared/validators/einvoice-identity";
 import { DomainError } from "../errors";
+import { toAsciiDigits } from "../../shared/arabic-text";
 import {
   assertBuyerLegalId,
   assertContactDefaults,
@@ -47,7 +48,7 @@ const contactFields = {
     .optional(),
   phone: optText(40),
   whatsappNumber: optText(40),
-  trnNumber: optText(40),
+  trnNumber: optText(40).transform((v) => (typeof v === "string" ? toAsciiDigits(v) : v)),
   address: optText(300),
   city: optText(100),
   country: optText(100),
@@ -353,6 +354,9 @@ export function registerContactRoutes(app: Express) {
           // Check if contact exists by email
           const existing = await storage.getCustomerContactByEmail(companyId, contact.email);
 
+          const rawTrn = clean(contact.trnNumber || contact.trn, 40);
+          const trnNumber = rawTrn ? toAsciiDigits(rawTrn) : null;
+
           if (existing) {
             // Update existing contact
             await storage.updateCustomerContact(
@@ -360,7 +364,7 @@ export function registerContactRoutes(app: Express) {
               {
                 name: clean(contact.name, 200),
                 phone: clean(contact.phone, 40) || null,
-                trnNumber: clean(contact.trnNumber || contact.trn, 40) || null,
+                trnNumber,
                 address: clean(contact.address, 300) || null,
                 city: clean(contact.city, 100) || null,
                 country: clean(contact.country, 100) || "UAE",
@@ -375,7 +379,7 @@ export function registerContactRoutes(app: Express) {
               email: clean(contact.email, 254),
               name: clean(contact.name, 200),
               phone: clean(contact.phone, 40) || null,
-              trnNumber: clean(contact.trnNumber || contact.trn, 40) || null,
+              trnNumber,
               address: clean(contact.address, 300) || null,
               city: clean(contact.city, 100) || null,
               country: clean(contact.country, 100) || "UAE",

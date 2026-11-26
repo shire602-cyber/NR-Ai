@@ -2,7 +2,6 @@
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { BalanceCheck, StatementDownloads } from "../StatementParts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
@@ -10,10 +9,14 @@ import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
+import { reportQueryState } from "../model/reportQueryState";
+import { ReportBody } from "../ReportQueryNotice";
 
 export default function BalanceSheetTab() {
-  const { balanceSheet, bsLoading, dateRange, selectedCompanyId, t } = useReportsPageContext();
+  const { balanceSheet, bsFetchStatus, dateRange, reportLoadErrors, selectedCompanyId, t } =
+    useReportsPageContext();
   const { locale } = useTranslation();
+  const state = reportQueryState(balanceSheet, bsFetchStatus, reportLoadErrors.bs?.error);
   // SWEEP: Arabic statements showed English account names and dates.
   const accountLabel = (item: { accountName?: string | null; accountNameAr?: string | null }) =>
     (locale === "ar" && item.accountNameAr) || item.accountName || t["screens.unknownAccount"];
@@ -51,9 +54,12 @@ export default function BalanceSheetTab() {
           </div>
         </CardHeader>
         <CardContent>
-          {bsLoading ? (
-            <Skeleton className="h-96" />
-          ) : (
+          <ReportBody
+            state={state}
+            error={reportLoadErrors.bs}
+            testId="report-bs"
+            skeletonClassName="h-96"
+          >
             <div className="space-y-6">
               {balanceSheet?.warnings?.some(
                 (warning) => warning.code === "OVERDRAWN_CASH_ACCOUNTS"
@@ -152,7 +158,7 @@ export default function BalanceSheetTab() {
                 </Table>
               </div>
             </div>
-          )}
+          </ReportBody>
         </CardContent>
       </Card>
     </>

@@ -160,6 +160,7 @@
   "serverErrors.COUNTERPART_AMOUNT_MISMATCH": "The other transfer line must have the same amount in the opposite direction.",
   "serverErrors.COUNTER_ACCOUNT_REQUIRED": "Choose the account the purchase was paid from (for example the bank).",
   "serverErrors.CREDIT_INSUFFICIENT": "The available credit is not enough for this amount.",
+  "serverErrors.CREDIT_TOTAL_MISMATCH": "The credit note’s net amount plus VAT does not match the remaining invoice balance.",
   "serverErrors.CSV_EMPTY": "The CSV file is empty.",
   "serverErrors.CSV_HEADER_INVALID": "The CSV header row is not valid. Use the template columns.",
   "serverErrors.CSV_TOO_LARGE": "The CSV file is too large.",

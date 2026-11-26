@@ -34,7 +34,6 @@ import { isNraFirmRole } from "../../shared/access";
 import { zText, zUuid } from "../../shared/validators/primitives";
 import { storage } from "../storage";
 import { pq } from "../services/connectors/pq";
-import { recordAudit } from "../services/audit.service";
 import {
   BACKUP_EXCLUDED_TABLES,
   buildBackupManifest,
@@ -62,6 +61,14 @@ const restoreBody = z
     confirmName: zText(200).optional(),
   })
   .strict();
+
+function restoreRequestKey(req: Request): string | undefined {
+  const value = req.get("Idempotency-Key");
+  if (value === undefined) return;
+  const parsed = zUuid.safeParse(value);
+  if (!parsed.success) throw new DomainError("INVALID_IDEMPOTENCY_KEY", 400);
+  return parsed.data.toLowerCase();
+}
 
 const previewBody = z.object({ mode: z.enum(["merge", "replace"]).default("replace") }).strict();
 
@@ -372,7 +379,7 @@ export function registerBackupRoutes(app: Express) {
         ...result,
         warning:
           mode === "replace"
-            ? "Replace makes this company's data match the backup exactly: records created after the backup are deleted and edited records are reverted. A pre-restore backup is taken automatically."
+            ? "Replace rolls the accounting tables represented in the backup back to their saved state. A pre-restore backup is taken automatically."
             : "Merge only adds records that are missing. Edited records keep their current values and nothing is deleted.",
       });
     })
@@ -399,40 +406,14 @@ export function registerBackupRoutes(app: Express) {
         userId: req.user!.id,
         mode: body.mode,
         dryRun: false,
-      });
-      // Written only after the restore transaction committed (R19-07).
-      await pq(
-        `UPDATE backups SET last_restore_mode = $2, last_restored_at = now() WHERE id = $1`,
-        [backup.id, body.mode]
-      );
-      await storage.createActivityLog({
-        companyId: backup.companyId,
-        userId: req.user!.id,
-        action: "update",
-        entityType: "backup",
-        entityId: backup.id,
-        description: `Restored from backup "${backup.name}" in ${body.mode} mode (inserted ${result.totals.insert}, updated ${result.totals.update}, deleted ${result.totals.delete})`,
-        metadata: JSON.stringify({
-          mode: body.mode,
-          totals: result.totals,
-          preRestoreBackupId: result.preRestoreBackupId,
-        }),
-      });
-      await recordAudit({
-        userId: req.user!.id,
-        companyId: backup.companyId,
-        action: "backup.restore",
-        entityType: "backup",
-        entityId: backup.id,
-        before: { preRestoreBackupId: result.preRestoreBackupId },
-        after: { mode: body.mode, totals: result.totals },
+        requestKey: restoreRequestKey(req),
         req,
       });
       res.json({
         success: true,
         message:
           body.mode === "replace"
-            ? "Restore complete: company data now matches the backup."
+            ? "Restore complete."
             : `Merge complete: ${result.totals.insert} missing record(s) added from the backup.`,
         ...result,
       });
@@ -487,48 +468,10 @@ export function registerBackupRoutes(app: Express) {
         targetCompanyId: body.targetCompanyId,
         userId: req.user!.id,
         dryRun: false,
+        requestKey: restoreRequestKey(req),
+        req,
       });
-      // Written only after the clone transaction committed, in both companies.
       const detail = `inserted ${result.totals.insert} row(s), replaced ${result.totals.replacedTargetRows}`;
-      await storage.createActivityLog({
-        companyId: body.targetCompanyId,
-        userId: req.user!.id,
-        action: "update",
-        entityType: "backup",
-        entityId: backup.id,
-        description: `Loaded backup "${backup.name}" from another company (${detail})`,
-        metadata: JSON.stringify({
-          sourceCompanyId: backup.companyId,
-          totals: result.totals,
-          preRestoreBackupId: result.preRestoreBackupId,
-        }),
-      });
-      await storage.createActivityLog({
-        companyId: backup.companyId,
-        userId: req.user!.id,
-        action: "export",
-        entityType: "backup",
-        entityId: backup.id,
-        description: `Backup "${backup.name}" was loaded into company "${target.name}"`,
-        metadata: JSON.stringify({ targetCompanyId: body.targetCompanyId }),
-      });
-      for (const companyId of [body.targetCompanyId, backup.companyId]) {
-        await recordAudit({
-          userId: req.user!.id,
-          companyId,
-          action: "backup.clone",
-          entityType: "backup",
-          entityId: backup.id,
-          before: { preRestoreBackupId: result.preRestoreBackupId },
-          after: {
-            sourceCompanyId: backup.companyId,
-            targetCompanyId: body.targetCompanyId,
-            totals: result.totals,
-            skippedTables: result.skippedTables.map((t) => t.table),
-          },
-          req,
-        });
-      }
       res.json({
         success: true,
         message: `Backup loaded into ${target.name}: ${detail}.`,
