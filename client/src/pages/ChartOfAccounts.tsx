@@ -23,7 +23,7 @@ import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiUrl } from "@/lib/api";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   orderByHierarchy,
@@ -229,12 +229,8 @@ export default function ChartOfAccounts() {
         parentId: parentChoice === NO_PARENT ? null : parentChoice,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "accounts"],
-      });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "accounts-with-balances"]);
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "accounts"]);
       toast({ title: t["journal.coaParentSaved"] });
       setParentFor(null);
     },
