@@ -6,7 +6,7 @@
 import { act, createElement, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { PLAN_DEFINITIONS } from "../../shared/plans";
+import { PLAN_DEFINITIONS, TRIAL_LIMITS } from "../../shared/plans";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
 import enMarketingBase from "../../client/src/locales/en/marketing.json";
 import arMarketingBase from "../../client/src/locales/ar/marketing.json";
@@ -29,6 +29,16 @@ const arMarketing = { ...arMarketingBase, ...arMarketingHome, ...arMarketingMeta
 const HOME = "../../client/src/components/marketing/phase/home";
 const catalogs = { en: enMarketing, ar: arMarketing } as const;
 const PROVIDERS = /A-?Cube|Complyance|ZATCA|Saudi|KSA/i;
+const { maxCompanies, aiCreditsPerMonth, maxStorageMb } = TRIAL_LIMITS;
+const storageGb = maxStorageMb / 1024;
+const CAP_PHRASES = {
+  en: [`${maxCompanies} companies`, `${aiCreditsPerMonth} AI credits per month`, `${storageGb} GB`],
+  ar: [
+    `${maxCompanies} شركات`,
+    `${aiCreditsPerMonth} من أرصدة الذكاء الاصطناعي شهريًا`,
+    `${storageGb} غيغابايت`,
+  ],
+} as const;
 
 let container: HTMLDivElement;
 let root: Root;
@@ -263,6 +273,25 @@ describe.each(["en", "ar"] as const)("%s", (locale) => {
         expect(englishLines(scope), id).toEqual([]);
       }
     }
+  });
+
+  it("states the trial caps in the pricing lead and the trial FAQ", async () => {
+    expect([maxCompanies, aiCreditsPerMonth, storageGb]).toEqual([3, 100, 1]);
+    const { marketingMetadata } =
+      await import("../../client/src/components/marketing/phase/route-content");
+    expect(marketingMetadata(`/${locale}/pricing`)?.description).toBe(
+      catalog["marketing.hxMetaPricingLead"]
+    );
+    const { default: PhaseSite } =
+      await import("../../client/src/components/marketing/phase/PhaseSite");
+    await render(locale, "/pricing", async () => createElement(PhaseSite));
+    const lead = container.querySelector(".phase-subpage .phase-lead")?.textContent ?? "";
+    const answer = container.querySelector('details[data-faq="card"] p')?.textContent ?? "";
+    for (const phrase of CAP_PHRASES[locale]) {
+      expect(lead).toContain(phrase);
+      expect(answer).toContain(phrase);
+    }
+    expect(`${lead} ${answer}`).not.toMatch(/[{}]/);
   });
 
   it("keeps the monthly/yearly selector and the yearly signup path on the pricing page", async () => {

@@ -18,6 +18,13 @@ import { TRIAL_DAYS, trialState } from "../../shared/trial";
 import { applySignupChange, readSignupPlan } from "../../client/src/components/auth/signup-plan";
 import { planCta, planPhase } from "../../client/src/lib/plan-state";
 
+const { maxCompanies, aiCreditsPerMonth, maxStorageMb } = TRIAL_LIMITS;
+const storageGb = maxStorageMb / 1024;
+const trialCaps = {
+  en: `During the trial: up to ${maxCompanies} companies, ${aiCreditsPerMonth} AI credits per month and ${storageGb} GB of storage.`,
+  ar: `خلال الفترة التجريبية: حتى ${maxCompanies} شركات و${aiCreditsPerMonth} من أرصدة الذكاء الاصطناعي شهريًا، و${storageGb} غيغابايت من التخزين.`,
+};
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // File-level timeout is vitest's default (5 s); per-test overrides cover the two slow cases:
 
@@ -62,6 +69,11 @@ vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
 }));
 vi.mock("../../client/src/hooks/useCompanyPermission", () => ({
   useCompanyPermission: () => ({ can: () => sub.canBilling, gate: () => ({}) }),
+}));
+// Onboarding's first screen for an account with no company yet.
+vi.mock("../../client/src/components/ActiveCompanyProvider", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useActiveCompany: () => ({ company: undefined, isLoading: false }),
 }));
 
 let container: HTMLDivElement;
@@ -519,16 +531,8 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
     expect(body).toContain(L("AED 119, billed monthly", "تُدفع شهريًا"));
     expect(body).not.toContain("billed Monthly");
     expect(body).not.toContain("فوترة شهري");
-    // "Every feature" plus a line with the trial caps, from the shared constants.
-    expect(body).toContain(
-      L("Every feature is open during the trial.", "كل الميزات متاحة خلال الفترة التجريبية.")
-    );
-    expect(q("trial-caps")!.textContent).toContain(
-      L(
-        `up to ${TRIAL_LIMITS.maxCompanies} companies, ${TRIAL_LIMITS.aiCreditsPerMonth} AI credits and ${TRIAL_LIMITS.maxStorageMb / 1024} GB of storage`,
-        "حتى 3 شركات"
-      )
-    );
+    expect(body).toContain(L("You're on an Enterprise trial.", "أنت في تجربة خطة المؤسسات."));
+    expect(q("trial-caps")!.textContent).toBe(trialCaps[locale]);
     expect(q("button-activate-plan")).not.toBeNull();
     expect(q("button-see-plans")).toBeNull();
   });
@@ -595,6 +599,67 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
   });
 });
 
+// ── onboarding: the trial caps note ────────────────────────────────────────────────────────
+
+describe.each(["en", "ar"] as const)("onboarding trial note (%s)", (locale) => {
+  beforeEach(async () => setLocale(locale));
+
+  // Warm the heavy onboarding import outside the test timer; reused by both locales.
+  let CustomerOnboarding: typeof import("../../client/src/pages/onboarding/CustomerOnboarding").CustomerOnboarding;
+  beforeAll(async () => {
+    ({ CustomerOnboarding } = await import("../../client/src/pages/onboarding/CustomerOnboarding"));
+  });
+
+  // One stable client with a local demo queryFn, so the industry-template query neither logs a
+  // missing queryFn nor refetches on the paid rerender.
+  const onboardingClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        queryFn: async ({ queryKey }) =>
+          queryKey[0] === "/api/onboarding/coa-templates"
+            ? [{ id: "general", label: { en: "General", ar: "عام" }, accounts: 0 }]
+            : null,
+      },
+    },
+  });
+
+  async function onboarding() {
+    await act(async () => {
+      root.render(
+        createElement(
+          QueryClientProvider,
+          { client: onboardingClient },
+          createElement(CustomerOnboarding)
+        )
+      );
+    });
+    expect(q("express-company-name")).not.toBeNull();
+  }
+
+  it("shows during the trial and not once the chosen plan is paid and active", async () => {
+    sub.state = stateFor("running-chosen");
+    await onboarding();
+    expect(text(q("onboarding-trial-note")!)).toContain(String(aiCreditsPerMonth));
+
+    // Activation keeps the recorded choice; the trial's caps no longer apply.
+    sub.state = {
+      ...stateFor("running-chosen"),
+      planState: "active",
+      trial: null,
+      entitlement: {
+        state: "active",
+        planId: "professional",
+        storedPlanId: "professional",
+        features: planFeatures("professional"),
+        chosenPlan: chosen,
+      },
+    };
+    await onboarding();
+    expect(q("onboarding-trial-note")).toBeNull();
+  });
+});
+
 // ── sign-up step: accessible names, sticky Continue, focus, funnel source, flash ───────────
 
 describe.each(["en", "ar"] as const)("sign-up plan step (%s)", (locale) => {
@@ -652,13 +717,12 @@ describe.each(["en", "ar"] as const)("sign-up plan step (%s)", (locale) => {
     expect(classes).toContain("sticky");
     expect(classes).toContain("bottom-0");
     expect(classes.some((c) => c.startsWith("max-sm:sticky"))).toBe(false);
-    // "Every feature" with a caption of the trial caps from the shared constants.
     expect(text(q("signup-plan-step")!)).toContain(
-      locale === "en" ? "days of every feature, free" : "مع كل الميزات"
+      locale === "en"
+        ? `Try Enterprise free for ${TRIAL_DAYS} days. No card needed.`
+        : `جرّب باقة المؤسسات مجانًا لمدة ${TRIAL_DAYS} يومًا، دون بطاقة.`
     );
-    expect(q("signup-trial-caps")!.textContent).toContain(
-      locale === "en" ? "3 companies, 100 AI credits and 1 GB of storage" : "100"
-    );
+    expect(q("signup-trial-caps")!.textContent).toBe(trialCaps[locale]);
   });
 });
 
@@ -1061,7 +1125,14 @@ describe("catalog copy", () => {
       expect(note).not.toMatch(/\b14\b/);
       const billing = read(lang, "components")["components.ui.settingsNav.billing"];
       const phrase = read(lang, "marketing")["marketing.prPlanPhrase_professional"];
-      const out = formatMessage(note, { days: TRIAL_DAYS, plan: phrase, billing });
+      const out = formatMessage(note, {
+        days: TRIAL_DAYS,
+        companies: maxCompanies,
+        credits: aiCreditsPerMonth,
+        storageGb,
+        plan: phrase,
+        billing,
+      });
       expect(out).toContain(String(TRIAL_DAYS));
       expect(out).toContain(billing);
       expect(out).toContain(phrase);

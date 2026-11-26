@@ -335,6 +335,7 @@
   "activityLog.action.customer_credit.apply": "Customer credit applied",
   "activityLog.action.customer_credit.refund": "Customer credit refunded",
   "activityLog.action.debit_note.create": "Debit note created",
+  "activityLog.action.debit_note.void": "Debit note voided",
   "activityLog.action.deny": "Denied",
   "activityLog.action.email_intake.chase_gaps": "Email intake gaps chased",
   "activityLog.action.email_intake.task_create": "Email intake task created",
