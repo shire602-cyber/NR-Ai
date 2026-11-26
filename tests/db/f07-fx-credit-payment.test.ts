@@ -141,8 +141,9 @@ it("A: partial then final credit clears every AED leg to the fil; voids mirror e
   expect(await glNet(t, "1040")).toBe(2451.39);
 
   // Voiding a fresh, untouched foreign invoice nets its legs to zero again.
-  const other = await issueUsd(t, [std(700), zero(300)]);
   const before = await glNet(t, "1040");
+  const other = await issueUsd(t, [std(700), zero(300)]);
+  expect(await glNet(t, "1040")).toBe(Math.round((before + 3801.04) * 100) / 100);
   const v = await t.as.patch(`/api/invoices/${other}/status`, { status: "void" });
   expect(v.status, v.text).toBe(200);
   expect(await glNet(t, "1040")).toBe(before);

@@ -43,6 +43,7 @@ import {
   type VerifiedPaymentEvent,
 } from "./types";
 import type { RecordInvoicePaymentService } from "../invoice-payment.service";
+import { toAccountingDate } from "@shared/accounting-date";
 
 export * from "./types";
 export { setStripeFetch, signStripePayload, verifyStripeSignature } from "./stripe";
@@ -607,7 +608,9 @@ async function applyPaidEvent(
       invoiceId: link.invoiceId,
       companyId: link.companyId,
       amount: Number(fromFils(amountFils)),
-      date: new Date(),
+      // F06: the Dubai business date (UTC midnight), not the raw instant, which the posting
+      // path reads as a UTC date and so booked 00:00-04:00 Dubai receipts to the day before.
+      date: toAccountingDate(new Date())!.date,
       method: "online",
       reference: `${event.provider}:${event.paymentReference ?? event.sessionId ?? event.eventId}`,
       notes: `Online payment via ${adapter.label.en} (link ${link.id})`,

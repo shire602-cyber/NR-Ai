@@ -38,6 +38,7 @@ import { AppError, errorMessage } from "../errors";
 import { zPositiveFils } from "../../shared/validators/invoices";
 import { createInvoiceDraft } from "./invoices.routes";
 import { todayIso } from "../ledger/normalize";
+import { todayDubai } from "@shared/accounting-date";
 
 const router = Router();
 router.use(authMiddleware);
@@ -218,7 +219,7 @@ async function runOCR(
     typeof result.category === "string" && BULK_VALID_CATEGORIES.includes(result.category)
       ? result.category
       : "Other";
-  let parsedDate = new Date().toISOString().split("T")[0];
+  let parsedDate = todayDubai();
   if (typeof result.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(result.date)) {
     parsedDate = result.date;
   }

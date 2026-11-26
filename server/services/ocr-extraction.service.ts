@@ -18,6 +18,7 @@ import { deriveConfidenceBand } from "../../shared/receipt-confidence";
 import { extractReceipt, RECEIPT_EXTRACTION_PROMPT } from "./ai/receipt-extraction";
 import { normalizeModelConfidence, type ReceiptExtraction } from "./ai/structured-output";
 import { errorCode } from "../errors";
+import { todayDubai } from "@shared/accounting-date";
 
 const log = createLogger("ocr-extraction");
 
@@ -115,7 +116,7 @@ export function normalizeOcrJson(
       ? raw.category
       : "Other";
 
-  const fallbackDate = opts.today ?? new Date().toISOString().split("T")[0];
+  const fallbackDate = opts.today ?? todayDubai();
   const date =
     typeof raw?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.date) ? raw.date : fallbackDate;
 
