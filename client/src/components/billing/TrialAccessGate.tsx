@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import { Loader2, Lock } from "lucide-react";
 import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
 import { BrandMark } from "@/components/BrandMark";
@@ -23,6 +23,8 @@ export function TrialAccessGate({
   billing?: ReactNode;
 }) {
   const [location] = useLocation();
+  // Same matching as <Route path="/vat-filing">.
+  const [isVatFiling] = useRoute("/vat-filing");
   const { t } = useTranslation();
   const { companyId, isLoading, error } = useDefaultCompany();
   const { data: user } = useCurrentUser();
@@ -71,6 +73,8 @@ export function TrialAccessGate({
       </div>
     );
   }
+  // The VAT filing screen owns retry for a failed company list (no company to bill yet).
+  if (isVatFiling && !companyId && error) return workspace();
   // A missing billing endpoint resolves to null. An unresolved subscription has no data yet.
   if (error || (companyId && data === undefined)) {
     return (
