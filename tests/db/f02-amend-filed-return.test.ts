@@ -1,8 +1,10 @@
 /**
- * F02: amending a filed VAT return. On staging POST /api/vat-returns/:id/amend answered 409
- * DUPLICATE_VALUE (a Postgres 23505) for a filed Q1 return. The amendment must be created (201),
- * the original keeps counting as the period's effective return while the amendment is a draft,
- * and only the amendment counts once it is filed.
+ * F02: amending a filed/submitted VAT return. On staging (9e5fa726) POST /api/vat-returns/:id/amend
+ * answered 409 DUPLICATE_VALUE (Postgres 23505) repeatedly — both for a filed return and for the
+ * exact staging scenario: a record-only submission (transmittedByMuhasib:false, no ftaReferenceNumber)
+ * which produces "submitted" status. The amendment must be created (201), the original keeps
+ * counting as the period's effective return while the amendment is a draft, and only the amendment
+ * counts once it is filed.
  */
 import { expect, it } from "vitest";
 import {
@@ -99,4 +101,57 @@ it("amends a filed return: the original stays effective until the amendment is f
   expect(Number(current[0].box14PayableTax)).toBe(450);
   const original = await t.as.get(`/api/vat-returns/${originalId}`);
   expect(original.body.status).toBe("amended");
+});
+
+it("amends a submitted (record-only) return: exact staging scenario that produced 409 DUPLICATE_VALUE", async () => {
+  // The staging failure was with transmittedByMuhasib:false (no ftaReferenceNumber) which produces
+  // "submitted" status. POST /api/vat-returns/:id/amend repeatedly returned 409 DUPLICATE_VALUE.
+  const t = await h.createTenant({
+    companyColumns: {
+      trn_vat_number: "100000000000004",
+      emirate: "dubai",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+
+  const invoice = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Beta LLC",
+    customerTrn: "100000000000012",
+    date: "2026-02-15",
+    placeOfSupplyEmirate: "dubai",
+    lines: [{ description: "Service", quantity: 1, unitPrice: 20000, vatRate: 5 }],
+  });
+  expect(invoice.status, invoice.text).toBe(200);
+  const sent = await t.as.patch(`/api/invoices/${invoice.body.id}/status`, { status: "sent" });
+  expect(sent.status, sent.text).toBe(200);
+
+  const gen = await t.as.post(`${base(t)}/vat-returns/generate`, period);
+  expect(gen.status, gen.text).toBe(201);
+  const originalId = gen.body.id as string;
+
+  // Record-only submission: no ftaReferenceNumber → "submitted" status (not "filed").
+  const submitted = await t.as.post(`/api/vat-returns/${originalId}/submit`, {});
+  expect(submitted.status, submitted.text).toBe(200);
+  expect(submitted.body.status).toBe("submitted");
+  expect(Number(submitted.body.box14PayableTax)).toBe(1000);
+
+  // This is the call that returned 409 DUPLICATE_VALUE on staging 9e5fa726.
+  const amend = await t.as.post(`/api/vat-returns/${originalId}/amend`, {
+    reason: "Invoice amount was incorrect",
+  });
+  expect(amend.status, amend.text).toBe(201);
+  const amendmentId = (amend.body.vatReturn?.id ?? amend.body.id) as string;
+  expect(amendmentId).not.toBe(originalId);
+
+  // The original (now stored as "amended") still appears as the effective return.
+  const rows = (await t.as.get(`${base(t)}/vat-returns`)).body as VatReturnVersionLike[];
+  expect(rows.find((r) => r.id === originalId)?.status).toBe("amended");
+  expect(rows.find((r) => r.id === amendmentId)).toMatchObject({
+    status: "draft",
+    amendsReturnId: originalId,
+  });
+  const current = await effective(t);
+  expect(current.map((r) => r.id)).toEqual([originalId]);
+  expect(Number(current[0].box14PayableTax)).toBe(1000);
 });
