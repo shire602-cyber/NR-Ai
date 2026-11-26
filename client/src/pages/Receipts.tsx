@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   type Dispatch,
   type SetStateAction,
 } from "react";
@@ -22,6 +23,22 @@ import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  knownReceiptMerchant,
+  matchesReceiptSearch,
+  receiptCategoryLabel,
+  receiptMerchantLabel,
+} from "@/lib/receiptSearch";
+import {
+  hasUnconfirmedRowRemoval,
+  openReceiptById,
+  receiptsReadState,
+  receiptsShowsWaiting,
+  refreshReceiptsAfterWrite,
+  rollbackReceipts,
+  updateReceiptsOptimistically,
+  type ReceiptsSnapshot,
+} from "@/lib/receiptsCache";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +57,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -55,7 +73,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { clearCsrfToken, withCsrfHeader } from "@/lib/csrf";
-import { parseReceiptOcrText } from "@shared/receipt-ocr-parser";
+import { parseReceiptOcrText, UNKNOWN_RECEIPT_MERCHANT } from "@shared/receipt-ocr-parser";
 import {
   BAND_LABELS,
   bandRequiresReview,
@@ -93,6 +111,7 @@ import {
   Brain,
   Bot,
   Plus,
+  Search,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -320,12 +339,17 @@ function ReceiptThumbnail({ companyId, receipt, onPreview }: ReceiptThumbnailPro
     );
   }
 
+  const merchant = knownReceiptMerchant(receipt.merchant);
   return (
     <button
       type="button"
-      onClick={() => onPreview(url, receipt.merchant ?? undefined)}
+      onClick={() => onPreview(url, merchant || undefined)}
       className="group relative h-10 w-10 shrink-0 rounded-md overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      aria-label={`Preview receipt image for ${receipt.merchant ?? "this receipt"}`}
+      aria-label={
+        merchant
+          ? formatMessage(translateNow("screens.receiptPreviewFor"), { merchant })
+          : translateNow("screens.receiptPreviewThis")
+      }
       data-testid={`receipt-thumbnail-${receipt.id}`}
     >
       <img src={url} alt="" className="w-full h-full object-cover" />
@@ -378,27 +402,6 @@ function receiptReviewNotes(data: ExtractedData, locale: string, t: Record<strin
   const codes = data.reviewReasonCodes ?? data.validationIssues?.map(({ code }) => code) ?? [];
   const keys = codes.map((code) => OCR_REVIEW_ISSUE_LABELS[code] ?? fallback);
   return keys.length ? Array.from(new Set(keys), (key) => t[key]) : [t[fallback]];
-}
-
-/** Display label for a stored (English) receipt category; unknown categories show as stored. */
-const RECEIPT_CATEGORY_KEYS: Record<string, string> = {
-  "Office Supplies": "pageLabels.officeSupplies",
-  Meals: "pages.receiptsCategoryMeals",
-  Travel: "pages.travel",
-  Utilities: "pages.utilities",
-  Marketing: "pageLabels.marketing",
-  Equipment: "pages.equipment",
-  Communication: "pageLabels.communication",
-  "Professional Services": "pages.professionalServices",
-  Insurance: "pages.insurance",
-  Maintenance: "pages.maintenance",
-  Rent: "pages.receiptsCategoryRent",
-  Other: "pages.other",
-};
-
-function receiptCategoryLabel(t: Record<string, string>, category: string): string {
-  const key = RECEIPT_CATEGORY_KEYS[category];
-  return (key && t[key]) || category;
 }
 
 export default function Receipts() {
@@ -460,6 +463,8 @@ function CompanyReceipts({
   const [totalToSave, setTotalToSave] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState<any>(null);
+  // Placeholders are hidden only until the user types, so "Unknown Brewery" can be entered.
+  const [editMerchantTouched, setEditMerchantTouched] = useState(false);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
   const [postingReceipt, setPostingReceipt] = useState<any>(null);
   const [selectedExpenseAccount, setSelectedExpenseAccount] = useState<string>("");
@@ -476,6 +481,8 @@ function CompanyReceipts({
   const [isOcrExporting, setIsOcrExporting] = useState(false);
   const [manualDraft, setManualDraft] = useState<ManualReceiptDraft | null>(null);
   const manualSource = manualDraft?.source;
+  const [receiptSearch, setReceiptSearch] = useState("");
+  const receiptSearchInput = useRef<HTMLInputElement>(null);
   const [imagePreview, setImagePreview] = useState<{ src: string; merchant?: string } | null>(null);
   // R05-19b (S2): split lines / revise a posted receipt / split one upload into receipts.
   const [linesDialog, setLinesDialog] = useState<{
@@ -498,13 +505,40 @@ function CompanyReceipts({
   // Fetch receipts
   const {
     data: receipts,
-    isLoading,
-    error: receiptsError,
+    isSuccess: receiptsSucceeded,
+    isLoadingError: receiptsLoadFailed,
+    isPaused: receiptsPaused,
     refetch: refetchReceipts,
   } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "receipts"],
     enabled: !!companyId,
+    // A confirmed read can hand back rows that are structurally shared with the optimistic ones,
+    // so `data` alone may not change. dataUpdatedAt/fetchStatus still do, and re-render this page
+    // so the unconfirmed-removal gate below is re-evaluated.
+    notifyOnChangeProps: [
+      "data",
+      "status",
+      "isSuccess",
+      "isLoadingError",
+      "isPaused",
+      "fetchStatus",
+      "dataUpdatedAt",
+    ],
   });
+  const receiptsState = receiptsReadState({
+    data: receipts,
+    isSuccess: receiptsSucceeded,
+    isLoadingError: receiptsLoadFailed,
+    isPaused: receiptsPaused,
+  });
+  const receiptsConfirmed =
+    receiptsState === "ready" &&
+    !hasUnconfirmedRowRemoval(queryClient, ["/api/companies", companyId, "receipts"]);
+
+  // The lookup for `?open=<id>` is owned by this page: a new link, unmount or company change
+  // (the page is keyed by company) aborts it before it can open anything.
+  const openLookup = useRef<AbortController | null>(null);
+  useEffect(() => () => openLookup.current?.abort(), []);
 
   // Fetch accounts for posting
   const { data: accounts } = useQuery<any[]>({
@@ -540,7 +574,7 @@ function CompanyReceipts({
     mutationFn: ({ id, data }: { id: string; data: ReceiptFormData }) =>
       apiRequest("PUT", `/api/receipts/${id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+      void refreshReceiptsAfterWrite(queryClient, ["/api/companies", companyId, "receipts"]);
       toast({
         title: tr("Receipt updated successfully", "تم تحديث الإيصال"),
         description: tr("Your receipt has been updated.", "تم تحديث إيصالك."),
@@ -567,16 +601,12 @@ function CompanyReceipts({
       accountId: string;
       paymentAccountId: string;
     }) => apiRequest("POST", `/api/receipts/${id}/post`, { accountId, paymentAccountId }),
-    onMutate: async ({ id }) => {
-      const queryKey = ["/api/companies", companyId, "receipts"] as const;
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(
-        queryKey,
-        (old) => old?.map((r: any) => (r.id === id ? { ...r, posted: true } : r)) ?? []
-      );
-      return { previous, queryKey };
-    },
+    onMutate: ({ id }) =>
+      updateReceiptsOptimistically<any>(
+        queryClient,
+        ["/api/companies", companyId, "receipts"],
+        (rows) => rows.map((r: any) => (r.id === id ? { ...r, posted: true } : r))
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "journal-entries"] });
       toast({
@@ -588,10 +618,8 @@ function CompanyReceipts({
       setSelectedExpenseAccount("");
       setSelectedPaymentAccount("");
     },
-    onError: (error: any, _vars, context: any) => {
-      if (context?.previous && context?.queryKey) {
-        queryClient.setQueryData(context.queryKey, context.previous);
-      }
+    onError: async (error: any, _vars, context: ReceiptsSnapshot<any> | undefined) => {
+      await rollbackReceipts(queryClient, context);
       toast({
         variant: "destructive",
         title: tr("Failed to post expense", "تعذّر ترحيل المصروف"),
@@ -599,7 +627,7 @@ function CompanyReceipts({
       });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+      void refreshReceiptsAfterWrite(queryClient, ["/api/companies", companyId, "receipts"]);
     },
   });
 
@@ -619,7 +647,7 @@ function CompanyReceipts({
     onSuccess: (_created, { draft }) => {
       if (draft.source) removeReceipt(draft.source.id);
       setManualDraft(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", draft.companyId, "receipts"] });
+      void refreshReceiptsAfterWrite(queryClient, ["/api/companies", draft.companyId, "receipts"]);
       toast({
         title: tr("Expense created successfully", "تم إنشاء المصروف"),
         description: tr(
@@ -671,26 +699,20 @@ function CompanyReceipts({
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/receipts/${id}`),
-    onMutate: async (id: string) => {
-      const queryKey = ["/api/companies", companyId, "receipts"] as const;
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(
-        queryKey,
-        (old) => old?.filter((r: any) => r.id !== id) ?? []
-      );
-      return { previous, queryKey };
-    },
+    onMutate: (id: string) =>
+      updateReceiptsOptimistically<any>(
+        queryClient,
+        ["/api/companies", companyId, "receipts"],
+        (rows) => rows.filter((r: any) => r.id !== id)
+      ),
     onSuccess: () => {
       toast({
         title: tr("Expense deleted", "تم حذف المصروف"),
         description: tr("The expense has been deleted successfully.", "تم حذف المصروف."),
       });
     },
-    onError: (error: any, _id, context: any) => {
-      if (context?.previous && context?.queryKey) {
-        queryClient.setQueryData(context.queryKey, context.previous);
-      }
+    onError: async (error: any, _id, context: ReceiptsSnapshot<any> | undefined) => {
+      await rollbackReceipts(queryClient, context);
       toast({
         variant: "destructive",
         title: tr("Failed to delete expense", "تعذّر حذف المصروف"),
@@ -698,7 +720,7 @@ function CompanyReceipts({
       });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+      void refreshReceiptsAfterWrite(queryClient, ["/api/companies", companyId, "receipts"]);
     },
   });
 
@@ -712,6 +734,7 @@ function CompanyReceipts({
 
   const handleEditReceipt = (receipt: any) => {
     setEditingReceipt(receipt);
+    setEditMerchantTouched(false);
     form.reset({
       merchant: receipt.merchant || "",
       date: receipt.date || "",
@@ -727,17 +750,18 @@ function CompanyReceipts({
   // an older (or shorter) copy, so a receipt missing from it is looked up in a fresh list.
   useOpenInvoiceParam(
     (id) => {
-      void (async () => {
-        let target = (receipts ?? []).find((r) => r.id === id);
-        if (!target && companyId) {
-          const fresh: any[] = await queryClient.fetchQuery({
-            queryKey: ["/api/companies", companyId, "receipts"],
-            staleTime: 0,
-          });
-          target = fresh.find((r) => r.id === id);
-        }
-        if (target) handleEditReceipt(target);
-      })();
+      if (!companyId) return;
+      openLookup.current?.abort();
+      const controller = new AbortController();
+      openLookup.current = controller;
+      void openReceiptById<any>({
+        client: queryClient,
+        queryKey: ["/api/companies", companyId, "receipts"],
+        id,
+        cached: receipts,
+        signal: controller.signal,
+        onOpen: handleEditReceipt,
+      });
     },
     "/receipts",
     receipts !== undefined
@@ -1104,7 +1128,7 @@ function CompanyReceipts({
         if (response.ok) {
           const result = await response.json();
           parsed = {
-            merchant: result.merchant || "Unknown Merchant",
+            merchant: result.merchant || UNKNOWN_RECEIPT_MERCHANT,
             date: result.date || new Date().toISOString().split("T")[0],
             invoiceNumber: result.invoiceNumber || null,
             subtotal: result.subtotal || result.amount || 0,
@@ -1227,7 +1251,7 @@ function CompanyReceipts({
 
         parsed = parseReceiptText(tesseractText);
         if (!parsed.merchant && !parsed.total) {
-          parsed.merchant = "Unknown Merchant";
+          parsed.merchant = UNKNOWN_RECEIPT_MERCHANT;
           parsed.total = 0;
         }
 
@@ -1296,7 +1320,7 @@ function CompanyReceipts({
         },
         body: JSON.stringify({
           companyId: origin,
-          description: `${data.merchant || "Unknown"} - ${data.total} ${data.currency}`,
+          description: `${data.merchant || UNKNOWN_RECEIPT_MERCHANT} - ${data.total} ${data.currency}`,
           amount: data.total,
           currency: data.currency || "AED",
         }),
@@ -1450,7 +1474,7 @@ function CompanyReceipts({
           const { net, vat } = amountsFrom(receipt.data);
           const receiptData = {
             captureId: receipt.id,
-            merchant: receipt.data!.merchant || "Unknown",
+            merchant: receipt.data.merchant?.trim() || UNKNOWN_RECEIPT_MERCHANT,
             date: receipt.data!.date || new Date().toISOString().split("T")[0],
             amount: net / 100,
             vatAmount: vat / 100,
@@ -1475,11 +1499,15 @@ function CompanyReceipts({
 
           // Fuzzy duplicate warning from the server: saved, but worth a second look.
           if (Array.isArray(created?.duplicateWarnings) && created.duplicateWarnings.length > 0) {
+            const savedMerchant = created.duplicateWarnings[0].merchant;
+            const merchant = savedMerchant
+              ? receiptMerchantLabel(t, savedMerchant)
+              : tr("the same merchant", "نفس التاجر");
             toast({
               title: tr("Possible duplicate", "احتمال وجود تكرار"),
               description: tr(
-                `A similar receipt from ${created.duplicateWarnings[0].merchant ?? "the same merchant"} already exists`,
-                `يوجد إيصال مشابه من ${created.duplicateWarnings[0].merchant ?? "نفس التاجر"} بالفعل`
+                `A similar receipt from ${merchant} already exists`,
+                `يوجد إيصال مشابه من ${merchant} بالفعل`
               ),
             });
           }
@@ -1529,7 +1557,7 @@ function CompanyReceipts({
       }
 
       // Wait for queries to invalidate and refresh
-      await queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+      await refreshReceiptsAfterWrite(queryClient, ["/api/companies", companyId, "receipts"]);
 
       if (successCount > 0) {
         toast({
@@ -1568,12 +1596,15 @@ function CompanyReceipts({
 
   const filteredReceipts = useMemo(() => {
     if (!receipts || receipts.length === 0) return [];
-    if (!dateRange.from && !dateRange.to) return receipts;
+    const searched = receiptSearch.trim()
+      ? receipts.filter((r: any) => matchesReceiptSearch(r, receiptSearch, t))
+      : receipts;
+    if (!dateRange.from && !dateRange.to) return searched;
 
     const fromDate = dateRange.from ? startOfDay(dateRange.from) : null;
     const toDate = dateRange.to ? endOfDay(dateRange.to) : null;
 
-    return receipts.filter((receipt: any) => {
+    return searched.filter((receipt: any) => {
       if (!receipt.date) return false;
 
       const receiptDate =
@@ -1592,7 +1623,16 @@ function CompanyReceipts({
       }
       return true;
     });
-  }, [receipts, dateRange.from, dateRange.to]);
+  }, [receipts, receiptSearch, t, dateRange.from, dateRange.to]);
+
+  const hasReceiptSearch = receiptSearch.trim().length > 0;
+  const hasNoReceiptMatches = receiptsConfirmed && hasReceiptSearch && !filteredReceipts.length;
+  const showReceiptsWaiting = receiptsShowsWaiting({
+    state: receiptsState,
+    isPaused: receiptsPaused,
+    confirmed: receiptsConfirmed,
+    visibleCount: filteredReceipts.length,
+  });
 
   function canExportReceipts(origin: string) {
     try {
@@ -2036,7 +2076,7 @@ function CompanyReceipts({
                           onClick={() =>
                             setImagePreview({
                               src: receipt.preview,
-                              merchant: receipt.data?.merchant,
+                              merchant: knownReceiptMerchant(receipt.data?.merchant) || undefined,
                             })
                           }
                           className="group relative block w-24 h-24 rounded-lg overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
@@ -2172,7 +2212,12 @@ function CompanyReceipts({
                               <Input
                                 id={`ocr-merchant-${index}`}
                                 dir="auto"
-                                value={receipt.data.merchant || ""}
+                                value={
+                                  receipt.data.merchant === UNKNOWN_RECEIPT_MERCHANT
+                                    ? ""
+                                    : (receipt.data.merchant ?? "")
+                                }
+                                placeholder={t["screens.unknownMerchant"]}
                                 onChange={(e) =>
                                   updateReceiptData(receipt.id, { merchant: e.target.value })
                                 }
@@ -2498,6 +2543,17 @@ function CompanyReceipts({
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  ref={receiptSearchInput}
+                  type="search"
+                  dir="auto"
+                  value={receiptSearch}
+                  onChange={(e) => setReceiptSearch(e.target.value)}
+                  placeholder={t["screens.receiptsSearchPlaceholder"]}
+                  aria-label={t["screens.receiptsSearchPlaceholder"]}
+                  className="w-56"
+                  data-testid="input-search-receipts"
+                />
                 <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -2511,6 +2567,14 @@ function CompanyReceipts({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {hasReceiptSearch && (
+                      <DropdownMenuLabel
+                        className="max-w-64"
+                        data-testid="text-export-search-scope"
+                      >
+                        {t["screens.receiptsExportSearchScope"]}
+                      </DropdownMenuLabel>
+                    )}
                     <DropdownMenuItem
                       onClick={handleExportExcel}
                       data-testid="menu-export-expenses-excel"
@@ -2536,14 +2600,36 @@ function CompanyReceipts({
                 </DropdownMenu>
               </div>
             </div>
+            <p className="sr-only" role="status">
+              {hasNoReceiptMatches ? t["screens.receiptsNoMatchTitle"] : ""}
+            </p>
             <Card className="overflow-hidden">
-              {isLoading ? (
+              {receiptsState === "stale" && (
+                <ErrorState
+                  compact
+                  className="border-b border-border/70"
+                  title={t["screens.receiptsRefreshFailedTitle"]}
+                  description={t["screens.receiptsRefreshFailedBody"]}
+                  onRetry={() => void refetchReceipts()}
+                  testId="receipts-refresh-error"
+                />
+              )}
+              {receiptsState === "loading" ? (
                 <div className="p-4">
                   <CardListSkeleton count={4} />
                 </div>
-              ) : receiptsError && !receipts ? (
+              ) : showReceiptsWaiting ? (
+                <div className="px-4 py-8 text-center" role="status" data-testid="receipts-waiting">
+                  <p className="text-sm font-semibold text-foreground">
+                    {t["screens.receiptsWaitingTitle"]}
+                  </p>
+                  <p className="mt-1 text-small text-muted-foreground">
+                    {t["screens.receiptsWaitingBody"]}
+                  </p>
+                </div>
+              ) : receiptsState === "failed" ? (
                 <ErrorState compact onRetry={() => void refetchReceipts()} />
-              ) : filteredReceipts && filteredReceipts.length > 0 ? (
+              ) : filteredReceipts.length > 0 ? (
                 <VirtualList
                   items={filteredReceipts as any[]}
                   estimateSize={64}
@@ -2563,7 +2649,7 @@ function CompanyReceipts({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline justify-between gap-3">
                           <p dir="auto" className="truncate text-sm font-medium text-foreground">
-                            {receipt.merchant || t["screens.unknownMerchant"]}
+                            {receiptMerchantLabel(t, receipt.merchant)}
                           </p>
                           <Money
                             amount={Number(receipt.amount || 0)}
@@ -2685,23 +2771,27 @@ function CompanyReceipts({
                     </div>
                   )}
                 />
-              ) : (
+              ) : receiptsConfirmed ? (
                 <EmptyState
-                  icon={Upload}
+                  icon={hasReceiptSearch ? Search : Upload}
                   title={
-                    dateRange.from || dateRange.to
-                      ? t["pages.receiptsEmptyRangeTitle"]
-                      : t["pages.receiptsEmptyTitle"]
+                    hasReceiptSearch
+                      ? t["screens.receiptsNoMatchTitle"]
+                      : dateRange.from || dateRange.to
+                        ? t["pages.receiptsEmptyRangeTitle"]
+                        : t["pages.receiptsEmptyTitle"]
                   }
                   description={
-                    dateRange.from || dateRange.to
-                      ? t["pages.receiptsEmptyRangeBody"]
-                      : autoReadUnavailable
-                        ? t["pages.receiptsEmptyBodyManual"]
-                        : t["pages.receiptsEmptyBody"]
+                    hasReceiptSearch
+                      ? t["screens.noMatchingAssetsBody"]
+                      : dateRange.from || dateRange.to
+                        ? t["pages.receiptsEmptyRangeBody"]
+                        : autoReadUnavailable
+                          ? t["pages.receiptsEmptyBodyManual"]
+                          : t["pages.receiptsEmptyBody"]
                   }
                   action={
-                    !(dateRange.from || dateRange.to)
+                    !(dateRange.from || dateRange.to) && !hasReceiptSearch
                       ? {
                           label: t["pages.receiptsUploadReceipt"],
                           icon: Upload,
@@ -2711,16 +2801,24 @@ function CompanyReceipts({
                       : undefined
                   }
                   secondaryAction={
-                    dateRange.from || dateRange.to
+                    hasReceiptSearch
                       ? {
-                          label: t["screens.clearFilter"],
-                          onClick: () => setDateRange({ from: undefined, to: undefined }),
+                          label: t["screens.clearSearch"],
+                          onClick: () => {
+                            setReceiptSearch("");
+                            receiptSearchInput.current?.focus();
+                          },
                         }
-                      : undefined
+                      : dateRange.from || dateRange.to
+                        ? {
+                            label: t["screens.clearFilter"],
+                            onClick: () => setDateRange({ from: undefined, to: undefined }),
+                          }
+                        : undefined
                   }
                   testId="empty-state-receipts"
                 />
-              )}
+              ) : null}
             </Card>
           </section>
         </TabsContent>
@@ -2736,7 +2834,7 @@ function CompanyReceipts({
         receipt={linesDialog?.receipt ?? null}
         accounts={accounts ?? []}
         onSaved={() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
+          void refreshReceiptsAfterWrite(queryClient, ["/api/companies", companyId, "receipts"]);
           toast({ title: t["purchases.receiptSaved"] });
         }}
       />
@@ -2750,7 +2848,7 @@ function CompanyReceipts({
             </DialogTitle>
             <DialogDescription>
               {imagePreview?.merchant
-                ? `Original scanned image for ${imagePreview.merchant}`
+                ? formatMessage(t["screens.receiptScannedFor"], { merchant: imagePreview.merchant })
                 : t["pages.receiptsOriginalImage"]}
             </DialogDescription>
           </DialogHeader>
@@ -2758,7 +2856,7 @@ function CompanyReceipts({
             <div className="flex items-center justify-center bg-muted/30 rounded-md p-2 max-h-[75vh] overflow-auto">
               <img
                 src={imagePreview.src}
-                alt="Source receipt"
+                alt={t["pageLabels.sourceReceiptImage"]}
                 className="max-w-full h-auto rounded"
                 data-testid="image-preview-full"
               />
@@ -2791,7 +2889,23 @@ function CompanyReceipts({
                         <T k="pages.merchant" />
                       </FormLabel>
                       <FormControl>
-                        <Input {...field} dir="auto" data-testid="input-edit-merchant" />
+                        <Input
+                          {...field}
+                          dir="auto"
+                          value={
+                            editMerchantTouched ? field.value : knownReceiptMerchant(field.value)
+                          }
+                          onChange={(e) => {
+                            setEditMerchantTouched(true);
+                            field.onChange(e);
+                          }}
+                          placeholder={
+                            knownReceiptMerchant(editingReceipt?.merchant)
+                              ? undefined
+                              : t["screens.unknownMerchant"]
+                          }
+                          data-testid="input-edit-merchant"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -2939,7 +3053,7 @@ function CompanyReceipts({
                   <div className="flex justify-between items-start">
                     <div>
                       <p dir="auto" className="font-medium">
-                        {transaction.merchant || t["screens.unknownMerchant"]}
+                        {receiptMerchantLabel(t, transaction.merchant)}
                       </p>
                       <p className="text-sm text-muted-foreground">
                         {transaction.date ? formatDate(transaction.date, locale) : "—"}
@@ -3095,7 +3209,7 @@ function CompanyReceipts({
                 <div className="flex justify-between items-center">
                   <div>
                     <p dir="auto" className="font-medium">
-                      {postingReceipt.merchant || t["screens.unknownMerchant"]}
+                      {receiptMerchantLabel(t, postingReceipt.merchant)}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {postingReceipt.date ? formatDate(postingReceipt.date, locale) : "—"}
