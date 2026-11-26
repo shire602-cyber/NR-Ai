@@ -308,30 +308,32 @@ export function computeEInvoiceAmounts(invoice: InvoiceLike, lines: InvoiceLine[
   return { sign, totals, lines: computed };
 }
 
-/** VAT breakdown: one subtotal per category (and rate). */
+/** VAT breakdown: sum posted line amounts within each category and rate. */
 export function taxBreakdown(computed: ComputedEInvoiceLine[]) {
   const groups = new Map<
     string,
-    { category: UblCategory; rate: number; taxableFils: number; allowanceFils: number }
+    {
+      category: UblCategory;
+      rate: number;
+      taxableFils: number;
+      allowanceFils: number;
+      taxFils: number;
+    }
   >();
   for (const l of computed) {
     const { category } = l;
     const rate = category === "S" || category === "N" ? l.vatRate : 0;
     const key = `${category}:${rate}`;
-    const g = groups.get(key) ?? { category, rate, taxableFils: 0, allowanceFils: 0 };
+    const g = groups.get(key) ?? { category, rate, taxableFils: 0, allowanceFils: 0, taxFils: 0 };
     g.taxableFils += l.lineExtensionFils - l.documentDiscountFils;
     g.allowanceFils += l.documentDiscountFils;
+    // Preserve the rounding applied to each line when posting the invoice.
+    // PINT AE's aligned-ibrp-s-09 allows a tolerance on the category calculation.
+    if (category === "S") g.taxFils += l.vatFils;
     groups.set(key, g);
   }
   return [...groups.values()].map((g) => ({
     ...g,
-    taxFils:
-      g.category === "S"
-        ? new Decimal(g.taxableFils)
-            .times(g.rate)
-            .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
-            .toNumber()
-        : 0,
     reasonCode: classifySupplyForCategory(g.category).exemptionReasonCode ?? null,
   }));
 }
@@ -728,10 +730,10 @@ export function generateEInvoiceXML(
     null,
     amountEl("cbc:LineExtensionAmount", lineExtTotal, currency),
     amountEl("cbc:TaxExclusiveAmount", subtotalFils, currency),
-    amountEl("cbc:TaxInclusiveAmount", subtotalFils + vatFils, currency),
+    amountEl("cbc:TaxInclusiveAmount", payableFils, currency),
     docAllowanceFils > 0 && amountEl("cbc:AllowanceTotalAmount", docAllowanceFils, currency),
-    opts.paidAtIssue && amountEl("cbc:PrepaidAmount", subtotalFils + vatFils, currency),
-    amountEl("cbc:PayableAmount", opts.paidAtIssue ? 0 : subtotalFils + vatFils, currency)
+    opts.paidAtIssue && amountEl("cbc:PrepaidAmount", payableFils, currency),
+    amountEl("cbc:PayableAmount", opts.paidAtIssue ? 0 : payableFils, currency)
   );
   const paymentTerms = termsText && el("cac:PaymentTerms", null, el("cbc:Note", null, termsText));
 

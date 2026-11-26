@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { PINT_AE_FIXTURES, fixtureCompany } from "../fixtures/pint-ae/fixtures";
 import { generateEInvoiceXML } from "../../server/services/einvoice.service";
 import { prepareEInvoiceSubmission } from "../../server/services/einvoice-submit.service";
-import { attr, first, parseXml, text, textAt } from "../../server/services/einvoice/dom";
+import { attr, children, first, parseXml, text, textAt } from "../../server/services/einvoice/dom";
 import { ublToGets } from "../../server/services/einvoice/providers/complyance-gets";
 import { generateInvoicePDF } from "../../server/services/pdf-invoice.service";
 import { pdfToText, pdfWords } from "./pdf-test-helpers";
@@ -169,6 +169,37 @@ it("preserves the stored net in validated XML and the frozen provider amounts", 
   expect(textAt(root, "cac:InvoiceLine/cac:ItemPriceExtension/cac:TaxTotal/cbc:TaxAmount")).toBe(
     "183625.00"
   );
+}, 60_000);
+
+it("preserves the posted VAT and payable when VAT rounds up on two AED 0.10 lines", async () => {
+  const result = await prepareEInvoiceSubmission({
+    invoice: { ...invoice, subtotal: 0.2, vatAmount: 0.02, total: 0.22 },
+    lines: standard.lines.map((line) => ({
+      ...line,
+      quantity: 1,
+      unitPrice: 0.1,
+      discountType: null,
+      discountValue: null,
+      discountAmount: 0,
+      netAmount: 0.1,
+    })),
+    company: fixtureCompany,
+    ctx: { customer: standard.customer, options: standard.opts },
+    now: new Date("2027-01-15T12:00:00Z"),
+  });
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  const root = parseXml(result.xml).documentElement;
+  expect(textAt(root, "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount")).toBe("0.20");
+  expect(textAt(root, "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount")).toBe("0.02");
+  expect(textAt(root, "cac:TaxTotal/cbc:TaxAmount")).toBe("0.02");
+  expect(textAt(root, "cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount")).toBe("0.22");
+  expect(textAt(root, "cac:LegalMonetaryTotal/cbc:PayableAmount")).toBe("0.22");
+  expect(
+    children(root, "cac:InvoiceLine").map((line) =>
+      textAt(line, "cac:ItemPriceExtension/cac:TaxTotal/cbc:TaxAmount")
+    )
+  ).toEqual(["0.01", "0.01"]);
 }, 60_000);
 
 it("expresses both UAE line extension amounts in AED on a USD tax invoice", () => {
