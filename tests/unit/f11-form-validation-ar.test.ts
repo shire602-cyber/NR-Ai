@@ -11,6 +11,7 @@ import {
   byTestId,
   click,
   flush,
+  flushUntil,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
   renderPage,
@@ -190,7 +191,11 @@ const CASES: FormCase[] = [
     fixtures: { [`${C}/vendors/aging`]: null },
     load: async () => ({ page: (await import("../../client/src/pages/Vendors")).default }),
     // Fable P7: the page says "Suppliers" like the nav.
-    open: () => click(buttonByText(/^\s*new supplier\s*$/i)),
+    open: async () => {
+      await click(buttonByText(/^\s*new supplier\s*$/i));
+      // NewVendorDialog is lazy: wait for its form before the test continues.
+      await flushUntil(() => document.getElementById("vendor-name") !== null);
+    },
     submit: lastButton,
   },
   {
