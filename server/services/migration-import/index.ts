@@ -43,6 +43,7 @@ import { fromFils, mulRate } from "../../../shared/money";
 import { resolve } from "../../platform/service-registry";
 import type { FxGetRate } from "../fx";
 import { DomainError } from "../../errors";
+import { reserveIssuedNumbers } from "../invoice-numbering.service";
 import { postJournal, withLedgerTx, type PostJournalLineInput } from "../../ledger";
 import { controlAccountsAmong, type ControlLedger } from "../../ledger/control-accounts";
 import { emitDomainEvent } from "../../platform/domain-events";
@@ -1533,6 +1534,11 @@ async function commitOpenInvoices(
     created++;
     totalFils += dueBase;
   }
+  // Imported numbers bypass the allocator: move the invoice counter past them so the next
+  // invoice does not collide (the allocator also skips any number already taken).
+  await withLedgerTx(async (tx) => {
+    await reserveIssuedNumbers(companyId, "invoice", tx);
+  });
   return { documentsCreated: created, controlTotalFils: totalFils };
 }
 

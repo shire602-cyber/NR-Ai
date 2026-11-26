@@ -20,5 +20,7 @@
   "bankStatement.notReconciled": "Not reconciled — resolve the difference before signing off",
   "bankStatement.history": "Saved reconciliations",
   "bankStatement.historyNone": "No saved reconciliations yet",
-  "bankStatement.historyError": "Saved reconciliations could not be loaded"
+  "bankStatement.historyError": "Saved reconciliations could not be loaded",
+  "bankStatement.fxUnsupportedTitle": "Reconciliation not available",
+  "bankStatement.amountsIn": "Amounts in"
 }

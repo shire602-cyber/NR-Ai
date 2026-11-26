@@ -237,7 +237,6 @@
   "marketing.hxCmpRowVat": "إقرار VAT 201 جاهز لـ EmaraTax",
   "marketing.hxCmpRowWps": "ملف WPS للرواتب",
   "marketing.hxCmpRowFirm": "مساحة عمل متعددة العملاء للمحاسب وبوابة للعميل",
-  "marketing.hxCmpPrice": "{price} درهم بالدفع الشهري",
   "marketing.hxCmpPriceYearly": "{monthly} درهم بالدفع الشهري أو {yearly} درهم شهريًا بالدفع السنوي",
   "marketing.hxCmpZohoEntry": "باقة مجانية أو {price} درهم شهريًا بالدفع السنوي",
   "marketing.hxCmpZohoTop": "{price} درهم شهريًا بالدفع السنوي (⟦Elite⟧)",
