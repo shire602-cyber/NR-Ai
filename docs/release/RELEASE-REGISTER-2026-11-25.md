@@ -103,9 +103,9 @@ Update (GitHub API, read 2026-11-26): the CI workflow run on `ad9163cb` conclude
 ## 3. Counts
 
 - Original items: 32. Verified dispositions: **21** on staging `448dcac1` (2026-11-26): S06 (verified unaffected), O03, F01, F03, F04, F05 (incl. scheduled items and company switch), F06, F07, S01, S02, S03, O07, S05, O04, W01–W06, W08 (verified fixed). Evidence: [STAGING-VERIFY-2026-11-26.md](STAGING-VERIFY-2026-11-26.md).
-- Open: F02 (amendment creation returns 409 on staging). The F02 selector fix awaits staging verification. Fixed awaiting verification: S08 (needs a firm-side account), plus ENV-01.
-- Open (partial): O05 · Blocked or partly blocked: 8 (W07, W09, W10; S04, S07, O01, O02, O06). Total: 21 verified + 1 awaiting (S08) + 2 open (F02, O05) + 8 blocked = 32.
-- Handoff to Astra 6.2: **not eligible**.
+- DB-proven, awaiting staging verification: F02 (selector fix + amendment creation fix both have DB regression coverage as of 2026-11-27; both `filed` and `submitted` amendment cases pass PGlite). Fixed awaiting verification: S08 (needs a firm-side account), ENV-01.
+- Open (partial): O05 · Blocked or partly blocked: 8 (W07, W09, W10; S04, S07, O01, O02, O06). Total: 21 verified + 3 awaiting (F02, S08, ENV-01) + 1 open-partial (O05) + 8 blocked = 33 (F02 sub-items counted once, O05 added to partial).
+- Handoff to Astra 6.2: **pending staging deploy of batch-3 (F02 selector fix + amendment creation fix)**.
 
 ## 4. Commands run (local, Node 18.16, Windows)
 
