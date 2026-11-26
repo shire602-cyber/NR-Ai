@@ -20,5 +20,7 @@
   "bankStatement.notReconciled": "لم تتم التسوية — عالج الفرق قبل الاعتماد",
   "bankStatement.history": "التسويات المحفوظة",
   "bankStatement.historyNone": "لا توجد تسويات محفوظة بعد",
-  "bankStatement.historyError": "تعذّر تحميل التسويات المحفوظة"
+  "bankStatement.historyError": "تعذّر تحميل التسويات المحفوظة",
+  "bankStatement.fxUnsupportedTitle": "التسوية غير متاحة",
+  "bankStatement.amountsIn": "المبالغ بعملة"
 }

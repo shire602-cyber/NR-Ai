@@ -208,6 +208,10 @@ export const debitNoteCreateSchema = z.object({
 });
 export type DebitNoteCreateInput = z.output<typeof debitNoteCreateSchema>;
 
+/** Void a vendor debit note: the reason is mandatory (audit trail). */
+export const debitNoteVoidSchema = z.object({ reason: zText(500, { min: 1 }) }).strict();
+export type DebitNoteVoidInput = z.output<typeof debitNoteVoidSchema>;
+
 /**
  * Review of an inbound supplier credit note (W4-C residual): the reviewer may link the original
  * bill and choose the expense account(s) credited; amounts come from the archived e-invoice.

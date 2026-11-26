@@ -335,6 +335,7 @@
   "activityLog.action.customer_credit.apply": "تطبيق رصيد عميل",
   "activityLog.action.customer_credit.refund": "رد رصيد عميل",
   "activityLog.action.debit_note.create": "إنشاء إشعار مدين",
+  "activityLog.action.debit_note.void": "إبطال إشعار مدين",
   "activityLog.action.deny": "تم الرفض",
   "activityLog.action.email_intake.chase_gaps": "متابعة فجوات استلام البريد",
   "activityLog.action.email_intake.task_create": "إنشاء مهمة من استلام البريد",
