@@ -582,6 +582,7 @@ export function registerEInvoiceRoutes(app: Express) {
           "This invoice number cannot be sent again."
         );
       }
+      const provider = await providerForSubmission(invoice, company, doc);
       // Guard: tenant must have an active appointment before (re)submitting.
       {
         const partner = activeEInvoicePartner();
@@ -591,7 +592,6 @@ export function registerEInvoiceRoutes(app: Express) {
           if (gate) return res.status(409).json(gate);
         }
       }
-      const provider = await providerForSubmission(invoice, company, doc);
       const result = await enqueueEInvoiceSubmission({
         invoice,
         company,
@@ -626,6 +626,8 @@ export function registerEInvoiceRoutes(app: Express) {
       if (isB2cCashSale(invoice)) {
         throw new DomainError(EINVOICE_NOT_REQUIRED, 409, undefined, EINVOICE_NOT_REQUIRED_MESSAGE);
       }
+      const prior = await getEInvoiceDocument(company.id, invoice.id);
+      const provider = await providerForSubmission(invoice, company, prior);
       // Guard: tenant must have an active appointment before submitting.
       {
         const partner = activeEInvoicePartner();
@@ -635,8 +637,6 @@ export function registerEInvoiceRoutes(app: Express) {
           if (gate) return res.status(409).json(gate);
         }
       }
-      const prior = await getEInvoiceDocument(company.id, invoice.id);
-      const provider = await providerForSubmission(invoice, company, prior);
       const result = await enqueueEInvoiceSubmission({
         invoice,
         company,

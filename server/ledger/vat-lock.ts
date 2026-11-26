@@ -10,8 +10,8 @@
  *   - date the document in the current open period: a net error up to AED 10,000 is corrected
  *     in the return for the period in which it is found;
  *   - above AED 10,000, open a voluntary disclosure first (POST /api/vat-returns/:id/amend).
- *     The amendment draft supersedes the filed return, which re-opens the period until the
- *     amended return is submitted.
+ *     The amendment draft re-opens the period for corrections. The filed return remains
+ *     effective until the amended return is submitted.
  *
  * "Affects VAT": a line on a VAT control account (1050 / 2020 or any account flagged
  * is_vat_account), a tax-document source the VAT engine reads (zero-rated and exempt invoices
@@ -37,9 +37,11 @@ import {
 import { ledgerQueryable, rowsOf } from "./tx";
 import type { LedgerTx } from "./types";
 import {
+  getFilingVatGroup,
   resolveFilingVatGroup,
   UNVERIFIED_VAT_GROUP,
   vatGroupVerificationRequiredError,
+  type VerifiedVatGroup,
 } from "./vat-group-scope";
 
 /** Journal sources whose documents the VAT engine reports, whatever their lines. */
@@ -169,28 +171,58 @@ export async function lockVatGroupMembership(
   await tx.execute(sql`SELECT pg_advisory_xact_lock(${key})`);
 }
 
-/** Find the submitted or filed company or group return that overlaps the given dates. */
+async function hasOpenAmendment(
+  tx: LedgerTx,
+  returnId: string,
+  group: VerifiedVatGroup | null
+): Promise<boolean> {
+  const res = await tx.execute(sql`
+    SELECT a.vat_group_id AS "vatGroupId", a.reconciliation_snapshot -> 'filingVatGroup' AS scope
+      FROM vat_returns r
+      JOIN vat_returns a ON a.amends_return_id = r.id AND a.company_id = r.company_id
+       AND a.period_start::date = r.period_start::date AND a.period_end::date = r.period_end::date
+     WHERE r.id = ${returnId} AND a.status IN ('draft', 'pending_review', 'ready')
+  `);
+  return rowsOf<{ vatGroupId: string | null; scope: unknown }>(res).some((amendment) => {
+    if (!group) return amendment.vatGroupId === null && amendment.scope === null;
+    const scope = getFilingVatGroup({ filingVatGroup: amendment.scope });
+    return (
+      amendment.vatGroupId === group.groupId &&
+      scope?.groupId === group.groupId &&
+      scope.memberAuthority === group.memberAuthority &&
+      scope.memberIds.length === group.memberIds.length &&
+      scope.memberIds.every((id, index) => id === group.memberIds[index])
+    );
+  });
+}
+
+/** Find a VAT posting lock, or an overlapping effective return when checking filing scope. */
 export async function findFiledVatPeriod(
   tx: LedgerTx,
   companyId: string,
   from: string,
   to = from,
-  excludingReturnId?: string
+  options: { excludeReturnIds?: string[]; includePeriodsUnderAmendment?: boolean } = {}
 ): Promise<VatPeriodClosure | null> {
   const memberId = companyId.toLowerCase();
   const withMember = sql`jsonb_build_array(${memberId}::text, g.representative_company_id::text)`;
   const auditMembers = sql`jsonb_build_array(${memberId}::text, a.company_id::text)`;
+  const excludeReturns = options.excludeReturnIds?.length
+    ? sql`AND r.id NOT IN (${sql.join(
+        options.excludeReturnIds.map((id) => sql`${id}::uuid`),
+        sql`, `
+      )})`
+    : sql.empty();
   // Find evidence linking this company to a group before resolving any of its filings.
   // Dated snapshot evidence includes amended ancestors, which keep the original period.
   const res = await tx.execute(sql`
     WITH own_return AS (
-      SELECT * FROM vat_returns
+      SELECT r.* FROM vat_returns r
        WHERE company_id = ${companyId}
-         AND (${excludingReturnId ?? null}::uuid IS NULL OR id <> ${excludingReturnId ?? null}::uuid)
+         ${excludeReturns}
          AND status IN ('submitted', 'filed')
          AND period_end >= ${from}::date
          AND period_start < ${to}::date + interval '1 day'
-       ORDER BY period_end DESC LIMIT 1
     ),
     linked_audits AS MATERIALIZED (
       SELECT a.company_id, a.resource_id,
@@ -216,8 +248,7 @@ export async function findFiledVatPeriod(
       SELECT g.id, g.representative_company_id, a.authorized_since
         FROM vat_groups g
         LEFT JOIN linked_audits a ON a.company_id = g.representative_company_id AND a.resource_id = g.id::text
-       WHERE NOT EXISTS (SELECT 1 FROM own_return)
-         AND g.representative_company_id <> ${companyId}
+       WHERE g.representative_company_id <> ${companyId}
          AND (
            EXISTS (
              SELECT 1 FROM vat_group_members m
@@ -253,7 +284,7 @@ export async function findFiledVatPeriod(
           CROSS JOIN LATERAL (
             SELECT * FROM vat_returns r
              WHERE r.company_id = g.representative_company_id
-               AND (${excludingReturnId ?? null}::uuid IS NULL OR r.id <> ${excludingReturnId ?? null}::uuid)
+               ${excludeReturns}
                AND (r.vat_group_id = g.id OR (r.vat_group_id IS NULL AND r.amends_return_id IS NOT NULL))
                AND r.status IN ('submitted', 'filed')
                AND r.period_end >= ${from}::date
@@ -286,6 +317,9 @@ export async function findFiledVatPeriod(
       ownReturn ||
       (group?.memberAuthority === "settings.company" && group.memberIds.includes(memberId))
     ) {
+      if (!options.includePeriodsUnderAmendment && (await hasOpenAmendment(tx, r.id, group))) {
+        continue;
+      }
       return {
         vatReturnId: r.id,
         status: r.status,

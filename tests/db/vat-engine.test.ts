@@ -637,6 +637,13 @@ describe("W4-E purchases, adjustments and amendments", () => {
     expect(amend.status, amend.text).toBe(201);
     expect(amend.body.amendsReturnId).toBe(gen.body.id);
     expect(amend.body.box1cSharjahAmount).toBe(1000);
+    const originalStatus = async () =>
+      (
+        await h.sql<{ status: string }>(`SELECT status FROM vat_returns WHERE id = $1`, [
+          gen.body.id,
+        ])
+      )[0].status;
+    expect(await originalStatus()).toBe("submitted");
     const issued = await t.as.patch(`/api/invoices/${lateDraft.body.id}/status`, {
       status: "sent",
     });
@@ -650,10 +657,10 @@ describe("W4-E purchases, adjustments and amendments", () => {
     );
     expect(d).toEqual({ box: "box1cSharjahVat", previous: 50, amended: 70, difference: 20 });
     expect(refreshed.body.amendmentDiff.netChange).toBe(20);
-    const orig = await h.sql<{ status: string }>(`SELECT status FROM vat_returns WHERE id = $1`, [
-      gen.body.id,
-    ]);
-    expect(orig[0].status).toBe("amended");
+    expect(await originalStatus()).toBe("submitted");
+    const submitted = await t.as.post(`/api/vat-returns/${amend.body.id}/submit`, {});
+    expect(submitted.status, submitted.text).toBe(200);
+    expect(await originalStatus()).toBe("amended");
   });
 
   it("[R07-15] a VAT group return aggregates members and eliminates intra-group supplies", async () => {

@@ -192,6 +192,24 @@ export async function findReturnForPeriod(
   return row;
 }
 
+async function findOpenAmendment(tx: LedgerTx, original: VatReturn) {
+  const [amendment] = await tx
+    .select()
+    .from(vatReturns)
+    .where(
+      and(
+        eq(vatReturns.companyId, original.companyId),
+        eq(vatReturns.amendsReturnId, original.id),
+        sql`${vatReturns.periodStart}::date = ${dateOf(original.periodStart)}::date`,
+        sql`${vatReturns.periodEnd}::date = ${dateOf(original.periodEnd)}::date`,
+        sql`${vatReturns.status} IN ('draft', 'pending_review', 'ready')`
+      )
+    )
+    .orderBy(desc(vatReturns.createdAt))
+    .limit(1);
+  return amendment;
+}
+
 async function lockVatReturnScope(
   tx: LedgerTx,
   companyId: string,
@@ -284,7 +302,11 @@ export async function generateVatReturn(input: {
   return withLedgerTx(async (tx) => {
     await lockVatGroupMembership(tx, input.companyId);
     const { from, to, dueDate } = await validateReturnPeriod(input, tx);
-    const existing = await findReturnForPeriod(tx, input.companyId, from, to);
+    const effective = await findReturnForPeriod(tx, input.companyId, from, to);
+    const existing =
+      effective && (effective.status === "submitted" || effective.status === "filed")
+        ? ((await findOpenAmendment(tx, effective)) ?? effective)
+        : effective;
     assertReturnIsEditable(existing);
     const scope = await lockVatReturnScope(tx, input.companyId, existing);
     assertVerifiedVatGroup(scope);
@@ -463,12 +485,8 @@ async function assertNoOtherFinalReturn(
   vatReturn: VatReturn,
   group: VerifiedVatGroup | null
 ): Promise<void> {
-  // If this return is an amendment, its direct predecessor may still be
-  // 'submitted'/'filed' (it is only marked 'amended' once the amendment is
-  // itself submitted — see submitVatReturn).  Exclude that predecessor from
-  // the overlap check so submission is not blocked by its own predecessor.
-  const predecessorId = (vatReturn as VatReturn & { amendsReturnId?: string | null })
-    .amendsReturnId;
+  // The direct predecessor remains effective until this amendment is submitted.
+  const predecessorId = vatReturn.amendsReturnId;
   const [other] = await tx
     .select()
     .from(vatReturns)
@@ -487,7 +505,11 @@ async function assertNoOtherFinalReturn(
   const from = dateOf(vatReturn.periodStart);
   const to = dateOf(vatReturn.periodEnd);
   for (const memberId of group?.memberIds ?? [vatReturn.companyId]) {
-    if (await findFiledVatPeriod(tx, memberId, from, to, vatReturn.id)) {
+    const overlap = await findFiledVatPeriod(tx, memberId, from, to, {
+      excludeReturnIds: predecessorId ? [vatReturn.id, predecessorId] : [vatReturn.id],
+      includePeriodsUnderAmendment: true,
+    });
+    if (overlap) {
       throw new DomainError(
         "VAT_RETURN_SCOPE_OVERLAP",
         409,
@@ -511,7 +533,7 @@ async function transitionReturn(
     .returning();
   // When an amendment becomes effective (submitted or filed), mark its
   // predecessor 'amended' so it is no longer counted in the effective total.
-  const amendsId = (existing as VatReturn & { amendsReturnId?: string | null }).amendsReturnId;
+  const amendsId = existing.amendsReturnId;
   if (amendsId && (values.status === "submitted" || values.status === "filed")) {
     await tx
       .update(vatReturns)
@@ -750,6 +772,15 @@ export async function amendVatReturn(input: {
     }
     assertVerifiedVatGroup(scope);
     const group = await authorizeVatFilingGroup(tx, scope, input.userId);
+    const openAmendment = await findOpenAmendment(tx, original);
+    if (openAmendment) {
+      throw new DomainError(
+        "VAT_RETURN_EXISTS",
+        409,
+        { vatReturnId: openAmendment.id, status: openAmendment.status },
+        "An amendment is already being prepared for this VAT return."
+      );
+    }
     const from = new Date(original.periodStart).toISOString().slice(0, 10);
     const to = new Date(original.periodEnd).toISOString().slice(0, 10);
     const computation = await computeVat201({ companyId: original.companyId, from, to }, tx, group);
