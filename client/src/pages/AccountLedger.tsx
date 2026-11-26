@@ -176,7 +176,9 @@ export default function AccountLedger() {
       setSelectedEntry(null);
       setReversalReason("");
       // Cancels matching in-flight ledger reads that began before the reversal, then invalidates them.
-      refreshAfterWrite(["/api/accounts", accountId, "ledger"]);
+      // queryKey: form lets API-coverage join this to /api/accounts/:id/ledger instead of a bare /api/accounts.
+      const ledgerKey = { queryKey: ["/api/accounts", accountId, "ledger"] };
+      refreshAfterWrite(ledgerKey.queryKey);
     },
     onError: (error: any) => {
       toast({
