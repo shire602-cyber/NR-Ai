@@ -237,7 +237,6 @@
   "marketing.hxCmpRowVat": "VAT 201 prepared for EmaraTax",
   "marketing.hxCmpRowWps": "WPS payroll file",
   "marketing.hxCmpRowFirm": "Accountant multi-client workspace and client portal",
-  "marketing.hxCmpPrice": "AED {price} with monthly billing",
   "marketing.hxCmpPriceYearly": "AED {monthly} with monthly billing or AED {yearly} per month with annual billing",
   "marketing.hxCmpZohoEntry": "Free plan or AED {price} per month with annual billing",
   "marketing.hxCmpZohoTop": "AED {price} per month with annual billing (⟦Elite⟧)",

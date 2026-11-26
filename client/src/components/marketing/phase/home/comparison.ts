@@ -1,4 +1,4 @@
-import { PLAN_MONTHLY_PRICES } from "@shared/plans";
+import { PLAN_MONTHLY_PRICES, planPrice, type PaidPlanId } from "@shared/plans";
 import { vatBreakdown } from "../vat-calculator";
 import {
   COMPETITOR_PRICES,
@@ -51,6 +51,21 @@ function includingVat(aed: number): number {
   return vatBreakdown(aed * 100, "add", "standard").gross / 100;
 }
 
+/**
+ * Muhasib's price cell: the monthly price and the annual-billing price per month, both from
+ * shared/plans.ts (VAT included there, like the footnote says). Per month = yearly / 12, rounded
+ * to whole fils (two decimals) like the competitors' VAT-inclusive figures in this table.
+ */
+export function muhasibPriceCell(plan: PaidPlanId): ComparisonCell {
+  return {
+    key: "hxCmpPriceYearly",
+    vars: {
+      monthly: PLAN_MONTHLY_PRICES[plan],
+      yearly: Math.round((planPrice(plan, "yearly") / 12) * 100) / 100,
+    },
+  };
+}
+
 /*
  * Vendor pricing pages cover prices. Zoho's sign-up page covers its trial; its e-invoicing page
  * covers the included allowance and packs, and its e-invoicing help page the bilingual PDF for
@@ -63,7 +78,7 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
     id: "entry",
     labelKey: "hxCmpRowEntry",
     cells: {
-      muhasib: { key: "hxCmpPrice", vars: { price: PLAN_MONTHLY_PRICES.starter } },
+      muhasib: muhasibPriceCell("starter"),
       wafeq: wafeq({
         key: "hxCmpPriceYearly",
         vars: {
@@ -78,7 +93,7 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
     id: "top",
     labelKey: "hxCmpRowTop",
     cells: {
-      muhasib: { key: "hxCmpPrice", vars: { price: PLAN_MONTHLY_PRICES.enterprise } },
+      muhasib: muhasibPriceCell("enterprise"),
       wafeq: wafeq({
         key: "hxCmpPriceYearly",
         vars: { monthly: includingVat(WAFEQ_TOP.monthly), yearly: includingVat(WAFEQ_TOP.yearly) },
