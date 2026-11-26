@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { loadNamespaces, t as catalogs, useTranslation, type Locale } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import { FileDown } from "lucide-react";
 import { sectionState } from "./query-states";
 import { RefreshFailed } from "./RefreshFailed";
@@ -25,6 +25,7 @@ interface StatementItem {
 }
 
 interface Statement {
+  currency?: string;
   totals: Record<string, string>;
   differenceFils: number;
   depositsInTransit: StatementItem[];
@@ -79,8 +80,17 @@ export default function StatementDialogBody({
   const historyQuery = useQuery<SavedReconciliation[]>({ queryKey: historyKey });
   const { data: history, refetch: refetchHistory } = historyQuery;
   const historyState = sectionState(historyQuery);
-  const onError = (err: Error) =>
+  // A foreign-currency account whose ledger lacks account-currency amounts is refused (409); the
+  // localized reason is shown in place of a statement.
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const onError = (err: Error) => {
+    if (err instanceof ApiError && err.body?.code === "FX_RECONCILIATION_UNSUPPORTED") {
+      setStatement(null);
+      setRefusal(err.message);
+      return;
+    }
     toast({ variant: "destructive", title: tr("banking.common.error"), description: err?.message });
+  };
 
   const previewMutation = useMutation({
     mutationFn: async () => {
@@ -91,7 +101,10 @@ export default function StatementDialogBody({
         `/api/companies/${companyId}/bank-accounts/${accountId}/reconciliation-statement?${q}`
       )) as Statement;
     },
-    onSuccess: setStatement,
+    onSuccess: (st: Statement) => {
+      setRefusal(null);
+      setStatement(st);
+    },
     onError,
   });
   const saveMutation = useMutation({
@@ -102,6 +115,7 @@ export default function StatementDialogBody({
         ...(periodStart ? { periodStart } : {}),
       }),
     onSuccess: (row: { statement: Statement }) => {
+      setRefusal(null);
       setStatement(row.statement);
       queryClient.invalidateQueries({ queryKey: historyKey });
     },
@@ -195,6 +209,16 @@ export default function StatementDialogBody({
           {tr("bankStatement.saveDraft")}
         </Button>
       </div>
+      {refusal && (
+        <div
+          role="alert"
+          data-testid="bank-statement-fx-refusal"
+          className="rounded-md border p-3 text-sm"
+        >
+          <p className="font-semibold">{tr("bankStatement.fxUnsupportedTitle")}</p>
+          <p className="text-muted-foreground">{refusal}</p>
+        </div>
+      )}
       {statement && (
         <Card>
           <CardHeader>
@@ -202,6 +226,9 @@ export default function StatementDialogBody({
               {statement.differenceFils === 0
                 ? tr("bankStatement.reconciled")
                 : tr("bankStatement.notReconciled")}
+              {statement.currency
+                ? ` · ${tr("bankStatement.amountsIn")} ${statement.currency}`
+                : ""}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-1 text-sm">
