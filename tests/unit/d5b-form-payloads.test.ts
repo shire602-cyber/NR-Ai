@@ -15,6 +15,7 @@ import {
   buttonByText,
   click,
   flush,
+  flushUntil,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
   inputByLabel,
@@ -449,6 +450,8 @@ describe("[D5b] vendor form payload unchanged", () => {
     await renderPage(Vendors);
     await click(buttonByText(/^\s*new supplier\s*$/i));
     const byId = (id: string) => document.getElementById(id);
+    // NewVendorDialog is lazy: wait for its form before typing.
+    await flushUntil(() => byId("vendor-name") !== null);
     await type(byId("vendor-name"), "Atlas Office Supplies");
     await type(byId("vendor-name_ar"), "أطلس للوازم المكتبية");
     await type(byId("vendor-trn"), "100456789000003");

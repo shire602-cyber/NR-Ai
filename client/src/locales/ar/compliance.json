@@ -243,5 +243,17 @@
   "compliance.taxArchiveClearFilters": "مسح البحث وعوامل التصفية",
   "compliance.taxArchiveVatReturns": "إقرارات ضريبة القيمة المضافة",
   "compliance.taxArchiveViewFile": "عرض ملف الإقرار",
-  "compliance.taxArchiveDownloadFile": "تنزيل ملف الإقرار"
+  "compliance.taxArchiveDownloadFile": "تنزيل ملف الإقرار",
+  "compliance.vatQueryWaiting": "في انتظار التحميل. سيستمر ذلك عند عودة الاتصال أو عند العودة إلى هذه الصفحة.",
+  "compliance.vatQueryWaitingRefresh": "في انتظار التحديث. تُعرض آخر بيانات تم تحميلها.",
+  "compliance.vatProfileLoadFailedTitle": "تعذّر تحميل ملف الشركة",
+  "compliance.vatProfileRefreshFailedTitle": "تعذّر تحديث ملف الشركة",
+  "compliance.vatProfileRefreshFailedBody": "تُعرض آخر تفاصيل تم تحميلها. قد يكون رقم التسجيل الضريبي وإعدادات الضريبة غير محدّثة.",
+  "compliance.vatCompaniesLoadFailedTitle": "تعذّر تحميل شركاتك",
+  "compliance.vatNoCompanyTitle": "لا توجد شركة بعد",
+  "compliance.vatNoCompanyBody": "لا توجد شركة في حسابك، لذلك لا يوجد إقرار ضريبة قيمة مضافة لعرضه. أنشئ شركة أولًا.",
+  "compliance.vatReturnsLoadFailedTitle": "تعذّر تحميل إقرارات ضريبة القيمة المضافة",
+  "compliance.vatReturnsRefreshFailedTitle": "تعذّر تحديث إقرارات ضريبة القيمة المضافة",
+  "compliance.vatReturnsRefreshFailedBody": "تُعرض آخر إقرارات تم تحميلها. أعد المحاولة للحصول على أحدث البيانات.",
+  "compliance.vatReturnsUnavailable": "ستظهر إقرارات ضريبة القيمة المضافة هنا بعد تحميلها."
 }

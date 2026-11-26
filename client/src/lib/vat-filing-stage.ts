@@ -90,3 +90,24 @@ export function dayAfter(isoDate: string): string {
   d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
 }
+
+export interface VatReturnSummaryInput extends VatReturnStageInput {
+  box14PayableTax?: number | null;
+}
+
+/**
+ * Header figures for the returns list. An amended return is superseded by its
+ * replacement, so its payable tax is not counted again in the total.
+ */
+export function summariseVatReturns(returns: readonly VatReturnSummaryInput[] | undefined) {
+  const list = returns ?? [];
+  return {
+    total: list.length,
+    pending: list.filter((r) => r.status === "draft" || r.status === "pending_review").length,
+    submitted: list.filter((r) => r.status === "submitted").length,
+    filed: list.filter((r) => r.status !== "amended" && vatChecklist(r).filed).length,
+    totalPayable: list
+      .filter((r) => r.status !== "amended")
+      .reduce((sum, r) => sum + (r.box14PayableTax || 0), 0),
+  };
+}
