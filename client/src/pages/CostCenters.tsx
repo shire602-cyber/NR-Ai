@@ -1,6 +1,6 @@
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
-import { lazy, Suspense, useState } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Plus,
@@ -12,6 +12,7 @@ import {
   TrendingDown,
   DollarSign,
   Download,
+  RotateCw,
 } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
@@ -48,11 +49,27 @@ import {
 } from "@/lib/cost-center-view";
 import { exportToExcel, prepareCostCenterProfitabilityForExport } from "@/lib/export";
 import type { CostCenter, CostCenterFormData } from "@/components/CostCenterFormDialog";
+import { useOnDemandDialog } from "@/components/team/useOnDemandDialog";
+import { freshChunkUrl } from "@/lib/dialogChunk";
 
-// The create/edit form (react-hook-form, zod, select, switch) loads on the first open.
-const CostCenterFormDialog = lazy(() =>
-  import("@/components/CostCenterFormDialog").then((m) => ({ default: m.CostCenterFormDialog }))
-);
+type FormDialogModule = typeof import("@/components/CostCenterFormDialog");
+
+// The create/edit form (react-hook-form, zod, select, switch) loads on the first open. First try:
+// the literal import (split, hashed and preloaded by the bundler). Retry: the same chunk under a
+// fresh URL; the production path is a marker the dialog-chunk-urls Vite plugin rewrites to the
+// emitted chunk (see lib/dialogChunk.ts).
+const loadCostCenterFormDialog = (retry: string | null) => {
+  let chunk: Promise<FormDialogModule>;
+  if (retry === null) {
+    chunk = import("@/components/CostCenterFormDialog");
+  } else {
+    const path = import.meta.env.DEV
+      ? "../components/CostCenterFormDialog.tsx"
+      : "__MUHASIB_DIALOG_CHUNK__CostCenterFormDialog__";
+    chunk = import(/* @vite-ignore */ freshChunkUrl(new URL(path, import.meta.url), retry));
+  }
+  return chunk.then((m) => ({ default: m.CostCenterFormDialog }));
+};
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -106,7 +123,7 @@ export default function CostCenters() {
   const { canAccess, getRequiredTier } = useSubscription();
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogMounted, setDialogMounted] = useState(false);
+  const formDialog = useOnDemandDialog(loadCostCenterFormDialog, "CostCenterFormDialog");
   const [editingCostCenter, setEditingCostCenter] = useState<CostCenter | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<string | null>(null);
@@ -143,12 +160,16 @@ export default function CostCenters() {
 
   // ─── Mutations ────────────────────────────────────────
 
-  // Cancel first: invalidating alone reuses a still-running first load, whose pre-write response
-  // would then stand in for the fresh one.
-  const reloadRegister = async () => {
-    const filters = { queryKey: [`/api/companies/${companyId}/cost-centers`], exact: true };
-    await queryClient.cancelQueries(filters);
-    await queryClient.invalidateQueries(filters);
+  // After a create, edit (rename, activation) or delete the register and the P&L (which feeds the
+  // on-page table and its export) are both stale. Cancel first: invalidating alone reuses a
+  // still-running load, whose pre-write response would then stand in for the fresh one.
+  const reloadCostCenterData = async () => {
+    const filters = [
+      { queryKey: [`/api/companies/${companyId}/cost-centers`], exact: true },
+      { queryKey: [`/api/companies/${companyId}/cost-centers/profitability`], exact: true },
+    ];
+    await Promise.all(filters.map((f) => queryClient.cancelQueries(f)));
+    await Promise.all(filters.map((f) => queryClient.invalidateQueries(f)));
   };
 
   const createMutation = useMutation({
@@ -158,7 +179,7 @@ export default function CostCenters() {
         parentId: data.parentId || null,
       }),
     onSuccess: () => {
-      void reloadRegister();
+      void reloadCostCenterData();
       toast({
         title: translateNow("toasts.costCenterCreated"),
         description: translateNow("toasts.costCenterHasBeenAddedSuccessfully"),
@@ -181,7 +202,7 @@ export default function CostCenters() {
         parentId: data.parentId || null,
       }),
     onSuccess: () => {
-      void reloadRegister();
+      void reloadCostCenterData();
       toast({
         title: translateNow("toasts.costCenterUpdated"),
         description: translateNow("toasts.costCenterDetailsHaveBeenUpdated"),
@@ -201,7 +222,7 @@ export default function CostCenters() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/cost-centers/${id}`),
     onSuccess: () => {
-      void reloadRegister();
+      void reloadCostCenterData();
       if (selectedCostCenterId) {
         setSelectedCostCenterId(null);
       }
@@ -221,10 +242,12 @@ export default function CostCenters() {
 
   // ─── Handlers ─────────────────────────────────────────
 
+  // The Add (null) or Edit (row) target is set right away, so the latest click wins and a retry
+  // keeps it; the form renders once its chunk is there.
   const openDialog = (costCenter: CostCenter | null) => {
     setEditingCostCenter(costCenter);
-    setDialogMounted(true);
     setDialogOpen(true);
+    formDialog.request();
   };
 
   const handleSubmit = (data: CostCenterFormData) => {
@@ -335,6 +358,33 @@ export default function CostCenters() {
           </>
         }
       />
+
+      {formDialog.status === "loading" && (
+        <div
+          role="status"
+          data-testid="cost-center-form-loading"
+          className="flex flex-wrap items-center gap-3 px-4 py-3 text-small text-muted-foreground"
+        >
+          <p>{t["costCenters.ccFormLoading"]}</p>
+        </div>
+      )}
+      {(formDialog.status === "failed" || formDialog.status === "offline") && (
+        <div
+          role="alert"
+          data-testid="cost-center-form-error"
+          className="flex flex-wrap items-center gap-3 px-4 py-3 text-small text-destructive"
+        >
+          <p>
+            {formDialog.status === "offline"
+              ? t["common.errorHeading.offline"]
+              : t["costCenters.ccFormError"]}
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={formDialog.request}>
+            <RotateCw aria-hidden />
+            {t["components.errorRetry"]}
+          </Button>
+        </div>
+      )}
 
       {/* P&L by cost center. Spec 2.6: hidden until the first cost center exists, so an
           empty company sees no KPI row of zeros above the empty register. */}
@@ -708,17 +758,15 @@ export default function CostCenters() {
         </SectionCard>
       )}
 
-      {dialogMounted && (
-        <Suspense fallback={null}>
-          <CostCenterFormDialog
-            open={dialogOpen}
-            onOpenChange={setDialogOpen}
-            editing={editingCostCenter}
-            parents={costCenters}
-            pending={createMutation.isPending || updateMutation.isPending}
-            onSubmit={handleSubmit}
-          />
-        </Suspense>
+      {formDialog.Component && (
+        <formDialog.Component
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          editing={editingCostCenter}
+          parents={costCenters}
+          pending={createMutation.isPending || updateMutation.isPending}
+          onSubmit={handleSubmit}
+        />
       )}
     </div>
   );

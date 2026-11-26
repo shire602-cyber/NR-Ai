@@ -39,5 +39,7 @@
   "costCenters.ccLoadErrorBody": "تحقق من اتصالك وحاول مرة أخرى.",
   "costCenters.ccRegisterError": "تعذّر تحميل مراكز التكلفة",
   "costCenters.ccPlError": "تعذّر تحميل أرباح وخسائر مراكز التكلفة",
-  "costCenters.ccReportError": "تعذّر تحميل تقرير مركز التكلفة هذا"
+  "costCenters.ccReportError": "تعذّر تحميل تقرير مركز التكلفة هذا",
+  "costCenters.ccFormLoading": "جارٍ تحميل نموذج مركز التكلفة…",
+  "costCenters.ccFormError": "تعذّر تحميل نموذج مركز التكلفة. تحقق من اتصالك وحاول مرة أخرى."
 }

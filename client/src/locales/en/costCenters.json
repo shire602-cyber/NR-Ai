@@ -39,5 +39,7 @@
   "costCenters.ccLoadErrorBody": "Check your connection and try again.",
   "costCenters.ccRegisterError": "Could not load cost centers",
   "costCenters.ccPlError": "Could not load the cost center P&L",
-  "costCenters.ccReportError": "Could not load the report for this cost center"
+  "costCenters.ccReportError": "Could not load the report for this cost center",
+  "costCenters.ccFormLoading": "Loading the cost center form…",
+  "costCenters.ccFormError": "Could not load the cost center form. Check your connection and try again."
 }
