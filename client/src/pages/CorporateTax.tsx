@@ -356,10 +356,13 @@ export default function CorporateTax() {
     companyId,
     periodStart,
     periodEnd,
-    request: (requested) =>
+    request: (requested, signal) =>
       apiRequest(
         "GET",
-        `/api/companies/${requested.companyId}/corporate-tax/calculate?periodStart=${requested.periodStart}&periodEnd=${requested.periodEnd}`
+        `/api/companies/${requested.companyId}/corporate-tax/calculate?periodStart=${requested.periodStart}&periodEnd=${requested.periodEnd}`,
+        undefined,
+        undefined,
+        { signal }
       ),
     onSuccess: (data) => {
       toast({

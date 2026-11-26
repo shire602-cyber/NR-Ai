@@ -22,12 +22,13 @@ const YEAR_B = { periodStart: "2026-01-01", periodEnd: "2026-12-31" };
 let root: Root;
 let hook: ReturnType<typeof useCtCalculation<Result>>;
 let period = YEAR_A;
-const request = vi.fn<() => Promise<Result>>();
+const request = vi.fn<(selection: unknown, signal: AbortSignal) => Promise<Result>>();
 const onSuccess = vi.fn();
+const onError = vi.fn();
 const client = new QueryClient();
 
 function Probe() {
-  hook = useCtCalculation<Result>({ companyId: "c1", ...period, request, onSuccess });
+  hook = useCtCalculation<Result>({ companyId: "c1", ...period, request, onSuccess, onError });
   return null;
 }
 
@@ -65,6 +66,7 @@ describe("corporate tax calculation is tied to the selected period", () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     request.mockReset();
     onSuccess.mockReset();
+    onError.mockReset();
     root = createRoot(document.createElement("div"));
     await select(YEAR_A);
   });
@@ -114,5 +116,52 @@ describe("corporate tax calculation is tied to the selected period", () => {
     expect(hook.calculation).toBeNull();
     expect(screen()).toEqual({ notice: false, draft: null });
     expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it.each(["resolves", "rejects"])(
+    "an abandoned request that %s after A, B, A changes nothing",
+    async (outcome) => {
+      let resolve!: (result: Result) => void;
+      let reject!: (error: Error) => void;
+      // Deliberately ignores the abort signal and settles late.
+      request.mockReturnValueOnce(
+        new Promise<Result>((res, rej) => {
+          resolve = res;
+          reject = rej;
+        })
+      );
+      await calculate();
+      const signal = request.mock.calls[0][1];
+      expect(signal.aborted).toBe(false);
+      expect(hook.isPending).toBe(true);
+
+      await select(YEAR_B);
+      expect(signal.aborted).toBe(true);
+      await select(YEAR_A);
+      expect(hook.isPending).toBe(false);
+
+      await act(async () => {
+        if (outcome === "resolves") resolve(EMPTY);
+        else reject(new Error("late"));
+        await new Promise((done) => setTimeout(done, 0));
+      });
+      expect(hook.calculation).toBeNull();
+      expect(screen()).toEqual({ notice: false, draft: null });
+      expect(onSuccess).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+
+      request.mockResolvedValueOnce(EMPTY);
+      await calculate();
+      expect(screen().notice).toBe(true);
+      expect(screen().draft).not.toBeNull();
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it("aborts the request in flight when the screen unmounts", async () => {
+    request.mockReturnValueOnce(new Promise<Result>(() => {}));
+    await calculate();
+    await act(async () => root.unmount());
+    expect(request.mock.calls[0][1].aborted).toBe(true);
   });
 });
