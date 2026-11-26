@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,7 +44,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
-import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, getQueryFn } from "@/lib/queryClient";
 import { exportToExcel, prepareFxGainsLossesForExport } from "@/lib/export";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
 import {
@@ -79,6 +79,9 @@ const CURRENCIES = [
 const RATE_TYPES = ["spot", "closing", "average"] as const;
 type RateType = (typeof RATE_TYPES)[number];
 const STALE_DAYS = 7;
+// Rates and FX are cancelled after a delete, so their requests must really abort.
+const ratesQueryFn = getQueryFn<ExchangeRate[]>({ on401: "throw" });
+const fxQueryFn = getQueryFn<FxGainsLossesReport>({ on401: "throw" });
 
 const STRINGS = {
   en: {
@@ -122,16 +125,6 @@ const STRINGS = {
       "Company rates apply only to this company. System rates are platform reference rates (for example FTA-published) used when the company has none.",
     noRates: "No exchange rates configured yet.",
     noRatesHint: "Add your first rate to get started.",
-    searchPlaceholder: "Search by currency, type or source",
-    searchLabel: "Search saved rates",
-    noMatch: "No saved rates match your search.",
-    clearSearch: "Clear search",
-    loadFailedTitle: "Could not load exchange rates",
-    loadFailedBody: "Your saved rates are unchanged. Check your connection and try again.",
-    fxLoadFailedTitle: "Could not load FX exposure",
-    fxLoadFailedBody: "The exposure figures could not be loaded, so none are shown. Try again.",
-    retry: "Try again",
-    deleteFailed: "Failed to delete rate",
     rateType: "Rate type",
     scope: "Scope",
     scopeCompany: "Company",
@@ -237,16 +230,6 @@ const STRINGS = {
       "أسعار الشركة تخص هذه الشركة فقط. أسعار النظام أسعار مرجعية للمنصة (مثل أسعار الهيئة الاتحادية للضرائب) تُستخدم عند عدم وجود سعر للشركة.",
     noRates: "لم تتم إضافة أي أسعار صرف بعد.",
     noRatesHint: "أضف أول سعر للبدء.",
-    searchPlaceholder: "ابحث بالعملة أو النوع أو المصدر",
-    searchLabel: "البحث في الأسعار المحفوظة",
-    noMatch: "لا توجد أسعار محفوظة مطابقة لبحثك.",
-    clearSearch: "مسح البحث",
-    loadFailedTitle: "تعذر تحميل أسعار الصرف",
-    loadFailedBody: "أسعارك المحفوظة لم تتغير. تحقق من اتصالك وحاول مرة أخرى.",
-    fxLoadFailedTitle: "تعذر تحميل التعرض لفروقات الصرف",
-    fxLoadFailedBody: "تعذر تحميل أرقام التعرض، لذا لا تُعرض أي أرقام. حاول مرة أخرى.",
-    retry: "إعادة المحاولة",
-    deleteFailed: "تعذر حذف السعر",
     rateType: "نوع السعر",
     scope: "النطاق",
     scopeCompany: "الشركة",
@@ -454,8 +437,9 @@ function localizeFxWarning(warning: string, locale: string): string {
 }
 
 export default function ExchangeRates() {
-  const { locale } = useTranslation();
+  const { locale, t } = useTranslation();
   const s = locale === "ar" ? STRINGS.ar : STRINGS.en;
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
@@ -491,23 +475,43 @@ export default function ExchangeRates() {
 
   const {
     data: rates,
-    isLoading: isLoadingRates,
-    isError: isRatesError,
+    isLoadingError: ratesLoadFailed,
+    isRefetchError: ratesRefetchFailed,
+    isSuccess: ratesLoaded,
+    fetchStatus: ratesFetchStatus,
     refetch: refetchRates,
   } = useQuery<ExchangeRate[]>({
     queryKey: [ratesKey],
+    queryFn: ratesQueryFn,
     enabled: !!companyId,
   });
 
   const {
     data: fxReport,
-    isLoading: isLoadingFxReport,
-    isError: isFxError,
+    isLoadingError: fxLoadFailed,
+    isRefetchError: fxRefetchFailed,
+    isSuccess: fxLoaded,
+    fetchStatus: fxFetchStatus,
     refetch: refetchFx,
   } = useQuery<FxGainsLossesReport>({
     queryKey: [fxKey],
+    queryFn: fxQueryFn,
     enabled: !!companyId,
   });
+
+  // A pause (offline, or a retry waiting to resume) wins over an error and over empty copy.
+  // A failed or held refresh leaves the last loaded data on screen, flagged as possibly out of
+  // date. Empty-state copy needs a successful response and nothing in flight or on hold; after
+  // a delete the cache is edited locally, so "idle" waits for the reconciling refetch.
+  const ratesPaused = ratesFetchStatus === "paused";
+  const ratesRefreshFailed = ratesRefetchFailed && !ratesPaused;
+  const ratesRefreshPaused = ratesPaused && rates !== undefined;
+  const ratesShowEmpty = ratesLoaded && ratesFetchStatus === "idle";
+  const fxPaused = fxFetchStatus === "paused";
+  const fxRefreshFailed = fxRefetchFailed && !fxPaused;
+  const fxRefreshPaused = fxPaused && fxReport !== undefined;
+  const fxShowEmpty = fxLoaded && !fxPaused;
+  const fxMaybeStale = fxRefetchFailed || fxPaused;
 
   const { data: history } = useQuery<Revaluation[]>({
     queryKey: [historyKey],
@@ -588,12 +592,25 @@ export default function ExchangeRates() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => apiRequest("DELETE", `${ratesKey}/${id}`),
-    onSuccess: () => {
+    onSuccess: async (_data, id) => {
+      // An in-flight refresh started before the delete would put the deleted row back, so
+      // cancel the affected queries, drop the row from the cache, then refetch to reconcile.
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: [ratesKey], exact: true }),
+        queryClient.cancelQueries({ queryKey: [fxKey], exact: true }),
+      ]);
+      queryClient.setQueryData<ExchangeRate[]>([ratesKey], (old) =>
+        old ? old.filter((r) => r.id !== id) : old
+      );
       invalidateAll();
       toast({ title: s.deleted });
     },
     onError: (error: Error) => {
-      toast({ title: s.deleteFailed, description: error?.message, variant: "destructive" });
+      toast({
+        title: t["pages.exchangeRatesDeleteFailed"],
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -711,7 +728,7 @@ export default function ExchangeRates() {
   };
 
   const handleExportFxReport = async () => {
-    if (!fxReport) {
+    if (!fxReport || fxMaybeStale) {
       toast({ title: s.exportEmpty, description: s.exportEmptyDesc, variant: "destructive" });
       return;
     }
@@ -787,7 +804,8 @@ export default function ExchangeRates() {
             <Button
               variant="outline"
               onClick={handleExportFxReport}
-              disabled={isLoadingFxReport || !fxReport}
+              disabled={!fxReport || fxMaybeStale}
+              data-testid="button-export-fx"
             >
               <Download className="h-4 w-4 me-2" />
               <T k="pages.export" />
@@ -830,26 +848,59 @@ export default function ExchangeRates() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoadingFxReport ? (
-            <div className="space-y-3">
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-48 w-full" />
-            </div>
-          ) : isFxError && !fxReport ? (
-            <Alert
-              tone="danger"
-              title={s.fxLoadFailedTitle}
-              data-testid="fx-load-error"
-              action={
-                <Button size="sm" variant="outline" onClick={() => void refetchFx()}>
-                  {s.retry}
-                </Button>
-              }
-            >
-              {s.fxLoadFailedBody}
-            </Alert>
+          {fxReport === undefined ? (
+            fxPaused ? (
+              <Alert
+                tone="neutral"
+                title={t["pages.exchangeRatesPausedTitle"]}
+                data-testid="fx-paused"
+              >
+                {t["pages.exchangeRatesPausedBody"]}
+              </Alert>
+            ) : fxLoadFailed ? (
+              <Alert
+                tone="danger"
+                title={t["pages.exchangeRatesFxLoadFailedTitle"]}
+                data-testid="fx-load-error"
+                action={
+                  <Button size="sm" variant="outline" onClick={() => void refetchFx()}>
+                    {t["pages.exchangeRatesRetry"]}
+                  </Button>
+                }
+              >
+                {t["pages.exchangeRatesFxLoadFailedBody"]}
+              </Alert>
+            ) : (
+              <div className="space-y-3">
+                <Skeleton className="h-20 w-full" />
+                <Skeleton className="h-48 w-full" />
+              </div>
+            )
           ) : (
             <div className="space-y-4">
+              {fxRefreshFailed && (
+                <Alert
+                  tone="warning"
+                  title={t["pages.exchangeRatesFxRefreshFailedTitle"]}
+                  data-testid="fx-refresh-error"
+                  action={
+                    <Button size="sm" variant="outline" onClick={() => void refetchFx()}>
+                      {t["pages.exchangeRatesRetry"]}
+                    </Button>
+                  }
+                >
+                  {t["pages.exchangeRatesFxRefreshFailedBody"]}
+                </Alert>
+              )}
+              {fxRefreshPaused && (
+                <Alert
+                  tone="neutral"
+                  title={t["pages.exchangeRatesRefreshPausedTitle"]}
+                  data-testid="fx-refresh-paused"
+                >
+                  {t["pages.exchangeRatesFxRefreshPausedBody"]}
+                </Alert>
+              )}
               {(fxReport?.warnings ?? []).length > 0 && (
                 <Alert tone="warning" title={s.warnings}>
                   <ul className="list-disc ps-5">
@@ -861,7 +912,9 @@ export default function ExchangeRates() {
               )}
               {/* Spec 2.6: no KPI tiles or empty table while nothing is exposed. */}
               {exposureRows.length === 0 ? (
-                <EmptyState size="sm" title={s.noExposure} testId="fx-exposure-empty" />
+                fxShowEmpty ? (
+                  <EmptyState size="sm" title={s.noExposure} testId="fx-exposure-empty" />
+                ) : null
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -1185,117 +1238,156 @@ export default function ExchangeRates() {
           <CardDescription>{s.savedRatesDesc}</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoadingRates ? (
-            <div className="space-y-2">
-              {[...Array(3)].map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : isRatesError && !rates ? (
-            <Alert
-              tone="danger"
-              title={s.loadFailedTitle}
-              data-testid="rates-load-error"
-              action={
-                <Button size="sm" variant="outline" onClick={() => void refetchRates()}>
-                  {s.retry}
-                </Button>
-              }
-            >
-              {s.loadFailedBody}
-            </Alert>
-          ) : !rates || rates.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <ArrowRightLeft className="h-12 w-12 mx-auto mb-2 opacity-30" />
-              <p>{s.noRates}</p>
-              <p className="text-sm">{s.noRatesHint}</p>
-            </div>
+          {rates === undefined ? (
+            ratesPaused ? (
+              <Alert
+                tone="neutral"
+                title={t["pages.exchangeRatesPausedTitle"]}
+                data-testid="rates-paused"
+              >
+                {t["pages.exchangeRatesPausedBody"]}
+              </Alert>
+            ) : ratesLoadFailed ? (
+              <Alert
+                tone="danger"
+                title={t["pages.exchangeRatesLoadFailedTitle"]}
+                data-testid="rates-load-error"
+                action={
+                  <Button size="sm" variant="outline" onClick={() => void refetchRates()}>
+                    {t["pages.exchangeRatesRetry"]}
+                  </Button>
+                }
+              >
+                {t["pages.exchangeRatesLoadFailedBody"]}
+              </Alert>
+            ) : (
+              <div className="space-y-2">
+                {[...Array(3)].map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            )
           ) : (
             <div className="space-y-3">
-              <Input
-                type="search"
-                value={rateSearch}
-                onChange={(e) => setRateSearch(e.target.value)}
-                placeholder={s.searchPlaceholder}
-                aria-label={s.searchLabel}
-                data-testid="input-rate-search"
-                className="max-w-sm"
-              />
-              {filteredRates.length === 0 ? (
-                <div
-                  className="py-8 text-center text-muted-foreground"
-                  data-testid="rates-no-match"
+              {ratesRefreshFailed && (
+                <Alert
+                  tone="warning"
+                  title={t["pages.exchangeRatesRefreshFailedTitle"]}
+                  data-testid="rates-refresh-error"
+                  action={
+                    <Button size="sm" variant="outline" onClick={() => void refetchRates()}>
+                      {t["pages.exchangeRatesRetry"]}
+                    </Button>
+                  }
                 >
-                  <p>{s.noMatch}</p>
-                  <Button variant="link" size="sm" onClick={() => setRateSearch("")}>
-                    {s.clearSearch}
-                  </Button>
-                </div>
+                  {t["pages.exchangeRatesRefreshFailedBody"]}
+                </Alert>
+              )}
+              {ratesRefreshPaused && (
+                <Alert
+                  tone="neutral"
+                  title={t["pages.exchangeRatesRefreshPausedTitle"]}
+                  data-testid="rates-refresh-paused"
+                >
+                  {t["pages.exchangeRatesRefreshPausedBody"]}
+                </Alert>
+              )}
+              {rates.length === 0 ? (
+                ratesShowEmpty && (
+                  <div className="text-center py-8 text-muted-foreground" data-testid="rates-empty">
+                    <ArrowRightLeft className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                    <p>{s.noRates}</p>
+                    <p className="text-sm">{s.noRatesHint}</p>
+                  </div>
+                )
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{s.from}</TableHead>
-                        <TableHead>{s.to}</TableHead>
-                        <TableHead className="text-end">{s.rateLabel}</TableHead>
-                        <TableHead>{s.rateType}</TableHead>
-                        <TableHead>
-                          <T k="pages.effectiveDate" />
-                        </TableHead>
-                        <TableHead>{s.scope}</TableHead>
-                        <TableHead>
-                          <T k="pages.source" />
-                        </TableHead>
-                        <TableHead />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredRates.map((rate) => (
-                        <TableRow key={rate.id}>
-                          <TableCell className="font-medium">{rate.fromCurrency}</TableCell>
-                          <TableCell className="font-medium">{rate.toCurrency}</TableCell>
-                          <TableCell className="text-end font-mono">
-                            {Number(rate.rate).toFixed(6)}
-                          </TableCell>
-                          <TableCell>{s.rateTypes[rate.rateType] ?? rate.rateType}</TableCell>
-                          <TableCell>
-                            {formatDate(rate.effectiveDate, locale)}
-                            {staleIds.has(rate.id) && (
-                              <Badge variant="outline" className="ms-2" title={s.staleHint}>
-                                {s.stale}
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={rate.scope === "company" ? "secondary" : "outline"}>
-                              {rate.scope === "company" ? s.scopeCompany : s.scopeSystem}
-                            </Badge>
-                            {rate.legacyInverted && (
-                              <Badge variant="outline" className="ms-2" title={s.rewrittenHint}>
-                                {s.rewritten}
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>{sourceLabel(rate.source, locale)}</TableCell>
-                          <TableCell className="text-end">
-                            {rate.scope === "company" && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                aria-label={s.delete}
-                                onClick={() => deleteMutation.mutate(rate.id)}
-                                disabled={deleteMutation.isPending}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                <>
+                  <Input
+                    type="search"
+                    value={rateSearch}
+                    onChange={(e) => setRateSearch(e.target.value)}
+                    placeholder={t["pages.exchangeRatesSearchPlaceholder"]}
+                    aria-label={t["pages.exchangeRatesSearchLabel"]}
+                    data-testid="input-rate-search"
+                    className="max-w-sm"
+                  />
+                  {filteredRates.length === 0 ? (
+                    <div
+                      className="py-8 text-center text-muted-foreground"
+                      data-testid="rates-no-match"
+                    >
+                      <p>{t["pages.exchangeRatesNoMatch"]}</p>
+                      <Button variant="link" size="sm" onClick={() => setRateSearch("")}>
+                        {t["pages.exchangeRatesClearSearch"]}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>{s.from}</TableHead>
+                            <TableHead>{s.to}</TableHead>
+                            <TableHead className="text-end">{s.rateLabel}</TableHead>
+                            <TableHead>{s.rateType}</TableHead>
+                            <TableHead>
+                              <T k="pages.effectiveDate" />
+                            </TableHead>
+                            <TableHead>{s.scope}</TableHead>
+                            <TableHead>
+                              <T k="pages.source" />
+                            </TableHead>
+                            <TableHead />
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredRates.map((rate) => (
+                            <TableRow key={rate.id}>
+                              <TableCell className="font-medium">{rate.fromCurrency}</TableCell>
+                              <TableCell className="font-medium">{rate.toCurrency}</TableCell>
+                              <TableCell className="text-end font-mono">
+                                {Number(rate.rate).toFixed(6)}
+                              </TableCell>
+                              <TableCell>{s.rateTypes[rate.rateType] ?? rate.rateType}</TableCell>
+                              <TableCell>
+                                {formatDate(rate.effectiveDate, locale)}
+                                {staleIds.has(rate.id) && (
+                                  <Badge variant="outline" className="ms-2" title={s.staleHint}>
+                                    {s.stale}
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={rate.scope === "company" ? "secondary" : "outline"}>
+                                  {rate.scope === "company" ? s.scopeCompany : s.scopeSystem}
+                                </Badge>
+                                {rate.legacyInverted && (
+                                  <Badge variant="outline" className="ms-2" title={s.rewrittenHint}>
+                                    {s.rewritten}
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>{sourceLabel(rate.source, locale)}</TableCell>
+                              <TableCell className="text-end">
+                                {rate.scope === "company" && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label={s.delete}
+                                    onClick={() => deleteMutation.mutate(rate.id)}
+                                    disabled={deleteMutation.isPending}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
