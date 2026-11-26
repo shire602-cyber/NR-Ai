@@ -15,9 +15,9 @@ describe("F03 reportReadState", () => {
   });
   it("pending read is loading; disabled is idle", () => {
     expect(reportReadState({ isLoading: true, isError: false, hasData: false })).toBe("loading");
-    expect(reportReadState({ enabled: false, isLoading: false, isError: false, hasData: false })).toBe(
-      "idle"
-    );
+    expect(
+      reportReadState({ enabled: false, isLoading: false, isError: false, hasData: false })
+    ).toBe("idle");
   });
   it("unreadableReportIds lists only failed reports", () => {
     expect(
@@ -32,22 +32,10 @@ describe("F03 reportReadState", () => {
 // After the W5-A refactor the monolithic Reports.tsx was split into tab modules and hooks.
 // Source checks target the files that now carry the implementations.
 describe("F03 Reports page source invariants", () => {
-  const plTabSrc = readFileSync(
-    "client/src/pages/reports/tabs/ProfitLossTab.tsx",
-    "utf8"
-  );
-  const bsTabSrc = readFileSync(
-    "client/src/pages/reports/tabs/BalanceSheetTab.tsx",
-    "utf8"
-  );
-  const vatTabSrc = readFileSync(
-    "client/src/pages/reports/tabs/VatTab.tsx",
-    "utf8"
-  );
-  const exportsSrc = readFileSync(
-    "client/src/pages/reports/hooks/useReportsExports.ts",
-    "utf8"
-  );
+  const plTabSrc = readFileSync("client/src/pages/reports/tabs/ProfitLossTab.tsx", "utf8");
+  const bsTabSrc = readFileSync("client/src/pages/reports/tabs/BalanceSheetTab.tsx", "utf8");
+  const vatTabSrc = readFileSync("client/src/pages/reports/tabs/VatTab.tsx", "utf8");
+  const exportsSrc = readFileSync("client/src/pages/reports/hooks/useReportsExports.ts", "utf8");
   const dataQueriesSrc = readFileSync(
     "client/src/pages/reports/hooks/useReportsDataQueries.ts",
     "utf8"
@@ -132,7 +120,8 @@ describe("F05 CashFlowForecast panel states", () => {
   const src = readFileSync("client/src/pages/CashFlowForecast.tsx", "utf8");
   it("forecast and history each have their own error + retry, distinct from empty", () => {
     expect(src).toContain('testId="cashflow-forecast-error"');
-    expect(src).toContain('testId="cashflow-projections-error"');
+    // A failed forecast read hides the projections card instead of rendering it empty.
+    expect(src).toContain("!(forecastError && !forecast) && (");
     expect(src).toContain('testId="cashflow-history-error"');
     expect(src).toContain('data-testid="cashflow-history-empty"');
     expect(src).toContain("onRetry={() => refetchHistory()}");

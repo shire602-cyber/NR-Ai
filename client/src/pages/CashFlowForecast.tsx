@@ -498,8 +498,9 @@ export default function CashFlowForecast() {
         </Card>
       )}
 
-      {/* Projection Table */}
-      {!forecastEmpty && !forecastPaused && (
+      {/* Projection Table: hidden when the forecast read failed with no data (the page-level
+          cashflow-forecast-error panel carries the retry), never shown as an empty table. */}
+      {!forecastEmpty && !forecastPaused && !(forecastError && !forecast) && (
         <Card data-testid="forecast-projections">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -521,13 +522,6 @@ export default function CashFlowForecast() {
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
               </div>
-            ) : forecastError && !forecast ? (
-              <LoadErrorState
-                error={forecastError}
-                onRetry={() => refetchForecast()}
-                compact
-                testId="cashflow-projections-error"
-              />
             ) : forecast && forecast.projections.length > 0 ? (
               <div className="overflow-x-auto">
                 <Table>
