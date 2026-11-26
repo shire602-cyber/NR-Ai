@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 /**
- * Homepage comparison table: the config (every cell has a value or a dash, never "No", Muhasib
- * prices from shared/plans.ts) and the rendered table in English and Arabic, with and without
- * the single-competitor focus used by the /compare pages.
+ * Competitor comparison table (/compare pages only): the config (every cell has a value or a dash,
+ * never "No", Muhasib prices from shared/plans.ts) and the rendered table in English and Arabic,
+ * with and without the single-competitor focus. Also the homepage "switching" strip that links to
+ * those pages without showing a competitor price.
  */
 import { readFileSync } from "node:fs";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { MARKETING_BRAND } from "../../shared/marketing-brand";
 import { PLAN_MONTHLY_PRICES } from "../../shared/plans";
 import {
   COMPARISON_ROWS,
@@ -94,7 +96,7 @@ describe("comparison render", () => {
 
   async function mount(locale: "en" | "ar", focus?: "wafeq" | "zoho") {
     const { ComparisonTable } =
-      await import("../../client/src/components/marketing/phase/home/ComparisonTable");
+      await import("../../client/src/components/marketing/phase/pages/ComparisonTable");
     await act(async () => {
       root.render(createElement(ComparisonTable, { base: `/${locale}`, locale, focus }));
     });
@@ -181,8 +183,17 @@ describe("comparison render", () => {
     expect(container.querySelectorAll("thead th[scope=col]")).toHaveLength(3);
     expect(container.querySelector('td[data-column="zoho"]')).toBeNull();
     expect(container.querySelector('td[data-column="wafeq"]')).not.toBeNull();
-    expect(container.querySelector('a[href="/en/compare/zoho"]')).toBeNull();
     expect(container.querySelector("caption")?.textContent).toContain("Wafeq");
+    expect(container.querySelector(".mz-lead")?.textContent).toBe(
+      "A fact-based comparison with Wafeq, drawn from public vendor pages."
+    );
+    // Sources and the page link: only Wafeq is sourced, and the link goes to the other comparison.
+    const foot = container.querySelector('[data-testid="compare-footnote"]')!;
+    expect(foot.querySelector('a[href="https://www.wafeq.com/en-ae/pricing"]')).not.toBeNull();
+    expect(foot.querySelector('a[href="https://www.zoho.com/ae/books/pricing/"]')).toBeNull();
+    expect(foot.textContent).toContain("Vendor list prices checked 24 Nov 2026.");
+    expect(container.querySelector('a[href="/en/compare/wafeq"]')).toBeNull();
+    expect(container.querySelector('a[href="/en/compare/zoho"]')).not.toBeNull();
   });
 
   it("renders Arabic copy with Western digits", async () => {
@@ -215,5 +226,52 @@ describe("comparison render", () => {
     for (const cell of container.querySelectorAll("tbody td")) {
       expect(cell.textContent!.trim()).not.toBe("");
     }
+  });
+
+  describe.each(["en", "ar"] as const)("switching strip (%s)", (locale) => {
+    it("names what Muhasib includes and links to both compare pages, with no prices", async () => {
+      const { SwitchStrip } =
+        await import("../../client/src/components/marketing/phase/home/SwitchStrip");
+      await act(async () => {
+        root.render(createElement(SwitchStrip, { base: `/${locale}`, locale }));
+      });
+      const strip = container.querySelector('section#switch[data-testid="section-switch"]')!;
+      expect(strip.querySelector("h2")?.textContent).toBe(
+        locale === "ar" ? "هل تنتقل من Wafeq أو Zoho Books؟" : "Switching from Wafeq or Zoho Books?"
+      );
+      expect(strip.getAttribute("aria-labelledby")).toBe(strip.querySelector("h2")?.id);
+      const points = [...strip.querySelectorAll("li[data-point]")].map((li) => li.textContent);
+      expect(points).toEqual(
+        locale === "ar"
+          ? [
+              "ملف WPS للرواتب",
+              "مساحة عمل متعددة العملاء للمحاسب وبوابة للعميل",
+              "فواتير ضريبية ثنائية اللغة بالعربية والإنجليزية",
+              "الفوترة الإلكترونية في كل الباقات",
+            ]
+          : [
+              "WPS payroll file",
+              "Accountant multi-client workspace and client portal",
+              "Bilingual English and Arabic tax invoices",
+              "E-invoicing on every plan",
+            ]
+      );
+      const links = [...strip.querySelectorAll("a")];
+      expect(links.map((a) => a.getAttribute("href"))).toEqual([
+        `/${locale}/compare/wafeq`,
+        `/${locale}/compare/zoho`,
+      ]);
+      const brand = MARKETING_BRAND.name[locale];
+      expect(links.map((a) => a.textContent?.trim())).toEqual(
+        locale === "ar"
+          ? [`${brand} مقابل Wafeq`, `${brand} مقابل Zoho Books`]
+          : [`${brand} vs Wafeq`, `${brand} vs Zoho Books`]
+      );
+      // No table, no price, no outbound vendor link: those belong to the compare pages.
+      expect(strip.querySelector("table")).toBeNull();
+      expect(strip.querySelector('a[href^="http"]')).toBeNull();
+      expect(strip.textContent).not.toMatch(/\d/);
+      expect(strip.textContent).not.toMatch(/AED|درهم/);
+    });
   });
 });

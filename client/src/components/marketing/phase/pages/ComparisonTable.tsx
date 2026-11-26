@@ -1,8 +1,8 @@
 import { Link } from "wouter";
 import { ArrowRight } from "lucide-react";
-import type { SectionProps } from "./types";
-import { SectionHead } from "./SectionHead";
-import { useMarketingRich, useMarketingText, type MarketingKey } from "./text";
+import type { SectionProps } from "../home/types";
+import { SectionHead } from "../home/SectionHead";
+import { useMarketingRich, useMarketingText, type MarketingKey } from "../home/text";
 import {
   COMPARISON_ROWS,
   COMPARISON_SOURCES,
@@ -10,38 +10,28 @@ import {
   visibleColumns,
   type ComparisonCell,
   type ComparisonColumn,
-} from "./comparison";
+} from "../home/comparison";
 import "./comparison.css";
 
 export interface ComparisonTableProps extends SectionProps {
-  /** Show only Muhasib and this competitor (for the /compare pages). */
+  /** Show only Muhasib and this competitor (/compare/wafeq, /compare/zoho); omit for all three. */
   focus?: "wafeq" | "zoho";
-  headingLevel?: 1 | 2 | 3;
-  /**
-   * Fragment id of the section. The homepage keeps "compare"; /pricing passes another id because
-   * its legacy `#compare` target is the plan feature matrix.
-   */
-  anchorId?: string;
 }
-
-/** Fragment of the competitor comparison on /pricing (`#compare` there is the plan matrix). */
-export const PRICING_COMPETITOR_ANCHOR = "competitors";
 
 /** Placeholder glyph for "not confirmed"; the accessible label comes from the catalog. */
 const DASH = "-";
 
-export function ComparisonTable({
-  base,
-  locale,
-  focus,
-  headingLevel = 2,
-  anchorId = "compare",
-}: ComparisonTableProps) {
+/**
+ * The competitor comparison: prices, feature rows, sources, the checked-on date, the VAT note and
+ * the trademark disclaimer. It renders only on the /compare pages; rows come from home/comparison.ts.
+ */
+export function ComparisonTable({ base, locale, focus }: ComparisonTableProps) {
   const text = useMarketingText(locale);
   const rich = useMarketingRich(locale);
   const columns = visibleColumns(focus);
   const competitors = columns.filter((c): c is "wafeq" | "zoho" => c !== "muhasib");
-  const Heading = `h${headingLevel}` as "h1" | "h2" | "h3";
+  // Under the table: the detail pages on the hub, the other vendor's page on a focused one.
+  const otherPages = (["wafeq", "zoho"] as const).filter((id) => id !== focus);
 
   const renderCell = (cell: ComparisonCell) =>
     cell.key ? (
@@ -75,16 +65,12 @@ export function ComparisonTable({
     );
 
   return (
-    <section id={anchorId} data-testid="section-compare" className="mz-band mz-band--light mz-cmp">
+    <section id="compare" data-testid="section-compare" className="mz-band mz-band--light mz-cmp">
       <div className="phase-wrap">
-        {headingLevel === 2 ? (
-          <SectionHead title={text("hxCmpTitle")} lead={text("hxCmpLead")} />
-        ) : (
-          <header className="mz-head">
-            <Heading className="mz-h2">{text("hxCmpTitle")}</Heading>
-            <p className="mz-lead">{text("hxCmpLead")}</p>
-          </header>
-        )}
+        <SectionHead
+          title={text("hxCmpTitle")}
+          lead={focus ? text("hxCmpLeadOne", { vendor: VENDOR_NAME[focus] }) : text("hxCmpLead")}
+        />
 
         <div className="mz-cmp-scroll" tabIndex={0} role="region" aria-label={text("hxCmpCaption")}>
           <table className="mz-cmp-table" data-columns={columns.length}>
@@ -151,7 +137,7 @@ export function ComparisonTable({
         </div>
 
         <p className="mz-cmp-links">
-          {competitors.map((id) => (
+          {otherPages.map((id) => (
             <Link
               key={id}
               className="phase-textlink"

@@ -124,9 +124,9 @@ describe.each(["en", "ar"] as const)("%s", (locale) => {
     expect(container.querySelector('[data-testid="price-trial-note"]')?.textContent).toBe(
       catalog["marketing.hxPriceTrialNote"]
     );
-    expect(container.querySelector('a[href="#compare"]')?.textContent).toBe(
-      catalog["marketing.hxPriceCompareLink"]
-    );
+    const compare = container.querySelector('[data-testid="link-price-compare"]');
+    expect(compare?.getAttribute("href")).toBe(`/${locale}/compare`);
+    expect(compare?.textContent).toBe(catalog["marketing.hxPriceCompareLink"]);
     expect(container.querySelector('[data-testid="link-price-full"]')?.getAttribute("href")).toBe(
       `/${locale}/pricing`
     );
@@ -224,7 +224,7 @@ describe.each(["en", "ar"] as const)("%s", (locale) => {
     if (locale === "ar") expect(englishLines(footer)).toEqual([]);
   });
 
-  it("renders the pricing page: cards, feature matrix, comparison table and FAQ", async () => {
+  it("renders the pricing page: cards, feature matrix, switch strip and FAQ", async () => {
     const { PricingPage } =
       await import("../../client/src/components/marketing/phase/pages/PricingPage");
     await render(locale, "/pricing", async () => createElement(PricingPage, sectionProps(locale)));
@@ -241,14 +241,24 @@ describe.each(["en", "ar"] as const)("%s", (locale) => {
     // Gated rows come from the shared plan matrix: fixed assets start above Starter.
     const fixedAssets = matrix.querySelector('tr[data-row="marketing.prRowFixedAssets"]')!;
     expect(fixedAssets.querySelectorAll("td .mz-price-yes").length).toBeLessThan(3);
-    expect(page.querySelector('section[data-testid="section-compare"]')).not.toBeNull();
+    // The competitor table (prices, sources) is on the /compare pages; here a strip links to them.
+    expect(page.querySelector('[data-testid="section-compare"]')).toBeNull();
+    expect(page.querySelector("[data-column]")).toBeNull();
+    const strip = page.querySelector('section[data-testid="section-switch"]')!;
+    expect(strip.querySelector(`a[href="/${locale}/compare/wafeq"]`)).not.toBeNull();
+    expect(strip.querySelector(`a[href="/${locale}/compare/zoho"]`)).not.toBeNull();
     expect(page.querySelectorAll("section#faq details").length).toBeGreaterThanOrEqual(10);
     expect(page.querySelector('[data-testid="price-readonly"]')?.textContent).toBe(
       catalog["marketing.hxPriceReadOnly"]
     );
     expect(page.textContent).not.toMatch(PROVIDERS);
     if (locale === "ar") {
-      for (const id of ["section-plan-matrix", "section-faq", "section-pricing"]) {
+      for (const id of [
+        "section-plan-matrix",
+        "section-switch",
+        "section-faq",
+        "section-pricing",
+      ]) {
         const scope = page.querySelector(`[data-testid="${id}"]`)!;
         expect(englishLines(scope), id).toEqual([]);
       }
@@ -300,7 +310,7 @@ describe.each(["en", "ar"] as const)("%s", (locale) => {
     expect(container.querySelector("#plan-matrix")).not.toBeNull();
   });
 
-  it("keeps legacy #compare on the feature matrix while the competitor link has its own target", async () => {
+  it("keeps legacy #compare on the feature matrix and sends the competitor link to /compare", async () => {
     const { PricingPage } =
       await import("../../client/src/components/marketing/phase/pages/PricingPage");
     await render(locale, "/pricing", async () => createElement(PricingPage, sectionProps(locale)));
@@ -310,14 +320,9 @@ describe.each(["en", "ar"] as const)("%s", (locale) => {
     expect(legacy.querySelector('table[data-testid="plan-matrix"]')).not.toBeNull();
     expect(legacy.querySelector("#plan-matrix")).not.toBeNull();
     expect(container.querySelectorAll("#compare")).toHaveLength(1);
-    // The competitor comparison and the link that jumps to it use a separate fragment.
-    const target = container
-      .querySelector('[data-testid="link-price-compare"]')
-      ?.getAttribute("href");
-    expect(target).toBe("#competitors");
-    const competitors = container.querySelector(target!)!;
-    expect(competitors.getAttribute("data-testid")).toBe("section-compare");
-    expect(competitors).not.toBe(legacy);
+    expect(
+      container.querySelector('[data-testid="link-price-compare"]')?.getAttribute("href")
+    ).toBe(`/${locale}/compare`);
   });
 });
 
