@@ -463,6 +463,12 @@ async function assertNoOtherFinalReturn(
   vatReturn: VatReturn,
   group: VerifiedVatGroup | null
 ): Promise<void> {
+  // If this return is an amendment, its direct predecessor may still be
+  // 'submitted'/'filed' (it is only marked 'amended' once the amendment is
+  // itself submitted — see submitVatReturn).  Exclude that predecessor from
+  // the overlap check so submission is not blocked by its own predecessor.
+  const predecessorId = (vatReturn as VatReturn & { amendsReturnId?: string | null })
+    .amendsReturnId;
   const [other] = await tx
     .select()
     .from(vatReturns)
@@ -470,6 +476,7 @@ async function assertNoOtherFinalReturn(
       and(
         eq(vatReturns.companyId, vatReturn.companyId),
         ne(vatReturns.id, vatReturn.id),
+        ...(predecessorId ? [ne(vatReturns.id, predecessorId)] : []),
         sql`${vatReturns.status} IN ('submitted', 'filed')`,
         sql`${vatReturns.periodStart}::date <= ${dateOf(vatReturn.periodEnd)}::date`,
         sql`${vatReturns.periodEnd}::date >= ${dateOf(vatReturn.periodStart)}::date`
@@ -502,6 +509,15 @@ async function transitionReturn(
     .set({ ...values, updatedAt: new Date() })
     .where(eq(vatReturns.id, existing.id))
     .returning();
+  // When an amendment becomes effective (submitted or filed), mark its
+  // predecessor 'amended' so it is no longer counted in the effective total.
+  const amendsId = (existing as VatReturn & { amendsReturnId?: string | null }).amendsReturnId;
+  if (amendsId && (values.status === "submitted" || values.status === "filed")) {
+    await tx
+      .update(vatReturns)
+      .set({ status: "amended", updatedAt: new Date() })
+      .where(and(eq(vatReturns.id, amendsId), eq(vatReturns.companyId, existing.companyId)));
+  }
   await recordAudit({
     userId: input.userId,
     companyId: existing.companyId,
@@ -514,6 +530,7 @@ async function transitionReturn(
       ...(values.ftaReferenceNumber !== undefined
         ? { ftaReferenceNumber: values.ftaReferenceNumber }
         : {}),
+      ...(amendsId ? { amendsReturnId: amendsId } : {}),
     },
     req: input.req,
     tx,
@@ -764,20 +781,24 @@ export async function amendVatReturn(input: {
         createdBy: input.userId,
       })
       .returning();
-    await tx
-      .update(vatReturns)
-      .set({
-        status: "amended",
-        updatedAt: new Date(),
-        ...(getFilingVatGroup(original.reconciliationSnapshot)?.memberAuthority !==
-        group?.memberAuthority
-          ? {
-              vatGroupId: group?.groupId ?? null,
-              reconciliationSnapshot: withFilingVatGroup(original.reconciliationSnapshot, group),
-            }
-          : {}),
-      })
-      .where(and(eq(vatReturns.id, original.id), eq(vatReturns.companyId, original.companyId)));
+    // Keep the predecessor in its current status (submitted/filed) so it
+    // remains effective while the amendment is in draft.  It is marked
+    // 'amended' atomically when the amendment is itself submitted (see
+    // submitVatReturn → transitionReturn, below).  Any group-authority
+    // metadata is recorded as a pending update here so the full history
+    // is available to the submission path.
+    if (
+      getFilingVatGroup(original.reconciliationSnapshot)?.memberAuthority !== group?.memberAuthority
+    ) {
+      await tx
+        .update(vatReturns)
+        .set({
+          vatGroupId: group?.groupId ?? null,
+          reconciliationSnapshot: withFilingVatGroup(original.reconciliationSnapshot, group),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(vatReturns.id, original.id), eq(vatReturns.companyId, original.companyId)));
+    }
     await recordAudit({
       userId: input.userId,
       companyId: original.companyId,
