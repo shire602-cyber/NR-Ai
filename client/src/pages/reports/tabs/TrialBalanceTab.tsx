@@ -26,7 +26,6 @@ export default function TrialBalanceTab() {
     t,
     tbFetchStatus,
     trialBalance,
-    trialBalanceLoading,
     trialBalanceSummary,
   } = useReportsPageContext();
   // SWEEP: the Arabic trial balance showed English account names, raw type keys ("expense")
