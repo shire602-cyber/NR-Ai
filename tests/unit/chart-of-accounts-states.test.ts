@@ -72,6 +72,17 @@ async function renderPage(locale: "en" | "ar", queryFn: () => Promise<unknown>) 
   await act(async () => {
     await new Promise((r) => setTimeout(r, 50));
   });
+  return client;
+}
+
+/** Refetch and wait until the cache records the failure and observers have been notified. */
+async function failRefetch(client: QueryClient) {
+  const queryKey = ["/api/companies", "co-1", "accounts-with-balances"];
+  await act(async () => {
+    await client.refetchQueries({ queryKey });
+    await vi.waitFor(() => expect(client.getQueryState(queryKey)?.status).toBe("error"));
+    await new Promise((r) => setTimeout(r, 0));
+  });
 }
 
 describe("chart of accounts states", { timeout: 30000 }, () => {
@@ -114,6 +125,46 @@ describe("chart of accounts states", { timeout: 30000 }, () => {
     await renderPage("en", () => Promise.resolve([]));
     expect(container.querySelector('[data-testid="coa-load-error"]')).toBeNull();
     expect(container.textContent).toContain("No accounts yet");
+  });
+
+  it("keeps the empty state when a refetch fails after an empty response", async () => {
+    const queryFn = vi
+      .fn<() => Promise<unknown>>()
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error("boom"));
+    const client = await renderPage("en", queryFn);
+    await failRefetch(client);
+
+    expect(queryFn).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-testid="coa-load-error"]')).toBeNull();
+    expect(container.textContent).toContain("No accounts yet");
+  });
+
+  it("keeps the no-results state when a refetch fails with cached accounts filtered out", async () => {
+    const queryFn = vi
+      .fn<() => Promise<unknown>>()
+      .mockResolvedValueOnce([cashAccount])
+      .mockRejectedValueOnce(new Error("boom"));
+    const client = await renderPage("en", queryFn);
+
+    const search = container.querySelector<HTMLInputElement>(
+      '[data-testid="input-search-accounts"]'
+    )!;
+    act(() => {
+      // React tracks the input value, so set it through the native setter before the event.
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        search,
+        "no-such-account"
+      );
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.textContent).toContain("No results found");
+
+    await failRefetch(client);
+
+    expect(queryFn).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-testid="coa-load-error"]')).toBeNull();
+    expect(container.textContent).toContain("No results found");
   });
 
   it("renders the page eyebrow in Arabic", async () => {

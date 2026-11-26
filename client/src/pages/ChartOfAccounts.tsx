@@ -148,8 +148,7 @@ export default function ChartOfAccounts() {
   const {
     data: accountsWithBalances,
     isPending,
-    isError,
-    isSuccess,
+    isLoadingError,
     refetch,
   } = useQuery<AccountWithBalance[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
@@ -357,9 +356,9 @@ export default function ChartOfAccounts() {
         status={
           isPending
             ? "loading"
-            : isError && !accountsWithBalances
+            : isLoadingError
               ? "error"
-              : isSuccess && Object.keys(groupedAccounts).length === 0
+              : accountsWithBalances && Object.keys(groupedAccounts).length === 0
                 ? "empty"
                 : "ready"
         }
