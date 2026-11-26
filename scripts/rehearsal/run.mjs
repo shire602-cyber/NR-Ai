@@ -548,6 +548,7 @@ async function stageReleaseSchema(database) {
     "0156_request_throttle_buckets",
     "0157_preserve_period_locks_and_repair_cash_sale_numbering",
     "0158_s4_einvoice_asp_appointments",
+    "0159_preserve_invoice_line_document_discounts",
   ]) {
     psql(database, readFileSync(path.join(migrationsFolder, tag + ".sql"), "utf8"));
   }
@@ -949,6 +950,7 @@ async function rehearse() {
     "Upgrade changed preserved business data"
   );
   fixture("upgrade", "assert-upgraded.sql");
+  fixture("upgrade", "assert-invoice-line-document-discounts.sql");
   fixture("upgrade", "assert-0097.sql");
   fixture("upgrade", "assert-bank-findings.sql");
   console.log("Seeded preservation and backfills verified");
