@@ -120,13 +120,17 @@ async function main() {
   let failed = 0;
   for (const ep of ENDPOINTS) {
     const path = ep.replace(":cid", cid);
-    const timings = await pool(REQUESTS, CONCURRENCY, async () => {
+    const request = async () => {
       const t0 = performance.now();
       const r = await api("GET", path, { token });
       const ms = performance.now() - t0;
       if (r.status >= 400) throw new Error(`${ep} -> ${r.status} ${r.text.slice(0, 160)}`);
       return ms;
-    });
+    };
+    // Warm the endpoint at the same concurrency before collecting the full sample.
+    // A single request would only warm one of the pooled connections.
+    await pool(2 * CONCURRENCY, CONCURRENCY, request);
+    const timings = await pool(REQUESTS, CONCURRENCY, request);
     const value = Math.round(p95(timings));
     results[ep] = value;
     const budget = Math.round((baseline.p95Ms[ep] ?? Infinity) * SCALE * (1 + TOLERANCE));
