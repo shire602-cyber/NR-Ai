@@ -205,5 +205,14 @@
   "dashboard.gsBankLines": "استورد حركات البنك",
   "dashboard.gsBankLinesHint": "أضف حسابًا بنكيًا واستورد كشفًا، لتبدأ المطابقة.",
   "dashboard.gsEinvoice": "استعد للفوترة الإلكترونية",
-  "dashboard.gsEinvoiceHint": "راجع بياناتك وفق قواعد الفوترة الإلكترونية في الإمارات."
+  "dashboard.gsEinvoiceHint": "راجع بياناتك وفق قواعد الفوترة الإلكترونية في الإمارات.",
+  "dashboard.clientFallbackName": "العميل",
+  "dashboard.clientUrgent": "عاجل",
+  "dashboard.clientUpcoming": "قادم",
+  "dashboard.clientActivityLogged": "تم تسجيل نشاط",
+  "dashboard.clientDocsInVault": "المستندات في الخزنة",
+  "dashboard.clientUpcomingDeadline": "موعد نهائي قادم",
+  "dashboard.clientDueInDays": "يستحق خلال {count, plural, zero {# يوم} one {يوم واحد} two {يومين} few {# أيام} many {# يومًا} other {# يوم}}",
+  "dashboard.clientTasksIncomplete": "مهام غير مكتملة",
+  "dashboard.clientItemsThisWeek": "عناصر هذا الأسبوع"
 }

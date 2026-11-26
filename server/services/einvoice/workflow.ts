@@ -108,6 +108,7 @@ import {
 } from "./tracks";
 import { assertLegalEntityCanSend, getLegalEntity, requireCompanyTin } from "./legal-entities";
 import { first, parseXml, partyPeppolEndpoint, partyVatTrn } from "./dom";
+import { submissionAppointmentGate, type AppointmentState } from "../einvoice-appointment.service";
 
 const log = createLogger("einvoice-workflow");
 
@@ -271,7 +272,7 @@ type QueueResult =
       update: { einvoiceStatus: "queued" };
       providerMessageId: null;
     }
-  | SubmitErr;
+  | (SubmitErr & { state?: AppointmentState });
 
 function queued(documentRow: EInvoiceDocument): QueueResult {
   return {
@@ -389,7 +390,12 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       existing &&
       (isQueuedEInvoiceDocument(existing) || (existing.status === "failed" && existing.nextRetryAt))
     ) {
-      return queued(existing);
+      const appointment = await submissionAppointmentGate(
+        company.id,
+        existing.provider ?? provider.name,
+        tx
+      );
+      return appointment ? { ok: false, status: 409, ...appointment } : queued(existing);
     }
     if (existing?.submitClaimedAt) {
       return {
@@ -436,6 +442,8 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         message: EINVOICE_NOT_REQUIRED_MESSAGE,
       };
     }
+    const appointment = await submissionAppointmentGate(company.id, provider.name, tx);
+    if (appointment) return { ok: false, status: 409, ...appointment };
     const entity = await assertCanTransmit(company, provider, tx);
     if (
       verifiedEmailRequired &&
@@ -956,6 +964,8 @@ async function dispatchQueuedSubmission(
         return blockedSubmission(claim, err.code);
       }
     }
+    const appointment = await submissionAppointmentGate(companyId, provider.name, tx);
+    if (appointment) return blockedSubmission(claim, appointment.code);
     if (
       provider.getSubmissionScope &&
       (!metadata.scope ||

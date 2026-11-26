@@ -27,13 +27,11 @@ describe("S01 retention model — financial record DELETE routes", () => {
     expect(s).toContain('from "../services/retention.service"');
   });
 
-  it("vendor bill DELETE calls assertRetentionExpired using bill_date", () => {
+  it("vendor bill DELETE calls assertRetentionExpired", () => {
     const s = src("server/routes/bill-pay.routes.ts");
     expect(s).toContain("assertRetentionExpired");
     expect(s).toContain('from "../services/retention.service"');
-    // S01: guard must use bill_date (document date), not created_at or the
-    // generated retention_expires_at column (which is based on created_at).
-    expect(s).toMatch(/assertRetentionExpired[\s\S]{0,200}bill\.bill_date/);
+    // Date precedence is exercised by the DB-backed DELETE regression.
   });
 
   it("journal entry DELETE calls assertRetentionExpired", () => {

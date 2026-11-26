@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EInvoiceProvider } from "../../server/services/einvoice-provider";
-import { useHarness } from "./harness";
+import { useHarness, type Tenant } from "./harness";
+import { recordTestAppointment } from "./einvoice-appointment-fixture";
 
 const h = useHarness();
 
@@ -71,12 +72,14 @@ async function storedDocument(invoiceId: string) {
   return row;
 }
 
-async function selectComplyance(companyId: string) {
+async function selectComplyance(tenant: Tenant) {
+  const companyId = tenant.company.id;
   await h.sql("UPDATE companies SET einvoice_partner = 'complyance' WHERE id = $1", [companyId]);
   await h.sql(
     "INSERT INTO einvoice_legal_entities (company_id, provider, environment, tin, status) VALUES ($1, 'complyance', 'sandbox', '1001234567', 'active')",
     [companyId]
   );
+  await recordTestAppointment(tenant, "complyance");
 }
 
 /** Rewrite a queued snapshot to the earlier shape: line amounts in the document currency. */
@@ -431,6 +434,39 @@ describe("Durable UAE e-invoice submission queue", () => {
     expect(foreign.options?.taxExchangeRate).toBeNull();
   });
 
+  it("PR #178 blocks dispatch when the tenant revokes the queued provider's appointment", async () => {
+    const args = await readyInvoice();
+    await selectComplyance(args.tenant);
+    const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+      await import("../../server/services/einvoice/workflow");
+    const { revokeAppointment } =
+      await import("../../server/services/einvoice-appointment.service");
+    let posts = 0;
+    const provider = fakeProvider({
+      name: "complyance",
+      environment: "sandbox",
+      requiresLegalEntity: true,
+      submit: async ({ uuid }) => {
+        posts++;
+        return { providerMessageId: uuid, status: "submitted" };
+      },
+    });
+    const now = new Date();
+    expect((await enqueueEInvoiceSubmission({ ...args, provider, now })).ok).toBe(true);
+    await revokeAppointment({
+      companyId: args.company.id,
+      provider: provider.name,
+      userId: args.actorId,
+    });
+    expect((await runEInvoiceRetries(now, () => provider)).submitted).toBe(0);
+    expect(posts).toBe(0);
+    expect(await storedDocument(args.invoice.id)).toMatchObject({
+      delivery_status: "delivery_failed",
+      last_error_code: "EINVOICE_APPOINTMENT_REQUIRED",
+      next_retry_at: null,
+    });
+  });
+
   it("queues a single audited snapshot and sends it once through parallel workers", async () => {
     const args = await readyInvoice();
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
@@ -485,6 +521,7 @@ describe("Durable UAE e-invoice submission queue", () => {
 
   it("recovers a stale lease using the pinned environment and frozen XML without another POST", async () => {
     const args = await readyInvoice();
+    await recordTestAppointment(args.tenant, "acube");
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
       await import("../../server/services/einvoice/workflow");
     const { SUBMISSION_LEASE_MS } = await import("../../server/services/einvoice/store");
@@ -529,6 +566,7 @@ describe("Durable UAE e-invoice submission queue", () => {
 
   it("reconciles an ambiguous A-Cube handoff with backoff and stops for linking if still unknown", async () => {
     const args = await readyInvoice();
+    await recordTestAppointment(args.tenant, "acube");
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
       await import("../../server/services/einvoice/workflow");
     const { EINVOICE_MAX_ATTEMPTS } = await import("../../server/services/einvoice-status");
@@ -613,6 +651,7 @@ describe("Durable UAE e-invoice submission queue", () => {
 
   it("reads a historical A-Cube receipt only after proving its frozen provider source", async () => {
     const args = await readyInvoice();
+    await recordTestAppointment(args.tenant, "acube");
     const { submitAndPersist, refreshAndPersist } =
       await import("../../server/services/einvoice/workflow");
     const { documentSubmissionSnapshot } = await import("../../server/services/einvoice/store");
@@ -673,7 +712,7 @@ describe("Durable UAE e-invoice submission queue", () => {
 
   it("keeps a Complyance replay scoped to the first attempt after an intervening rate limit", async () => {
     const args = await readyInvoice();
-    await selectComplyance(args.company.id);
+    await selectComplyance(args.tenant);
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
       await import("../../server/services/einvoice/workflow");
     const { documentValidation, getEInvoiceDocument } =
@@ -739,7 +778,7 @@ describe("Durable UAE e-invoice submission queue", () => {
 
   it("rejects a queued submission when the initiating actor loses tax permission", async () => {
     const args = await readyInvoice();
-    await selectComplyance(args.company.id);
+    await selectComplyance(args.tenant);
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
       await import("../../server/services/einvoice/workflow");
     let posts = 0;
@@ -770,7 +809,7 @@ describe("Durable UAE e-invoice submission queue", () => {
 
   it("refuses changed workspace credentials before the first provider handoff", async () => {
     const args = await readyInvoice();
-    await selectComplyance(args.company.id);
+    await selectComplyance(args.tenant);
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
       await import("../../server/services/einvoice/workflow");
     let scope = "fixture-original-workspace";
@@ -799,7 +838,7 @@ describe("Durable UAE e-invoice submission queue", () => {
 
   it("keeps an exhausted attempt bound to its provider on both write endpoints and in the queue", async () => {
     const args = await readyInvoice();
-    await selectComplyance(args.company.id);
+    await selectComplyance(args.tenant);
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
       await import("../../server/services/einvoice/workflow");
     const { EINVOICE_MAX_ATTEMPTS } = await import("../../server/services/einvoice-status");
@@ -867,7 +906,7 @@ describe("Durable UAE e-invoice submission queue", () => {
 
   it("releases an unused queue item when its provider is replaced and no longer configured", async () => {
     const args = await readyInvoice();
-    await selectComplyance(args.company.id);
+    await selectComplyance(args.tenant);
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
       await import("../../server/services/einvoice/workflow");
     const provider = fakeProvider({
@@ -893,7 +932,7 @@ describe("Durable UAE e-invoice submission queue", () => {
 
   it("does not replay a lost Complyance response after the legal entity is delinked", async () => {
     const args = await readyInvoice();
-    await selectComplyance(args.company.id);
+    await selectComplyance(args.tenant);
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
       await import("../../server/services/einvoice/workflow");
     let posts = 0;

@@ -8,12 +8,12 @@ export type LoadErrorKind = "offline" | "server" | "forbidden" | "notFound";
  */
 export function classifyLoadError(error: unknown): LoadErrorKind {
   if (error instanceof ApiError) {
-    if (error.status === 403) return "forbidden";
+    if (error.status === 401 || error.status === 403) return "forbidden";
     if (error.status === 404) return "notFound";
     return "server";
   }
   const status = (error as { status?: number } | null)?.status;
-  if (status === 403) return "forbidden";
+  if (status === 401 || status === 403) return "forbidden";
   if (status === 404) return "notFound";
   if (typeof status === "number" && status >= 500) return "server";
   // fetch() rejected before any response: offline, DNS, timeout.

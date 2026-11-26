@@ -158,6 +158,17 @@ function hold(pattern: string) {
   return release;
 }
 
+/**
+ * A 5xx read is retried with backoff in the app; a test that counts requests turns that off for
+ * its own run and puts the defaults back with the returned function.
+ */
+async function withoutRetries() {
+  const { queryClient } = await import("../../client/src/lib/queryClient");
+  const previous = queryClient.getDefaultOptions();
+  queryClient.setDefaultOptions({ ...previous, queries: { ...previous.queries, retry: false } });
+  return () => queryClient.setDefaultOptions(previous);
+}
+
 const hits = (pattern: string) => seenUrls.filter((u) => new RegExp(pattern).test(u)).length;
 
 async function setLocale(locale: "en" | "ar") {
@@ -450,13 +461,16 @@ describe("TeamManagement", { timeout: 30_000 }, () => {
   });
 
   it("keeps cached members and the retry control visible when a refresh fails", async () => {
+    const restoreRetries = await withoutRetries();
     let teamCalls = 0;
     routes.push([
       "GET .*/team$",
       () => {
         teamCalls += 1;
         if (teamCalls === 1) return { body: [1, 2, 3].map(member) };
-        return { status: 404, body: { message: "boom" } };
+        // A transient server failure: a 404 on a company-scoped read means access was lost, and the
+        // query cache then deliberately drops the cached rows (see queryReadState).
+        return { status: 500, body: { message: "boom" } };
       },
     ]);
     routes.push(["GET .*/team/me", () => ({ body: ACCESS })]);
@@ -478,9 +492,11 @@ describe("TeamManagement", { timeout: 30_000 }, () => {
     expect(container.querySelectorAll('[data-testid^="member-m"]')).toHaveLength(3);
     expect(container.querySelector('[data-testid="button-retry-team"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="team-load-error"]')).not.toBeNull();
+    restoreRetries();
   });
 
   it("keeps cached invitations and the retry control visible when a refresh fails", async () => {
+    const restoreRetries = await withoutRetries();
     let inviteCalls = 0;
     routes.push(["GET .*/team$", () => ({ body: [member(1)] })]);
     routes.push(["GET .*/team/me", () => ({ body: ACCESS })]);
@@ -502,7 +518,8 @@ describe("TeamManagement", { timeout: 30_000 }, () => {
             ],
           };
         }
-        return { status: 404, body: { message: "boom" } };
+        // Transient failure (not a 404, which means access was lost and drops the cached rows).
+        return { status: 500, body: { message: "boom" } };
       },
     ]);
     const { default: TeamManagement } = await import("../../client/src/pages/TeamManagement");
@@ -524,6 +541,7 @@ describe("TeamManagement", { timeout: 30_000 }, () => {
       "pending@example.com"
     );
     expect(container.querySelector('[data-testid="button-retry-team-invites"]')).not.toBeNull();
+    restoreRetries();
   });
 
   it("drops the member filter when the roster shrinks and the search box disappears", async () => {

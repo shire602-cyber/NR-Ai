@@ -597,6 +597,7 @@ export function registerEInvoiceRoutes(app: Express) {
         return res.status(result.status).json({
           message: result.message,
           code: result.code,
+          state: result.state,
           issues: "issues" in result ? result.issues : undefined,
           validation: "validation" in result ? result.validation : undefined,
         });
@@ -632,6 +633,7 @@ export function registerEInvoiceRoutes(app: Express) {
         return res.status(result.status).json({
           message: result.message,
           code: result.code,
+          state: result.state,
           issues: result.issues,
           validation: result.validation,
         });

@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiFieldErrors, type FieldMessages } from "@/lib/api-field-errors";
 import { errorHeading } from "@/lib/error-heading";
 import { lastEndedFiscalYear } from "@/lib/fiscal-year";
-import { loadNamespaces, useTranslation, type Locale } from "@/lib/i18n";
+import { formatMessage, loadNamespaces, useTranslation, type Locale } from "@/lib/i18n";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { YearEndFailure } from "@/pages/month-end/YearEndFailure";
 
@@ -169,7 +169,7 @@ export default function YearEndCloseCard({
           <AskNajmaButton
             companyId={companyId}
             topic="year_end_close"
-            period={`FY ending ${fiscalYearEnd}`}
+            period={formatMessage(t["yearEndClose.askPeriod"], { date: fiscalYearEnd })}
             testId="button-ask-najma-year-end"
           />
           <span className="text-caption text-muted-foreground">

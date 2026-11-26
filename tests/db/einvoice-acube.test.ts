@@ -1,3 +1,4 @@
+import { recordTestAppointment } from "./einvoice-appointment-fixture";
 /**
  * E1: UAE e-invoicing through A-Cube on the real app + Postgres, against an in-memory A-Cube
  * built from the doc-derived fixtures (tests/fixtures/pint-ae/asp/acube/README.md).
@@ -285,6 +286,7 @@ for (const k of ENV_KEYS) saved[k] = process.env[k];
 let credentialVariable: string | null = null;
 
 async function useAcube(t: Tenant, webhookToken?: string) {
+  await recordTestAppointment(t, "acube");
   const context = { companyId: t.company.id, provider: "acube", environment: "sandbox" } as const;
   credentialVariable = companyCredentialVariable(context);
   process.env[credentialVariable] = sealCompanyCredentials(context, {

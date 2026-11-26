@@ -1,4 +1,5 @@
 import { formatAedText } from "@/lib/format";
+import { localizeFirmText } from "@shared/server-copy";
 import { T } from "@/components/layout/T";
 import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
@@ -42,6 +43,9 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { SERVER_ERROR_NAMESPACES, serverErrorCopy } from "@/lib/validation-messages";
 import type { Company } from "@shared/schema";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { queryReadState } from "@/lib/queryReadState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,7 +61,26 @@ interface OcrFileItem {
   preview?: string;
   status: "pending" | "processing" | "success" | "error";
   receiptId?: string;
-  error?: string;
+  errorKey?: string;
+}
+
+function bulkOcrErrorKey(error: unknown): string {
+  if (typeof error === "string") {
+    if (/(?:^|; )(?:OpenAI: )?Empty OpenAI response$/.test(error)) {
+      return "components.srv.firm.bulk.ocrEmptyResponse";
+    }
+    if (error === "Unable to save bulk OCR receipt") {
+      return "components.srv.firm.bulk.ocrSaveFailed";
+    }
+    if (
+      error.startsWith("Unsupported image MIME type: ") ||
+      error.startsWith("Image must be a data URL with MIME type ") ||
+      error === "Invalid image data URL"
+    ) {
+      return "components.srv.firm.bulk.ocrInvalidImage";
+    }
+  }
+  return "components.srv.firm.bulk.ocrFailed";
 }
 
 interface VatQueueEntry {
@@ -110,12 +133,25 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 function VatStatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const map: Record<string, { label: string; cls: string }> = {
-    draft: { label: "Draft", cls: "bg-muted text-foreground border-border" },
-    pending_review: { label: "Pending review", cls: "bg-info-subtle text-info border-info/30" },
-    submitted: { label: "Submitted", cls: "bg-warning-subtle text-warning border-warning/30" },
-    filed: { label: "Filed", cls: "bg-success-subtle text-success border-success/30" },
-    none: { label: "Not started", cls: "bg-muted text-muted-foreground border-border" },
+    draft: { label: t["firmOps.bulkVatDraft"], cls: "bg-muted text-foreground border-border" },
+    pending_review: {
+      label: t["firmOps.bulkVatPendingReview"],
+      cls: "bg-info-subtle text-info border-info/30",
+    },
+    submitted: {
+      label: t["firmOps.bulkVatSubmitted"],
+      cls: "bg-warning-subtle text-warning border-warning/30",
+    },
+    filed: {
+      label: t["firmOps.bulkVatFiled"],
+      cls: "bg-success-subtle text-success border-success/30",
+    },
+    none: {
+      label: t["firmOps.bulkVatNotStarted"],
+      cls: "bg-muted text-muted-foreground border-border",
+    },
   };
   const { label, cls } = map[status] ?? map.draft;
   return <Badge className={cls}>{label}</Badge>;
@@ -203,17 +239,16 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
             )
           );
         } else {
+          const errorKey = bulkOcrErrorKey(r?.error);
           setItems((prev) =>
-            prev.map((i) =>
-              i.id === item.id ? { ...i, status: "error", error: r?.error ?? "OCR failed" } : i
-            )
+            prev.map((i) => (i.id === item.id ? { ...i, status: "error", errorKey } : i))
           );
         }
-      } catch (err: any) {
+      } catch {
         setItems((prev) =>
           prev.map((i) =>
             i.id === item.id
-              ? { ...i, status: "error", error: err?.message ?? t["bulkOperations.requestFailed"] }
+              ? { ...i, status: "error", errorKey: "bulkOperations.requestFailed" }
               : i
           )
         );
@@ -274,15 +309,15 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">
-                {items.length} file{items.length !== 1 ? "s" : ""} queued
+                {formatMessage(t["firmOps.bulkFilesQueued"], { count: items.length })}
                 {successCount > 0 && (
                   <span className="ms-2 text-success text-sm font-normal">
-                    · {successCount} done
+                    · {formatMessage(t["firmOps.bulkFilesDone"], { count: successCount })}
                   </span>
                 )}
                 {errorCount > 0 && (
                   <span className="ms-2 text-destructive text-sm font-normal">
-                    · {errorCount} failed
+                    · {formatMessage(t["firmOps.bulkFilesFailed"], { count: errorCount })}
                   </span>
                 )}
               </CardTitle>
@@ -357,7 +392,10 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                           </Badge>
                         )}
                         {item.status === "error" && (
-                          <Badge variant="destructive" title={item.error}>
+                          <Badge
+                            variant="destructive"
+                            title={t[item.errorKey ?? "components.srv.firm.bulk.ocrFailed"]}
+                          >
                             <XCircle className="w-3 h-3 me-1" />
                             <T k="pages.failed" />
                           </Badge>
@@ -677,7 +715,9 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                 </div>
                 {selectedIds.size > 0 && (
                   <div className="flex justify-between text-primary font-semibold pt-1">
-                    <span>Total ({selectedIds.size} clients)</span>
+                    <span>
+                      {formatMessage(t["firmOps.bulkTotalClients"], { count: selectedIds.size })}
+                    </span>
                     <span>{formatAed(total * selectedIds.size)}</span>
                   </div>
                 )}
@@ -751,7 +791,7 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                   <TableHead>
                     <T k="pages.company" />
                   </TableHead>
-                  <TableHead>Invoice #</TableHead>
+                  <TableHead>{t["firmOps.bulkInvoiceNumber"]}</TableHead>
                   <TableHead>
                     <T k="pages.status" />
                   </TableHead>
@@ -988,7 +1028,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
                     </Badge>
                   ) : (
                     <Badge className="bg-warning-subtle text-warning">
-                      {s.issues.length} issue{s.issues.length !== 1 ? "s" : ""}
+                      {formatMessage(t["firmOps.bulkIssuesCount"], { count: s.issues.length })}
                     </Badge>
                   )}
                 </div>
@@ -1011,7 +1051,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
                   <div className="mt-3 bg-warning-subtle border border-warning/30 rounded p-2">
                     {s.issues.map((issue, i) => (
                       <p key={i} className="text-xs text-warning">
-                        · {issue}
+                        · {localizeFirmText(issue, t)}
                       </p>
                     ))}
                   </div>
@@ -1038,25 +1078,45 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
 
 export default function BulkOperations() {
   const { t } = useTranslation();
-  const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
+  const clientsQuery = useQuery<ClientWithStats[]>({
     queryKey: ["/api/firm/clients"],
   });
+  const clientsState = queryReadState(clientsQuery);
 
-  if (isLoading) {
+  if (clientsState === "pending") {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex items-center justify-center h-64" data-testid="bulk-clients-loading">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
+  // The tabs seed their client selection from this list, so they mount only once it has loaded.
+  if (clientsState === "error") {
+    return (
+      <div className="space-y-6">
+        <PageHeader eyebrow={t["firm.eyebrowFirm"]} title={t["bulkOperations.bulkOperations"]} />
+        <LoadErrorState
+          error={clientsQuery.error}
+          onRetry={() => void clientsQuery.refetch()}
+          testId="bulk-clients-error"
+        />
+      </div>
+    );
+  }
+  const clients = clientsQuery.data ?? [];
+
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
+        eyebrow={t["firm.eyebrowFirm"]}
         title={t["bulkOperations.bulkOperations"]}
         description={t["bulkOperations.batchActionsAcrossAllManaged"]}
       />
+
+      {clientsState === "stale" && (
+        <StaleDataNotice onRetry={() => void clientsQuery.refetch()} testId="bulk-clients-stale" />
+      )}
 
       <Tabs defaultValue="ocr">
         <div className="overflow-x-auto">

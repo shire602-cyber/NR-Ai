@@ -7,8 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import { translateNow } from "@/lib/i18n";
+import type {
+  AcceptPartnerTermsBody,
+  ConfirmEmaraTaxAppointmentBody,
+} from "@shared/validators/einvoice-partner";
 
 type AppointmentState =
   | "not_started"
@@ -53,8 +57,8 @@ const STATE_BADGE: Record<
  */
 export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
   const { toast } = useToast();
-  const [agreed, setAgreed] = useState(false);
-  const [appointed, setAppointed] = useState(false);
+  const [agreedReview, setAgreedReview] = useState<string | null>(null);
+  const [appointedReview, setAppointedReview] = useState<string | null>(null);
   const queryKey = ["/api/companies", companyId, "einvoice/partner"];
   const base = `/api/companies/${companyId}/einvoice/partner`;
 
@@ -62,24 +66,31 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
 
   const onDone = (message: string) => () => {
     queryClient.invalidateQueries({ queryKey });
-    setAgreed(false);
-    setAppointed(false);
+    setAgreedReview(null);
+    setAppointedReview(null);
     toast({ title: message });
   };
-  const onError = (err: any) =>
-    toast({ title: translateNow("toasts.couldNotSave"), description: err?.message, variant: "destructive" });
+  const onError = (err: Error) => {
+    if (err instanceof ApiError && err.status === 409) {
+      setAgreedReview(null);
+      setAppointedReview(null);
+      queryClient.invalidateQueries({ queryKey });
+    }
+    toast({
+      title: translateNow("toasts.couldNotSave"),
+      description: err.message,
+      variant: "destructive",
+    });
+  };
 
   const accept = useMutation({
-    mutationFn: () =>
-      apiRequest("POST", `${base}/accept-terms`, {
-        accepted: true,
-        termsVersion: data?.partner.termsVersion,
-      }),
+    mutationFn: (body: AcceptPartnerTermsBody) => apiRequest("POST", `${base}/accept-terms`, body),
     onSuccess: onDone("Partner terms accepted"),
     onError,
   });
   const confirm = useMutation({
-    mutationFn: () => apiRequest("POST", `${base}/confirm-emaratax`, { confirmed: true }),
+    mutationFn: (body: ConfirmEmaraTaxAppointmentBody) =>
+      apiRequest("POST", `${base}/confirm-emaratax`, body),
     onSuccess: onDone("E-invoicing is active"),
     onError,
   });
@@ -99,9 +110,34 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
     );
   }
 
-  const { partner, state } = data;
+  const { partner, appointment, state } = data;
+  const acceptanceRevision = appointment?.termsAcceptedAt;
+  const review = JSON.stringify([
+    companyId,
+    partner.provider,
+    partner.termsVersion,
+    partner.termsUrl,
+    state,
+    acceptanceRevision,
+  ]);
+  const agreed = agreedReview === review;
+  const appointed = appointedReview === review;
   const badge = STATE_BADGE[state];
   const needsTerms = state === "not_started" || state === "terms_outdated" || state === "revoked";
+  const acceptTerms = () =>
+    accept.mutate({
+      expectedProvider: partner.provider,
+      termsVersion: partner.termsVersion,
+      accepted: true,
+    });
+  const confirmAppointment = () => {
+    if (!acceptanceRevision) return;
+    confirm.mutate({
+      expectedProvider: partner.provider,
+      expectedAcceptanceRevision: acceptanceRevision,
+      confirmed: true,
+    });
+  };
 
   return (
     <Card data-testid="einvoicing-partner-card">
@@ -149,13 +185,13 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
                 <label className="flex items-start gap-2">
                   <Checkbox
                     checked={agreed}
-                    onCheckedChange={(v) => setAgreed(v === true)}
+                    onCheckedChange={(v) => setAgreedReview(v === true ? review : null)}
                     data-testid="einvoice-terms-checkbox"
                   />
                   <span>I have read these terms and accept them on behalf of my company.</span>
                 </label>
                 {/* i18n-ignore: UI copy awaiting AR sweep */}
-                <Button disabled={!agreed || accept.isPending} onClick={() => accept.mutate()}>
+                <Button disabled={!agreed || accept.isPending} onClick={acceptTerms}>
                   Accept terms
                 </Button>
               </>
@@ -167,11 +203,12 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
           </section>
         )}
 
-        {state === "awaiting_emaratax" && (
+        {state === "awaiting_emaratax" && acceptanceRevision && (
           <section className="space-y-3">
             <h3 className="font-medium">Step 2: Appoint {partner.displayName} in EmaraTax</h3>
             <ol className="list-decimal pl-5 space-y-1 text-muted-foreground">
-              <li>Sign in to EmaraTax with your company's account.</li> {/* i18n-ignore: UI copy awaiting AR sweep */}
+              {/* i18n-ignore: UI copy awaiting AR sweep */}
+              <li>Sign in to EmaraTax with your company's account.</li>
               <li>Open the e-invoicing service and choose to appoint a service provider.</li>
               <li>Select {partner.displayName} from the list and submit.</li>
             </ol>
@@ -182,13 +219,13 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
             <label className="flex items-start gap-2">
               <Checkbox
                 checked={appointed}
-                onCheckedChange={(v) => setAppointed(v === true)}
+                onCheckedChange={(v) => setAppointedReview(v === true ? review : null)}
                 data-testid="einvoice-emaratax-checkbox"
               />
               <span>I have appointed {partner.displayName} in EmaraTax.</span>
             </label>
             {/* i18n-ignore: UI copy awaiting AR sweep */}
-            <Button disabled={!appointed || confirm.isPending} onClick={() => confirm.mutate()}>
+            <Button disabled={!appointed || confirm.isPending} onClick={confirmAppointment}>
               Confirm
             </Button>
           </section>

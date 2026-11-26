@@ -1313,7 +1313,7 @@ function expandPlurals(template: string, values: Record<string, string | number>
     if (depth !== 0) break;
     const body = template.slice(bodyStart, i - 1);
     const forms: Record<string, string> = {};
-    const formRe = /(\w+)\s*\{([^{}]*)\}/g;
+    const formRe = /(\w+)\s*\{((?:[^{}]|\{\w+\})*)\}/g;
     for (let f = formRe.exec(body); f; f = formRe.exec(body)) forms[f[1]] = f[2];
     const n = Number(values[m[1]]);
     const category = Number.isFinite(n) ? rules.select(n) : "other";

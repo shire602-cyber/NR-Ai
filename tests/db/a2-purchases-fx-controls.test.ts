@@ -22,6 +22,38 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString
 const tenant = (over: Parameters<typeof h.createTenant>[0] = {}) =>
   h.createTenant({ ...over, companyColumns: { ...VAT_CO, ...(over?.companyColumns ?? {}) } });
 
+it.each([
+  { documentDate: "2018-01-01", oldCreationDate: false, floor: "creation date" },
+  { documentDate: today(), oldCreationDate: true, floor: "document date" },
+])(
+  "PR #178 enforces the $floor on DELETE of a void bill",
+  async ({ documentDate, oldCreationDate }) => {
+    const t = await tenant();
+    const bill = await t.as.post(`/api/companies/${t.company.id}/bills`, {
+      vendor_name: "Retention supplier",
+      vendor_trn: SUPPLIER_TRN,
+      bill_number: "RETENTION-178",
+      bill_date: documentDate,
+      line_items: [{ description: "Supplies", quantity: 1, unit_price: 100, vat_rate: 5 }],
+    });
+    expect(bill.status, bill.text).toBe(200);
+    const path = `/api/bills/${bill.body.id}`;
+    await h.sql(
+      `UPDATE vendor_bills
+        SET status = 'void', approved_at = now(),
+            created_at = CASE WHEN $2 THEN '2018-01-01'::timestamp ELSE created_at END
+      WHERE id = $1`,
+      [bill.body.id, oldCreationDate]
+    );
+    const deleted = await t.as.delete(path);
+    expect(deleted.status, deleted.text).toBe(409);
+    expect(deleted.body.code).toBe("RETENTION_NOT_EXPIRED");
+    expect(await h.sql("SELECT status FROM vendor_bills WHERE id = $1", [bill.body.id])).toEqual([
+      { status: "void" },
+    ]);
+  }
+);
+
 /** Natural debit − credit balance (fils) of an account code. */
 async function bal(t: Tenant, code: string): Promise<number> {
   const rows = await h.sql<{ n: string }>(
