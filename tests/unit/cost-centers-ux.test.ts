@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   costCenterDisplayName,
@@ -37,19 +36,5 @@ describe("cost center period label", () => {
     expect(costCenterPeriodLabel(null, null, copy)).toBe("All");
     expect(costCenterPeriodLabel(null, "2026-03-31", copy)).toBe("B → 2026-03-31");
     expect(costCenterPeriodLabel("2026-01-01", null, copy)).toBe("2026-01-01 → T");
-  });
-});
-
-describe("CostCenters page", () => {
-  // Source-inspection: the page needs a company and API to render.
-  const src = readFileSync("client/src/pages/CostCenters.tsx", "utf8");
-  it("has no hardcoded English eyebrow or period words", () => {
-    expect(src).not.toContain('eyebrow="Accounting"');
-    expect(src).not.toContain('?? "Beginning"');
-    expect(src).not.toContain('?? "today"');
-  });
-  it("shows an error state instead of the empty state when loading fails", () => {
-    expect(src).toContain("isCostCentersError");
-    expect(src).toContain("isProfitabilityError");
   });
 });

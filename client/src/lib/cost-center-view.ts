@@ -1,4 +1,46 @@
-// Pure view helpers for the cost centers screen (search, display name, period label).
+// Pure view helpers for the cost centers screen (load state, search, display name, period label).
+
+/**
+ * What a screen section should say about one query. Whether there are rows to show is a separate
+ * question (`data !== undefined`): `paused`, `pausedRetry`, `retrying` and `refreshError` apply
+ * with or without cached data, `pending` and `error` only without it.
+ */
+export type LoadState =
+  | "ready"
+  | "pending"
+  | "paused"
+  | "retrying"
+  | "pausedRetry"
+  | "error"
+  | "refreshError";
+
+export interface LoadSnapshot {
+  data: unknown;
+  status: "pending" | "error" | "success";
+  fetchStatus: "fetching" | "paused" | "idle";
+  failureCount: number;
+  dataUpdatedAt: number;
+  errorUpdatedAt: number;
+}
+
+export function costCenterLoadState(query: LoadSnapshot): LoadState {
+  const hasData = query.data !== undefined && query.data !== null;
+  // A new fetch resets failureCount (and, without data, the error status), so a user or scheduled
+  // retry is recognised by the last settled outcome having been a failure.
+  const isRetry =
+    query.failureCount > 0 ||
+    query.status === "error" ||
+    query.errorUpdatedAt > query.dataUpdatedAt;
+
+  if (query.fetchStatus === "paused") return isRetry ? "pausedRetry" : "paused";
+  if (query.fetchStatus === "fetching") {
+    if (isRetry) return "retrying";
+    return hasData ? "ready" : "pending";
+  }
+  if (query.status === "error") return hasData ? "refreshError" : "error";
+  if (hasData) return "ready";
+  return query.status === "pending" ? "pending" : "error";
+}
 
 export interface CostCenterLike {
   code: string;

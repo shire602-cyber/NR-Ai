@@ -64,15 +64,19 @@ import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import { CostCenterLoadNotice } from "@/components/CostCenterLoadNotice";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
 import {
   costCenterDisplayName,
+  costCenterLoadState,
   costCenterPeriodLabel,
   filterCostCenters,
 } from "@/lib/cost-center-view";
@@ -144,9 +148,13 @@ type CostCenterFormData = z.infer<typeof costCenterFormSchema>;
 
 // ─── Component ───────────────────────────────────────────
 
+/** The default API loader, with the query's abort signal carried to `fetch`. */
+function costCenterLoader<T>() {
+  return getQueryFn<T>({ on401: "throw" });
+}
+
 export default function CostCenters() {
   const { t, locale } = useTranslation();
-  const cc = CC_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
@@ -158,30 +166,33 @@ export default function CostCenters() {
 
   // ─── Queries ───────────────────────────────────────────
 
-  const {
-    data: costCenters = [],
-    isLoading,
-    isError: isCostCentersError,
-    refetch: refetchCostCenters,
-  } = useQuery<CostCenter[]>({
+  const registerQuery = useQuery<CostCenter[]>({
     queryKey: [`/api/companies/${companyId}/cost-centers`],
+    queryFn: costCenterLoader<CostCenter[]>(),
     enabled: !!companyId,
   });
 
-  const {
-    data: profitabilityReport,
-    isLoading: isLoadingProfitability,
-    isError: isProfitabilityError,
-    refetch: refetchProfitability,
-  } = useQuery<CostCenterProfitabilityReport>({
+  const profitabilityQuery = useQuery<CostCenterProfitabilityReport>({
     queryKey: [`/api/companies/${companyId}/cost-centers/profitability`],
+    queryFn: costCenterLoader<CostCenterProfitabilityReport>(),
     enabled: !!companyId,
   });
 
-  const { data: report, isError: isReportError } = useQuery<CostCenterReport>({
+  const reportQuery = useQuery<CostCenterReport>({
     queryKey: [`/api/companies/${companyId}/cost-centers/${selectedCostCenterId}/report`],
+    queryFn: costCenterLoader<CostCenterReport>(),
     enabled: !!companyId && !!selectedCostCenterId,
   });
+
+  // `data` stays undefined until a request has succeeded: counts, totals and empty states are
+  // only drawn from it, and it is kept (never mutated) when a later refresh fails.
+  const registerData = registerQuery.data;
+  const profitabilityReport = profitabilityQuery.data;
+  const report = reportQuery.data;
+  const costCenters = registerData ?? [];
+  const registerState = costCenterLoadState(registerQuery);
+  const profitabilityState = costCenterLoadState(profitabilityQuery);
+  const reportState = costCenterLoadState(reportQuery);
 
   // ─── Form ─────────────────────────────────────────────
 
@@ -200,6 +211,14 @@ export default function CostCenters() {
 
   // ─── Mutations ────────────────────────────────────────
 
+  // Cancel first: invalidating alone reuses a still-running first load, whose pre-write response
+  // would then stand in for the fresh one.
+  const reloadRegister = async () => {
+    const filters = { queryKey: [`/api/companies/${companyId}/cost-centers`], exact: true };
+    await queryClient.cancelQueries(filters);
+    await queryClient.invalidateQueries(filters);
+  };
+
   const createMutation = useMutation({
     mutationFn: (data: CostCenterFormData) =>
       apiRequest("POST", `/api/companies/${companyId}/cost-centers`, {
@@ -207,7 +226,7 @@ export default function CostCenters() {
         parentId: data.parentId || null,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
+      void reloadRegister();
       toast({
         title: translateNow("toasts.costCenterCreated"),
         description: translateNow("toasts.costCenterHasBeenAddedSuccessfully"),
@@ -231,7 +250,7 @@ export default function CostCenters() {
         parentId: data.parentId || null,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
+      void reloadRegister();
       toast({
         title: translateNow("toasts.costCenterUpdated"),
         description: translateNow("toasts.costCenterDetailsHaveBeenUpdated"),
@@ -252,7 +271,7 @@ export default function CostCenters() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/cost-centers/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
+      void reloadRegister();
       if (selectedCostCenterId) {
         setSelectedCostCenterId(null);
       }
@@ -356,30 +375,24 @@ export default function CostCenters() {
   const inactiveCount = costCenters.filter((cc) => !cc.isActive).length;
   const selectedCostCenter = costCenters.find((cc) => cc.id === selectedCostCenterId);
   const profitabilityRows = profitabilityReport?.costCenters ?? [];
-  const profitabilityTotals = profitabilityReport?.totals ?? {
-    costCenterCount: 0,
-    activeCostCenterCount: 0,
-    allocatedLineCount: 0,
-    totalIncome: 0,
-    totalExpenses: 0,
-    netIncome: 0,
-  };
-  const profitabilityPeriodLabel = costCenterPeriodLabel(
-    profitabilityReport?.periodStart,
-    profitabilityReport?.periodEnd,
-    {
-      beginning: cc.beginning,
-      today: cc.today,
-      range: cc.periodRange,
-      allPeriods: t["costCenters.allPostedPeriods"],
-    }
-  );
+  const profitabilityTotals = profitabilityReport?.totals;
+  // Without a report, no period is known: do not claim "all posted periods".
+  const profitabilityPeriodLabel = profitabilityReport
+    ? costCenterPeriodLabel(profitabilityReport.periodStart, profitabilityReport.periodEnd, {
+        beginning: t["screens.ccPeriodBeginning"],
+        today: t["screens.ccPeriodToday"],
+        range: t["screens.ccPeriodRange"],
+        allPeriods: t["costCenters.allPostedPeriods"],
+      })
+    : profitabilityState === "error"
+      ? t["screens.ccPeriodUnavailable"]
+      : t["screens.ccPeriodUnknown"];
 
   if (!canAccess("costCenters")) {
     return <UpgradePrompt feature="costCenters" requiredTier={getRequiredTier("costCenters")} />;
   }
 
-  if (isLoadingCompany || isLoading) {
+  if (isLoadingCompany) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -387,12 +400,17 @@ export default function CostCenters() {
     );
   }
 
+  // The queries stay disabled without a company, so there is nothing to wait for.
+  if (!companyId) {
+    return <EmptyState icon={Building2} title={t["screens.noCompanySelected"]} />;
+  }
+
   // ─── Render ───────────────────────────────────────────
 
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow={cc.eyebrow}
+        eyebrow={t["screens.ccEyebrow"]}
         title={t["screens.costCenters"]}
         description={t["screens.costCentersDescription"]}
         backHref="/reports"
@@ -402,7 +420,7 @@ export default function CostCenters() {
             <Button
               variant="outline"
               onClick={handleExportCostCenterProfitability}
-              disabled={isLoadingProfitability || !profitabilityReport}
+              disabled={!profitabilityReport}
             >
               <Download aria-hidden />
               <T k="pages.export" />
@@ -417,7 +435,7 @@ export default function CostCenters() {
 
       {/* P&L by cost center. Spec 2.6: hidden until the first cost center exists, so an
           empty company sees no KPI row of zeros above the empty register. */}
-      {(isLoading || costCenters.length > 0) && (
+      {(!registerData || registerData.length > 0) && (
         <section className="space-y-4" aria-labelledby="cc-pl-title">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="min-w-0">
@@ -434,143 +452,154 @@ export default function CostCenters() {
               <T k="pageLabels.accrualBasis" />
             </Badge>
           </div>
-          <div className="mobile-keep-cols grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <StatCard
-              label={t["pageLabels.activeCenters"]}
-              loading={isLoadingProfitability}
-              value={
-                <span className="tabular-nums">
-                  {profitabilityTotals.activeCostCenterCount}/{profitabilityTotals.costCenterCount}
-                </span>
-              }
+          {(profitabilityTotals || profitabilityState === "pending") && (
+            <div className="mobile-keep-cols grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <StatCard
+                testId="cost-center-stat-active"
+                label={t["pageLabels.activeCenters"]}
+                loading={!profitabilityTotals}
+                value={
+                  profitabilityTotals && (
+                    <span className="tabular-nums">
+                      {profitabilityTotals.activeCostCenterCount}/
+                      {profitabilityTotals.costCenterCount}
+                    </span>
+                  )
+                }
+              />
+              <StatCard
+                testId="cost-center-stat-income"
+                label={t["pages.income"]}
+                loading={!profitabilityTotals}
+                value={profitabilityTotals && <Money amount={profitabilityTotals.totalIncome} />}
+              />
+              <StatCard
+                label={t["pages.expenses"]}
+                loading={!profitabilityTotals}
+                value={profitabilityTotals && <Money amount={profitabilityTotals.totalExpenses} />}
+              />
+              <StatCard
+                label={t["pageLabels.netIncome"]}
+                loading={!profitabilityTotals}
+                value={
+                  profitabilityTotals && (
+                    <Money amount={profitabilityTotals.netIncome} tone="auto" />
+                  )
+                }
+              />
+            </div>
+          )}
+          <DataTableCard testId="cost-center-pl">
+            <CostCenterLoadNotice
+              state={profitabilityState}
+              hasData={!!profitabilityReport}
+              errorTitle={t["screens.ccPlError"]}
+              errorBody={t["screens.ccLoadErrorBody"]}
+              onRetry={() => void profitabilityQuery.refetch()}
+              testId="cost-center-pl-notice"
             />
-            <StatCard
-              label={t["pages.income"]}
-              loading={isLoadingProfitability}
-              value={<Money amount={profitabilityTotals.totalIncome} />}
-            />
-            <StatCard
-              label={t["pages.expenses"]}
-              loading={isLoadingProfitability}
-              value={<Money amount={profitabilityTotals.totalExpenses} />}
-            />
-            <StatCard
-              label={t["pageLabels.netIncome"]}
-              loading={isLoadingProfitability}
-              value={<Money amount={profitabilityTotals.netIncome} tone="auto" />}
-            />
-          </div>
-          <DataTableCard
-            status={
-              isLoadingProfitability
-                ? "loading"
-                : isProfitabilityError
-                  ? "error"
-                  : profitabilityRows.length === 0
-                    ? "empty"
-                    : "ready"
-            }
-            empty={{
-              icon: Building2,
-              title: t["pageLabels.noCostCenterAllocationsHaveBeenPostedYet"],
-            }}
-            error={{
-              title: cc.loadErrorTitle,
-              description: cc.loadErrorBody,
-              onRetry: () => void refetchProfitability(),
-              testId: "cost-center-pl-error",
-            }}
-          >
-            <Table className="row-cards">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t["screens.code"]}</TableHead>
-                  <TableHead className="w-full">
-                    <T k="pageLabels.costCenter" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pages.status" />
-                  </TableHead>
-                  <TableHead data-numeric="">
-                    <T k="pages.income" />
-                  </TableHead>
-                  <TableHead data-numeric="">
-                    <T k="pages.expenses" />
-                  </TableHead>
-                  <TableHead data-numeric="">
-                    <T k="pages.netIncome" />
-                  </TableHead>
-                  <TableHead data-numeric="">{cc.rollup}</TableHead>
-                  <TableHead data-numeric="">{cc.lines}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {profitabilityRows.map((row) => (
-                  <TableRow
-                    key={row.costCenterId}
-                    className={row.isUnallocated ? "bg-surface-sunken/60" : undefined}
-                  >
-                    <TableCell
-                      data-nowrap=""
-                      data-cell="meta"
-                      className="tabular-nums text-muted-foreground"
-                    >
-                      {row.code}
-                    </TableCell>
-                    <TableCell
-                      data-truncate=""
-                      data-cell="title"
-                      className={cn("font-medium", row.isUnallocated && "text-muted-foreground")}
-                      style={{ paddingInlineStart: `${(row.depth ?? 0) * 16 + 16}px` }}
-                    >
-                      <span dir="auto">
-                        {row.isUnallocated
-                          ? cc.unallocated
-                          : locale === "ar" && row.nameAr
-                            ? row.nameAr
-                            : row.name}
-                      </span>
-                      {row.type && row.type !== "cost_centre" && !row.isUnallocated && (
-                        <Badge variant="outline" className="ms-2">
-                          {row.type === "project" ? cc.typeProject : cc.typeJob}
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell data-nowrap="" data-cell="status">
-                      {!row.isUnallocated && (
-                        <StatusBadge status={row.isActive ? "active" : "inactive"} />
-                      )}
-                    </TableCell>
-                    <MoneyCell
-                      amount={row.totalIncome}
-                      showCurrency={false}
-                      className="text-muted-foreground"
-                    />
-                    <MoneyCell
-                      amount={row.totalExpenses}
-                      showCurrency={false}
-                      className="text-muted-foreground"
-                    />
-                    <MoneyCell
-                      amount={row.netIncome}
-                      tone="auto"
-                      className="font-medium"
-                      data-cell="amount"
-                    />
-                    <TableCell data-numeric="" className="text-muted-foreground">
-                      {row.rollup ? (
-                        <Money amount={row.rollup.netIncome} showCurrency={false} />
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell data-numeric="" className="text-muted-foreground">
-                      {row.lineCount}
-                    </TableCell>
+            {!profitabilityReport && profitabilityState === "pending" && <TableSkeleton />}
+            {profitabilityReport && profitabilityRows.length === 0 && (
+              <EmptyState
+                compact
+                icon={Building2}
+                title={t["pageLabels.noCostCenterAllocationsHaveBeenPostedYet"]}
+              />
+            )}
+            {profitabilityRows.length > 0 && (
+              <Table className="row-cards">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t["screens.code"]}</TableHead>
+                    <TableHead className="w-full">
+                      <T k="pageLabels.costCenter" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
+                    <TableHead data-numeric="">
+                      <T k="pages.income" />
+                    </TableHead>
+                    <TableHead data-numeric="">
+                      <T k="pages.expenses" />
+                    </TableHead>
+                    <TableHead data-numeric="">
+                      <T k="pages.netIncome" />
+                    </TableHead>
+                    <TableHead data-numeric="">{t["screens.ccRollup"]}</TableHead>
+                    <TableHead data-numeric="">{t["screens.ccLines"]}</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {profitabilityRows.map((row) => (
+                    <TableRow
+                      key={row.costCenterId}
+                      className={row.isUnallocated ? "bg-surface-sunken/60" : undefined}
+                    >
+                      <TableCell
+                        data-nowrap=""
+                        data-cell="meta"
+                        className="tabular-nums text-muted-foreground"
+                      >
+                        {row.code}
+                      </TableCell>
+                      <TableCell
+                        data-truncate=""
+                        data-cell="title"
+                        className={cn("font-medium", row.isUnallocated && "text-muted-foreground")}
+                        style={{ paddingInlineStart: `${(row.depth ?? 0) * 16 + 16}px` }}
+                      >
+                        <span dir="auto">
+                          {row.isUnallocated
+                            ? t["screens.ccUnallocated"]
+                            : locale === "ar" && row.nameAr
+                              ? row.nameAr
+                              : row.name}
+                        </span>
+                        {row.type && row.type !== "cost_centre" && !row.isUnallocated && (
+                          <Badge variant="outline" className="ms-2">
+                            {row.type === "project"
+                              ? t["screens.ccTypeProject"]
+                              : t["screens.ccTypeJob"]}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell data-nowrap="" data-cell="status">
+                        {!row.isUnallocated && (
+                          <StatusBadge status={row.isActive ? "active" : "inactive"} />
+                        )}
+                      </TableCell>
+                      <MoneyCell
+                        amount={row.totalIncome}
+                        showCurrency={false}
+                        className="text-muted-foreground"
+                      />
+                      <MoneyCell
+                        amount={row.totalExpenses}
+                        showCurrency={false}
+                        className="text-muted-foreground"
+                      />
+                      <MoneyCell
+                        amount={row.netIncome}
+                        tone="auto"
+                        className="font-medium"
+                        data-cell="amount"
+                      />
+                      <TableCell data-numeric="" className="text-muted-foreground">
+                        {row.rollup ? (
+                          <Money amount={row.rollup.netIncome} showCurrency={false} />
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                      <TableCell data-numeric="" className="text-muted-foreground">
+                        {row.lineCount}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </DataTableCard>
         </section>
       )}
@@ -582,13 +611,15 @@ export default function CostCenters() {
             <h2 id="cc-register-title" className="text-h2 text-foreground">
               {t["screens.costCenterRegister"]}
             </h2>
-            <p className="mt-1 text-small text-muted-foreground">
-              {formatMessage(t["screens.costCenterCounts"], {
-                total: costCenters.length,
-                active: activeCount,
-                inactive: inactiveCount,
-              })}
-            </p>
+            {registerData && (
+              <p className="mt-1 text-small text-muted-foreground" data-testid="cost-center-counts">
+                {formatMessage(t["screens.costCenterCounts"], {
+                  total: costCenters.length,
+                  active: activeCount,
+                  inactive: inactiveCount,
+                })}
+              </p>
+            )}
           </div>
           <div className="relative w-full sm:w-72">
             <Search
@@ -604,102 +635,115 @@ export default function CostCenters() {
             />
           </div>
         </div>
-        <DataTableCard
-          status={
-            isCostCentersError ? "error" : filteredCostCenters.length === 0 ? "empty" : "ready"
-          }
-          error={{
-            title: cc.loadErrorTitle,
-            description: cc.loadErrorBody,
-            onRetry: () => void refetchCostCenters(),
-            testId: "cost-center-register-error",
-          }}
-          empty={{
-            icon: Building2,
-            title: searchQuery.trim() ? t["screens.noCostCenterMatch"] : t["screens.noCostCenters"],
-            action: searchQuery.trim()
-              ? undefined
-              : { label: t["pageLabels.addCostCenter"], onClick: handleOpenCreateDialog },
-          }}
-        >
-          <Table className="row-cards">
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t["screens.code"]}</TableHead>
-                <TableHead className="w-full">{t["pages.contactsColName"]}</TableHead>
-                <TableHead>
-                  <T k="pages.description" />
-                </TableHead>
-                <TableHead>
-                  <T k="consolidation.parent" />
-                </TableHead>
-                <TableHead>
-                  <T k="pages.status" />
-                </TableHead>
-                <TableHead>
-                  <span className="sr-only">
-                    <T k="pages.actions" />
-                  </span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredCostCenters.map((center) => (
-                <TableRow
-                  key={center.id}
-                  data-state={selectedCostCenterId === center.id ? "selected" : undefined}
-                  className="cursor-pointer"
-                  onClick={() =>
-                    setSelectedCostCenterId(center.id === selectedCostCenterId ? null : center.id)
-                  }
-                >
-                  <TableCell
-                    data-nowrap=""
-                    data-cell="meta"
-                    className="tabular-nums text-muted-foreground"
-                  >
-                    {center.code}
-                  </TableCell>
-                  <TableCell data-truncate="" data-cell="title" dir="auto" className="font-medium">
-                    {costCenterDisplayName(center, locale)}
-                  </TableCell>
-                  <TableCell data-truncate="" className="text-muted-foreground">
-                    {center.description || "—"}
-                  </TableCell>
-                  <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
-                    {getParentName(center.parentId)}
-                  </TableCell>
-                  <TableCell data-nowrap="" data-cell="status">
-                    <StatusBadge status={center.isActive ? "active" : "inactive"} />
-                  </TableCell>
-                  <TableCell data-cell="actions" onClick={(e) => e.stopPropagation()}>
-                    <RowActions
-                      collapseOnMobile
-                      menu={
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onSelect={() => {
-                            if (window.confirm(t["screens.confirmDeleteCostCenter"])) {
-                              deleteMutation.mutate(center.id);
-                            }
-                          }}
-                        >
-                          <Trash2 aria-hidden />
-                          {t.delete}
-                        </DropdownMenuItem>
-                      }
-                    >
-                      <RowActionButton
-                        label={t.edit}
-                        icon={Edit}
-                        onClick={() => handleOpenEditDialog(center)}
-                      />
-                    </RowActions>
-                  </TableCell>
+        <DataTableCard testId="cost-center-register">
+          <CostCenterLoadNotice
+            state={registerState}
+            hasData={!!registerData}
+            errorTitle={t["screens.ccRegisterError"]}
+            errorBody={t["screens.ccLoadErrorBody"]}
+            onRetry={() => void registerQuery.refetch()}
+            testId="cost-center-register-notice"
+          />
+          {!registerData && registerState === "pending" && <TableSkeleton />}
+          {registerData && filteredCostCenters.length === 0 && (
+            <EmptyState
+              compact
+              icon={Building2}
+              title={
+                searchQuery.trim() ? t["screens.noCostCenterMatch"] : t["screens.noCostCenters"]
+              }
+              action={
+                searchQuery.trim()
+                  ? undefined
+                  : { label: t["pageLabels.addCostCenter"], onClick: handleOpenCreateDialog }
+              }
+            />
+          )}
+          {filteredCostCenters.length > 0 && (
+            <Table className="row-cards">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t["screens.code"]}</TableHead>
+                  <TableHead className="w-full">{t["pages.contactsColName"]}</TableHead>
+                  <TableHead>
+                    <T k="pages.description" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="consolidation.parent" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead>
+                    <span className="sr-only">
+                      <T k="pages.actions" />
+                    </span>
+                  </TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredCostCenters.map((center) => (
+                  <TableRow
+                    key={center.id}
+                    data-state={selectedCostCenterId === center.id ? "selected" : undefined}
+                    className="cursor-pointer"
+                    onClick={() =>
+                      setSelectedCostCenterId(center.id === selectedCostCenterId ? null : center.id)
+                    }
+                  >
+                    <TableCell
+                      data-nowrap=""
+                      data-cell="meta"
+                      className="tabular-nums text-muted-foreground"
+                    >
+                      {center.code}
+                    </TableCell>
+                    <TableCell
+                      data-truncate=""
+                      data-cell="title"
+                      dir="auto"
+                      className="font-medium"
+                    >
+                      {costCenterDisplayName(center, locale)}
+                    </TableCell>
+                    <TableCell data-truncate="" className="text-muted-foreground">
+                      {center.description || "—"}
+                    </TableCell>
+                    <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                      {getParentName(center.parentId)}
+                    </TableCell>
+                    <TableCell data-nowrap="" data-cell="status">
+                      <StatusBadge status={center.isActive ? "active" : "inactive"} />
+                    </TableCell>
+                    <TableCell data-cell="actions" onClick={(e) => e.stopPropagation()}>
+                      <RowActions
+                        collapseOnMobile
+                        menu={
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={() => {
+                              if (window.confirm(t["screens.confirmDeleteCostCenter"])) {
+                                deleteMutation.mutate(center.id);
+                              }
+                            }}
+                          >
+                            <Trash2 aria-hidden />
+                            {t.delete}
+                          </DropdownMenuItem>
+                        }
+                      >
+                        <RowActionButton
+                          label={t.edit}
+                          icon={Edit}
+                          onClick={() => handleOpenEditDialog(center)}
+                        />
+                      </RowActions>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </DataTableCard>
       </section>
 
@@ -716,15 +760,24 @@ export default function CostCenters() {
             </>
           }
         >
-          {report ? (
-            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <CostCenterLoadNotice
+            state={reportState}
+            hasData={!!report}
+            errorTitle={t["screens.ccReportError"]}
+            errorBody={t["screens.ccLoadErrorBody"]}
+            onRetry={() => void reportQuery.refetch()}
+            testId="cost-center-report-notice"
+            className="px-0"
+          />
+          {report && (
+            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3" data-testid="cost-center-report">
               <div>
                 <dt className="flex items-center gap-1.5 text-small text-muted-foreground">
                   <TrendingUp className="h-4 w-4" aria-hidden />
                   <T k="pages.income" />
                 </dt>
                 <dd className="mt-1 text-h3 font-semibold">
-                  <Money amount={report.totalIncome ?? 0} />
+                  <Money amount={report.totalIncome} />
                 </dd>
               </div>
               <div>
@@ -733,7 +786,7 @@ export default function CostCenters() {
                   <T k="pages.expenses" />
                 </dt>
                 <dd className="mt-1 text-h3 font-semibold">
-                  <Money amount={report.totalExpenses ?? 0} />
+                  <Money amount={report.totalExpenses} />
                 </dd>
               </div>
               <div>
@@ -742,18 +795,10 @@ export default function CostCenters() {
                   {t["screens.net"]}
                 </dt>
                 <dd className="mt-1 text-h3 font-semibold">
-                  <Money amount={report.netIncome ?? 0} tone="auto" />
+                  <Money amount={report.netIncome} tone="auto" />
                 </dd>
               </div>
             </dl>
-          ) : (
-            <p className="text-sm text-muted-foreground" role={isReportError ? "alert" : undefined}>
-              {isReportError ? (
-                cc.reportError
-              ) : (
-                <T k="pageLabels.noReportDataAvailableForThisCostCenter" />
-              )}
-            </p>
           )}
         </SectionCard>
       )}
@@ -808,7 +853,7 @@ export default function CostCenters() {
                     name="nameAr"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{cc.nameAr}</FormLabel>
+                        <FormLabel>{t["screens.ccNameAr"]}</FormLabel>
                         <FormControl>
                           <Input dir="rtl" {...field} value={field.value ?? ""} />
                         </FormControl>
@@ -821,7 +866,7 @@ export default function CostCenters() {
                     name="type"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{cc.type}</FormLabel>
+                        <FormLabel>{t["screens.ccType"]}</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value ?? "cost_centre"}>
                           <FormControl>
                             <SelectTrigger>
@@ -829,9 +874,11 @@ export default function CostCenters() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="cost_centre">{cc.typeCostCentre}</SelectItem>
-                            <SelectItem value="project">{cc.typeProject}</SelectItem>
-                            <SelectItem value="job">{cc.typeJob}</SelectItem>
+                            <SelectItem value="cost_centre">
+                              {t["screens.ccTypeCostCentre"]}
+                            </SelectItem>
+                            <SelectItem value="project">{t["screens.ccTypeProject"]}</SelectItem>
+                            <SelectItem value="job">{t["screens.ccTypeJob"]}</SelectItem>
                           </SelectContent>
                         </Select>
                       </FormItem>
@@ -934,45 +981,3 @@ export default function CostCenters() {
     </div>
   );
 }
-
-// W4-B copy (en + ar): Arabic names, types, roll-up and the Unallocated row (R10-10, R10-18, R10-19).
-const CC_COPY = {
-  en: {
-    nameAr: "Arabic name",
-    type: "Type",
-    typeCostCentre: "Cost centre",
-    typeProject: "Project",
-    typeJob: "Job",
-    unallocated: "Unallocated (no cost center)",
-    rollup: "Net incl. children",
-    lines: "Lines",
-    active: "Active",
-    inactive: "Inactive",
-    eyebrow: "Accounting",
-    beginning: "the beginning",
-    today: "today",
-    periodRange: "{start} to {end}",
-    loadErrorTitle: "Could not load cost centers",
-    loadErrorBody: "Check your connection and try again. Nothing was changed.",
-    reportError: "Could not load the report for this cost center. Try again later.",
-  },
-  ar: {
-    nameAr: "الاسم بالعربية",
-    type: "النوع",
-    typeCostCentre: "مركز تكلفة",
-    typeProject: "مشروع",
-    typeJob: "مهمة",
-    unallocated: "غير موزع (بدون مركز تكلفة)",
-    rollup: "الصافي مع الفروع",
-    lines: "البنود",
-    active: "نشط",
-    inactive: "غير نشط",
-    eyebrow: "المحاسبة",
-    beginning: "البداية",
-    today: "اليوم",
-    periodRange: "من {start} إلى {end}",
-    loadErrorTitle: "تعذّر تحميل مراكز التكلفة",
-    loadErrorBody: "تحقق من اتصالك وحاول مرة أخرى. لم يتم تغيير أي شيء.",
-    reportError: "تعذّر تحميل تقرير مركز التكلفة هذا. حاول لاحقًا.",
-  },
-} as const;
