@@ -97,7 +97,7 @@ export async function getAppointment(
   companyId: string,
   provider: string,
   conn: Pick<typeof db, "select"> = db,
-  lock?: "share"
+  lock?: "share" | "update"
 ): Promise<EInvoiceAspAppointment | null> {
   const query = conn
     .select()
@@ -126,16 +126,15 @@ export async function submissionAppointmentGate(
 /** Record acceptance of the current terms. Accepting a newer terms version keeps
  *  the EmaraTax confirmation (same partner, still appointed). Accepting after a
  *  revocation clears it, because the client may have removed the partner. */
-export async function acceptPartnerTerms(args: {
-  companyId: string;
-  partner: EInvoicePartner;
-  userId: string;
-}): Promise<EInvoiceAspAppointment> {
+export async function acceptPartnerTerms(
+  args: { companyId: string; partner: EInvoicePartner; userId: string },
+  conn: Pick<typeof db, "insert"> = db
+): Promise<EInvoiceAspAppointment> {
   const now = new Date();
   // The EmaraTax confirmation is cleared atomically when the row's current
   // revokedAt is non-null at write time (not at the earlier read time),
   // closing the TOCTOU window where a concurrent revocation could be lost.
-  const [row] = await db
+  const [row] = await conn
     .insert(einvoiceAspAppointments)
     .values({
       companyId: args.companyId,
@@ -164,16 +163,19 @@ export async function acceptPartnerTerms(args: {
   return row;
 }
 
-export async function confirmEmaraTaxAppointment(args: {
-  accepted: Pick<
-    EInvoiceAspAppointment,
-    "id" | "companyId" | "provider" | "termsVersion" | "termsAcceptedAt"
-  >;
-  userId: string;
-}): Promise<EInvoiceAspAppointment | null> {
+export async function confirmEmaraTaxAppointment(
+  args: {
+    accepted: Pick<
+      EInvoiceAspAppointment,
+      "id" | "companyId" | "provider" | "termsVersion" | "termsAcceptedAt"
+    >;
+    userId: string;
+  },
+  conn: Pick<typeof db, "update"> = db
+): Promise<EInvoiceAspAppointment | null> {
   const now = new Date();
   const { accepted } = args;
-  const [row] = await db
+  const [row] = await conn
     .update(einvoiceAspAppointments)
     .set({ emarataxConfirmedAt: now, emarataxConfirmedBy: args.userId, updatedAt: now })
     .where(

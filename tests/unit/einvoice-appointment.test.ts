@@ -5,6 +5,10 @@ import {
   appointmentGate,
   appointmentState,
 } from "../../server/services/einvoice-appointment.service";
+import {
+  acceptPartnerTermsBody,
+  confirmEmaraTaxAppointmentBody,
+} from "../../shared/validators/einvoice-partner";
 
 const env = {
   EINVOICE_PROVIDER: "complyance",
@@ -21,6 +25,25 @@ const accepted = {
 };
 
 describe("e-invoicing partner (reseller model)", () => {
+  it("requires the reviewed provider on both writes and the acceptance revision on confirmation", () => {
+    const terms = { accepted: true, termsVersion: "2026-11" };
+    expect(acceptPartnerTermsBody.safeParse(terms).success).toBe(false);
+    expect(
+      acceptPartnerTermsBody.safeParse({ ...terms, expectedProvider: "complyance" }).success
+    ).toBe(true);
+
+    const confirm = { confirmed: true, expectedProvider: "complyance" };
+    const expectedAcceptanceRevision = new Date("2026-11-26T12:00:00Z").toISOString();
+    expect(confirmEmaraTaxAppointmentBody.safeParse(confirm).success).toBe(false);
+    expect(
+      confirmEmaraTaxAppointmentBody.safeParse({ confirmed: true, expectedAcceptanceRevision })
+        .success
+    ).toBe(false);
+    expect(
+      confirmEmaraTaxAppointmentBody.safeParse({ ...confirm, expectedAcceptanceRevision }).success
+    ).toBe(true);
+  });
+
   it("describes the active partner from env", () => {
     expect(partner).toMatchObject({
       provider: "complyance",

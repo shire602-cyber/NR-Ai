@@ -239,6 +239,8 @@
   "serverErrors.EINVOICE_NOT_SUBMITTED": "لم تُرسَل هذه الفاتورة الإلكترونية إلى مزوّد الخدمة بعد.",
   "serverErrors.EINVOICE_PARTNER_REQUIRED": "اختر شريك الفوترة الإلكترونية أولًا.",
   "serverErrors.EINVOICE_PARTNER_UNKNOWN": "شريك الفوترة الإلكترونية هذا غير معروف.",
+  "serverErrors.EINVOICE_ACCEPTANCE_REVISION_MISMATCH": "تغيّر قبول الشروط. راجع التعيين قبل تأكيده.",
+  "serverErrors.EINVOICE_PROVIDER_MISMATCH": "تغيّر مزوّد الفوترة الإلكترونية. راجع المزوّد الحالي قبل المتابعة.",
   "serverErrors.EINVOICE_PROVIDER_NOT_CONFIGURED": "أكمل إعداد مزوّد الفوترة الإلكترونية لهذه الشركة قبل الإرسال.",
   "serverErrors.EINVOICE_RETRY_PROVIDER_CHANGED": "أعد الاتصال بمزوّد الفوترة الإلكترونية الأصلي قبل محاولة إرسال هذه الفاتورة مرة أخرى.",
   "serverErrors.EINVOICE_PROVIDER_UNAVAILABLE": "خدمة الفوترة الإلكترونية غير متاحة حاليًا. حاول مرة أخرى لاحقًا.",

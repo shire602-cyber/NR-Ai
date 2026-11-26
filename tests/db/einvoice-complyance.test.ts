@@ -527,6 +527,8 @@ describe("E2 onboarding gates sending", () => {
     vi.stubEnv("EINVOICE_PROVIDER", "mock");
     vi.stubEnv("EINVOICE_ASP_COMPLYANCE_TERMS_URL", "https://partner.example/terms");
     vi.stubEnv("EINVOICE_ASP_COMPLYANCE_TERMS_VERSION", "pr178");
+    vi.stubEnv("EINVOICE_ASP_ACUBE_TERMS_URL", "https://other-partner.example/terms");
+    vi.stubEnv("EINVOICE_ASP_ACUBE_TERMS_VERSION", "pr178");
     try {
       const t = await readyTenant();
       const partnerPath = `/api/companies/${t.company.id}/einvoice/partner`;
@@ -534,11 +536,23 @@ describe("E2 onboarding gates sending", () => {
         await import("../../server/services/einvoice-appointment.service");
       const previouslyAccepted = (await getAppointment(t.company.id, "complyance"))!;
       await recordTestAppointment(t, "acube");
+      const acubeAcceptance = (await getAppointment(t.company.id, "acube"))!;
+      expect(acubeAcceptance.termsVersion).toBe(previouslyAccepted.termsVersion);
+      const acceptBody = {
+        expectedProvider: "complyance",
+        accepted: true,
+        termsVersion: "pr178",
+      };
+      const confirmBody = {
+        expectedProvider: "complyance",
+        expectedAcceptanceRevision: previouslyAccepted.termsAcceptedAt.toISOString(),
+        confirmed: true,
+      };
 
       const foreign = await h.createSecondTenant();
       for (const [action, body] of [
-        ["accept-terms", { accepted: true, termsVersion: "pr178" }],
-        ["confirm-emaratax", { confirmed: true }],
+        ["accept-terms", acceptBody],
+        ["confirm-emaratax", confirmBody],
         ["revoke", {}],
       ] as const) {
         const blocked = await foreign.as.post(`${partnerPath}/${action}`, body);
@@ -555,15 +569,32 @@ describe("E2 onboarding gates sending", () => {
         state: "revoked",
       });
 
-      const accepted = await t.as.post(`${partnerPath}/accept-terms`, {
-        accepted: true,
-        termsVersion: "pr178",
+      const wrongProviderTerms = await t.as.post(`${partnerPath}/accept-terms`, {
+        ...acceptBody,
+        expectedProvider: "acube",
       });
+      expect(wrongProviderTerms.status, wrongProviderTerms.text).toBe(409);
+      expect(wrongProviderTerms.body.code).toBe("EINVOICE_PROVIDER_MISMATCH");
+      expect((await t.as.get(partnerPath)).body.state).toBe("revoked");
+
+      const accepted = await t.as.post(`${partnerPath}/accept-terms`, acceptBody);
       expect(accepted.status, accepted.text).toBe(200);
       expect(accepted.body.state).toBe("awaiting_emaratax");
       expect(
         await confirmEmaraTaxAppointment({ accepted: previouslyAccepted, userId: t.user.id })
       ).toBeNull();
+
+      const wrongProviderConfirmation = await t.as.post(`${partnerPath}/confirm-emaratax`, {
+        ...confirmBody,
+        expectedProvider: "acube",
+        expectedAcceptanceRevision: acubeAcceptance.termsAcceptedAt.toISOString(),
+      });
+      expect(wrongProviderConfirmation.status, wrongProviderConfirmation.text).toBe(409);
+      expect(wrongProviderConfirmation.body.code).toBe("EINVOICE_PROVIDER_MISMATCH");
+
+      const staleConfirmation = await t.as.post(`${partnerPath}/confirm-emaratax`, confirmBody);
+      expect(staleConfirmation.status, staleConfirmation.text).toBe(409);
+      expect(staleConfirmation.body.code).toBe("EINVOICE_ACCEPTANCE_REVISION_MISMATCH");
 
       await h.sql("UPDATE invoices SET einvoice_status = 'failed' WHERE id = $1", [issued.id]);
       const blockedResubmit = await t.as.post(`${invoicePath}/resubmit`, {});
@@ -572,7 +603,13 @@ describe("E2 onboarding gates sending", () => {
         code: "EINVOICE_APPOINTMENT_REQUIRED",
         state: "awaiting_emaratax",
       });
-      const confirmed = await t.as.post(`${partnerPath}/confirm-emaratax`, { confirmed: true });
+      const current = await t.as.get(partnerPath);
+      expect(current.status, current.text).toBe(200);
+      expect(current.body.state).toBe("awaiting_emaratax");
+      const confirmed = await t.as.post(`${partnerPath}/confirm-emaratax`, {
+        ...confirmBody,
+        expectedAcceptanceRevision: current.body.appointment.termsAcceptedAt,
+      });
       expect(confirmed.status, confirmed.text).toBe(200);
       expect(confirmed.body.state).toBe("active");
       const queued = await t.as.post(`${invoicePath}/resubmit`, {});

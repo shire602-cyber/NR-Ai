@@ -373,11 +373,16 @@ async function appointProvider({ lang, clients, providers }) {
   assert.equal(partner.provider, providers[0]);
   assert.equal(state, "not_started");
   const accepted = await request(token, "POST", `${path}/accept-terms`, {
+    expectedProvider: partner.provider,
     termsVersion: partner.termsVersion,
     accepted: true,
   });
   assert.equal(accepted.state, "awaiting_emaratax");
-  const confirmed = await request(token, "POST", `${path}/confirm-emaratax`, { confirmed: true });
+  const confirmed = await request(token, "POST", `${path}/confirm-emaratax`, {
+    expectedProvider: partner.provider,
+    expectedAcceptanceRevision: accepted.appointment.termsAcceptedAt,
+    confirmed: true,
+  });
   assert.equal(confirmed.state, "active");
 }
 

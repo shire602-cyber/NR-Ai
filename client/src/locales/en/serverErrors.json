@@ -239,6 +239,8 @@
   "serverErrors.EINVOICE_NOT_SUBMITTED": "This e-invoice has not been sent to the service provider yet.",
   "serverErrors.EINVOICE_PARTNER_REQUIRED": "Choose an e-invoicing partner first.",
   "serverErrors.EINVOICE_PARTNER_UNKNOWN": "This e-invoicing partner is not recognised.",
+  "serverErrors.EINVOICE_ACCEPTANCE_REVISION_MISMATCH": "The terms acceptance changed. Review the appointment before confirming.",
+  "serverErrors.EINVOICE_PROVIDER_MISMATCH": "The e-invoicing provider changed. Review the current provider before continuing.",
   "serverErrors.EINVOICE_PROVIDER_NOT_CONFIGURED": "Complete the e-invoicing provider setup for this company before sending.",
   "serverErrors.EINVOICE_RETRY_PROVIDER_CHANGED": "Restore the original e-invoicing provider connection before retrying this invoice.",
   "serverErrors.EINVOICE_PROVIDER_UNAVAILABLE": "The e-invoicing service is not available right now. Try again later.",
