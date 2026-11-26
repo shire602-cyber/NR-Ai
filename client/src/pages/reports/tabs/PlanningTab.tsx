@@ -17,13 +17,14 @@ import {
 import { cn } from "@/lib/utils";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
+import { SecondaryQueryError } from "../ReportQueryNotice";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { reportDateRange } from "../shared";
 import { budgetCategoryLabel } from "@/lib/budget-categories";
 import { describeCashForecastText, renderDescriptor } from "@shared/server-copy";
 
 export default function PlanningTab() {
-  const { hasFocusedReportSelection, planningLoading, planningReport, reportSectionClass } =
+  const { hasFocusedReportSelection, planningLoading, planningReport, reportSectionClass, secondaryLoadErrors } =
     useReportsPageContext();
   const { t } = useTranslation();
   const localizeInsight = (text: string) => {
@@ -32,6 +33,7 @@ export default function PlanningTab() {
   };
   return (
     <>
+      <SecondaryQueryError error={secondaryLoadErrors.budgetPlans} testId="planning-tab-budgets-error" />
       <div
         className={reportSectionClass(
           ["budget-actual", "cash-flow-forecast"],

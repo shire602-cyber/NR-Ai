@@ -87,6 +87,47 @@ describe("F03 Reports page source invariants", () => {
   });
 });
 
+describe("F03 — secondary query errors", () => {
+  // Source-inspection: behaviour tests would require mocking react-query and the full context.
+  // These guard that secondaryLoadErrors is wired into the hook and each tab component.
+  const dataQueriesSrc = readFileSync(
+    "client/src/pages/reports/hooks/useReportsDataQueries.ts",
+    "utf8"
+  );
+  const noticeSrc = readFileSync("client/src/pages/reports/ReportQueryNotice.tsx", "utf8");
+  const salesTabSrc = readFileSync("client/src/pages/reports/tabs/SalesTab.tsx", "utf8");
+  const expensesTabSrc = readFileSync("client/src/pages/reports/tabs/ExpensesTab.tsx", "utf8");
+  const ledgerTabSrc = readFileSync("client/src/pages/reports/tabs/LedgerTab.tsx", "utf8");
+  const payrollTabSrc = readFileSync("client/src/pages/reports/tabs/PayrollTab.tsx", "utf8");
+  const planningTabSrc = readFileSync("client/src/pages/reports/tabs/PlanningTab.tsx", "utf8");
+  const balancesTabSrc = readFileSync("client/src/pages/reports/tabs/BalancesTab.tsx", "utf8");
+
+  it("useReportsDataQueries exports secondaryLoadErrors", () => {
+    expect(dataQueriesSrc).toContain("secondaryLoadErrors");
+  });
+  it("ReportQueryNotice exports SecondaryQueryError", () => {
+    expect(noticeSrc).toContain("SecondaryQueryError");
+  });
+  it("SalesTab uses secondaryLoadErrors", () => {
+    expect(salesTabSrc).toContain("secondaryLoadErrors");
+  });
+  it("ExpensesTab uses secondaryLoadErrors", () => {
+    expect(expensesTabSrc).toContain("secondaryLoadErrors");
+  });
+  it("LedgerTab uses secondaryLoadErrors", () => {
+    expect(ledgerTabSrc).toContain("secondaryLoadErrors");
+  });
+  it("PayrollTab uses secondaryLoadErrors", () => {
+    expect(payrollTabSrc).toContain("secondaryLoadErrors");
+  });
+  it("PlanningTab uses secondaryLoadErrors", () => {
+    expect(planningTabSrc).toContain("secondaryLoadErrors");
+  });
+  it("BalancesTab uses secondaryLoadErrors", () => {
+    expect(balancesTabSrc).toContain("secondaryLoadErrors");
+  });
+});
+
 describe("F05 CashFlowForecast panel states", () => {
   const src = readFileSync("client/src/pages/CashFlowForecast.tsx", "utf8");
   it("forecast and history each have their own error + retry, distinct from empty", () => {

@@ -190,14 +190,14 @@ export function useReportsDataQueries({
     ...reportQueryOptions,
     enabled: shouldLoadReportData("vat-summary"),
   });
-  const { data: cashFlowStatement = [], isLoading: cashFlowStatementLoading } = useQuery<
+  const { data: cashFlowStatement = [], isLoading: cashFlowStatementLoading, isError: cashFlowStatementIsError, refetch: cashFlowStatementRefetch } = useQuery<
     CashFlowStatementRow[]
   >({
     queryKey: ["/api/reports", selectedCompanyId, "cash-flow", advancedReportPeriod],
     ...reportQueryOptions,
     enabled: shouldLoadWorkflowData,
   });
-  const { data: agingReport = [], isLoading: agingReportLoading } = useQuery<AgingReportItem[]>({
+  const { data: agingReport = [], isLoading: agingReportLoading, isError: agingReportIsError, refetch: agingReportRefetch } = useQuery<AgingReportItem[]>({
     queryKey: ["/api/reports", selectedCompanyId, "aging"],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("ar-aging"),
@@ -207,7 +207,7 @@ export function useReportsDataQueries({
     ...reportQueryOptions,
     enabled: shouldLoadReportData("ap-aging"),
   });
-  const { data: vendorBills = [], isLoading: vendorBillsLoading } = useQuery<VendorBillReportRow[]>(
+  const { data: vendorBills = [], isLoading: vendorBillsLoading, isError: vendorBillsIsError, refetch: vendorBillsRefetch } = useQuery<VendorBillReportRow[]>(
     {
       queryKey: ["/api/companies", selectedCompanyId, "bills"],
       ...reportQueryOptions,
@@ -219,7 +219,7 @@ export function useReportsDataQueries({
       ),
     }
   );
-  const { data: advancedPeriodComparison = [], isLoading: advancedPeriodComparisonLoading } =
+  const { data: advancedPeriodComparison = [], isLoading: advancedPeriodComparisonLoading, isError: advancedPeriodComparisonIsError, refetch: advancedPeriodComparisonRefetch } =
     useQuery<AdvancedPeriodComparisonRow[]>({
       queryKey: ["/api/reports", selectedCompanyId, "comparison", advancedReportPeriod],
       ...reportQueryOptions,
@@ -230,7 +230,7 @@ export function useReportsDataQueries({
     ...reportQueryOptions,
     enabled: shouldLoadWorkflowData,
   });
-  const { data: vatReturns = [], isLoading: vatReturnsLoading } = useQuery<VATReturnReportRow[]>({
+  const { data: vatReturns = [], isLoading: vatReturnsLoading, isError: vatReturnsIsError, refetch: vatReturnsRefetch } = useQuery<VATReturnReportRow[]>({
     queryKey: ["/api/companies", selectedCompanyId, "vat-returns"],
     ...reportQueryOptions,
     enabled: shouldLoadWorkflowData,
@@ -636,7 +636,7 @@ export function useReportsDataQueries({
     ...reportQueryOptions,
     enabled: shouldLoadReportData("trial-balance"),
   });
-  const { data: invoices = [], isLoading: invoicesLoading } = useQuery<InvoiceReportRow[]>({
+  const { data: invoices = [], isLoading: invoicesLoading, isError: invoicesIsError, refetch: invoicesRefetch } = useQuery<InvoiceReportRow[]>({
     queryKey: ["/api/companies", selectedCompanyId, "invoices"],
     // R20-05: the list endpoint paginates by default; report aggregates need all rows.
     queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/invoices?all=true`),
@@ -672,19 +672,19 @@ export function useReportsDataQueries({
     ...reportQueryOptions,
     enabled: shouldLoadReportData("ar-aging", "invoice-status"),
   });
-  const { data: receipts = [], isLoading: receiptsLoading } = useQuery<ReceiptReportRow[]>({
+  const { data: receipts = [], isLoading: receiptsLoading, isError: receiptsIsError, refetch: receiptsRefetch } = useQuery<ReceiptReportRow[]>({
     queryKey: ["/api/companies", selectedCompanyId, "receipts"],
     ...reportQueryOptions,
     enabled: shouldLoadReportData("expenses-vendor", "expenses-category"),
   });
-  const { data: bankTransactions = [], isLoading: bankTransactionsLoading } = useQuery<
+  const { data: bankTransactions = [], isLoading: bankTransactionsLoading, isError: bankTransactionsIsError, refetch: bankTransactionsRefetch } = useQuery<
     BankTransactionReportRow[]
   >({
     queryKey: ["/api/companies", selectedCompanyId, "bank-statements", "transactions"],
     ...reportQueryOptions,
     enabled: shouldLoadWorkflowData,
   });
-  const { data: expenseClaims = [], isLoading: expenseClaimsLoading } = useQuery<
+  const { data: expenseClaims = [], isLoading: expenseClaimsLoading, isError: expenseClaimsIsError, refetch: expenseClaimsRefetch } = useQuery<
     ExpenseClaimReportRow[]
   >({
     queryKey: ["/api/companies", selectedCompanyId, "expense-claims"],
@@ -700,7 +700,7 @@ export function useReportsDataQueries({
       ...reportQueryOptions,
       enabled: shouldLoadReportData("expense-claims"),
     });
-  const { data: payrollRuns = [], isLoading: payrollRunsLoading } = useQuery<PayrollRunReportRow[]>(
+  const { data: payrollRuns = [], isLoading: payrollRunsLoading, isError: payrollRunsIsError, refetch: payrollRunsRefetch } = useQuery<PayrollRunReportRow[]>(
     {
       queryKey: ["/api/companies", selectedCompanyId, "payroll-runs"],
       queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/payroll-runs`),
@@ -708,7 +708,7 @@ export function useReportsDataQueries({
       enabled: shouldLoadReportData("payroll-summary", "wps-sif-summary"),
     }
   );
-  const { data: journalEntries = [], isLoading: journalLoading } = useQuery<
+  const { data: journalEntries = [], isLoading: journalLoading, isError: journalEntriesIsError, refetch: journalEntriesRefetch } = useQuery<
     JournalEntryReportRow[]
   >({
     queryKey: ["/api/companies", selectedCompanyId, "journal"],
@@ -733,7 +733,7 @@ export function useReportsDataQueries({
       ...reportQueryOptions,
       enabled: shouldLoadReportData("month-end-close-status"),
     });
-  const { data: activityLogs = [], isLoading: activityLogsLoading } = useQuery<
+  const { data: activityLogs = [], isLoading: activityLogsLoading, isError: activityLogsIsError, refetch: activityLogsRefetch } = useQuery<
     ActivityLogReportRow[]
   >({
     queryKey: ["/api/companies", selectedCompanyId, "activity-logs"],
@@ -741,7 +741,7 @@ export function useReportsDataQueries({
     ...reportQueryOptions,
     enabled: shouldLoadReportData("audit-trail"),
   });
-  const { data: budgetPlans = [], isLoading: budgetPlansLoading } = useQuery<BudgetPlanReportRow[]>(
+  const { data: budgetPlans = [], isLoading: budgetPlansLoading, isError: budgetPlansIsError, refetch: budgetPlansRefetch } = useQuery<BudgetPlanReportRow[]>(
     {
       queryKey: ["/api/companies", selectedCompanyId, "budget-plans"],
       ...reportQueryOptions,
@@ -774,7 +774,7 @@ export function useReportsDataQueries({
       // E3 (J1-r3): every report that shows the balances KPI strip loads its figures.
       enabled: shouldLoadReportData(...BALANCE_STRIP_REPORT_IDS),
     });
-  const { data: fixedAssets = [], isLoading: fixedAssetsLoading } = useQuery<FixedAssetReportRow[]>(
+  const { data: fixedAssets = [], isLoading: fixedAssetsLoading, isError: fixedAssetsIsError, refetch: fixedAssetsRefetch } = useQuery<FixedAssetReportRow[]>(
     {
       queryKey: ["/api/companies", selectedCompanyId, "fixed-assets"],
       queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/fixed-assets`),
@@ -789,7 +789,7 @@ export function useReportsDataQueries({
       ...reportQueryOptions,
       enabled: shouldLoadReportData("fixed-asset-register", "depreciation-schedule"),
     });
-  const { data: inventoryProducts = [], isLoading: inventoryProductsLoading } = useQuery<
+  const { data: inventoryProducts = [], isLoading: inventoryProductsLoading, isError: inventoryProductsIsError, refetch: inventoryProductsRefetch } = useQuery<
     InventoryProductReportRow[]
   >({
     queryKey: ["/api/companies", selectedCompanyId, "products"],
@@ -797,7 +797,7 @@ export function useReportsDataQueries({
     ...reportQueryOptions,
     enabled: shouldLoadReportData("inventory-valuation", "inventory-movement"),
   });
-  const { data: inventoryMovements = [], isLoading: inventoryMovementsLoading } = useQuery<
+  const { data: inventoryMovements = [], isLoading: inventoryMovementsLoading, isError: inventoryMovementsIsError, refetch: inventoryMovementsRefetch } = useQuery<
     InventoryMovementReportRow[]
   >({
     queryKey: ["/api/companies", selectedCompanyId, "inventory-movements"],
@@ -836,6 +836,25 @@ export function useReportsDataQueries({
       bs: bsError ? { error: bsError, retry: () => void bsRefetch() } : null,
       vat: vatError ? { error: vatError, retry: () => void vatRefetch() } : null,
       tb: tbError ? { error: tbError, retry: () => void tbRefetch() } : null,
+    },
+    /** A failed secondary read is shown as an error notice, never silently as an empty list. */
+    secondaryLoadErrors: {
+      cashFlowStatement: cashFlowStatementIsError ? { retry: () => void cashFlowStatementRefetch() } : null,
+      agingReport: agingReportIsError ? { retry: () => void agingReportRefetch() } : null,
+      vendorBills: vendorBillsIsError ? { retry: () => void vendorBillsRefetch() } : null,
+      advancedPeriodComparison: advancedPeriodComparisonIsError ? { retry: () => void advancedPeriodComparisonRefetch() } : null,
+      vatReturns: vatReturnsIsError ? { retry: () => void vatReturnsRefetch() } : null,
+      invoices: invoicesIsError ? { retry: () => void invoicesRefetch() } : null,
+      receipts: receiptsIsError ? { retry: () => void receiptsRefetch() } : null,
+      bankTransactions: bankTransactionsIsError ? { retry: () => void bankTransactionsRefetch() } : null,
+      expenseClaims: expenseClaimsIsError ? { retry: () => void expenseClaimsRefetch() } : null,
+      payrollRuns: payrollRunsIsError ? { retry: () => void payrollRunsRefetch() } : null,
+      journalEntries: journalEntriesIsError ? { retry: () => void journalEntriesRefetch() } : null,
+      activityLogs: activityLogsIsError ? { retry: () => void activityLogsRefetch() } : null,
+      budgetPlans: budgetPlansIsError ? { retry: () => void budgetPlansRefetch() } : null,
+      fixedAssets: fixedAssetsIsError ? { retry: () => void fixedAssetsRefetch() } : null,
+      inventoryProducts: inventoryProductsIsError ? { retry: () => void inventoryProductsRefetch() } : null,
+      inventoryMovements: inventoryMovementsIsError ? { retry: () => void inventoryMovementsRefetch() } : null,
     },
     costCenterProfitability,
     costCenterProfitabilityLoading,

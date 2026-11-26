@@ -23,6 +23,7 @@ import { Money } from "@/components/ui/money";
 import { localizeJournalLine } from "@/lib/journal-memo";
 import { formatReportDate, ledgerDetailPageSize, reportCodeLabel } from "../shared";
 import { useReportsPageContext } from "../context";
+import { SecondaryQueryError } from "../ReportQueryNotice";
 import { StatementDownloads } from "../StatementParts";
 
 export default function LedgerTab() {
@@ -40,11 +41,14 @@ export default function LedgerTab() {
     ledgerSourceRows,
     locale,
     reportSectionClass,
+    secondaryLoadErrors,
     setLedgerDetailPage,
     selectedCompanyId,
   } = useReportsPageContext();
   return (
     <>
+      <SecondaryQueryError error={secondaryLoadErrors.journalEntries} testId="ledger-tab-journal-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.activityLogs} testId="ledger-tab-activity-error" />
       <div
         className={reportSectionClass(
           ["general-ledger", "account-transactions"],

@@ -28,6 +28,7 @@ import { format } from "date-fns";
 import { formatDateRange } from "@/lib/format-date";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
+import { SecondaryQueryError } from "../ReportQueryNotice";
 import { StatementDownloads } from "../StatementParts";
 import { AgingTiesToGl } from "@/components/reports/TiesToGlBadge";
 
@@ -48,6 +49,7 @@ export default function SalesTab() {
     reportSectionClass,
     salesLoading,
     salesProductServiceLoading,
+    secondaryLoadErrors,
     statusSummary,
     selectedCompanyId,
   } = useReportsPageContext();
@@ -130,6 +132,9 @@ export default function SalesTab() {
           </CardContent>
         </Card>
       </div>
+
+      <SecondaryQueryError error={secondaryLoadErrors.agingReport} testId="sales-tab-aging-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.invoices} testId="sales-tab-invoices-error" />
 
       <Card className={reportSectionClass(["ar-aging"])}>
         <CardHeader>
