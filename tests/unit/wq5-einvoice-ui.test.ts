@@ -216,6 +216,29 @@ describe("tax-ready prompt", () => {
     expect(put?.body).toEqual({ einvoiceTin: "1001234567" });
   });
 
+  it("keeps the TIN when typed with Arabic digits and saves it in ASCII", async () => {
+    await setLocale("ar");
+    routes["GET /einvoicing/tax-ready"] = () => ({
+      body: { show: true, missing: ["tin"], identity: { ...IDENTITY, tinSuggestion: null } },
+    });
+    routes["PUT /einvoicing/identity"] = () => ({ body: { ...IDENTITY, missing: [] } });
+    await renderPrompt();
+    const input = document.querySelector<HTMLInputElement>('[data-testid="tax-id-tin"]')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(input, "١٠٠١٢٣٤٥٦٧");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(input.value).toBe("1001234567");
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[data-testid="tax-ready-save"]')!.click();
+    });
+    await flush();
+    const put = calls.find((c) => c.method === "PUT" && c.url.includes("/einvoicing/identity"));
+    expect(put?.body).toEqual({ einvoiceTin: "1001234567" });
+  });
+
   it("does not open when nothing is missing, and reads in Arabic", async () => {
     routes["GET /einvoicing/tax-ready"] = () => ({
       body: { show: false, missing: [], promptedAt: null, identity: IDENTITY },
@@ -369,6 +392,73 @@ describe("no-login approver page", () => {
     await flush();
     expect(container.querySelector('[data-testid="approve-completed"]')).not.toBeNull();
   });
+
+  it("Done on a link that expired meanwhile shows the expired state, not a retry error", async () => {
+    let expired = false;
+    routes["GET /api/portal/einvoicing-approve/"] = () =>
+      expired
+        ? { status: 410, body: { state: "expired" } }
+        : {
+            body: {
+              state: "active",
+              companyName: "Pearl Trading",
+              approverName: null,
+              expiresAt: "2026-12-02T00:00:00Z",
+              completedAt: null,
+              partner: null,
+            },
+          };
+    routes["POST /done"] = () => {
+      expired = true;
+      return { status: 410, body: { state: "expired" } };
+    };
+    const { default: Page } = await import("../../client/src/pages/EInvoicingApprove");
+    await mount(createElement(Page));
+    await act(async () =>
+      (container.querySelector('[data-testid="approve-done"]') as HTMLButtonElement).click()
+    );
+    await flush();
+    expect(container.querySelector('[data-testid="approve-expired"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="approve-done"]')).toBeNull();
+  });
+
+  it.each([
+    ["expired", "LINK_EXPIRED", "This link has expired"],
+    ["revoked", "LINK_REVOKED", "This link was withdrawn"],
+  ] as const)(
+    "Done applies the %s response immediately when a follow-up read fails",
+    async (state, code, heading) => {
+      let reads = 0;
+      routes["GET /api/portal/einvoicing-approve/"] = () => {
+        reads += 1;
+        if (reads > 1) return { status: 500, body: { message: "unavailable" } };
+        return {
+          body: {
+            state: "active",
+            companyName: "Pearl Trading",
+            approverName: null,
+            expiresAt: "2026-12-02T00:00:00Z",
+            completedAt: null,
+            partner: null,
+          },
+        };
+      };
+      routes["POST /done"] = () => ({ status: 410, body: { code, state } });
+      const { default: Page } = await import("../../client/src/pages/EInvoicingApprove");
+      await mount(createElement(Page));
+      await act(async () =>
+        (container.querySelector('[data-testid="approve-done"]') as HTMLButtonElement).click()
+      );
+      await flush();
+      expect(container.querySelector(`[data-testid="approve-${state}"]`)?.textContent).toContain(
+        heading
+      );
+      expect(container.querySelector('[data-testid="approve-done"]')).toBeNull();
+      expect(container.querySelector('[data-testid="approve-retry"]')).toBeNull();
+      expect(container.textContent).not.toContain("We could not record that");
+      expect(reads).toBe(1);
+    }
+  );
 
   it("an expired link says so (Arabic)", async () => {
     await setLocale("ar");

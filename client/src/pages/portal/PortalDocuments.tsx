@@ -7,6 +7,7 @@ import { Upload, FileText, FileImage, File, FolderOpen, Loader2, CheckCircle2 } 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { PortalLoadNotice } from "@/components/portal/PortalLoadNotice";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DateText } from "@/components/documents/DateText";
@@ -29,6 +30,7 @@ async function uploadDocument(file: File, supplier: string) {
   return res.json();
 }
 import { useToast } from "@/hooks/use-toast";
+import { usePortalRetry } from "@/hooks/usePortalRetry";
 
 const CATEGORIES = new Set([
   "trade_license",
@@ -62,9 +64,10 @@ export default function PortalDocuments() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  const { data: documents = [], isLoading } = useQuery<any[]>({
-    ...portalQuery("/api/client-portal/documents", supplier),
-  });
+  const documentsQuery = portalQuery("/api/client-portal/documents", supplier);
+  const query = useQuery<any[]>({ ...documentsQuery });
+  const { data: documents, isPaused, isFetching } = query;
+  const { error, isLoading, retryPending, retry } = usePortalRetry(documentsQuery.queryKey, query);
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => uploadDocument(file, supplier),
@@ -130,11 +133,22 @@ export default function PortalDocuments() {
 
       <Card>
         <CardContent className="p-0">
+          {!isLoading && (
+            <PortalLoadNotice
+              error={error}
+              paused={isPaused}
+              retrying={isFetching}
+              retryPending={retryPending}
+              onRetry={retry}
+              compact={documents !== undefined}
+              resource="documents"
+            />
+          )}
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
             </div>
-          ) : documents.length === 0 ? (
+          ) : documents === undefined ? null : documents.length === 0 ? (
             <EmptyState
               headingLevel="h2"
               icon={FolderOpen}

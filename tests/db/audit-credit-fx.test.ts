@@ -18,7 +18,7 @@ const exported = (price: number) => ({
   vatSupplyType: "zero_rated",
 });
 
-async function issue(
+async function createDraft(
   t: Tenant,
   lines: Record<string, unknown>[],
   other: Record<string, unknown> = {}
@@ -31,9 +31,24 @@ async function issue(
     ...other,
   });
   expect(draft.status, draft.text).toBe(200);
-  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
-  expect(issued.status, issued.text).toBe(200);
   return draft.body.id;
+}
+
+async function issue(
+  t: Tenant,
+  lines: Record<string, unknown>[],
+  other: Record<string, unknown> = {}
+): Promise<string> {
+  const id = await createDraft(t, lines, other);
+  const issued = await t.as.patch(`/api/invoices/${id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+  return id;
+}
+
+async function center(t: Tenant, code: string): Promise<string> {
+  const response = await t.as.post(`${base(t)}/cost-centers`, { code, name: code });
+  expect(response.status, response.text).toBe(201);
+  return response.body.id;
 }
 
 async function pay(t: Tenant, invoice: string, amount: number, allowCredit = false) {
@@ -49,8 +64,7 @@ async function pay(t: Tenant, invoice: string, amount: number, allowCredit = fal
   return response.body;
 }
 
-// Remaining PR #83 follow-up. Keep it from blocking this PR's CI.
-it.skip("clears each VAT 201 box on the remaining credit of a partly credited mixed-supply invoice", async () => {
+it("clears each VAT 201 box on the remaining credit of a partly credited mixed-supply invoice", async () => {
   const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
   const id = await issue(t, [standard(100), exported(100)]);
   const url = `${base(t)}/invoices/${id}/credit-note`;
@@ -68,6 +82,311 @@ it.skip("clears each VAT 201 box on the remaining credit of a partly credited mi
     box4ZeroRatedAmount: 0,
     box14PayableTax: 0,
   });
+});
+
+it("includes a VAT-only remaining credit in VAT 201", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const id = await issue(t, [standard(0.1), standard(0.1), standard(0.1)]);
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const reportUrl = `${base(t)}/reports/vat-return?from=2026-01-01&to=2026-03-31`;
+  const partial = await t.as.post(url, { date, lines: [standard(0.3)] });
+  expect(partial.status, partial.text).toBe(201);
+  expect(Number(partial.body.vatAmount)).toBe(-0.02);
+  const before = await t.as.get(reportUrl);
+  expect(before.status, before.text).toBe(200);
+  expect(before.body.boxes).toMatchObject({ box1bDubaiAmount: 0, box1bDubaiVat: 0.01 });
+
+  const remaining = await t.as.post(url, { date });
+  expect(remaining.status, remaining.text).toBe(201);
+  expect(Number(remaining.body.total)).toBe(-0.01);
+  expect(Number(remaining.body.vatAmount)).toBe(-0.01);
+  const after = await t.as.get(reportUrl);
+  expect(after.status, after.text).toBe(200);
+  expect(after.body.boxes).toMatchObject({
+    box1bDubaiAmount: 0,
+    box1bDubaiVat: 0,
+    box14PayableTax: 0,
+  });
+  expect(after.body.reconciliation.hasUnexplainedDifference).toBe(false);
+});
+
+it("reconciles VAT 201 to posted VAT after two credits clear a foreign invoice", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const id = await issue(t, [standard(0.2), standard(0.2)], {
+    currency: "USD",
+    exchangeRate: 3.67,
+  });
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const reportUrl = `${base(t)}/reports/vat-return?from=2026-01-01&to=2026-03-31`;
+  const partial = await t.as.post(url, { date, lines: [standard(0.2)] });
+  expect(partial.status, partial.text).toBe(201);
+  expect(Number(partial.body.vatAmount)).toBe(-0.01);
+  const during = await t.as.get(reportUrl);
+  expect(during.status, during.text).toBe(200);
+  expect(during.body.boxes.box1bDubaiVat).toBe(0.03);
+
+  const remainder = await t.as.post(url, { date });
+  expect(remainder.status, remainder.text).toBe(201);
+  expect(remainder.body.currency).toBe("USD");
+  expect(Number(remainder.body.total)).toBe(-0.21);
+  expect(Number(remainder.body.vatAmount)).toBe(-0.01);
+  const vatLegs = await h.sql(
+    `SELECT jl.debit::float8 AS debit, jl.credit::float8 AS credit
+       FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+       JOIN accounts a ON a.id = jl.account_id
+      WHERE je.company_id = $1 AND je.source = 'invoice' AND a.code = '2020'
+      ORDER BY jl.debit, jl.credit`,
+    [t.company.id]
+  );
+  expect(vatLegs).toEqual([
+    { debit: 0, credit: 0.07 },
+    { debit: 0.03, credit: 0 },
+    { debit: 0.04, credit: 0 },
+  ]);
+  const after = await t.as.get(reportUrl);
+  expect(after.status, after.text).toBe(200);
+  expect(after.body.boxes).toMatchObject({ box1bDubaiVat: 0, box14PayableTax: 0 });
+  expect(after.body.reconciliation).toMatchObject({
+    ledgerOutputVatFils: 0,
+    outputDifferenceFils: 0,
+    hasUnexplainedDifference: false,
+  });
+});
+
+it("reports the last posted VAT fil when only a zero-rated foreign line remains", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const id = await issue(
+    t,
+    [standard(0.2), standard(0.2), standard(0.2), standard(0.2), exported(10)],
+    {
+      currency: "USD",
+      exchangeRate: 3.67,
+    }
+  );
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const reportUrl = `${base(t)}/reports/vat-return?from=2026-01-01&to=2026-03-31`;
+  for (let i = 0; i < 2; i++) {
+    const partial = await t.as.post(url, { date, lines: [standard(0.4)] });
+    expect(partial.status, partial.text).toBe(201);
+    expect(Number(partial.body.vatAmount)).toBe(-0.02);
+  }
+  const before = await t.as.get(reportUrl);
+  expect(before.status, before.text).toBe(200);
+  expect(before.body.boxes).toMatchObject({ box1bDubaiAmount: 0, box1bDubaiVat: 0.01 });
+
+  const remainder = await t.as.post(url, { date });
+  expect(remainder.status, remainder.text).toBe(201);
+  expect(Number(remainder.body.vatAmount)).toBe(0);
+  const note = await t.as.get(`/api/credit-notes/${remainder.body.id}`);
+  expect(note.status, note.text).toBe(200);
+  expect(note.body.lines).toEqual([expect.objectContaining({ vatSupplyType: "zero_rated" })]);
+
+  const after = await t.as.get(reportUrl);
+  expect(after.status, after.text).toBe(200);
+  expect(after.body.boxes).toMatchObject({
+    box1bDubaiAmount: 0,
+    box1bDubaiVat: 0,
+    box4ZeroRatedAmount: 0,
+    box14PayableTax: 0,
+  });
+  expect(after.body.reconciliation).toMatchObject({
+    ledgerOutputVatFils: 0,
+    outputDifferenceFils: 0,
+    hasUnexplainedDifference: false,
+  });
+});
+
+it.each(["inline", "standalone draft"] as const)(
+  "rejects a %s credit whose rounded VAT exceeds the invoice VAT",
+  async (entryPoint) => {
+    const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+    const id = await issue(t, [standard(0.1), standard(0.09), standard(0.09)]);
+    const url = `${base(t)}/invoices/${id}/credit-note`;
+    const lines = [standard(0.1), standard(0.1)];
+    let rejected;
+    if (entryPoint === "standalone draft") {
+      const draft = await t.as.post(`${base(t)}/credit-notes`, { invoiceId: id, date, lines });
+      expect(draft.status, draft.text).toBe(201);
+      expect(draft.body.vatAmount).toBe(0.02);
+      rejected = await t.as.post(`/api/credit-notes/${draft.body.id}/issue`, {});
+    } else {
+      rejected = await t.as.post(url, { date, lines });
+    }
+    expect(rejected.status, rejected.text).toBe(409);
+    expect(rejected.body.code).toBe("CREDIT_EXCEEDS_REMAINING");
+
+    const reportUrl = `${base(t)}/reports/vat-return?from=2026-01-01&to=2026-03-31`;
+    const before = await t.as.get(reportUrl);
+    expect(before.status, before.text).toBe(200);
+    expect(before.body.boxes).toMatchObject({ box1bDubaiAmount: 0.28, box1bDubaiVat: 0.01 });
+
+    const partial = await t.as.post(url, { date, lines: [standard(0.1)] });
+    expect(partial.status, partial.text).toBe(201);
+    expect(Number(partial.body.vatAmount)).toBe(-0.01);
+    const remainder = await t.as.post(url, { date });
+    expect(remainder.status, remainder.text).toBe(201);
+    expect(Number(remainder.body.total)).toBe(-0.18);
+    expect(Number(remainder.body.vatAmount)).toBe(0);
+    const vatDebits = await h.sql(
+      `SELECT jl.entry_id, jl.debit::float8 AS debit
+         FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+        WHERE jl.entry_id IN ($1, $2) AND a.code = '2020'`,
+      [partial.body.journalEntryId, remainder.body.journalEntryId]
+    );
+    expect(vatDebits).toEqual([{ entry_id: partial.body.journalEntryId, debit: 0.01 }]);
+
+    const after = await t.as.get(reportUrl);
+    expect(after.status, after.text).toBe(200);
+    expect(after.body.boxes).toMatchObject({ box1bDubaiAmount: 0, box1bDubaiVat: 0 });
+    expect(after.body.reconciliation.hasUnexplainedDifference).toBe(false);
+  }
+);
+
+it("credits a margin-scheme sale only within its original tax treatment", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const margin = (price: number, cost: number) => ({
+    ...standard(price),
+    marginScheme: true,
+    marginPurchaseCost: cost,
+  });
+  const id = await issue(t, [margin(105, 84)]);
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const reportUrl = `${base(t)}/reports/vat-return?from=2026-01-01&to=2026-03-31`;
+  const before = await t.as.get(reportUrl);
+  expect(before.status, before.text).toBe(200);
+  expect(before.body.boxes).toMatchObject({ box1bDubaiAmount: 20, box1bDubaiVat: 1 });
+
+  const ordinary = await t.as.post(url, { date, lines: [standard(10)] });
+  expect(ordinary.status, ordinary.text).toBe(409);
+  expect(ordinary.body.code).toBe("CREDIT_EXCEEDS_REMAINING");
+  const { createAndIssueCreditNote } =
+    await import("../../server/services/invoice-posting.service");
+  const creditMargin = (unitPriceFils: number, marginPurchaseCost: number) =>
+    createAndIssueCreditNote({
+      invoiceId: id,
+      companyId: t.company.id,
+      userId: t.user.id,
+      date,
+      lines: [
+        {
+          description: "Returned margin-scheme goods",
+          quantity: 1,
+          unitPriceFils,
+          vatRate: 0.05,
+          vatSupplyType: "standard_rated",
+          marginScheme: true,
+          marginPurchaseCost,
+        },
+      ],
+    });
+  // The total and VAT fit, but the credit would leave negative purchase cost.
+  await expect(creditMargin(8500, 85)).rejects.toMatchObject({ code: "CREDIT_EXCEEDS_REMAINING" });
+
+  await creditMargin(5250, 42);
+  const during = await t.as.get(reportUrl);
+  expect(during.status, during.text).toBe(200);
+  expect(during.body.boxes).toMatchObject({ box1bDubaiAmount: 10, box1bDubaiVat: 0.5 });
+
+  const remainder = await t.as.post(url, { date });
+  expect(remainder.status, remainder.text).toBe(201);
+  expect(Number(remainder.body.total)).toBe(-52.5);
+  const after = await t.as.get(reportUrl);
+  expect(after.status, after.text).toBe(200);
+  expect(after.body.boxes).toMatchObject({ box1bDubaiAmount: 0, box1bDubaiVat: 0 });
+  expect(after.body.reconciliation.hasUnexplainedDifference).toBe(false);
+});
+
+it("rejects an ordinary partial credit that would use the VAT of a margin-scheme line", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const id = await issue(t, [
+    standard(0.09),
+    standard(0.09),
+    { ...standard(105), marginScheme: true, marginPurchaseCost: 84 },
+  ]);
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const rejected = await t.as.post(url, { date, lines: [standard(0.1)] });
+  expect(rejected.status, rejected.text).toBe(409);
+  expect(rejected.body.code).toBe("CREDIT_EXCEEDS_REMAINING");
+
+  const partial = await t.as.post(url, { date, lines: [standard(0.09)] });
+  expect(partial.status, partial.text).toBe(201);
+  expect(Number(partial.body.vatAmount)).toBe(0);
+  const remainder = await t.as.post(url, { date });
+  expect(remainder.status, remainder.text).toBe(201);
+  expect(Number(remainder.body.total)).toBe(-105.09);
+  expect(Number(remainder.body.vatAmount)).toBe(-1);
+});
+
+it("issues a generated remainder draft with its original VAT allocation across treatments", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const id = await issue(t, [
+    standard(0.09),
+    standard(0.09),
+    standard(0.09),
+    { ...standard(105), marginScheme: true, marginPurchaseCost: 84 },
+  ]);
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const partial = await t.as.post(url, { date, lines: [standard(0.09)] });
+  expect(partial.status, partial.text).toBe(201);
+
+  const draft = await t.as.post(`${base(t)}/credit-notes`, { invoiceId: id, date });
+  expect(draft.status, draft.text).toBe(201);
+  expect(draft.body).toMatchObject({ total: 105.18, subtotal: 104.18, vatAmount: 1 });
+  expect(draft.body.lines).toHaveLength(2);
+  expect(draft.body.lines).toContainEqual(expect.objectContaining({ unitPrice: 0.18 }));
+
+  const issueUrl = `/api/credit-notes/${draft.body.id}/issue`;
+  const intervening = await t.as.post(url, { date, lines: [standard(0.09)] });
+  expect(intervening.status, intervening.text).toBe(201);
+  const rejected = await t.as.post(issueUrl, {});
+  expect(rejected.status, rejected.text).toBe(409);
+  expect(rejected.body.code).toBe("CREDIT_EXCEEDS_REMAINING");
+  const voided = await t.as.post(`/api/credit-notes/${intervening.body.id}/void`, {});
+  expect(voided.status, voided.text).toBe(200);
+
+  const issued = await t.as.post(issueUrl, {});
+  expect(issued.status, issued.text).toBe(200);
+  expect(issued.body).toMatchObject({ status: "issued", total: 105.18, vatAmount: 1 });
+  const report = await t.as.get(`${base(t)}/reports/vat-return?from=2026-01-01&to=2026-03-31`);
+  expect(report.status, report.text).toBe(200);
+  expect(report.body.boxes).toMatchObject({ box1bDubaiAmount: 0, box1bDubaiVat: 0 });
+  expect(report.body.reconciliation.hasUnexplainedDifference).toBe(false);
+});
+
+it("issues a standalone remainder draft for a mixed-treatment invoice with document-rounded VAT", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const id = await createDraft(t, [
+    standard(0.09),
+    standard(0.09),
+    standard(0.09),
+    { ...standard(105), marginScheme: true, marginPurchaseCost: 84 },
+  ]);
+  // The old rule rounded AED 0.27 of ordinary sales together, adding one VAT fil.
+  // Set the legacy draft totals before issuance so the journal uses the same amounts.
+  await h.sql(
+    `UPDATE invoices SET vat_amount = 1.01, total = 105.28, base_currency_amount = 105.28 WHERE id = $1`,
+    [id]
+  );
+  const invoice = await t.as.patch(`/api/invoices/${id}/status`, { status: "sent" });
+  expect(invoice.status, invoice.text).toBe(200);
+
+  const partial = await t.as.post(`${base(t)}/invoices/${id}/credit-note`, {
+    date,
+    lines: [standard(0.09)],
+  });
+  expect(partial.status, partial.text).toBe(201);
+  expect(Number(partial.body.vatAmount)).toBe(0);
+
+  const draft = await t.as.post(`${base(t)}/credit-notes`, { invoiceId: id, date });
+  expect(draft.status, draft.text).toBe(201);
+  expect(draft.body).toMatchObject({ total: 105.19, subtotal: 104.18, vatAmount: 1.01 });
+  expect(draft.body.lines).toHaveLength(2);
+  expect(draft.body.lines).toContainEqual(expect.objectContaining({ unitPrice: 0.18 }));
+  expect(draft.body.lines).toContainEqual(expect.objectContaining({ unitPrice: 105 }));
+
+  const issued = await t.as.post(`/api/credit-notes/${draft.body.id}/issue`, {});
+  expect(issued.status, issued.text).toBe(200);
+  expect(issued.body).toMatchObject({ status: "issued", total: 105.19, vatAmount: 1.01 });
 });
 
 it("fully settles a foreign invoice after an earlier part payment was reversed at the same rate", async () => {
@@ -99,8 +418,7 @@ it("fully settles a foreign invoice after an earlier part payment was reversed a
   });
 });
 
-// Remaining PR #83 follow-up. Keep it from blocking this PR's CI.
-it.skip("shows a USD overpayment liability in the USD trial balance", async () => {
+it("shows a USD overpayment liability in the USD trial balance", async () => {
   const t = await h.createTenant();
   const id = await issue(t, [exported(100)], { currency: "USD", exchangeRate: 3.67 });
   await pay(t, id, 150, true);
@@ -114,32 +432,187 @@ it.skip("shows a USD overpayment liability in the USD trial balance", async () =
   expect(credit).toMatchObject({ credit: 50, baseCredit: 183.5 });
 });
 
-// Remaining PR #83 follow-up. Keep it from blocking this PR's CI.
-it.skip("debits the cost centre named on a partial credit for a specific invoice line", async () => {
+it("[PR #104] credits only the named cost centre even when the credit clears the invoice", async () => {
   const t = await h.createTenant({ planId: "enterprise" });
-  async function center(code: string): Promise<string> {
-    const response = await t.as.post(`${base(t)}/cost-centers`, { code, name: code });
-    expect(response.status, response.text).toBe(201);
-    return response.body.id;
-  }
-  const a = await center("Job-A");
-  const b = await center("Job-B");
+  const a = await center(t, "Job-A");
+  const b = await center(t, "Job-B");
   const jobA = { ...standard(100), description: "Job A", costCenterId: a };
-  const id = await issue(t, [jobA, { ...standard(100), description: "Job B", costCenterId: b }]);
-  const cn = await t.as.post(`${base(t)}/invoices/${id}/credit-note`, { date, lines: [jobA] });
-  expect(cn.status, cn.text).toBe(201);
-  const ledger = await h.sql<{ code: string; debit: number }>(
-    `SELECT cc.code, jl.debit::float8 AS debit
-       FROM journal_lines jl JOIN cost_centers cc ON cc.id = jl.cost_center_id
-       JOIN accounts a ON a.id = jl.account_id
-      WHERE jl.entry_id = $1 AND a.code = '4010' ORDER BY cc.code`,
-    [cn.body.journalEntryId]
+  const jobB = { ...standard(100), description: "Job B", costCenterId: b };
+  const revenueAccountId = (await accountByCode(t, "4010")).id;
+  const id = await issue(
+    t,
+    [jobA, jobB].map((line) => ({ ...line, revenueAccountId }))
   );
-  expect(ledger).toEqual([{ code: "Job-A", debit: 100 }]);
+  const revenueDebits = (entryId: string) =>
+    h.sql<{ code: string; debit: number }>(
+      `SELECT cc.code, jl.debit::float8 AS debit
+         FROM journal_lines jl JOIN cost_centers cc ON cc.id = jl.cost_center_id
+         JOIN accounts a ON a.id = jl.account_id
+        WHERE jl.entry_id = $1 AND a.code = '4010' ORDER BY cc.code`,
+      [entryId]
+    );
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const cn = await t.as.post(url, { date, lines: [jobA] });
+  expect(cn.status, cn.text).toBe(201);
+  expect(await revenueDebits(cn.body.journalEntryId)).toEqual([{ code: "Job-A", debit: 100 }]);
+
+  const duplicate = await t.as.post(url, { date, lines: [jobA] });
+  expect(duplicate.status, duplicate.text).toBe(422);
+  expect(duplicate.body).toMatchObject({
+    code: "CREDIT_LINE_NOT_ON_INVOICE",
+    details: { costCenterId: a },
+  });
+
+  const final = await t.as.post(url, { date, lines: [jobB] });
+  expect(final.status, final.text).toBe(201);
+  expect(await revenueDebits(final.body.journalEntryId)).toEqual([{ code: "Job-B", debit: 100 }]);
 });
 
-// Remaining PR #83 follow-up. Keep it from blocking this PR's CI.
-it.skip("uses the refund date's exchange rate for a foreign customer credit paid from an AED bank", async () => {
+function creditJournal(entryId: string) {
+  return h.sql<{ code: string; centre: string | null; base: number; foreign: number }>(
+    `SELECT a.code, cc.code AS centre, (jl.debit - jl.credit)::float8 AS base,
+            (COALESCE(jl.foreign_debit, 0) - COALESCE(jl.foreign_credit, 0))::float8 AS "foreign"
+       FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+       LEFT JOIN cost_centers cc ON cc.id = jl.cost_center_id
+      WHERE jl.entry_id = $1 ORDER BY a.code, cc.code`,
+    [entryId]
+  );
+}
+
+it("[PR #104] clears a named centre's document-currency residual in the final credit journal", async () => {
+  const t = await h.createTenant({ planId: "enterprise" });
+  const a = await center(t, "Job-A");
+  const b = await center(t, "Job-B");
+  const jobA = (price: number) => ({ ...exported(price), costCenterId: a });
+  const jobB = { ...exported(0.05), costCenterId: b };
+  const id = await issue(t, [jobA(0.02), jobB], { currency: "USD", exchangeRate: 0.6 });
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const partial = await t.as.post(url, { date, lines: [jobA(0.01)] });
+  expect(partial.status, partial.text).toBe(201);
+  expect(await creditJournal(partial.body.journalEntryId)).toEqual([
+    { code: "1040", centre: null, base: -0.01, foreign: -0.01 },
+    { code: "4060", centre: "Job-A", base: 0.01, foreign: 0.01 },
+  ]);
+
+  const final = await t.as.post(url, { date, lines: [jobA(0.01), jobB] });
+  expect(final.status, final.text).toBe(201);
+  expect(await creditJournal(final.body.journalEntryId)).toEqual([
+    { code: "1040", centre: null, base: -0.03, foreign: -0.06 },
+    { code: "4060", centre: "Job-A", base: 0, foreign: 0.01 },
+    { code: "4060", centre: "Job-B", base: 0.03, foreign: 0.05 },
+  ]);
+});
+
+it("[PR #104] rounds a partial foreign credit once per revenue role across named centres", async () => {
+  const t = await h.createTenant({ planId: "enterprise" });
+  const a = await center(t, "Job-A");
+  const b = await center(t, "Job-B");
+  const jobs = (price: number) =>
+    [a, b].map((costCenterId) => ({ ...exported(price), costCenterId }));
+  const id = await issue(t, jobs(0.03), { currency: "USD", exchangeRate: 3.67 });
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const partial = await t.as.post(url, { date, lines: jobs(0.01) });
+  expect(partial.status, partial.text).toBe(201);
+  const [ar, ...revenue] = await creditJournal(partial.body.journalEntryId);
+  expect(ar).toEqual({ code: "1040", centre: null, base: -0.07, foreign: -0.02 });
+  expect(revenue.map(({ code, centre, foreign }) => ({ code, centre, foreign }))).toEqual([
+    { code: "4060", centre: "Job-A", foreign: 0.01 },
+    { code: "4060", centre: "Job-B", foreign: 0.01 },
+  ]);
+  expect(revenue.map((leg) => leg.base).sort((a, b) => a - b)).toEqual([0.03, 0.04]);
+  const final = await t.as.post(url, { date, lines: jobs(0.02) });
+  expect(final.status, final.text).toBe(201);
+  expect(await creditJournal(final.body.journalEntryId)).toEqual([
+    { code: "1040", centre: null, base: -0.15, foreign: -0.04 },
+    ...revenue.map((leg) => ({ ...leg, base: leg.base === 0.04 ? 0.07 : 0.08, foreign: 0.02 })),
+  ]);
+});
+
+it("[PR #104] keeps the role-level FX total when only one centre can absorb the rounding fils", async () => {
+  const t = await h.createTenant({ planId: "enterprise" });
+  const a = await center(t, "Job-A");
+  const b = await center(t, "Job-B");
+  const c = await center(t, "Job-C");
+  const line = (costCenterId: string, price: number) => ({ ...exported(price), costCenterId });
+  const id = await issue(t, [line(a, 0.02), line(b, 0.02), line(c, 0.03)], {
+    currency: "USD",
+    exchangeRate: 3.67,
+  });
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  // Each 0.02 line posts 0.07. A 0.01 credit reverses 0.04 and leaves exactly 0.03.
+  for (const costCenterId of [a, b]) {
+    const partial = await t.as.post(url, { date, lines: [line(costCenterId, 0.01)] });
+    expect(partial.status, partial.text).toBe(201);
+  }
+  const credit = await t.as.post(url, {
+    date,
+    lines: [line(a, 0.01), line(b, 0.01), line(c, 0.01)],
+  });
+  expect(credit.status, credit.text).toBe(201);
+  const journal = await creditJournal(credit.body.journalEntryId);
+  expect(journal[0]).toEqual({ code: "1040", centre: null, base: -0.11, foreign: -0.03 });
+  expect(journal.slice(1)).toEqual([
+    { code: "4060", centre: "Job-A", base: 0.03, foreign: 0.01 },
+    { code: "4060", centre: "Job-B", base: 0.03, foreign: 0.01 },
+    { code: "4060", centre: "Job-C", base: 0.05, foreign: 0.01 },
+  ]);
+});
+
+it("[PR #104] credits a centre's document-currency residual while another centre remains", async () => {
+  const t = await h.createTenant({ planId: "enterprise" });
+  const a = await center(t, "Job-A");
+  const b = await center(t, "Job-B");
+  const jobA = (price: number) => ({ ...exported(price), costCenterId: a });
+  const jobB = { ...exported(0.05), costCenterId: b };
+  const id = await issue(t, [jobA(0.02), jobB], { currency: "USD", exchangeRate: 0.6 });
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const partial = await t.as.post(url, { date, lines: [jobA(0.01)] });
+  expect(partial.status, partial.text).toBe(201);
+
+  const residual = await t.as.post(url, { date, lines: [jobA(0.01)] });
+  expect(residual.status, residual.text).toBe(201);
+  expect(await creditJournal(residual.body.journalEntryId)).toEqual([
+    { code: "1040", centre: null, base: 0, foreign: -0.01 },
+    { code: "4060", centre: "Job-A", base: 0, foreign: 0.01 },
+  ]);
+
+  const rest = await t.as.post(url, { date, lines: [jobB] });
+  expect(rest.status, rest.text).toBe(201);
+  expect(await creditJournal(rest.body.journalEntryId)).toEqual([
+    { code: "1040", centre: null, base: -0.03, foreign: -0.05 },
+    { code: "4060", centre: "Job-B", base: 0.03, foreign: 0.05 },
+  ]);
+});
+
+it("[PR #104] can post and void a final credit with only document currency remaining", async () => {
+  const t = await h.createTenant({ planId: "enterprise" });
+  const a = await center(t, "Job-A");
+  const line = (price: number) => ({ ...exported(price), costCenterId: a });
+  const id = await issue(t, [line(0.02)], { currency: "USD", exchangeRate: 0.6 });
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const partial = await t.as.post(url, { date, lines: [line(0.01)] });
+  expect(partial.status, partial.text).toBe(201);
+
+  const final = await t.as.post(url, { date, lines: [line(0.01)] });
+  expect(final.status, final.text).toBe(201);
+  const journal = await creditJournal(final.body.journalEntryId);
+  expect(journal).toEqual([
+    { code: "1040", centre: null, base: 0, foreign: -0.01 },
+    { code: "4060", centre: "Job-A", base: 0, foreign: 0.01 },
+  ]);
+
+  const voided = await t.as.post(`/api/credit-notes/${final.body.id}/void`, {});
+  expect(voided.status, voided.text).toBe(200);
+  const [reversal] = await h.sql<{ id: string }>(
+    "SELECT reversed_by_entry_id AS id FROM journal_entries WHERE id = $1",
+    [final.body.journalEntryId]
+  );
+  expect(await creditJournal(reversal.id)).toEqual(
+    journal.map((row) => ({ ...row, foreign: -row.foreign }))
+  );
+});
+
+it("uses the refund date's exchange rate for a foreign customer credit paid from an AED bank", async () => {
   const t = await h.createTenant();
   const invoice = await issue(t, [exported(100)], { currency: "USD", exchangeRate: 3.67 });
   await pay(t, invoice, 100);

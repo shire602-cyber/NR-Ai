@@ -1,6 +1,7 @@
 import { MARKETING_BRAND } from "@shared/marketing-brand";
 import { T } from "@/components/layout/T";
 import { LegalLayout } from "@/components/LegalLayout";
+import { SHOW_DATA_RESIDENCY } from "@/components/marketing/phase/home/flags";
 import { PrivacyPolicyAr } from "./legal/legalAr";
 
 export default function PrivacyPolicy() {
@@ -125,8 +126,13 @@ export default function PrivacyPolicy() {
       <h2>8. International transfers</h2>
       {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
-        Customer data is hosted in the United Arab Emirates. Where transfers outside the UAE are
-        necessary, we apply appropriate safeguards as required by PDPL.
+        {SHOW_DATA_RESIDENCY && (
+          <>
+            <T k="marketing.privacyHostingResidency" />{" "}
+          </>
+        )}
+        Where transfers outside the UAE are necessary, we apply appropriate safeguards as required
+        by PDPL.
       </p>
 
       <h2>9. Children</h2>
