@@ -21,7 +21,12 @@ import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
-import { LoadErrorState } from "@/components/ui/load-error-state";
+import {
+  BillingUnloaded,
+  PlanLoadState,
+  RefreshFailedNotice,
+} from "@/components/billing/PlanLoadState";
+import { useIsOnline } from "@/hooks/useIsOnline";
 import { Button } from "@/components/ui/button";
 import { formatMoneyText, formatAmountDigits } from "@/lib/format-money";
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
@@ -304,13 +309,17 @@ export default function Subscription() {
     planState,
     trial,
     trialLocked,
-    isLoading,
+    planLoading,
     loadError,
+    isPaused,
+    refreshError,
     retryLoad,
+    usageState,
     checkoutAvailable,
     chosenPlan,
     activationRequestedAt,
   } = useSubscription();
+  const online = useIsOnline();
   const { choose, activate } = usePlanChoiceActions();
   // STEP4: /subscription?choose=<plan>&cycle=<cycle> (a signed-in visitor who followed a plan link).
   const [highlight] = useState<PaidPlanId | null>(() => {
@@ -319,7 +328,7 @@ export default function Subscription() {
     return isPaidPlanId(id) ? id : null;
   });
   const inTrialFlow = (planState === "trial" || planState === "expired") && !checkoutAvailable;
-  const { companyId } = useDefaultCompany();
+  const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const { can } = useCompanyPermission();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -385,8 +394,11 @@ export default function Subscription() {
     },
   });
 
+  // The plan grid is on screen: also true again after a retry recovers from a failed first load.
+  const planReady = !companyLoading && !planLoading && !isPaused && !loadError;
+
   useEffect(() => {
-    if (isLoading) return;
+    if (!planReady) return;
     if (highlight) {
       document.getElementById("subscription-plans")?.scrollIntoView({ block: "center" });
       document
@@ -397,9 +409,9 @@ export default function Subscription() {
     } else if (window.location.hash === "#after-trial") {
       document.getElementById("after-trial")?.scrollIntoView({ block: "center" });
     }
-  }, [isLoading, highlight]);
+  }, [planReady, highlight]);
 
-  if (isLoading) {
+  if (companyLoading || planLoading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -407,20 +419,16 @@ export default function Subscription() {
     );
   }
 
-  if (loadError) {
+  if (loadError || isPaused) {
     return (
       <SettingsLayout>
-        <div className="space-y-6">
-          <PageHeader
-            eyebrow={t["pages.companyProfileEyebrow"]}
-            title={t["pages.subscriptionPageTitle"]}
-            description={t["pages.subscriptionPlanPageDescription"]}
-          />
-          <LoadErrorState error={loadError} onRetry={retryLoad} testId="subscription-load-error" />
-        </div>
+        <BillingUnloaded error={loadError} online={online} onRetry={retryLoad} />
       </SettingsLayout>
     );
   }
+
+  // ProtectedLayout supplies a company on real routes; without one there is no plan to describe.
+  if (!companyId) return null;
 
   const scrollToPlans = () =>
     document.getElementById("subscription-plans")?.scrollIntoView({ behavior: "smooth" });
@@ -457,6 +465,15 @@ export default function Subscription() {
           title={t["pages.subscriptionPageTitle"]}
           description={t["pages.subscriptionPlanPageDescription"]}
         />
+
+        {refreshError || usageState.refreshError ? (
+          <RefreshFailedNotice
+            onRetry={() => {
+              if (refreshError) retryLoad();
+              if (usageState.refreshError) usageState.retry();
+            }}
+          />
+        ) : null}
 
         {planState === "expired" ? (
           <Alert
@@ -628,64 +645,77 @@ export default function Subscription() {
             </CardContent>
           </Card>
 
-          {/* Usage */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">
-                <T k="pageLabels.usageThisMonth" />
-              </CardTitle>
-              <CardDescription>
-                <T k="pageLabels.yourResourceConsumptionForTheCurrent" />
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <UsageMeter
-                label={t["pages.subscriptionUsageInvoices"]}
-                used={usage?.invoices?.used ?? 0}
-                limit={usage?.invoices?.limit ?? -1}
-                icon={FileText}
-                testId="usage-invoices"
-                {...upgradeProps}
-              />
-              <UsageMeter
-                label={t["pages.subscriptionUsageReceipts"]}
-                used={usage?.receipts?.used ?? 0}
-                limit={usage?.receipts?.limit ?? -1}
-                icon={Receipt}
-                testId="usage-receipts"
-                {...upgradeProps}
-              />
-              <UsageMeter
-                label={t["pages.subscriptionUsageAiCredits"]}
-                used={usage?.aiCredits?.used ?? 0}
-                limit={usage?.aiCredits?.limit ?? -1}
-                icon={Brain}
-                testId="usage-ai"
-                {...upgradeProps}
-              />
-              <UsageMeter
-                label={t["pages.subscriptionUsageTeamMembers"]}
-                used={usage?.users?.used ?? 0}
-                limit={-1}
-                icon={Users}
-                testId="usage-users"
-              />
-              {usage?.storage && usage.storage.used != null && (
-                <UsageMeter
-                  label={t["pages.subscriptionUsageStorage"]}
-                  used={usage.storage.used}
-                  limit={usage.storage.limit}
-                  unit="MB"
-                  icon={HardDrive}
-                  testId="usage-storage"
-                  {...upgradeProps}
-                />
-              )}
-            </CardContent>
-          </Card>
+          {/* Usage: no card for a missing usage response, so it never reads as zero use. */}
+          {!usageState.loaded || usage ? (
+            <Card data-testid="card-usage">
+              <CardHeader>
+                <CardTitle className="text-lg">
+                  <T k="pageLabels.usageThisMonth" />
+                </CardTitle>
+                <CardDescription>
+                  <T k="pageLabels.yourResourceConsumptionForTheCurrent" />
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {!usageState.loaded ? (
+                  <PlanLoadState
+                    error={usageState.loadError}
+                    online={online}
+                    onRetry={usageState.retry}
+                    testId="usage"
+                  />
+                ) : (
+                  <>
+                    <UsageMeter
+                      label={t["pages.subscriptionUsageInvoices"]}
+                      used={usage?.invoices?.used ?? 0}
+                      limit={usage?.invoices?.limit ?? -1}
+                      icon={FileText}
+                      testId="usage-invoices"
+                      {...upgradeProps}
+                    />
+                    <UsageMeter
+                      label={t["pages.subscriptionUsageReceipts"]}
+                      used={usage?.receipts?.used ?? 0}
+                      limit={usage?.receipts?.limit ?? -1}
+                      icon={Receipt}
+                      testId="usage-receipts"
+                      {...upgradeProps}
+                    />
+                    <UsageMeter
+                      label={t["pages.subscriptionUsageAiCredits"]}
+                      used={usage?.aiCredits?.used ?? 0}
+                      limit={usage?.aiCredits?.limit ?? -1}
+                      icon={Brain}
+                      testId="usage-ai"
+                      {...upgradeProps}
+                    />
+                    <UsageMeter
+                      label={t["pages.subscriptionUsageTeamMembers"]}
+                      used={usage?.users?.used ?? 0}
+                      limit={-1}
+                      icon={Users}
+                      testId="usage-users"
+                    />
+                    {usage?.storage && usage.storage.used != null && (
+                      <UsageMeter
+                        label={t["pages.subscriptionUsageStorage"]}
+                        used={usage.storage.used}
+                        limit={usage.storage.limit}
+                        unit="MB"
+                        icon={HardDrive}
+                        testId="usage-storage"
+                        {...upgradeProps}
+                      />
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
 
-        {companyId && <BillingDocuments companyId={companyId} />}
+        <BillingDocuments companyId={companyId} />
 
         {/* Plans */}
         <section aria-labelledby="subscription-plans-title" className="space-y-4">
@@ -891,7 +921,8 @@ const DOC_COPY = {
 function BillingDocuments({ companyId }: { companyId: string }) {
   const { locale } = useI18n();
   const c = DOC_COPY[locale === "ar" ? "ar" : "en"];
-  const { data } = useQuery<
+  const online = useIsOnline();
+  const { data, error, isLoadingError, isRefetchError, fetchStatus, refetch } = useQuery<
     Array<{
       id: string;
       kind: "invoice" | "receipt";
@@ -901,7 +932,15 @@ function BillingDocuments({ companyId }: { companyId: string }) {
       currency: string;
       issuedAt: string;
     }>
-  >({ queryKey: ["/api/companies", companyId, "billing", "documents"], retry: false });
+  >({
+    queryKey: ["/api/companies", companyId, "billing", "documents"],
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/billing/documents`, undefined, undefined, {
+        signal,
+      }),
+    retry: false,
+  });
+  const retry = () => void refetch();
   const money = (fils: number, cur: string) => formatMoneyText(Number(fils) / 100, cur, locale);
   return (
     <Card>
@@ -910,7 +949,15 @@ function BillingDocuments({ companyId }: { companyId: string }) {
         <CardDescription>{c.help}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
-        {!data?.length ? (
+        {isRefetchError ? <RefreshFailedNotice onRetry={retry} /> : null}
+        {!data ? (
+          <PlanLoadState
+            error={isLoadingError && fetchStatus !== "paused" ? error : null}
+            online={online}
+            onRetry={retry}
+            testId="billing-documents"
+          />
+        ) : !data.length ? (
           <p className="text-muted-foreground">{c.none}</p>
         ) : (
           data.map((d) => (

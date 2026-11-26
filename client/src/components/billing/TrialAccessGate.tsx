@@ -4,6 +4,8 @@ import { Link, useLocation } from "wouter";
 import { Loader2, Lock } from "lucide-react";
 import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
 import { BrandMark } from "@/components/BrandMark";
+import { BillingUnloaded, PlanLoadState } from "@/components/billing/PlanLoadState";
+import { useIsOnline } from "@/hooks/useIsOnline";
 import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { Button } from "@/components/ui/button";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -27,7 +29,15 @@ export function TrialAccessGate({
   const { companyId, isLoading, error } = useDefaultCompany();
   const { data: user } = useCurrentUser();
   const exempt = user?.isAdmin === true || !!user?.firmRole;
-  const { data, isPending, refetch } = useCompanySubscription(true, !exempt);
+  const {
+    data,
+    isPending,
+    fetchStatus,
+    error: subscriptionError,
+    isLoadingError,
+    refetch,
+  } = useCompanySubscription(true, !exempt);
+  const online = useIsOnline();
   const queryClient = useQueryClient();
   const lockedCompany = useRef<string>();
   const isLocked = data?.trialLocked === true;
@@ -63,7 +73,10 @@ export function TrialAccessGate({
   }, [companyId, data, isLocked, queryClient]);
 
   if (exempt) return workspace();
-  if (isLoading || (companyId && isPending)) {
+  const onBilling = location.split(/[?#]/)[0] === "/subscription";
+  // A paused first fetch stays pending for as long as the device is offline: say so.
+  const offline = !!companyId && data === undefined && fetchStatus === "paused" && !online;
+  if (isLoading || (companyId && isPending && !offline)) {
     return (
       <div role="status" className="grid min-h-dvh place-items-center bg-background">
         <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden />
@@ -71,8 +84,23 @@ export function TrialAccessGate({
       </div>
     );
   }
+  // A failed refresh of the company list keeps the cached selection, so it does not close the gate.
+  const companyFailed = !!error && !companyId;
   // A missing billing endpoint resolves to null. An unresolved subscription has no data yet.
-  if (error || (companyId && data === undefined)) {
+  // The workspace stays closed; Billing (and any route while offline) says why and retries the query.
+  if (!companyFailed && companyId && data === undefined && (offline || (onBilling && billing))) {
+    const state = {
+      error: !offline && isLoadingError ? subscriptionError : null,
+      online,
+      onRetry: () => void refetch(),
+    };
+    return (
+      <TrialRecoveryLayout billing={onBilling}>
+        {onBilling ? <BillingUnloaded {...state} /> : <PlanLoadState {...state} />}
+      </TrialRecoveryLayout>
+    );
+  }
+  if (companyFailed || (companyId && data === undefined)) {
     return (
       <TrialRecoveryLayout>
         <div className="mx-auto max-w-md space-y-4 rounded-xl border bg-card p-6 text-start">
@@ -86,7 +114,7 @@ export function TrialAccessGate({
   }
   if (!data || !isLocked) return workspace();
 
-  if (location.split(/[?#]/)[0] === "/subscription" && billing) {
+  if (onBilling && billing) {
     return <TrialRecoveryLayout billing>{billing}</TrialRecoveryLayout>;
   }
 

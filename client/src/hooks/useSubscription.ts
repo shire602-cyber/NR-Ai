@@ -81,8 +81,10 @@ export function useCompanySubscription(watchTrial = false, enabled = true) {
     queryKey: ["/api/companies", companyId, "billing", "subscription"],
     // 404 = billing module not deployed in this environment; resolve null
     // instead of erroring so the UI fails open without retry noise.
-    queryFn: () =>
-      apiRequest("GET", `/api/companies/${companyId}/billing/subscription`).catch((err: any) => {
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/billing/subscription`, undefined, undefined, {
+        signal,
+      }).catch((err: any) => {
         if (err?.status === 404) return null;
         throw err;
       }),
@@ -109,14 +111,27 @@ export function useSubscription() {
     data: subData,
     isLoading: subLoading,
     isError: subError,
-    error: subLoadError,
+    error: subQueryError,
+    isLoadingError: subLoadingError,
+    isRefetchError: subRefetchError,
+    fetchStatus: subFetchStatus,
     refetch: refetchSubscription,
   } = useCompanySubscription();
 
-  const { data: usageData, isLoading: usageLoading } = useQuery<UsageData>({
+  const {
+    data: usageData,
+    isLoading: usageLoading,
+    error: usageError,
+    isLoadingError: usageLoadingError,
+    isRefetchError: usageRefetchError,
+    fetchStatus: usageFetchStatus,
+    refetch: refetchUsage,
+  } = useQuery<UsageData | null>({
     queryKey: ["/api/companies", companyId, "billing", "usage"],
-    queryFn: () =>
-      apiRequest("GET", `/api/companies/${companyId}/billing/usage`).catch((err: any) => {
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/billing/usage`, undefined, undefined, {
+        signal,
+      }).catch((err: any) => {
         if (err?.status === 404) return null;
         throw err;
       }),
@@ -147,6 +162,10 @@ export function useSubscription() {
     return FEATURE_MIN_PLAN[feature as PlanFeature] ?? "starter";
   }
 
+  /** First fetch is paused (offline, or a retry waiting for focus): nothing is known yet. */
+  const isPaused = subData === undefined && subFetchStatus === "paused";
+  const usagePaused = usageData === undefined && usageFetchStatus === "paused";
+
   return {
     subscription: subData?.subscription,
     usage: usageData?.usage,
@@ -170,10 +189,24 @@ export function useSubscription() {
     canWrite,
     getRequiredTier,
     isLoading: subLoading || usageLoading,
-    /** The plan could not be loaded (not a missing billing module, which resolves to null). */
-    loadError: subError && !subData ? (subLoadError ?? new Error("load failed")) : null,
+    /** The plan's own first fetch is in flight (usage has its own state below). */
+    planLoading: subLoading,
+    /** The first load failed (a missing billing module resolves to null instead). Paused wins. */
+    loadError: subLoadingError && !isPaused ? subQueryError : null,
+    isPaused,
+    /** A refresh failed; the cached plan (possibly null) is still in use. */
+    refreshError: subRefetchError ? subQueryError : null,
     retryLoad: () => {
       void refetchSubscription();
+    },
+    /** Usage has its own request: without `usage` the meters must not read as zero. */
+    usageState: {
+      loaded: usageData !== undefined,
+      loadError: usageLoadingError && !usagePaused ? usageError : null,
+      refreshError: usageRefetchError ? usageError : null,
+      retry: () => {
+        void refetchUsage();
+      },
     },
   };
 }
