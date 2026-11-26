@@ -1093,5 +1093,6 @@
   "serverErrors.FIRM_MEMBER_INELIGIBLE": "Customer portal accounts cannot become firm members.",
   "serverErrors.LAST_FIRM_OWNER": "A firm must have at least one owner. Make someone else an owner first.",
   "serverErrors.TRANSACTION_CONFLICT": "Another update conflicted with this operation. Reload the page and try again.",
-  "serverErrors.UNRESOLVED_FIRM_ACCESS": "A company owner must review the remaining client access before this access change can finish."
+  "serverErrors.UNRESOLVED_FIRM_ACCESS": "A company owner must review the remaining client access before this access change can finish.",
+  "serverErrors.FX_RECONCILIATION_UNSUPPORTED": "This foreign-currency account cannot be reconciled yet because some ledger entries on it have no amount in the account currency. Reconcile it after correcting those entries, or use a base-currency statement."
 }
