@@ -86,6 +86,9 @@ export function formHarnessQueryClientMock() {
   return {
     apiRequest: vi.fn(apiRequest),
     queryClient: qc,
+    refreshAfterWrite: vi.fn((queryKey: readonly unknown[]) => {
+      void qc.cancelQueries({ queryKey }).then(() => qc.invalidateQueries({ queryKey }));
+    }),
     ApiError,
     getQueryFn:
       () =>
