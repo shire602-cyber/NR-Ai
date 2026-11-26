@@ -100,10 +100,10 @@ Update (GitHub API, read 2026-11-26): the CI workflow run on `ad9163cb` conclude
 
 ## 3. Counts
 
-- Original items: 32. Verified dispositions: **18** on staging `448dcac1` (2026-11-26): F01, F03, F04, F05 (incl. scheduled items and company switch), F06, F07, S01, S02, S03, O07, S05, O04, W01–W06, W08 (verified fixed). Evidence: [STAGING-VERIFY-2026-11-26.md](STAGING-VERIFY-2026-11-26.md).
+- Original items: 32. Verified dispositions: **19** on staging `448dcac1` (2026-11-26): F01, F03, F04, F05 (incl. scheduled items and company switch), F06, F07, S01, S02, S03, O07, S05, O04, W01–W06, W08 (verified fixed). Evidence: [STAGING-VERIFY-2026-11-26.md](STAGING-VERIFY-2026-11-26.md).
 - Fixed awaiting verification: F02 (needs a filed return, FTA boundary), S08 (needs a firm-side account), plus ENV-01.
 - Test written, CI-only: **1** (O03 — bills-aging benchmark; PGlite startup timeout locally).
-- Open: 5 · Blocked or partly blocked: 9 (W07, W09, W10; S04, S06, S07, O01, O02, O06).
+- Open (partial): 1 (O05) · Blocked or partly blocked: 9 (W07, W09, W10; S04, S06, S07, O01, O02, O06). Total: 19 verified + 2 awaiting (F02, S08) + 1 CI-only (O03) + 1 open + 9 blocked = 32.
 - Handoff to Astra 6.2: **not eligible**.
 
 ## 4. Commands run (local, Node 18.16, Windows)
