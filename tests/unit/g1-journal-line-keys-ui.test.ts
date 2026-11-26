@@ -5,7 +5,7 @@
  * with no key still reads Arabic through the matcher; an issued invoice uses one label for
  * "partly paid" in both chips and calls the preview "Document" (not "Live preview").
  */
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   COMPANY_ID,
@@ -251,8 +251,8 @@ describe("G5 issued invoice chips", () => {
 });
 
 describe("account ledger states", () => {
-  const load = async (fetchImpl: (params: URLSearchParams) => Response) => {
-    const fetchLedger = vi.fn(async (url: string) =>
+  const load = async (fetchImpl: (params: URLSearchParams) => Response | Promise<Response>) => {
+    const fetchLedger = vi.fn(async (url: string, _init?: RequestInit) =>
       fetchImpl(new URL(url, window.location.origin).searchParams)
     );
     vi.stubGlobal("fetch", fetchLedger);
@@ -325,19 +325,167 @@ describe("account ledger states", () => {
     expect(document.activeElement).toBe(input);
   });
 
-  it("shows the no-match panel when the literal search consists only of whitespace", async () => {
-    const search = "   ";
-    await load((params) =>
-      Response.json(
-        params.get("search") === search ? { ...LEDGER, entries: [], totalCount: 0 } : LEDGER
-      )
+  const SUMMARY_IDS = [
+    "text-opening-balance",
+    "text-total-debit",
+    "text-total-credit",
+    "text-closing-balance",
+  ];
+  const summary = () => SUMMARY_IDS.map((id) => byTestId(id)?.textContent);
+  const queryClient = async () => (await import("../../client/src/lib/queryClient")).queryClient;
+
+  it("keeps the cached rows, balances and page when a refresh fails, and Retry clears the warning", async () => {
+    let available = true;
+    await load(() =>
+      available ? Response.json({ ...LEDGER, totalCount: 30 }) : new Response("{}", { status: 500 })
+    );
+    await flushUntil(() => !!byTestId("button-next-page"));
+    await click(byTestId("button-next-page"));
+    await flushUntil(
+      () => !!byTestId("row-entry-l1") && !!byTestId("button-next-page")?.matches(":disabled")
+    );
+    expect(byTestId("warning-ledger-refresh")).toBeNull();
+    const before = summary();
+    const footer = byTestId("button-next-page")!.parentElement!.parentElement!;
+    const footerText = footer.textContent;
+
+    available = false;
+    const client = await queryClient();
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["/api/accounts", ACCOUNT_ID, "ledger"] });
+    });
+    await flushUntil(() => !!byTestId("warning-ledger-refresh"));
+    const warning = byTestId("warning-ledger-refresh")!;
+    expect(warning.textContent).toContain("تعذّر تحديث دفتر الأستاذ");
+    expect(warning.textContent).not.toMatch(/[A-Za-z]{3,}/);
+    expect(byTestId("error-ledger")).toBeNull();
+    expect(byTestId("row-entry-l1")).toBeTruthy();
+    expect(byTestId("row-entry-l4")).toBeTruthy();
+    expect(summary()).toEqual(before);
+    expect(footer.isConnected).toBe(true);
+    expect(footer.textContent).toBe(footerText);
+
+    available = true;
+    await click(buttonByText(/^إعادة المحاولة$/, warning));
+    await flushUntil(() => !byTestId("warning-ledger-refresh"));
+    expect(byTestId("row-entry-l4")).toBeTruthy();
+  });
+
+  it.each(["search", "date"])(
+    "announces a deferred %s no-match through a status region that was already mounted",
+    async (filter) => {
+      let release: (() => void) | undefined;
+      await load((params) => {
+        if (!params.has("search") && !params.has("dateStart")) return Response.json(LEDGER);
+        return new Promise<Response>((resolve) => {
+          release = () => resolve(Response.json({ ...LEDGER, entries: [], totalCount: 0 }));
+        });
+      });
+      await flushUntil(() => !!byTestId("row-entry-l1"));
+      const region = byTestId("ledger-live")!;
+      expect(region.getAttribute("role")).toBe("status");
+      expect(region.getAttribute("aria-live")).toBe("polite");
+      expect(region.textContent).toBe("");
+
+      const input = byTestId("input-search-ledger") as HTMLInputElement;
+      if (filter === "search") {
+        input.focus();
+        await type(input, "zzz");
+      } else {
+        await pickOption(byTestId("select-date-preset"), /^(This Month|هذا الشهر)$/i);
+      }
+      await flushUntil(() => !!release);
+      expect(byTestId("ledger-live")).toBe(region);
+      expect(region.textContent).toBe("");
+
+      await act(async () => release!());
+      await flushUntil(() => !!byTestId("empty-ledger-no-match"));
+      expect(byTestId("ledger-live")).toBe(region);
+      expect(region.textContent).toBe("لا توجد قيود مطابقة");
+      if (filter === "search") expect(document.activeElement).toBe(input);
+    }
+  );
+
+  it("never matches a whitespace-only search, even where the text has repeated spaces", async () => {
+    // The endpoint matches literally; with no search parameter it returns the spaced row.
+    const spaced = entry({ id: "s1", description: "Office   rent", memo: null, memoKey: null });
+    const fetchLedger = await load((params) => {
+      const search = params.get("search") ?? "";
+      const matches = spaced.description.includes(search);
+      return Response.json({
+        ...LEDGER,
+        entries: matches ? [spaced] : [],
+        allEntries: matches ? [spaced] : [],
+        openingBalance: 500,
+        totalCredit: 2000,
+        closingBalance: 2500,
+        totalCount: matches ? 30 : 0,
+      });
+    });
+    await flushUntil(() => !!byTestId("row-entry-s1"));
+    const input = byTestId("input-search-ledger");
+    await type(input, "   ");
+    await flushUntil(() => !!byTestId("empty-ledger-no-match"));
+    // The blank term is not sent, so the endpoint still returns its row; the page hides it.
+    const blankUrl = new URL(fetchLedger.mock.calls[1][0], window.location.origin);
+    expect(blankUrl.searchParams.has("search")).toBe(false);
+    expect(byTestId("row-entry-s1")).toBeNull();
+    expect(byTestId("button-next-page")).toBeNull();
+    expect(byTestId("ledger-live")?.textContent).toBe("لا توجد قيود مطابقة");
+    // Opening carries to closing; the matched debit and credit totals are gone.
+    expect(summary().map((card) => card?.match(/\d[\d,]*\.\d\d/)?.[0])).toEqual([
+      "500.00",
+      "0.00",
+      "0.00",
+      "500.00",
+    ]);
+
+    // The cached response is left as the endpoint sent it.
+    const cached = (await queryClient())
+      .getQueryCache()
+      .getAll()
+      .find((q) => (q.queryKey[3] as { searchQuery: string }).searchQuery === "   ");
+    expect(cached?.state.data).toMatchObject({ totalCount: 30, closingBalance: 2500 });
+    expect((cached?.state.data as typeof LEDGER).entries.map((row) => row.id)).toEqual(["s1"]);
+    expect(fetchLedger).toHaveBeenCalledTimes(2);
+
+    await type(input, "Office   rent");
+    await flushUntil(() => !!byTestId("row-entry-s1"));
+    expect(byTestId("empty-ledger-no-match")).toBeNull();
+    expect(byTestId("ledger-live")?.textContent).toBe("");
+    const spacedUrl = new URL(fetchLedger.mock.calls[2][0], window.location.origin);
+    expect(spacedUrl.searchParams.get("search")).toBe("Office   rent");
+  });
+
+  it("forwards the query's AbortSignal to fetch, so a superseded search is aborted", async () => {
+    const fetchLedger = await load((params) =>
+      params.get("search") === "IN" ? new Promise<Response>(() => {}) : Response.json(LEDGER)
     );
     await flushUntil(() => !!byTestId("row-entry-l1"));
-    await type(byTestId("input-search-ledger"), search);
-    await flushUntil(() => !!byTestId("empty-ledger-no-match"));
-    expect(byTestId("empty-ledger-no-match")?.querySelector("h3")?.textContent).toBe(
-      "لا توجد قيود مطابقة"
-    );
-    expect(byTestId("button-clear-ledger-filters-empty")).toBeTruthy();
+    const input = byTestId("input-search-ledger");
+    await type(input, "IN");
+    await flushUntil(() => fetchLedger.mock.calls.length === 2);
+    const signal = fetchLedger.mock.calls[1][1]?.signal;
+    expect(signal?.aborted).toBe(false);
+
+    await type(input, "INV");
+    await flushUntil(() => fetchLedger.mock.calls.length === 3);
+    expect(signal?.aborted).toBe(true);
+    expect(fetchLedger.mock.calls[2][1]?.signal?.aborted).toBe(false);
   });
+
+  it.each(["en", "ar"] as const)(
+    "takes the unfiltered empty description from the %s catalog",
+    async (locale) => {
+      useI18n.setState({ locale });
+      const { default: catalog } = await import(
+        `../../client/src/locales/${locale}/financeViews.json`
+      );
+      const expected = (catalog as Record<string, string>)["accountLedger.emptyBody"];
+      expect(expected).toBeTruthy();
+      await load(() => Response.json({ ...LEDGER, entries: [], totalCount: 0 }));
+      await flushUntil(() => !!byTestId("empty-state")?.textContent?.includes(expected));
+      expect(byTestId("ledger-live")?.textContent).toBe("");
+    }
+  );
 });

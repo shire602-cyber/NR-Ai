@@ -12,6 +12,8 @@
   "accountLedger.noMatchTitle": "No matching entries",
   "accountLedger.noMatchBody": "Nothing in this ledger matches your search or date range.",
   "accountLedger.clearFilters": "Clear filters",
+  "accountLedger.emptyBody": "No transactions have been posted to this account yet",
+  "accountLedger.refreshFailed": "Could not refresh this ledger. Showing the last loaded data.",
   "advancedAnalytics.aiPoweredFinancialIntelligenceFor": "AI-powered financial intelligence for strategic decision making",
   "advancedAnalytics.generateAForecastOnceInvoices": "Generate a forecast once invoices, receipts, or journals exist.",
   "advancedAnalytics.createBudgetsAndPostTransactions": "Create budgets and post transactions to compare planned versus actual performance.",

@@ -30,6 +30,7 @@ import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
+import { Alert } from "@/components/ui/alert";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
@@ -112,18 +113,16 @@ export default function AccountLedger() {
   const [currentPage, setCurrentPage] = useState(1);
   const entriesPerPage = 25;
 
-  const {
-    data: ledger,
-    isLoading,
-    isError,
-    refetch,
-  } = useQuery<LedgerResponse>({
+  // A whitespace-only search is never sent: the endpoint would match it as a literal substring.
+  const blankSearch = searchQuery !== "" && searchQuery.trim() === "";
+
+  const { data, isLoading, isError, isLoadingError, refetch } = useQuery<LedgerResponse>({
     queryKey: ["/api/accounts", accountId, "ledger", { dateRange, searchQuery, currentPage }],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams();
       if (dateRange.from) params.set("dateStart", format(dateRange.from, "yyyy-MM-dd"));
       if (dateRange.to) params.set("dateEnd", format(dateRange.to, "yyyy-MM-dd"));
-      if (searchQuery) params.set("search", searchQuery);
+      if (searchQuery && !blankSearch) params.set("search", searchQuery);
       params.set("limit", String(entriesPerPage));
       params.set("offset", String((currentPage - 1) * entriesPerPage));
 
@@ -134,12 +133,28 @@ export default function AccountLedger() {
           ...getAuthHeaders(),
         },
         credentials: "include",
+        signal,
       });
       if (!response.ok) throw new Error("Failed to fetch ledger");
       return response.json();
     },
     enabled: !!accountId,
   });
+
+  // A whitespace-only search matches nothing. Derive the no-match view (opening balance carries to
+  // closing) without touching the cached response.
+  const ledger: LedgerResponse | undefined =
+    data && blankSearch
+      ? {
+          ...data,
+          entries: [],
+          allEntries: [],
+          totalDebit: 0,
+          totalCredit: 0,
+          closingBalance: data.openingBalance,
+          totalCount: 0,
+        }
+      : data;
 
   const reversalMutation = useMutation({
     mutationFn: async ({ entryId, reason }: { entryId: string; reason: string }) => {
@@ -173,6 +188,10 @@ export default function AccountLedger() {
     setCurrentPage(1);
     searchInput.current?.focus();
   };
+
+  // A failed load blocks the table; a failed refresh keeps the cached ledger and only warns.
+  const refreshFailed = isError && !isLoadingError;
+  const noMatch = hasFilters && !!ledger && !ledger.entries.length;
 
   const totalPages = Math.ceil((ledger?.totalCount || 0) / entriesPerPage);
 
@@ -479,6 +498,26 @@ export default function AccountLedger() {
         }
       />
 
+      {/* Always mounted, so a result that arrives later is announced. */}
+      <p role="status" aria-live="polite" className="sr-only" data-testid="ledger-live">
+        {noMatch ? t["accountLedger.noMatchTitle"] : ""}
+      </p>
+
+      {refreshFailed ? (
+        <Alert
+          tone="warning"
+          data-testid="warning-ledger-refresh"
+          action={
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              <RefreshCw aria-hidden />
+              {t["components.errorRetry"]}
+            </Button>
+          }
+        >
+          {t["accountLedger.refreshFailed"]}
+        </Alert>
+      ) : null}
+
       {(isLoading || ledger) && (
         <div className="mobile-keep-cols grid grid-cols-2 gap-4 md:grid-cols-4">
           <StatCard
@@ -557,7 +596,13 @@ export default function AccountLedger() {
 
       <DataTableCard
         status={
-          isLoading ? "loading" : isError ? "error" : !ledger?.entries?.length ? "empty" : "ready"
+          isLoading
+            ? "loading"
+            : isLoadingError
+              ? "error"
+              : !ledger?.entries?.length
+                ? "empty"
+                : "ready"
         }
         columnLabels={[t.date, t.description, t["screens.balance"]]}
         error={{
@@ -583,10 +628,7 @@ export default function AccountLedger() {
             : {
                 icon: BookOpen,
                 title: locale === "ar" ? "لا توجد قيود" : "No entries found",
-                description:
-                  locale === "ar"
-                    ? "لا توجد حركات مسجلة لهذا الحساب بعد"
-                    : "No transactions have been posted to this account yet",
+                description: t["accountLedger.emptyBody"],
               }
         }
         footer={
