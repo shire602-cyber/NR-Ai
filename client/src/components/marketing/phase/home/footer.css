@@ -1,0 +1,130 @@
+/* Site footer ("mz-foot-"). Scope: .phase-site. Logical properties only. */
+.phase-site .mz-foot {
+  background: var(--mz-sand);
+  color: var(--mz-ink-soft);
+  padding-block: clamp(40px, 6vw, 72px) 32px;
+}
+.phase-site .mz-foot-wrap {
+  inline-size: min(100% - 64px, 1320px);
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 3fr);
+  gap: clamp(28px, 4vw, 64px);
+}
+.phase-site .mz-foot-brand {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+.phase-site .mz-foot-brand p {
+  color: #3f5247;
+  font-size: 15px;
+  line-height: 1.6;
+  max-inline-size: 34ch;
+}
+.phase-site .mz-foot-contact,
+.phase-site .mz-foot-lang {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+}
+.phase-site .mz-foot-contact span,
+.phase-site .mz-foot-lang span {
+  font-weight: 700;
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-foot a {
+  color: var(--mz-emerald-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.phase-site .mz-foot .mz-foot-langbtn {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+  color: var(--mz-emerald-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.phase-site .mz-foot .mz-foot-langbtn:hover {
+  color: var(--mz-ink);
+}
+.phase-site .mz-foot a:hover {
+  color: var(--mz-ink);
+}
+.phase-site .mz-foot a:focus-visible {
+  outline: 3px solid #087450;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.phase-site .mz-foot .phase-brand {
+  text-decoration: none;
+  color: var(--mz-ink);
+}
+.phase-site .mz-foot-brand .mz-foot-contact a,
+.phase-site .mz-foot-brand .mz-foot-lang a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+}
+/* Overrides the flex row from the shared .phase-footer nav rule. */
+.phase-site .mz-foot nav.mz-foot-nav {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: start;
+  justify-content: stretch;
+  gap: 24px;
+}
+.phase-site .mz-foot-title {
+  margin-block-end: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mz-emerald-deep);
+}
+.phase-site[lang="ar"] .mz-foot-title {
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 15px;
+}
+.phase-site .mz-foot-col ul {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  list-style: none;
+}
+.phase-site .mz-foot nav a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 36px;
+  font-size: 15px;
+  text-decoration: underline;
+}
+@media (max-width: 1100px) {
+  .phase-site .mz-foot nav.mz-foot-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 860px) {
+  .phase-site .mz-foot-wrap {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .phase-site .mz-foot-wrap {
+    inline-size: calc(100% - 34px);
+  }
+  .phase-site .mz-foot nav.mz-foot-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .phase-site .mz-foot nav a {
+    min-block-size: 44px;
+  }
+}
+@media (max-width: 400px) {
+  .phase-site .mz-foot nav.mz-foot-nav {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

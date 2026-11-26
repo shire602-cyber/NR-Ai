@@ -1,0 +1,52 @@
+/* Trust and security (id="trust", light). Prefix mz-trust-. Logical properties only. */
+.phase-site .mz-trust-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0 0 28px;
+  padding: 0;
+  list-style: none;
+}
+.phase-site .mz-trust-fact {
+  padding: 22px;
+  border: 1px solid var(--mz-line-light);
+  border-radius: var(--mz-radius);
+  background: #fbfdfc;
+}
+.phase-site .mz-trust-fact svg {
+  inline-size: 40px;
+  block-size: 40px;
+  padding: 9px;
+  border-radius: 12px;
+  background: #e3f1e9;
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-trust-fact h3 {
+  margin-block-start: 14px;
+  font-size: 18px;
+}
+.phase-site .mz-trust-fact p {
+  margin-block-start: 6px;
+  line-height: 1.55;
+}
+.phase-site .mz-trust-residency {
+  margin-block-end: 16px;
+  font-weight: 650;
+}
+.phase-site .mz-trust .phase-textlink svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+.phase-site[dir="rtl"] .mz-trust .phase-textlink svg {
+  transform: scaleX(-1);
+}
+@media (max-width: 900px) {
+  .phase-site .mz-trust-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .phase-site .mz-trust-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

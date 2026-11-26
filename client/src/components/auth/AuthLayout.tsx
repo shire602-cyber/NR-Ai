@@ -1,11 +1,8 @@
-import { Button } from "@/components/ui/button";
 import type { ReactNode } from "react";
-import { Link } from "wouter";
-import { ArrowLeft, Languages, Landmark, ShieldCheck } from "lucide-react";
+import { Languages, Landmark, ShieldCheck } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
-import { LocaleToggle, MarketingBrand, ThemeToggle } from "@/components/marketing/MarketingLayout";
-import { useMarketingPage } from "@/components/marketing/hooks";
-import { SkipLink } from "@/components/SkipLink";
+import { PublicChrome } from "@/components/marketing/MarketingLayout";
+import { useLightPublicTheme, useMarketingPage } from "@/components/marketing/hooks";
 
 const TRUST_POINTS = [
   { icon: Landmark, title: "marketing.authPoint1Title", body: "marketing.authPoint1Body" },
@@ -48,27 +45,26 @@ interface AuthLayoutProps {
 }
 
 /**
- * Split-screen shell for sign-in, registration, password recovery, the OAuth callback and
- * email verification: the inverse brand panel with the ledger-ruling motif (desktop only) and
- * the form straight on the page canvas, 400 px wide, no card (spec 3.2). Shares tokens,
- * header controls and SEO handling with the marketing pages.
+ * Shell for sign-in, registration, password recovery, the OAuth callback and email verification:
+ * the shared public header and footer around a split screen, with the inverse brand panel and its
+ * ledger-ruling motif (desktop only) and the form straight on the page canvas, 400 px wide, no
+ * card (spec 3.2).
  */
 export function AuthLayout({ children, variant }: AuthLayoutProps) {
   const { t } = useTranslation();
   const copy = COPY[variant];
   useMarketingPage(`marketing.seo${copy.seo}Title`, `marketing.seo${copy.seo}Description`);
+  useLightPublicTheme();
 
   return (
-    <div className="mk-root">
-      <SkipLink />
+    <PublicChrome>
       <div className="mk-auth">
         <aside className="mk-auth__panel">
           <span
             className="mk-ruling mk-ruling--fill bg-ledger-ruling on-inverse"
             aria-hidden="true"
           />
-          <MarketingBrand testId="link-brand-home" />
-          <div>
+          <div className="[margin-block:auto]">
             <p className="mk-auth__headline">
               {t[copy.lead]} <em>{t[copy.accent]}</em>
             </p>
@@ -89,25 +85,12 @@ export function AuthLayout({ children, variant }: AuthLayoutProps) {
         </aside>
 
         <div className="mk-auth__form">
-          <header className="mk-auth__top">
-            <Button asChild variant="ghost" size="sm" className="mk-auth__back">
-              <Link href="/" data-testid="button-back-home">
-                <ArrowLeft className="mk-flip" aria-hidden="true" />
-                {t["marketing.backToHome"]}
-              </Link>
-            </Button>
-            <MarketingBrand className="mk-auth__brand" testId="link-auth-logo" />
-            <div className="mk-header__actions" style={{ marginInlineStart: 0 }}>
-              <LocaleToggle />
-              <ThemeToggle />
-            </div>
-          </header>
           <main id="main-content" className="mk-auth__body" tabIndex={-1}>
             <div className="mk-auth__inner">{children}</div>
           </main>
-          <footer className="mk-auth__foot">{t["marketing.authFooter"]}</footer>
+          <p className="mk-auth__foot">{t["marketing.authFooter"]}</p>
         </div>
       </div>
-    </div>
+    </PublicChrome>
   );
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import { Wand2 } from "lucide-react";
@@ -55,6 +55,17 @@ const toFils = (v: string | number) => {
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
 };
 const fromFils = (f: number) => (f / 100).toFixed(2);
+const NO_OPEN_INVOICES: readonly OpenInvoice[] = [];
+
+/** What to say about the open-invoice query; any cached rows stay listed with it. */
+function openNoticeFor(query: UseQueryResult<OpenInvoice[]>, rows: number) {
+  if (query.isPaused) return "paused";
+  if (query.isFetching) return rows ? null : "loading";
+  if (query.isRefetchError) return "refreshError";
+  if (query.isLoadingError) return "loadError";
+  if (rows) return null;
+  return query.isSuccess ? "empty" : "loading";
+}
 
 /**
  * WQ1 (7.6): one payment from a customer applied to several open invoices. "Auto apply" pays
@@ -69,14 +80,16 @@ export default function ReceivePayment() {
   const { can } = useCompanyPermission();
   const baseCurrency = (company as { baseCurrency?: string } | undefined)?.baseCurrency || "AED";
 
-  const { data: contacts = [] } = useQuery<Array<{ id: string; name: string }>>({
+  const contactsQuery = useQuery<Array<{ id: string; name: string }>>({
     queryKey: ["/api/companies", companyId, "customer-contacts"],
     enabled: !!companyId,
   });
-  const { data: accounts = [] } = useQuery<any[]>({
+  const contacts = contactsQuery.data ?? [];
+  const accountsQuery = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "accounts"],
     enabled: !!companyId,
   });
+  const accounts = accountsQuery.data ?? [];
   const { data: bankAccounts = [] } = useQuery<BankAccountLike[]>({
     queryKey: ["/api/companies", companyId, "bank-accounts"],
     enabled: !!companyId,
@@ -90,27 +103,61 @@ export default function ReceivePayment() {
   const [date, setDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [amount, setAmount] = useState("");
   const [fee, setFee] = useState("");
-  const [rate, setRate] = useState("");
+  // A typed rate belongs to the currency it was typed for.
+  const [typedRate, setTypedRate] = useState({ currency: "", value: "" });
   const [reference, setReference] = useState("");
   const [applied, setApplied] = useState<Record<string, string>>({});
 
-  const { data: open = [], isFetching } = useQuery<OpenInvoice[]>({
+  const openQuery = useQuery<OpenInvoice[]>({
     queryKey: ["/api/companies", companyId, "receive-payments", "open-invoices", contactId],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       apiRequest(
         "GET",
-        `/api/companies/${companyId}/receive-payments/open-invoices?contactId=${encodeURIComponent(contactId)}`
+        `/api/companies/${companyId}/receive-payments/open-invoices?contactId=${encodeURIComponent(contactId)}`,
+        undefined,
+        undefined,
+        { signal }
       ),
     enabled: !!companyId && !!contactId,
   });
+  const open = openQuery.data ?? NO_OPEN_INVOICES;
+  // Totals and "no open invoices" are only true of a successful response with nothing in flight.
+  const openReady = openQuery.isSuccess && openQuery.fetchStatus === "idle";
+  const openNotice = openNoticeFor(openQuery, open.length);
+  const openNotices = {
+    paused: { testId: "receive-paused", role: "status", text: t["invoices.receive.paused"] },
+    loading: { testId: "receive-loading", role: "status", text: t["invoices.receive.loading"] },
+    loadError: {
+      testId: "receive-load-error",
+      role: "alert",
+      text: t["invoices.receive.loadError"],
+    },
+    refreshError: {
+      testId: "receive-refresh-error",
+      role: "alert",
+      text: t["invoices.receive.refreshError"],
+    },
+    empty: { testId: "receive-no-open", role: undefined, text: t["invoices.receive.noOpen"] },
+  };
 
-  const currency = open[0]?.currency ?? baseCurrency;
+  // The invoice whose currency applies to the receipt: the first applied one (the API validates
+  // only allocated invoices), the first open one as a preview before any is applied.
+  const rateInvoice = open.find((i) => toFils(applied[i.id] ?? 0) > 0) ?? open[0];
+  const currency = rateInvoice?.currency ?? baseCurrency;
   const foreign = currency !== baseCurrency;
   const amountFils = toFils(amount);
   const appliedFils = open.reduce((s, i) => s + toFils(applied[i.id] ?? 0), 0);
   const feeFils = toFils(fee);
   const creditFils = Math.max(0, amountFils - appliedFils);
   const overApplied = appliedFils > amountFils;
+  // The rate sent with the receipt; the field only exists for a foreign currency. Derived during
+  // render, so another currency never sees (or submits) this one's rate.
+  const rate = typedRate.currency === currency ? typedRate.value : "";
+  const enteredRate = foreign && Number(rate) > 0 ? Number(rate) : undefined;
+  // The fee (base currency) must be less than the amount received. Only a base-currency receipt
+  // can be checked here; for a foreign one the API checks the cash its journals actually book
+  // (payment-date or typed rate, converted per allocation).
+  const feeTooHigh = !foreign && feeFils > 0 && amountFils > 0 && feeFils >= amountFils;
   const overInvoice = open.some(
     (i) => toFils(applied[i.id] ?? 0) > Math.round(i.openBalance * 100)
   );
@@ -147,7 +194,7 @@ export default function ReceivePayment() {
         date,
         amount: fromFils(amountFils),
         ...(feeFils > 0 ? { bankFee: fromFils(feeFils) } : {}),
-        ...(foreign && Number(rate) > 0 ? { exchangeRate: Number(rate) } : {}),
+        ...(foreign && enteredRate ? { exchangeRate: enteredRate } : {}),
         ...(reference.trim() ? { reference: reference.trim() } : {}),
         allocations,
       }),
@@ -183,6 +230,7 @@ export default function ReceivePayment() {
     allocations.length > 0 &&
     !overApplied &&
     !overInvoice &&
+    !feeTooHigh &&
     can("ledger.post") &&
     !record.isPending;
 
@@ -195,18 +243,20 @@ export default function ReceivePayment() {
       title={t["invoices.receive.title"]}
       description={t["invoices.receive.desc"]}
       footerSummary={
-        <span className="flex flex-wrap items-baseline gap-x-3" data-testid="receive-summary">
-          <span>
-            {t["invoices.receive.applied"]}{" "}
-            <Money amount={appliedFils / 100} currency={currency} className="font-semibold" />
-          </span>
-          {creditFils > 0 && (
-            <span data-testid="receive-credit">
-              {t["invoices.receive.toCredit"]}{" "}
-              <Money amount={creditFils / 100} currency={currency} className="font-semibold" />
+        openReady && (
+          <span className="flex flex-wrap items-baseline gap-x-3" data-testid="receive-summary">
+            <span>
+              {t["invoices.receive.applied"]}{" "}
+              <Money amount={appliedFils / 100} currency={currency} className="font-semibold" />
             </span>
-          )}
-        </span>
+            {creditFils > 0 && (
+              <span data-testid="receive-credit">
+                {t["invoices.receive.toCredit"]}{" "}
+                <Money amount={creditFils / 100} currency={currency} className="font-semibold" />
+              </span>
+            )}
+          </span>
+        )
       }
       footer={
         <>
@@ -247,14 +297,20 @@ export default function ReceivePayment() {
               </SelectContent>
             </Select>
             {/* Sweep: with no customers the picker opened empty and the page was a dead end. */}
-            {contacts.length === 0 && (
-              <p className="text-small text-muted-foreground" data-testid="receive-no-customers">
-                {t["invoices.receive.noCustomers"]}{" "}
-                <Link href="/contacts" className="text-primary underline-offset-4 hover:underline">
-                  {t["invoices.receive.addCustomer"]}
-                </Link>
-              </p>
-            )}
+            {contactsQuery.isSuccess &&
+              !contactsQuery.isFetching &&
+              !contactsQuery.isPaused &&
+              contacts.length === 0 && (
+                <p className="text-small text-muted-foreground" data-testid="receive-no-customers">
+                  {t["invoices.receive.noCustomers"]}{" "}
+                  <Link
+                    href="/contacts"
+                    className="text-primary underline-offset-4 hover:underline"
+                  >
+                    {t["invoices.receive.addCustomer"]}
+                  </Link>
+                </p>
+              )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="receive-account">{t["invoices.receive.depositTo"]}</Label>
@@ -270,6 +326,14 @@ export default function ReceivePayment() {
                 ))}
               </SelectContent>
             </Select>
+            {accountsQuery.isSuccess &&
+              !accountsQuery.isFetching &&
+              !accountsQuery.isPaused &&
+              paymentAccounts.length === 0 && (
+                <p className="text-small text-muted-foreground" data-testid="receive-no-accounts">
+                  {t["invoices.receive.noAccounts"]}
+                </p>
+              )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="receive-date">{t["invoices.receive.date"]}</Label>
@@ -322,7 +386,7 @@ export default function ReceivePayment() {
                 ltr
                 inputMode="decimal"
                 value={rate}
-                onChange={(e) => setRate(e.target.value)}
+                onChange={(e) => setTypedRate({ currency, value: e.target.value })}
                 placeholder={t["invoices.receive.ratePlaceholder"]}
               />
             </div>
@@ -349,56 +413,69 @@ export default function ReceivePayment() {
       >
         {!contactId ? (
           <p className="text-small text-muted-foreground">{t["invoices.receive.pickFirst"]}</p>
-        ) : !isFetching && open.length === 0 ? (
-          <p className="text-small text-muted-foreground" data-testid="receive-no-open">
-            {t["invoices.receive.noOpen"]}
-          </p>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t["invoices.receive.col.number"]}</TableHead>
-                  <TableHead>{t["invoices.receive.col.due"]}</TableHead>
-                  <TableHead data-numeric="">{t["invoices.receive.col.open"]}</TableHead>
-                  <TableHead data-numeric="">{t["invoices.receive.col.payment"]}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {open.map((inv) => {
-                  const over = toFils(applied[inv.id] ?? 0) > Math.round(inv.openBalance * 100);
-                  return (
-                    <TableRow key={inv.id} data-testid={`receive-row-${inv.id}`}>
-                      <TableCell data-nowrap="" className="font-medium">
-                        <span dir="ltr" className="[unicode-bidi:isolate]">
-                          {inv.number}
-                        </span>
-                      </TableCell>
-                      <TableCell data-nowrap="" className="text-muted-foreground">
-                        {inv.dueDate ? formatDate(inv.dueDate, locale) : "—"}
-                      </TableCell>
-                      <TableCell data-numeric="">
-                        <Money amount={inv.openBalance} currency={inv.currency} />
-                      </TableCell>
-                      <TableCell data-numeric="" className="w-40">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min={0}
-                          value={applied[inv.id] ?? ""}
-                          aria-label={formatMessage(t["invoices.receive.applyTo"], {
-                            number: inv.number,
-                          })}
-                          aria-invalid={over || undefined}
-                          onChange={(e) => setApplied({ ...applied, [inv.id]: e.target.value })}
-                          data-testid={`input-apply-${inv.id}`}
-                        />
-                      </TableCell>
+          <div className="space-y-3">
+            {openNotice && (
+              <p
+                className={
+                  openNotices[openNotice].role === "alert"
+                    ? "text-small text-danger"
+                    : "text-small text-muted-foreground"
+                }
+                role={openNotices[openNotice].role}
+                data-testid={openNotices[openNotice].testId}
+              >
+                {openNotices[openNotice].text}
+              </p>
+            )}
+            {open.length > 0 && (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t["invoices.receive.col.number"]}</TableHead>
+                      <TableHead>{t["invoices.receive.col.due"]}</TableHead>
+                      <TableHead data-numeric="">{t["invoices.receive.col.open"]}</TableHead>
+                      <TableHead data-numeric="">{t["invoices.receive.col.payment"]}</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {open.map((inv) => {
+                      const over = toFils(applied[inv.id] ?? 0) > Math.round(inv.openBalance * 100);
+                      return (
+                        <TableRow key={inv.id} data-testid={`receive-row-${inv.id}`}>
+                          <TableCell data-nowrap="" className="font-medium">
+                            <span dir="ltr" className="[unicode-bidi:isolate]">
+                              {inv.number}
+                            </span>
+                          </TableCell>
+                          <TableCell data-nowrap="" className="text-muted-foreground">
+                            {inv.dueDate ? formatDate(inv.dueDate, locale) : "—"}
+                          </TableCell>
+                          <TableCell data-numeric="">
+                            <Money amount={inv.openBalance} currency={inv.currency} />
+                          </TableCell>
+                          <TableCell data-numeric="" className="w-40">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min={0}
+                              value={applied[inv.id] ?? ""}
+                              aria-label={formatMessage(t["invoices.receive.applyTo"], {
+                                number: inv.number,
+                              })}
+                              aria-invalid={over || undefined}
+                              onChange={(e) => setApplied({ ...applied, [inv.id]: e.target.value })}
+                              data-testid={`input-apply-${inv.id}`}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </div>
         )}
         {(overApplied || overInvoice) && (
@@ -406,7 +483,12 @@ export default function ReceivePayment() {
             {overApplied ? t["invoices.receive.overApplied"] : t["invoices.receive.overInvoice"]}
           </p>
         )}
-        {feeFils > 0 && amountFils > 0 && !foreign && (
+        {feeTooHigh && (
+          <p className="mt-3 text-small text-danger" role="alert" data-testid="receive-fee-error">
+            {t["invoices.receive.feeTooHigh"]}
+          </p>
+        )}
+        {feeFils > 0 && amountFils > 0 && !foreign && !feeTooHigh && (
           <p className="mt-3 text-small text-muted-foreground" data-testid="receive-bank-net">
             {formatMessage(t["invoices.receive.bankNet"], {
               amount: fromFils(amountFils - feeFils),

@@ -373,6 +373,10 @@ describe("W4-E VAT engine: report 07 scenario", () => {
       `UPDATE invoice_lines SET unit_price = 2000, net_amount = 2000 WHERE invoice_id = $1`,
       [inv.id]
     );
+    await h.sql(
+      `UPDATE invoices SET subtotal = 2000, vat_amount = 100, total = 2100 WHERE id = $1`,
+      [inv.id]
+    );
     const gen = await t.as.post(`/api/companies/${t.company.id}/vat-returns/generate`, Q3);
     expect(gen.status, gen.text).toBe(201);
     expect(gen.body._metadata.reconciliation.hasUnexplainedDifference).toBe(true);
