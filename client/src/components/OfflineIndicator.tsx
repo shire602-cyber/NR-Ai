@@ -81,6 +81,7 @@ export function OfflineIndicator({ className, showReconnect = true }: OfflineInd
  * pages where lack of connectivity will block primary user flows.
  */
 export function OfflineBanner({ className }: { className?: string }) {
+  const { t } = useTranslation();
   const [online, setOnline] = useState(() => isOnline());
 
   useEffect(() => {
@@ -99,7 +100,7 @@ export function OfflineBanner({ className }: { className?: string }) {
       )}
     >
       <CloudOff className="w-4 h-4 shrink-0" />
-      <p>You&apos;re offline. Changes will be queued and synced when you reconnect.</p>
+      <p>{t["components.offlineBannerQueued"]}</p>
     </div>
   );
 }

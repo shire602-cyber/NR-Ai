@@ -592,5 +592,8 @@
   "invoices.recurring.freq.quarterly": "Quarterly",
   "invoices.recurring.freq.yearly": "Yearly",
   "invoices.recurring.status.active": "Active",
-  "invoices.recurring.status.paused": "Paused"
+  "invoices.recurring.status.paused": "Paused",
+  "invoices.emptyWidenDateFilter": "Try widening the date filter or clearing it to see all invoices.",
+  "invoices.emptyClearFilter": "Clear filter",
+  "invoices.createPaymentAccount": "Create Bank/Cash Account"
 }
