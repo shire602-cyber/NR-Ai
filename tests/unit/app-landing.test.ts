@@ -74,3 +74,43 @@ describe("firm audit defect 3: Open books never lands in an onboarding wizard", 
     expect(onboardingRedirectTarget({ ...base, canRunOnboarding: false })).toBeNull();
   });
 });
+
+describe("PR 164: no-company exception for the tax rates page only", () => {
+  const noCompany: OnboardingRedirectState = {
+    pathname: "/settings/tax-rates",
+    companyLoading: false,
+    isFirmContext: false,
+    switchingClient: false,
+    companiesFetching: false,
+    hasNoCompanies: true,
+    company: undefined,
+    canRunOnboarding: true,
+  };
+  it("stays on every path the tax rates route matches", () => {
+    for (const pathname of ["/settings/tax-rates", "/settings/tax-rates/", "/Settings/Tax-Rates"]) {
+      expect(onboardingRedirectTarget({ ...noCompany, pathname }), pathname).toBeNull();
+    }
+  });
+  it("still sends a user with no company to the wizard from any other path", () => {
+    for (const pathname of [
+      "/dashboard",
+      "/settings",
+      "/settings/company",
+      "/settings/tax-rates-archive",
+      "/settings/tax-rates/new",
+      "/settings/tax-rates//",
+      "/x/settings/tax-rates",
+    ]) {
+      expect(onboardingRedirectTarget({ ...noCompany, pathname }), pathname).toBe("/onboarding");
+    }
+  });
+  it("does not exempt a company whose owner has not finished onboarding", () => {
+    expect(
+      onboardingRedirectTarget({
+        ...noCompany,
+        hasNoCompanies: false,
+        company: { onboardingCompleted: false },
+      })
+    ).toBe("/onboarding");
+  });
+});

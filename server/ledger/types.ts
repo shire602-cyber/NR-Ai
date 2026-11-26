@@ -99,6 +99,8 @@ export interface PostJournalInput {
   allowSameAccount?: boolean;
   /** Allow a posting date after today (default false -> 422 FUTURE_DATE). */
   allowFutureDate?: boolean;
+  /** Posted invoice journals may clear FX residuals with no base amount. Server-only. */
+  allowForeignOnlyLines?: boolean;
   /**
    * LEGACY ADAPTER ONLY. "halfUp" rounds each amount half-up to 2dp (what the
    * numeric(15,2) column did implicitly) before the exact balance check. New

@@ -68,6 +68,7 @@
     "e2e:auth-portal": "node tests/e2e/auth-portal-flow.mjs",
     "e2e:firm-tools": "node tests/e2e/firm-tools-flow.mjs",
     "e2e:flows": "node tests/e2e/core-flows.mjs",
+    "e2e:dialog-retry": "node tests/e2e/dialog-chunk-retry.mjs",
     "check:no-zatca-bundle": "node scripts/qa/check-no-zatca-bundle.mjs"
   },
   "dependencies": {

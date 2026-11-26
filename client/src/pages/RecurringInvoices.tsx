@@ -11,7 +11,7 @@ import {
 import { EditorShell } from "@/components/ui/editor-shell";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { useEditorRoute } from "@/hooks/useEditorRoute";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -47,6 +47,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/badge";
+import { STATUS_NAMESPACES, statusBadgeText } from "@/components/ui/status-meta";
 import { DataTableCard } from "@/components/ui/data-table";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
@@ -67,10 +68,11 @@ import { isolateLtrText } from "@/lib/format-bidi";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, CalendarIcon, Trash2, Edit, Pause, Play, CalendarDays } from "lucide-react";
+import { Plus, CalendarIcon, Trash2, Edit, Pause, Play, CalendarDays, Search } from "lucide-react";
 import type { RecurringInvoice } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { parseCalendarDate } from "@/lib/format-date";
+import { matchesRecurringSearch } from "@/lib/recurring-search";
 
 const lineItemSchema = z.object({
   description: z.string().min(1, "forms.errors.descriptionRequired"),
@@ -101,19 +103,7 @@ const recurringInvoiceSchema = z.object({
 
 type RecurringInvoiceFormData = z.infer<typeof recurringInvoiceSchema>;
 
-const frequencyLabels: Record<string, string> = {
-  weekly: "Weekly",
-  monthly: "Monthly",
-  quarterly: "Quarterly",
-  yearly: "Yearly",
-};
-
-const frequencyLabelsAr: Record<string, string> = {
-  weekly: "اسبوعي",
-  monthly: "شهري",
-  quarterly: "ربع سنوي",
-  yearly: "سنوي",
-};
+const FREQUENCIES = ["weekly", "monthly", "quarterly", "yearly"] as const;
 
 /** The line payload: an explicit supply type wins; otherwise 5% is standard, 0% zero-rated. */
 function linePayload(l: RecurringInvoiceFormData["lines"][number]) {
@@ -144,6 +134,8 @@ function seededHeader(data: RecurringInvoiceFormData) {
 
 export default function RecurringInvoices() {
   const { t, locale } = useTranslation();
+  // Same namespaces StatusBadge loads, so the search label is the exact badge text.
+  const { t: badgeT } = useTranslation(STATUS_NAMESPACES);
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const { routed, editor, toNew, toEdit, toList } = useEditorRoute("/recurring-invoices");
@@ -152,6 +144,8 @@ export default function RecurringInvoices() {
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   /** WQ1: the invoice number this new schedule was made from (shown in the header). */
   const [seededFrom, setSeededFrom] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { data: recurringInvoices, isLoading } = useQuery<RecurringInvoice[]>({
     queryKey: ["/api/companies", selectedCompanyId, "recurring-invoices"],
@@ -458,9 +452,19 @@ export default function RecurringInvoices() {
   };
 
   const getFreqLabel = (freq: string) => {
-    if (locale === "ar") return frequencyLabelsAr[freq] || freq;
-    return frequencyLabels[freq] || freq;
+    const key = `invoices.recurring.freq.${freq}`;
+    return (FREQUENCIES as readonly string[]).includes(freq) ? t[key] : freq;
   };
+  const getStatusLabel = (active: boolean) => statusBadgeText(active ? "active" : "paused", badgeT);
+  const allItems = recurringInvoices ?? [];
+  const visibleItems = allItems.filter((item) =>
+    matchesRecurringSearch(item, searchTerm, {
+      frequency: getFreqLabel(item.frequency),
+      status: getStatusLabel(item.isActive),
+    })
+  );
+  const hasSearch = searchTerm.trim().length > 0;
+  const hasNoMatches = !isLoading && hasSearch && allItems.length > 0 && visibleItems.length === 0;
 
   if (!selectedCompanyId) {
     return (
@@ -481,7 +485,7 @@ export default function RecurringInvoices() {
       testId="dialog-recurring-form"
       backHref="/recurring-invoices"
       backLabel={t["invoices.editor.backRecurring"]}
-      eyebrow="Sales"
+      eyebrow={t["pages.contactsEyebrow"]}
       title={editingItem ? t["forms.recurring.editTitle"] : t["forms.recurring.newTitle"]}
       description={
         seededFrom && !editingItem
@@ -874,37 +878,65 @@ export default function RecurringInvoices() {
         }
       />
 
+      <div role="status" aria-atomic="true" className="sr-only">
+        {hasNoMatches ? t["invoices.recurring.noMatchTitle"] : ""}
+      </div>
+
       <DataTableCard
-        status={
-          isLoading
-            ? "loading"
-            : !recurringInvoices || recurringInvoices.length === 0
-              ? "empty"
-              : "ready"
+        status={isLoading ? "loading" : visibleItems.length === 0 ? "empty" : "ready"}
+        toolbar={
+          allItems.length > 0 || hasSearch ? (
+            <div className="flex w-full max-w-md items-center gap-2 rounded-md border border-input bg-background px-3 focus-within:ring-2 focus-within:ring-ring">
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <Input
+                ref={searchInputRef}
+                type="search"
+                dir="auto"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder={t["invoices.recurring.searchPlaceholder"]}
+                aria-label={t["invoices.recurring.searchLabel"]}
+                className="min-w-0 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                data-testid="input-search-recurring"
+              />
+            </div>
+          ) : undefined
         }
         columnLabels={[t.customerName, t.status]}
         testId="recurring-invoices-table"
-        empty={{
-          icon: CalendarDays,
-          title: locale === "ar" ? "لا توجد فواتير متكررة بعد" : "No recurring invoices yet",
-          description:
-            locale === "ar"
-              ? "انشئ قالب فاتورة متكررة للبدء"
-              : "Create a recurring invoice template to get started",
-          action: {
-            label: locale === "ar" ? "فاتورة متكررة جديدة" : "New recurring invoice",
-            onClick: openNewRecurring,
-          },
-        }}
+        empty={
+          hasNoMatches
+            ? {
+                icon: Search,
+                title: t["invoices.recurring.noMatchTitle"],
+                description: t["invoices.recurring.noMatchBody"],
+                action: {
+                  label: t["invoices.recurring.clearSearch"],
+                  onClick: () => {
+                    setSearchTerm("");
+                    searchInputRef.current?.focus();
+                  },
+                },
+              }
+            : {
+                icon: CalendarDays,
+                title: t["invoices.recurring.emptyTitle"],
+                description: t["invoices.recurring.emptyBody"],
+                action: {
+                  label: t["invoices.recurring.newAction"],
+                  onClick: openNewRecurring,
+                },
+              }
+        }
       >
         <Table className="row-cards">
           <TableHeader>
             <TableRow>
               <TableHead className="w-full">{t.customerName || "Customer"}</TableHead>
-              <TableHead>{locale === "ar" ? "التكرار" : "Frequency"}</TableHead>
+              <TableHead>{t["invoices.recurring.colFrequency"]}</TableHead>
               <TableHead>{t["invoices.recurringNextRunDate"]}</TableHead>
               <TableHead data-numeric="">{t["screens.perRun"]}</TableHead>
-              <TableHead data-numeric="">{locale === "ar" ? "تم التوليد" : "Generated"}</TableHead>
+              <TableHead data-numeric="">{t["invoices.recurring.colGenerated"]}</TableHead>
               <TableHead>{t.status || "Status"}</TableHead>
               <TableHead>
                 <span className="sr-only">{t.actions || "Actions"}</span>
@@ -912,7 +944,7 @@ export default function RecurringInvoices() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(recurringInvoices ?? []).map((item) => (
+            {visibleItems.map((item) => (
               <TableRow key={item.id}>
                 <TableCell data-truncate="" data-cell="title" dir="auto" className="font-medium">
                   {item.customerName}
@@ -944,12 +976,12 @@ export default function RecurringInvoices() {
                           {item.isActive ? (
                             <>
                               <Pause aria-hidden />
-                              {locale === "ar" ? "ايقاف مؤقت" : "Pause"}
+                              {t["invoices.recurring.pause"]}
                             </>
                           ) : (
                             <>
                               <Play aria-hidden />
-                              {locale === "ar" ? "استئناف" : "Resume"}
+                              {t["invoices.recurring.resume"]}
                             </>
                           )}
                         </DropdownMenuItem>

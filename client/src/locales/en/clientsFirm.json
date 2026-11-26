@@ -13,6 +13,7 @@
   "customerContacts.thisLinkIsValidFor": "This link is valid for 1 year. The client can view invoices and download PDFs without needing to log in.",
   "customerContacts.invoicesWillBeKeptBut": "Invoices will be kept, but their customer link will be cleared. You may need to relink them after re-importing your client list.",
   "customerContacts.clearAllConfirmLabel": "Type {phrase} to confirm.",
+  "customerContacts.clearAllBodyUnverified": "This will permanently delete all contacts for this company. This action cannot be undone.",
   "customerContacts.contactCreatedSuccessfully": "Contact created successfully",
   "customerContacts.contactUpdatedSuccessfully": "Contact updated successfully",
   "customerContacts.contactDeletedSuccessfully": "Contact deleted successfully",
