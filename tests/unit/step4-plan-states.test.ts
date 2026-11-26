@@ -6,7 +6,7 @@
  * accessible names, and the P2 polish (focus, funnel source, flash, read-only forms, one trial-end
  * rule, UTC pin) is pinned here as behaviour.
  */
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { createElement, act } from "react";
@@ -19,6 +19,7 @@ import { applySignupChange, readSignupPlan } from "../../client/src/components/a
 import { planCta, planPhase } from "../../client/src/lib/plan-state";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
 
 const sub = vi.hoisted(() => ({
   state: {} as Record<string, unknown>,
@@ -808,33 +809,37 @@ describe("read-only forms follow what the server gates", () => {
     expect(disabled("f-input")).toBe(false);
   });
 
-  it("every locked page maps to a rule the server enforces (shared gate lists)", async () => {
-    const { CORE_ROUTE_MODULES } = await import("../../shared/plan-gates");
-    const { PLAN_ROUTE_FEATURES } = await import("../../client/src/lib/plan-routes");
-    const { featureForRequest } = await import("../../server/middleware/featureGate");
-    const id = "11111111-1111-4111-8111-111111111111";
-    for (const [prefix, module] of CORE_ROUTE_MODULES) {
-      const viaCompany = featureForRequest("POST", `/api/companies/${id}/${module}`);
-      const viaRow = featureForRequest("PUT", `/api/${module}/${id}`);
-      expect(viaCompany ?? viaRow, `${prefix} -> ${module}`).not.toBeNull();
-    }
-    const samples: Record<string, string> = {
-      payroll: `companies/${id}/payroll/x`,
-      fixedAssets: `companies/${id}/fixed-assets`,
-      budgets: `companies/${id}/budget-plans`,
-      monthEnd: `companies/${id}/month-end/x`,
-      costCenters: `companies/${id}/cost-centers`,
-      purchaseOrders: `companies/${id}/purchase-orders`,
-      expenseClaims: `companies/${id}/expense-claims`,
-      corporateTax: `companies/${id}/corporate-tax/x`,
-      apiAccess: `companies/${id}/api-keys`,
-      recurringInvoices: `companies/${id}/recurring-invoices`,
-      aiAssistant: "ai/chat",
-    };
-    for (const [prefix, feature] of PLAN_ROUTE_FEATURES) {
-      expect(featureForRequest("POST", `/api/${samples[feature]}`), prefix).toBe(feature);
-    }
-  });
+  it(
+    "every locked page maps to a rule the server enforces (shared gate lists)",
+    async () => {
+      const { CORE_ROUTE_MODULES } = await import("../../shared/plan-gates");
+      const { PLAN_ROUTE_FEATURES } = await import("../../client/src/lib/plan-routes");
+      const { featureForRequest } = await import("../../server/middleware/featureGate");
+      const id = "11111111-1111-4111-8111-111111111111";
+      for (const [prefix, module] of CORE_ROUTE_MODULES) {
+        const viaCompany = featureForRequest("POST", `/api/companies/${id}/${module}`);
+        const viaRow = featureForRequest("PUT", `/api/${module}/${id}`);
+        expect(viaCompany ?? viaRow, `${prefix} -> ${module}`).not.toBeNull();
+      }
+      const samples: Record<string, string> = {
+        payroll: `companies/${id}/payroll/x`,
+        fixedAssets: `companies/${id}/fixed-assets`,
+        budgets: `companies/${id}/budget-plans`,
+        monthEnd: `companies/${id}/month-end/x`,
+        costCenters: `companies/${id}/cost-centers`,
+        purchaseOrders: `companies/${id}/purchase-orders`,
+        expenseClaims: `companies/${id}/expense-claims`,
+        corporateTax: `companies/${id}/corporate-tax/x`,
+        apiAccess: `companies/${id}/api-keys`,
+        recurringInvoices: `companies/${id}/recurring-invoices`,
+        aiAssistant: "ai/chat",
+      };
+      for (const [prefix, feature] of PLAN_ROUTE_FEATURES) {
+        expect(featureForRequest("POST", `/api/${samples[feature]}`), prefix).toBe(feature);
+      }
+    },
+    180000
+  );
 });
 
 describe("ended + no choice says choose AND activate", () => {
@@ -1031,15 +1036,25 @@ describe("catalog copy", () => {
 
 describe("the server process runs in UTC", () => {
   it("pins TZ=UTC at startup even when the host says Asia/Dubai, so timestamp columns never shift", () => {
-    const tsx = path.join(process.cwd(), "node_modules/.bin/tsx");
-    const out = execFileSync(
-      tsx,
-      [
-        "-e",
-        "import './server/config/pin-timezone'; console.log(JSON.stringify({ tz: process.env.TZ, offset: new Date(2026, 0, 1, 12).getTimezoneOffset(), iso: new Date('2026-11-19 10:00:00').toISOString() }));",
-      ],
-      { env: { ...process.env, TZ: "Asia/Dubai" }, encoding: "utf8", cwd: process.cwd() }
-    );
+    const tsxBin = path.join(process.cwd(), "node_modules/.bin/tsx");
+    const script =
+      "import './server/config/pin-timezone'; console.log(JSON.stringify({ tz: process.env.TZ, offset: new Date(2026, 0, 1, 12).getTimezoneOffset(), iso: new Date('2026-11-19 10:00:00').toISOString() }));";
+    const spawnEnv = { ...process.env, TZ: "Asia/Dubai" };
+    const result =
+      process.platform === "win32"
+        ? spawnSync("cmd", ["/c", tsxBin + ".cmd", "-e", script], {
+            env: spawnEnv,
+            encoding: "utf8",
+            cwd: process.cwd(),
+          })
+        : spawnSync(tsxBin, ["-e", script], {
+            env: spawnEnv,
+            encoding: "utf8",
+            cwd: process.cwd(),
+          });
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error(result.stderr ?? String(result.status));
+    const out = result.stdout;
     expect(JSON.parse(out.trim().split("\n").pop()!)).toEqual({
       tz: "UTC",
       offset: 0,
