@@ -200,18 +200,29 @@ async function requestWithHeaders(
   const immediateOnly = isMutation && options?.queueWhenOffline === false;
   if (immediateOnly && !isOnline()) throw new ApiRequestNotSentError(offlineWriteMessage());
 
-  let headers: Record<string, string>;
-  try {
-    headers = withExtra(await buildRequestHeaders(method, data, authHeaders));
-  } catch (error) {
-    if (immediateOnly) {
-      throw new ApiRequestNotSentError(
-        isOnline() ? "Could not prepare the request." : offlineWriteMessage()
-      );
+  // The connection can drop while headers are prepared: a write is then refused, not sent; reads
+  // go to the network and surface its error. Call this synchronously just before a send, with no
+  // await in between, so nothing queued can run between the check and the dispatch.
+  const throwIfOffline = () => {
+    if (!isMutation || isOnline()) return;
+    if (immediateOnly) throw new ApiRequestNotSentError(offlineWriteMessage());
+    throw new ApiError(offlineWriteMessage(), 0);
+  };
+
+  // The catch covers preparation only, never a send.
+  const prepareHeaders = async (prepare: () => Promise<Record<string, string>>) => {
+    try {
+      return await prepare();
+    } catch (error) {
+      throwIfOffline();
+      if (immediateOnly) throw new ApiRequestNotSentError("Could not prepare the request.");
+      throw error;
     }
-    if (isMutation && !isOnline()) throw new ApiError(offlineWriteMessage(), 0);
-    throw error;
-  }
+  };
+
+  let headers = await prepareHeaders(async () =>
+    withExtra(await buildRequestHeaders(method, data, authHeaders))
+  );
 
   const fullUrl = apiUrl(url);
   const body = data !== undefined ? JSON.stringify(data) : undefined;
@@ -226,13 +237,7 @@ async function requestWithHeaders(
       signal: options?.signal,
     });
 
-  // The connection can drop while headers are prepared. A write is then refused, not sent; reads
-  // go to the network and surface its error.
-  if (isMutation && !isOnline()) {
-    if (immediateOnly) throw new ApiRequestNotSentError(offlineWriteMessage());
-    throw new ApiError(offlineWriteMessage(), 0);
-  }
-
+  throwIfOffline();
   let res = await send(headers);
 
   if (res.status === 401) {
@@ -248,7 +253,8 @@ async function requestWithHeaders(
   // recover without making the user refresh the whole app.
   if (await isCsrfInvalidResponse(res)) {
     clearCsrfToken();
-    const retryHeaders = await withCsrfHeader(method, { ...headers });
+    const retryHeaders = await prepareHeaders(() => withCsrfHeader(method, { ...headers }));
+    throwIfOffline();
     res = await send(retryHeaders);
     if (await isCsrfInvalidResponse(res)) {
       clearCsrfToken();

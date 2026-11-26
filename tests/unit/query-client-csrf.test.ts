@@ -206,6 +206,90 @@ describe("apiRequest offline write refusal", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  /** Token fetch, CSRF-rejected write, then whatever `recovery` does for the later calls. */
+  function stubCsrfRejection(recovery: () => Promise<Response>) {
+    clearCsrfToken();
+    const network = { onLine: true };
+    vi.stubGlobal("navigator", network);
+    const fetchMock = vi
+      .fn((_url: string, _init?: RequestInit) => recovery())
+      .mockImplementationOnce(async () => jsonResponse({ csrfToken: "stale-token" }))
+      .mockImplementationOnce(async () => jsonResponse({ code: "CSRF_INVALID" }, { status: 403 }));
+    vi.stubGlobal("fetch", fetchMock);
+    return { network, fetchMock };
+  }
+
+  const write = (immediateOnly: boolean) =>
+    apiRequest(
+      "POST",
+      "/api/things",
+      {},
+      undefined,
+      immediateOnly ? { queueWhenOffline: false } : undefined
+    ).catch((e: unknown) => e);
+
+  it.each([
+    ["en", "rejects", false, offlineEn],
+    ["en", "rejects", true, offlineEn],
+    ["en", "succeeds", false, offlineEn],
+    ["en", "succeeds", true, offlineEn],
+    ["ar", "rejects", false, offlineAr],
+    ["ar", "rejects", true, offlineAr],
+    ["ar", "succeeds", false, offlineAr],
+    ["ar", "succeeds", true, offlineAr],
+  ] as const)(
+    "does not replay (%s) when the connection drops and the token refetch %s, immediate-only %s",
+    async (locale, outcome, immediateOnly, catalog) => {
+      useI18n.setState({ locale });
+      const { network, fetchMock } = stubCsrfRejection(async () => {
+        network.onLine = false;
+        if (outcome === "rejects") throw new TypeError("Failed to fetch");
+        return jsonResponse({ csrfToken: "fresh-token" });
+      });
+
+      const error = await write(immediateOnly);
+
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error instanceof ApiRequestNotSentError).toBe(immediateOnly);
+      expect(error).toMatchObject({ message: catalog["offline.writeNotSent"], status: 0 });
+      // Stale token, the rejected write, the refetch: no replay.
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+        apiUrl("/api/csrf-token"),
+        apiUrl("/api/things"),
+        apiUrl("/api/csrf-token"),
+      ]);
+    }
+  );
+
+  it.each([false, true])(
+    "does not replay when the token refetch fails online (immediate-only %s)",
+    async (immediateOnly) => {
+      const { fetchMock } = stubCsrfRejection(async () => jsonResponse({}, { status: 500 }));
+
+      const error = await write(immediateOnly);
+
+      expect(error instanceof ApiRequestNotSentError).toBe(immediateOnly);
+      expect(error).toMatchObject({
+        message: immediateOnly
+          ? "Could not prepare the request."
+          : "Failed to fetch CSRF token: 500",
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    }
+  );
+
+  it("does not report a dispatched replay as not sent", async () => {
+    const failure = new TypeError("Failed to fetch");
+    const { network, fetchMock } = stubCsrfRejection(async () => {
+      network.onLine = false;
+      throw failure;
+    });
+    fetchMock.mockImplementationOnce(async () => jsonResponse({ csrfToken: "fresh-token" }));
+
+    await expect(write(true)).resolves.toBe(failure);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it("has distinct English and Arabic copy", () => {
     expect(offlineEn["offline.writeNotSent"]).toContain("was not sent");
     expect(offlineAr["offline.writeNotSent"]).toMatch(/[؀-ۿ]/);
