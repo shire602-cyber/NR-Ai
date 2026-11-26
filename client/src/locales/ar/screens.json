@@ -70,6 +70,8 @@
   "screens.searchVendorOrBill": "ابحث عن مورد أو رقم فاتورة",
   "screens.billsEmptyBody": "أضف أول فاتورة مورد لبدء تتبع المبالغ المستحقة عليك.",
   "screens.billsNoMatchBody": "لا توجد فواتير تطابق عوامل التصفية هذه.",
+  "screens.billsSearchNoMatchTitle": "لا توجد فواتير مطابقة",
+  "screens.billsSearchNoMatchBody": "لا يوجد مورد أو رقم فاتورة يطابق بحثك. جرّب كلمة مختلفة أو امسح البحث.",
   "screens.billNumber": "رقم الفاتورة",
   "screens.paid": "المدفوع",
   "screens.confirmDeleteBill": "هل تريد حذف هذه الفاتورة؟ لا يمكن التراجع عن ذلك.",

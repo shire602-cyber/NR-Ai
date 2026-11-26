@@ -318,7 +318,9 @@ describe("W3-A sales cycle", () => {
       ],
     });
     // The invoice has no zero-rated revenue to credit.
-    expect(cn.status).toBe(422);
+    expect(cn.status, cn.text).toBe(409);
+    expect(cn.body.code).toBe("CREDIT_EXCEEDS_REMAINING");
+    expect(cn.body.details.supplyType).toBe("zero_rated");
     const cn2 = await t.as.post(`/api/companies/${t.company.id}/invoices/${inv.id}/credit-note`, {
       lines: [{ description: "Refund part", quantity: 1, unitPrice: 95.24, vatRate: 5 }],
     });
