@@ -116,13 +116,13 @@ function htmlCopy(file: string, html: string): Copy[] {
 }
 
 // Public code can reach a catalog entry with a computed key, e.g.
-// t[`pageLabels.companySettings.currency.${code}`], "pageLabels.x." + code, or a const alias of
-// either. Every template/concatenation in a public file becomes a pattern (parts only known at run
+// t[`pageLabels.companySettings.currency.${code}`] or prefix + code. Local consts are resolved
+// in their lexical scope. Templates/concatenations in public files become patterns (parts only known at run
 // time match anything) and each catalog location it could match counts as publicly used. Only
 // expressions that start with a static dotted prefix count; conditionals and imports are not followed.
 type KeyPart = string | null; // null = a value only known at run time
 
-function keyParts(node: ts.Node): KeyPart[] {
+function keyParts(node: ts.Node, checker: ts.TypeChecker, seen = new Set<ts.Node>()): KeyPart[] {
   if (
     ts.isParenthesizedExpression(node) ||
     ts.isAsExpression(node) ||
@@ -130,16 +130,36 @@ function keyParts(node: ts.Node): KeyPart[] {
     ts.isSatisfiesExpression(node) ||
     ts.isTypeAssertionExpression(node)
   ) {
-    return keyParts(node.expression);
+    return keyParts(node.expression, checker, seen);
   }
   if (ts.isStringLiteralLike(node)) return [node.text];
+  if (ts.isIdentifier(node)) {
+    const declaration = checker.getSymbolAtLocation(node)?.valueDeclaration;
+    if (
+      declaration &&
+      ts.isVariableDeclaration(declaration) &&
+      declaration.initializer &&
+      declaration.parent.flags & ts.NodeFlags.Const &&
+      !seen.has(declaration)
+    ) {
+      seen.add(declaration);
+      const parts = keyParts(declaration.initializer, checker, seen);
+      seen.delete(declaration);
+      return parts;
+    }
+  }
   if (ts.isTemplateExpression(node)) {
     return [
       node.head.text,
-      ...node.templateSpans.flatMap((span) => [...keyParts(span.expression), span.literal.text]),
+      ...node.templateSpans.flatMap((span) => [
+        ...keyParts(span.expression, checker, seen),
+        span.literal.text,
+      ]),
     ];
   }
-  if (isPlus(node)) return [...keyParts(node.left), ...keyParts(node.right)];
+  if (isPlus(node)) {
+    return [...keyParts(node.left, checker, seen), ...keyParts(node.right, checker, seen)];
+  }
   return [null];
 }
 
@@ -148,14 +168,19 @@ const isPlus = (node: ts.Node): node is ts.BinaryExpression =>
 
 function computedKeyPatterns(file: string, text: string): RegExp[] {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const options: ts.CompilerOptions = { noLib: true, noResolve: true, types: [] };
+  const host = ts.createCompilerHost(options);
+  host.getSourceFile = (name) => (name === file ? source : undefined);
+  const checker = ts.createProgram([file], options, host).getTypeChecker();
   const bodies = new Set<string>();
 
   function visit(node: ts.Node) {
     // Outermost expression only: a nested part would give a looser prefix pattern.
     if ((ts.isTemplateExpression(node) || isPlus(node)) && !isPlus(node.parent)) {
-      const parts = keyParts(node);
-      const prefix = parts[0];
-      if (typeof prefix === "string" && prefix.length >= 6 && prefix.includes(".")) {
+      const parts = keyParts(node, checker);
+      const wildcard = parts.indexOf(null);
+      const prefix = (wildcard < 0 ? parts : parts.slice(0, wildcard)).join("");
+      if (prefix.length >= 6 && prefix.includes(".")) {
         bodies.add(
           parts
             .map((part) => (part === null ? ".*" : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
@@ -226,11 +251,16 @@ function saudiViolation(value: string, { public: isPublic, file, location }: Cop
   return (isPublic || (countryAndCurrencyOptions.has(file) && !isOption)) && saudi.test(value);
 }
 
-// Bank statement import is CSV only. A sentence or clause about the bank statement must not name
-// another format. Sentences are split so unrelated text next to it (the Document Vault line in
-// marketing.migrationFilesBody mentions Excel) is not mistaken for a bank claim.
+// Bank statement import is CSV only. Include adjacent clauses that continue the format claim,
+// while keeping unrelated subjects such as Document Vault report packs out of the scan.
 const competingBankFormat =
   /\b(?:excel|xlsx?|ofx|qif|mt940|camt\.?\d*|pdf)\b|\.xlsx?\b|[إا]كس[يـ]?ل/iu;
+const formatSubject = /^(?:also[,،]?\s+|و|كما\s+)?(?:ملفات |صيغة )?\.?$/iu;
+const formatSupport =
+  /^\s*(?:(?:files?|formats?)\s+)?(?:is |are |can be )?(?:also )?(?:accepted|supported|allowed|imported|uploaded)(?: too| as well| here| for this import)?$|^\s*(?:[اأ]يضا\s+)?(?:مقبول[ة]?|مدعوم[ة]?|متاح[ة]?)(?:\s+[اأ]يضا)?$/iu;
+const supportAction =
+  /^(?:(?:we |you |it )?(?:can )?(?:also )?(?:accept|support|allow|upload|import)\w*\s+(?:also\s+)?|(?:و|كما\s+)?(?:نقبل|ندعم|يقبل|يدعم|يمكنك (?:رفع|استيراد)|تقبل|تدعم|يتم قبول)\s+(?:[اأ]يضا\s+)?(?:ملفات |صيغة )?)$/iu;
+const formatObject = /^(?: (?:files?|formats?))?(?: too| as well| [اأ]يضا)?$/iu;
 const csvFormat = /\bcsv\b/i;
 const bankMention = /\bbank|بنك|مصرف/iu;
 const statementMention = /\bstatements?\b|كشف/iu;
@@ -245,23 +275,36 @@ function clauses(value: string): string[] {
 }
 
 /** Generic public scan: a bank import clause may not name a competing format. */
-function competingBankFormats(value: string): string[] {
-  return clauses(value).filter(
-    (clause) =>
-      bankMention.test(clause) && importAction.test(clause) && competingBankFormat.test(clause)
-  );
+function competingBankFormats(
+  value: string,
+  isBankImport = (clause: string) =>
+    (bankMention.test(clause) || (statementMention.test(clause) && csvFormat.test(clause))) &&
+    importAction.test(clause)
+): string[] {
+  let inBankImport = false;
+  return clauses(value).filter((clause) => {
+    const format = competingBankFormat.exec(clause);
+    const before = format ? clause.slice(0, format.index) : "";
+    const after = format ? clause.slice(format.index + format[0].length) : "";
+    const continuesFormatClaim =
+      (supportAction.test(before) && formatObject.test(after)) ||
+      (formatSubject.test(before) && formatSupport.test(after));
+    inBankImport =
+      isBankImport(clause) || (inBankImport && format !== null && continuesFormatClaim);
+    return inBankImport && format !== null;
+  });
 }
 
 /** Known bank-import copy: must say CSV about the bank statement and nothing else. */
 function bankImportProblems(value: string): string[] {
-  const about = clauses(value).filter(
-    (clause) => bankMention.test(clause) || statementMention.test(clause)
-  );
+  const aboutBankStatement = (clause: string) =>
+    bankMention.test(clause) || statementMention.test(clause);
+  const about = clauses(value).filter(aboutBankStatement);
   const problems: string[] = [];
   if (!about.length) problems.push("no clause about the bank statement");
   else if (!about.some((clause) => csvFormat.test(clause))) problems.push("bank clause lacks CSV");
-  for (const clause of about) {
-    if (competingBankFormat.test(clause)) problems.push(`competing format: ${clause}`);
+  for (const clause of competingBankFormats(value, aboutBankStatement)) {
+    problems.push(`competing format: ${clause}`);
   }
   return problems;
 }
@@ -373,6 +416,11 @@ describe("launch copy guard regressions", () => {
       ["template.tsx", "const x = t[`pageLabels.companySettings.${kind}.${code}`];"],
       ["concat.tsx", 'const x = t[("pageLabels.companySettings.currency." + code) as K];'],
       ["alias.tsx", 'const key = "pageLabels.companySettings." + "currency." + code; t[key];'],
+      ["prefix.tsx", 'const prefix = "pageLabels.companySettings.currency."; t[prefix + code];'],
+      [
+        "template-prefix.tsx",
+        'const prefix = "pageLabels.companySettings."; const base = prefix; t[`${base}currency.${code}`];',
+      ],
       ["static.tsx", 't["pageLabels.companySettings." + "currency.SAR"];'],
     ];
     for (const [file, text] of sources) {
@@ -386,10 +434,17 @@ describe("launch copy guard regressions", () => {
       expect(flagged, file).toContain(
         "client/src/locales/en/pageLabels.json:pageLabels.companySettings.currency.SAR"
       );
+      expect(copy[1].public, file).toBe(file === "template.tsx");
       expect(copy[2].public, file).toBe(false);
     }
     // Wholly dynamic keys carry no information, so they must not mark everything public.
     expect(computedKeyPatterns("f.tsx", "const x = t[`${a}${b}`]; f(a + b);")).toEqual([]);
+    expect(
+      computedKeyPatterns(
+        "shadowed.tsx",
+        'const prefix = "pageLabels.companySettings.currency."; function label(prefix: string) { return t[prefix + code]; }'
+      )
+    ).toEqual([]);
     // Private use of the allow-listed entry stays allowed.
     const privateCopy = [entry("pageLabels.companySettings.currency.SAR")];
     markPublic(
@@ -408,6 +463,7 @@ describe("launch copy guard regressions", () => {
       // Excel appears in a different sentence about the Document Vault.
       "Bank reconciliation supports CSV formats from Emirates NBD. Report packs from Excel go in Document Vault.",
       "وتدعم التسوية البنكية صيغ CSV من بنك الإمارات. أما حزم التقارير من Excel فتحفظ في خزنة المستندات.",
+      "Upload bank statements as CSV. Excel is also accepted in Document Vault.",
     ];
     for (const value of good) {
       expect(bankImportProblems(value), value).toEqual([]);
@@ -420,6 +476,12 @@ describe("launch copy guard regressions", () => {
       "Reconcile a bank statement PDF.",
       "ارفع كشف حساب بنكي بصيغة Excel",
       "ارفع كشف حساب بنكي بصيغة CSV أو إكسل",
+      "Upload bank statements as CSV. Excel is also accepted.",
+      "Upload bank statements as CSV. Excel is accepted for this import.",
+      "Upload bank statements as CSV. We also accept Excel files.",
+      "CSV statement import. Excel files are supported too.",
+      "ارفع كشف حساب بنكي بصيغة CSV. ملفات إكسل مقبولة أيضًا.",
+      "ارفع كشف حساب بنكي بصيغة CSV. كما نقبل ملفات Excel.",
     ];
     for (const value of bad) {
       expect(bankImportProblems(value), value).not.toEqual([]);
@@ -449,9 +511,19 @@ describe("launch copy guard regressions", () => {
       ["Start a 14-day Enterprise trial. A card is required.", "en"],
       ["Start your Enterprise trial without a card.", "en"],
       ["Start a 14-day Enterprise trial. Pay by card. No.", "en"],
+      ["Start using Enterprise for AED 229 every 14 days. No card needed.", "en"],
+      [
+        "Start using Enterprise for AED 229 every 14 days and get free support. No card needed.",
+        "en",
+      ],
+      ["Start a 14-day Enterprise trial. No card needed. A card is required to activate it.", "en"],
+      ["Start a 14-day Enterprise trial without a card, but you must enter card details.", "en"],
       ["لم تعد تجربة باقة المؤسسات لمدة 14 يومًا متاحة دون بطاقة.", "ar"],
       ["تجربة مجانية لباقة المؤسسات لمدة 14 يومًا دون بطاقة.", "ar"],
       ["ابدأ تجربة لمدة 14 يومًا دون بطاقة.", "ar"],
+      ["ابدأ استخدام باقة المؤسسات مقابل 229 درهمًا كل 14 يومًا دون بطاقة.", "ar"],
+      ["ابدأ تجربة باقة المؤسسات لمدة 14 يومًا دون بطاقة. يلزم إدخال بطاقة لتفعيلها.", "ar"],
+      ["ابدأ تجربة باقة المؤسسات لمدة 14 يومًا دون بطاقة. بطاقة الدفع مطلوبة للتفعيل.", "ar"],
     ];
     for (const [value, locale] of rejected) {
       expect(trialViolations(value, locale), value).not.toEqual([]);
@@ -477,9 +549,13 @@ const wording = {
     plan: /\benterprise\b/i,
     days: /\b14[-\s]+days?\b/i,
     card: /\b(?:no (?:credit |payment )?card|without (?:(?:needing|entering|using|providing) )?(?:an? )?(?:credit |payment )?card(?: details)?)\b/i,
-    cardOnly: /^no (?:credit |payment )?card(?: (?:needed|required))?$/i,
+    cardOnly: /^no (?:credit |payment )?card(?: (?:is )?(?:needed|required))?$/i,
     bare: /^no$/i,
     offer: /\b(?:start(?:s|ed)?|get|gets|try|begin|yes)\b/i,
+    trial: /\btrial\b|\b(?:free|at no cost) for 14 days\b|\b14 days (?:free|at no cost)\b/i,
+    comparisonOffer: /^yes,?\s+14 days of enterprise(?:,|$)/i,
+    cardRequired:
+      /\b(?:cards?(?: details)? (?:is |are )?(?:required|needed|mandatory)|(?:require[sd]?|needing|needs?|must (?:have|enter|add|provide|use)|pay (?:by|with)) (?:an? )?(?:(?:credit|debit|payment) )?cards?)\b/i,
     negation:
       /\b(?:no longer|not (?:be )?(?:available|offered|included|possible)|unavailable|isn'?t|aren'?t|cannot|can'?t|ended|expired|discontinued|withdrawn)\b/i,
   },
@@ -495,15 +571,18 @@ const wording = {
     cardOnly: /^(?:دون|بدون) (?:ال)?بطاقة$/u,
     bare: /^لا$/u,
     offer: /(?<!\p{L})(?:ابدا|يبدا|جرب|نعم|احصل)/u,
+    trial: /تجربة|(?:مجانا|بلا تكلفة) لمدة (?:14|١٤) يوما|(?:14|١٤) يوما (?:مجانا|بلا تكلفة)/u,
+    comparisonOffer: /^نعم[،,]?\s+(?:14|١٤) يوما من باقة المؤسسات(?:[،,]|\s+دون |$)/u,
+    cardRequired:
+      /(?:يلزم|يجب|يتطلب|تتطلب|مطلوب)\s+(?:(?:عليك|توفر|وجود|ادخال|اضافة|تقديم|استخدام|بيانات)\s+)*(?:ال)?بطاقة|(?:ال)?بطاقة(?: (?:الدفع|ائتمان|الائتمان))? (?:مطلوبة|الزامية|ضرورية)|ادفع (?:ببطاقة|بالبطاقة)/u,
     negation:
       /(?<!\p{L})(?:لم (?:يعد|تعد)|لا (?:يتوفر|تتوفر|يمكن|تتاح|يتاح)|غير (?:متاح|متوفر)|لن |ليس|انتهت|منتهي|ملغ|متوقف)/u,
   },
 };
 
 /**
- * The trial must be offered, not withdrawn: one sentence has an affirmative verb, Enterprise and
- * 14 days, and the no-card wording is in that sentence or is the sentence right after it ("No
- * card."). A standalone "No." (FAQ answer) is ignored; negated availability is a violation.
+ * Require an affirmative trial, free period, or explicit comparison answer. Keep the no-card
+ * wording with the offer and check every clause for contradictory requirements.
  */
 function trialViolations(
   value: string | null | undefined,
@@ -514,7 +593,11 @@ function trialViolations(
     (sentence) => !rules.bare.test(sentence)
   );
   const at = sentences.findIndex(
-    (s) => rules.offer.test(s) && rules.plan.test(s) && rules.days.test(s)
+    (s) =>
+      rules.offer.test(s) &&
+      rules.plan.test(s) &&
+      rules.days.test(s) &&
+      (rules.trial.test(s) || rules.comparisonOffer.test(s))
   );
   if (at < 0) return ["no sentence offers a 14-day Enterprise trial"];
   const problems: string[] = [];
@@ -522,6 +605,10 @@ function trialViolations(
     problems.push("no-card wording is not part of the offer");
   }
   if (sentences.some((s) => rules.negation.test(s))) problems.push("negates the offer");
+  const noCard = new RegExp(rules.card.source, `${rules.card.flags}g`);
+  if (sentences.some((s) => rules.cardRequired.test(s.replace(noCard, "")))) {
+    problems.push("requires a card");
+  }
   return problems;
 }
 
