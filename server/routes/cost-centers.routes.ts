@@ -393,33 +393,58 @@ export function registerCostCenterRoutes(app: Express) {
     requireFeature("costCenters"),
     asyncHandler(async (req: Request, res: Response) => {
       const cc = await loadCenter(req);
-      const [refCount] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(journalLines)
-        .where(eq(journalLines.costCenterId, cc.id));
-      if (refCount && Number(refCount.count) > 0) {
-        return res.status(400).json({
-          message: "Cannot delete cost center: journal lines still reference it",
-          code: "COST_CENTER_IN_USE",
-          journalLineCount: Number(refCount.count),
-        });
+      const client = await pool.connect();
+      let refused: Record<string, unknown> | null = null;
+      try {
+        await client.query("BEGIN");
+        // Budget writers lock this row before referencing it, so the checks below stay true.
+        const locked = await client.query(
+          `SELECT 1 FROM cost_centers WHERE id = $1 AND company_id = $2 FOR UPDATE`,
+          [cc.id, cc.companyId]
+        );
+        if (!locked.rows[0]) {
+          throw new DomainError("COST_CENTER_NOT_FOUND", 404, undefined, "Cost center not found");
+        }
+        const journal = await client.query(
+          `SELECT COUNT(*)::int AS n FROM journal_lines WHERE cost_center_id = $1`,
+          [cc.id]
+        );
+        if (Number(journal.rows[0].n) > 0) {
+          refused = {
+            message: "Cannot delete cost center: journal lines still reference it",
+            code: "COST_CENTER_IN_USE",
+            journalLineCount: Number(journal.rows[0].n),
+          };
+        } else {
+          const other = await client.query(
+            `SELECT (SELECT COUNT(*) FROM cost_centers WHERE parent_id = $1)
+                  + (SELECT COUNT(*) FROM bill_line_items WHERE cost_center_id = $1)
+                  + (SELECT COUNT(*) FROM fixed_assets WHERE cost_center_id = $1)
+                  + (SELECT COUNT(*) FROM budget_plans WHERE cost_center_id = $1)
+                  + (SELECT COUNT(*) FROM budget_lines WHERE cost_center_id = $1) AS n`,
+            [cc.id]
+          );
+          if (Number(other.rows[0]?.n ?? 0) > 0) {
+            refused = {
+              message:
+                "Cannot delete cost center: child cost centres, documents or assets still reference it",
+              code: "COST_CENTER_IN_USE",
+            };
+          } else {
+            await client.query(`DELETE FROM cost_centers WHERE id = $1 AND company_id = $2`, [
+              cc.id,
+              cc.companyId,
+            ]);
+          }
+        }
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw err;
+      } finally {
+        client.release();
       }
-      const other = await pool.query(
-        `SELECT (SELECT COUNT(*) FROM cost_centers WHERE parent_id = $1)
-              + (SELECT COUNT(*) FROM bill_line_items WHERE cost_center_id = $1)
-              + (SELECT COUNT(*) FROM fixed_assets WHERE cost_center_id = $1)
-              + (SELECT COUNT(*) FROM budget_plans WHERE cost_center_id = $1)
-              + (SELECT COUNT(*) FROM budget_lines WHERE cost_center_id = $1) AS n`,
-        [cc.id]
-      );
-      if (Number(other.rows[0]?.n ?? 0) > 0) {
-        return res.status(400).json({
-          message:
-            "Cannot delete cost center: child cost centres, documents or assets still reference it",
-          code: "COST_CENTER_IN_USE",
-        });
-      }
-      await storage.deleteCostCenter(cc.id);
+      if (refused) return res.status(400).json(refused);
       res.json({ message: "Cost center deleted" });
     })
   );
@@ -505,12 +530,10 @@ export function registerCostCenterRoutes(app: Express) {
           .status(404)
           .json({ message: "Cost center not found", code: "COST_CENTER_NOT_FOUND" });
       if (costCenter.companyId !== companyId) {
-        return res
-          .status(403)
-          .json({
-            message: "Cost center does not belong to this company",
-            code: "COST_CENTER_NOT_FOUND",
-          });
+        return res.status(403).json({
+          message: "Cost center does not belong to this company",
+          code: "COST_CENTER_NOT_FOUND",
+        });
       }
       // Optional period (UAE calendar days), like the profitability summary.
       const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };

@@ -591,6 +591,18 @@ export async function createStocktake(
         VALUES (${args.companyId}, ${warehouseId}, ${args.countDate}, ${args.notes ?? null}, ${args.actorId})
         RETURNING id`
   );
+  // Take every product lock up front in id order, the order postStocktake uses, so two stocktakes
+  // listing the same products differently cannot deadlock. The loop below keeps the request order.
+  if (args.lines.length) {
+    const ids = sql.join(
+      args.lines.map((l) => sql`${l.productId}`),
+      sql`, `
+    );
+    await tx.execute(
+      sql`SELECT id FROM products WHERE company_id = ${args.companyId} AND id IN (${ids})
+           ORDER BY id FOR UPDATE`
+    );
+  }
   const seen = new Set<string>();
   for (const l of args.lines) {
     if (seen.has(l.productId)) {

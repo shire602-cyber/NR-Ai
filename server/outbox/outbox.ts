@@ -351,25 +351,33 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
         content: Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content as Uint8Array),
       })),
     });
-    const [sent] = await db
-      .update(emailOutbox)
-      .set({
-        ...refreshed,
-        status: unlessSettled(emailOutbox.status, "sent"),
-        attempts,
-        provider: transport.name,
-        providerMessageId,
-        sentAt: new Date(),
-        lockedUntil: null,
-        lastError: unlessSettled(emailOutbox.lastError, null),
-        updatedAt: new Date(),
-        ...(row.sensitive ? { html: null, textBody: null } : {}),
-      })
-      .where(eq(emailOutbox.id, row.id))
-      .returning();
+    // The message id is recorded and any webhook that beat it is applied in one transaction,
+    // under the same lock applyProviderEvent takes, so an event cannot fall between the two.
+    const sent = await db.transaction(async (tx: typeof db) => {
+      if (providerMessageId) await lockProviderMessage(tx, transport.name, providerMessageId);
+      const [updated] = await tx
+        .update(emailOutbox)
+        .set({
+          ...refreshed,
+          status: unlessSettled(emailOutbox.status, "sent"),
+          attempts,
+          provider: transport.name,
+          providerMessageId,
+          sentAt: new Date(),
+          lockedUntil: null,
+          // An earlier attempt's error survives only on a terminal failure.
+          lastError: sql`CASE WHEN ${emailOutbox.status} IN ('bounced', 'complained', 'dead') THEN ${emailOutbox.lastError} ELSE NULL END`,
+          updatedAt: new Date(),
+          ...(row.sensitive ? { html: null, textBody: null } : {}),
+        })
+        .where(eq(emailOutbox.id, row.id))
+        .returning();
+      if (!providerMessageId) return updated as EmailOutboxRow;
+      return applyUnmatchedEvents(tx, updated as EmailOutboxRow, transport.name, providerMessageId);
+    });
     await recordEvent(row.id, "sent", null, transport.name, providerMessageId);
     log.info({ outboxId: row.id, provider: transport.name }, "Email delivered to provider");
-    return toResult(sent as EmailOutboxRow);
+    return toResult(sent);
   } catch (err) {
     const message = row.sensitive
       ? "Sensitive email delivery failed"
@@ -565,9 +573,92 @@ export async function listOutboxForCompany(
 
 export type ProviderEventType = "delivered" | "bounced" | "complained" | "opened" | "failed";
 
+/** Serialises webhook matching with the sender recording the same provider message id. */
+async function lockProviderMessage(
+  tx: typeof db,
+  provider: string,
+  providerMessageId: string
+): Promise<void> {
+  const key = `email-message:${provider}:${providerMessageId}`;
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+}
+
+/** Move a row (locked by the caller's transaction) to the state one delivery event implies. */
+async function applyEventToRow(
+  tx: typeof db,
+  row: EmailOutboxRow,
+  type: ProviderEventType,
+  detail: string | null,
+  at: Date
+): Promise<EmailOutboxRow> {
+  const patch: Partial<typeof emailOutbox.$inferInsert> = { updatedAt: new Date() };
+  if (type === "delivered" && ["sent", "sending", "retrying"].includes(row.status)) {
+    patch.status = "delivered";
+    patch.deliveredAt = at;
+    patch.lastError = null;
+  } else if (type === "bounced") {
+    patch.status = "bounced";
+    patch.bouncedAt = at;
+    patch.lastError = detail ?? "Bounced";
+  } else if (type === "complained") {
+    patch.status = "complained";
+    patch.complainedAt = at;
+  } else if (type === "failed" && row.status !== "delivered") {
+    patch.status = "dead";
+    patch.deadAt = at;
+    patch.lastError = detail ?? "Delivery failed";
+  }
+  const [updated] = await tx
+    .update(emailOutbox)
+    .set(patch)
+    .where(eq(emailOutbox.id, row.id))
+    .returning();
+  return updated as EmailOutboxRow;
+}
+
+/**
+ * Apply the events that arrived before the row knew its provider message id. Claiming them (setting
+ * outbox_id) makes this happen once.
+ */
+async function applyUnmatchedEvents(
+  tx: typeof db,
+  row: EmailOutboxRow,
+  provider: string,
+  providerMessageId: string
+): Promise<EmailOutboxRow> {
+  const unmatched = await tx
+    .select()
+    .from(emailDeliveryEvents)
+    .where(
+      and(
+        isNull(emailDeliveryEvents.outboxId),
+        eq(emailDeliveryEvents.provider, provider),
+        eq(emailDeliveryEvents.providerMessageId, providerMessageId)
+      )
+    )
+    .orderBy(emailDeliveryEvents.createdAt);
+  let current = row;
+  for (const event of unmatched as Array<typeof emailDeliveryEvents.$inferSelect>) {
+    const detail = row.sensitive ? null : event.detail;
+    current = await applyEventToRow(
+      tx,
+      current,
+      event.eventType as ProviderEventType,
+      detail,
+      event.createdAt
+    );
+    await tx
+      .update(emailDeliveryEvents)
+      .set({ outboxId: row.id, detail })
+      .where(eq(emailDeliveryEvents.id, event.id));
+  }
+  return current;
+}
+
 /**
  * Apply a provider delivery event (from a verified webhook). Matches by provider message id
- * (or outbox id). Returns the updated row id, or null when nothing matched.
+ * (or outbox id). Returns the updated row id, or null when nothing matched yet: the event is then
+ * kept and applied when the sender records that message id.
  */
 export async function applyProviderEvent(evt: {
   provider: string;
@@ -576,40 +667,45 @@ export async function applyProviderEvent(evt: {
   type: ProviderEventType;
   detail?: string | null;
 }): Promise<string | null> {
-  let row: EmailOutboxRow | undefined;
-  if (evt.outboxId && /^[0-9a-f-]{36}$/i.test(evt.outboxId)) {
-    row = await getOutboxMessage(evt.outboxId);
-  }
-  if (!row && evt.providerMessageId) {
-    const [byMsg] = await db
-      .select()
-      .from(emailOutbox)
-      .where(eq(emailOutbox.providerMessageId, evt.providerMessageId));
-    row = byMsg as EmailOutboxRow | undefined;
-  }
-  if (!row) {
-    await recordEvent(null, evt.type, null, evt.provider, evt.providerMessageId);
-    return null;
-  }
-  const detail = row.sensitive ? null : evt.detail;
-  const now = new Date();
-  const patch: Partial<typeof emailOutbox.$inferInsert> = { updatedAt: now };
-  if (evt.type === "delivered" && ["sent", "sending", "retrying"].includes(row.status)) {
-    patch.status = "delivered";
-    patch.deliveredAt = now;
-  } else if (evt.type === "bounced") {
-    patch.status = "bounced";
-    patch.bouncedAt = now;
-    patch.lastError = detail ?? "Bounced";
-  } else if (evt.type === "complained") {
-    patch.status = "complained";
-    patch.complainedAt = now;
-  } else if (evt.type === "failed" && row.status !== "delivered") {
-    patch.status = "dead";
-    patch.deadAt = now;
-    patch.lastError = detail ?? "Delivery failed";
-  }
-  await db.update(emailOutbox).set(patch).where(eq(emailOutbox.id, row.id));
-  await recordEvent(row.id, evt.type, detail, evt.provider, evt.providerMessageId);
-  return row.id;
+  return db.transaction(async (tx: typeof db) => {
+    if (evt.providerMessageId) {
+      await lockProviderMessage(tx, evt.provider, evt.providerMessageId);
+    }
+    let row: EmailOutboxRow | undefined;
+    if (evt.outboxId && /^[0-9a-f-]{36}$/i.test(evt.outboxId)) {
+      const [byId] = await tx
+        .select()
+        .from(emailOutbox)
+        .where(eq(emailOutbox.id, evt.outboxId))
+        .for("update");
+      row = byId as EmailOutboxRow | undefined;
+    }
+    if (!row && evt.providerMessageId) {
+      const [byMsg] = await tx
+        .select()
+        .from(emailOutbox)
+        .where(
+          and(
+            eq(emailOutbox.provider, evt.provider),
+            eq(emailOutbox.providerMessageId, evt.providerMessageId)
+          )
+        )
+        .for("update");
+      row = byMsg as EmailOutboxRow | undefined;
+    }
+    // Raw provider text (bounce messages can quote recipients or content) is kept only once the
+    // row is known and not sensitive. An unmatched event keeps its type and time with no detail;
+    // the row then gets the generic failure text when the event is applied.
+    const detail = row && !row.sensitive ? (evt.detail ?? null) : null;
+    if (row) await applyEventToRow(tx, row, evt.type, detail, new Date());
+    // Not in recordEvent: a lost unmatched event must fail the webhook so the provider retries.
+    await tx.insert(emailDeliveryEvents).values({
+      outboxId: row?.id ?? null,
+      eventType: evt.type,
+      detail: detail ? detail.slice(0, 2000) : null,
+      provider: evt.provider,
+      providerMessageId: evt.providerMessageId ?? null,
+    });
+    return row?.id ?? null;
+  });
 }

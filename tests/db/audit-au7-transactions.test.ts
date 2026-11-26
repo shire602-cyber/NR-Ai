@@ -22,7 +22,8 @@ async function rentTemplate(t: Awaited<ReturnType<typeof h.createTenant>>, day: 
   };
 }
 
-it("AU7 preserves goods received after a completed count awaiting posting", async () => {
+/** A product holding 10 units at AED 20, counted as `countedQty`, then 5 more received. */
+async function countThenReceive(countedQty: number) {
   const t = await h.createTenant();
   const base = "/api/companies/" + t.company.id;
   const day = new Date().toISOString().slice(0, 10);
@@ -44,17 +45,74 @@ it("AU7 preserves goods received after a completed count awaiting posting", asyn
   expect((await receive(10)).status).toBe(200);
   const count = await t.as.post(base + "/stocktakes", {
     countDate: day,
-    lines: [{ productId: id, countedQty: 10 }],
+    lines: [{ productId: id, countedQty }],
   });
   expect(count.status, count.text).toBe(201);
   expect((await receive(5)).status).toBe(200);
-  const posted = await t.as.post(base + "/stocktakes/" + count.body.id + "/post", {});
-  const [stock] = await h.sql(
-    "SELECT current_stock, stock_value::text AS stock_value FROM products WHERE id=$1",
-    [id]
-  );
-  expect([200, 409]).toContain(posted.status);
-  expect([Number(stock.current_stock), Number(stock.stock_value)]).toEqual([15, 300]);
+  const state = async () => {
+    const [stock] = await h.sql(
+      "SELECT current_stock, stock_value::text AS stock_value FROM products WHERE id=$1",
+      [id]
+    );
+    const [journal] = await h.sql(
+      "SELECT count(*)::int AS n FROM journal_entries WHERE company_id=$1",
+      [t.company.id]
+    );
+    const [stocktake] = await h.sql("SELECT status FROM stocktakes WHERE id=$1", [count.body.id]);
+    return {
+      stock: [Number(stock.current_stock), Number(stock.stock_value)],
+      journals: journal.n,
+      status: stocktake.status,
+    };
+  };
+  return {
+    state,
+    post: () => t.as.post(base + "/stocktakes/" + count.body.id + "/post", {}),
+  };
+}
+
+it("AU7 preserves goods received after a completed count awaiting posting", async () => {
+  const { state, post } = await countThenReceive(10);
+  const posted = await post();
+  expect(posted.status, posted.text).toBe(200);
+  expect(await state()).toMatchObject({ stock: [15, 300], status: "posted" });
+});
+
+it("AU7 refuses a variance counted before a later receipt and changes nothing", async () => {
+  const { state, post } = await countThenReceive(8);
+  const before = await state();
+  const posted = await post();
+  expect(posted.status, posted.text).toBe(409);
+  expect(posted.body.code).toBe("STOCKTAKE_STALE");
+  expect(await state()).toEqual(before);
+  expect(before).toMatchObject({ stock: [15, 300], status: "draft" });
+});
+
+it("AU7 creates and posts stocktakes that list the same products in opposite orders", async () => {
+  const t = await h.createTenant();
+  const base = "/api/companies/" + t.company.id;
+  const countDate = new Date().toISOString().slice(0, 10);
+  const ids: string[] = [];
+  for (const name of ["First item", "Second item"]) {
+    const product = await t.as.post(base + "/products", { name, unitPrice: 100, costPrice: 0 });
+    expect(product.status, product.text).toBe(200);
+    ids.push(product.body.id);
+  }
+  for (let round = 0; round < 5; round++) {
+    const created = await Promise.all(
+      [ids, [...ids].reverse()].map((order) =>
+        t.as.post(base + "/stocktakes", {
+          countDate,
+          lines: order.map((productId) => ({ productId, countedQty: 0 })),
+        })
+      )
+    );
+    for (const r of created) expect(r.status, r.text).toBe(201);
+    const posted = await Promise.all(
+      created.map((r) => t.as.post(base + "/stocktakes/" + r.body.id + "/post", {}))
+    );
+    for (const r of posted) expect(r.status, r.text).toBe(200);
+  }
 });
 
 it("AU7 keeps the recurring bill date due if creation is blocked by a closed period", async () => {
