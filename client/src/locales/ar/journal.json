@@ -511,6 +511,7 @@
   "journal.memo.doc.reversalBill": "عكس فاتورة مورّد {ref}",
   "journal.memo.doc.reversalInvoice": "عكس الفاتورة {ref}",
   "journal.memo.doc.reversalCreditNote": "عكس إشعار دائن {ref}",
+  "journal.memo.doc.reversalDebitNote": "عكس إشعار مدين {ref}",
   "journal.memo.doc.stocktake": "الجرد",
   "journal.memo.doc.stockPurchase": "شراء مخزون",
   "journal.memo.doc.stockSale": "بيع مخزون",

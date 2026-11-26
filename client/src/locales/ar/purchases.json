@@ -206,5 +206,11 @@
   "purchases.claimReceipt.attached": "تم إرفاق الإيصال",
   "purchases.claimReceipt.view": "عرض",
   "purchases.claimReceipt.failed": "تعذّر رفع الإيصال",
-  "purchases.supplier.linked": "مرتبط بسجل المورد"
+  "purchases.supplier.linked": "مرتبط بسجل المورد",
+  "purchases.debitNote.void": "إبطال",
+  "purchases.debitNote.voidTitle": "إبطال هذا الإشعار المدين؟",
+  "purchases.debitNote.voidDesc": "سيُعكس القيد: يرتفع رصيد الدائنين من جديد وتُستعاد ضريبة المدخلات التي عُكست وتعود البضاعة المرتجعة إلى المخزون. لا يمكن التراجع عن ذلك.",
+  "purchases.debitNote.voidReason": "سبب الإبطال",
+  "purchases.debitNote.voidConfirm": "إبطال الإشعار المدين",
+  "purchases.debitNote.voided": "تم إبطال الإشعار المدين"
 }

@@ -7,6 +7,7 @@
  *   inventory.onInvoiceVoided(tx, {companyId, invoiceId, number, userId})
  *   inventory.onCreditNoteIssued(tx, {original, creditNote, lines, userId})
  *   inventory.onCreditNoteVoided(tx, {companyId, creditNoteId, number, userId})
+ *   inventory.onDebitNoteVoided(tx, {companyId, debitNoteId, number, userId})
  *
  * and the daily reorder scan (domain event task.due per product at or below its reorder point).
  */
@@ -18,6 +19,7 @@ import { has, provide } from "../../platform/service-registry";
 import {
   onCreditNoteIssued,
   onCreditNoteVoided,
+  onDebitNoteVoided,
   onGoodsReceived,
   onInvoiceIssued,
   onInvoiceVoided,
@@ -55,6 +57,8 @@ export function registerInventoryServices(): void {
     provide("inventory.onCreditNoteIssued", onCreditNoteIssued);
   if (!has("inventory.onCreditNoteVoided"))
     provide("inventory.onCreditNoteVoided", onCreditNoteVoided);
+  if (!has("inventory.onDebitNoteVoided"))
+    provide("inventory.onDebitNoteVoided", onDebitNoteVoided);
   if (!listJobs().some((j) => j.name === "inventory.reorderScan")) {
     registerJob({
       name: "inventory.reorderScan",
