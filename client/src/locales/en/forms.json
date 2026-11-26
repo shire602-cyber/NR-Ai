@@ -387,6 +387,7 @@
   "forms.serverErrors.USAGE_LIMIT_REACHED_ai_calls": "This month's AI credits on your plan are used up. Upgrade for more.",
   "forms.serverErrors.NUMBERING_BELOW_ISSUED": "The next number must be above the last number issued.",
   "forms.serverErrors.NUMBERING_PREFIX_IN_USE": "Another document type already uses this prefix.",
+  "forms.serverErrors.NUMBERING_COLLISION": "Could not find a free document number. Check the numbering settings.",
   "forms.serverErrors.AUTOMATION_NOT_FOUND": "This automation does not exist.",
   "forms.contact.role": "Role",
   "forms.contact.roleHelp": "One record for both: a supplier contact appears in bills and purchase orders.",
