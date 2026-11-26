@@ -260,7 +260,11 @@ const CASES: FormCase[] = [
   {
     name: "cost centre",
     load: async () => ({ page: (await import("../../client/src/pages/CostCenters")).default }),
-    open: () => click(buttonByText(/add cost cent/i)),
+    open: async () => {
+      await click(buttonByText(/add cost cent/i));
+      // CostCenterFormDialog is lazy: wait for its form before the test continues.
+      await flushUntil(() => byTestId("dialog-cost-center-form") !== null);
+    },
     submit: submitButton,
   },
 ];

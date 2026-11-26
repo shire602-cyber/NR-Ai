@@ -11,6 +11,7 @@
  * postJournal (kind 'revaluation') for the revaluation and undo entries, reverseEntry for the
  * scheduled next-day reversal (linked via reversed_entry_id / reversed_by_entry_id).
  */
+import { todayDubai } from "@shared/accounting-date";
 import { type JournalLineKey, journalLine, journalMemo } from "@shared/journal-memo";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../../db";
@@ -227,7 +228,7 @@ export async function getActiveRevaluation(
 
 function assertAsOf(asOfInput: string | undefined): string {
   const asOf = toIsoDate(asOfInput, "asOf");
-  if (asOf > new Date().toISOString().slice(0, 10)) {
+  if (asOf > todayDubai()) {
     throw new DomainError("FUTURE_REVALUATION_DATE", 400, { asOf });
   }
   return asOf;

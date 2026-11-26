@@ -2,6 +2,7 @@
 // Handlers moved from firm.routes.ts (R20-09); the route registrations (paths and
 // middleware order) stay in firm.routes.ts.
 import { isVatFilingRecorded } from "../../../shared/vat-filing-status";
+import { activeVatReturnFilter } from "../../tax/vat-filing-filter";
 import { CLIENT_SERVICE_OPTIONS } from "@shared/client-services";
 import type { Request, Response } from "express";
 import {
@@ -112,7 +113,7 @@ export async function buildBookkeeperDashboard(userId: string, firmRole: string,
       maxPeriodEnd: max(vatReturns.periodEnd).as("max_period_end"),
     })
     .from(vatReturns)
-    .where(inArray(vatReturns.companyId, clientIds))
+    .where(and(inArray(vatReturns.companyId, clientIds), activeVatReturnFilter))
     .groupBy(vatReturns.companyId)
     .as("latest_vat_for_bookkeeper");
 
@@ -191,7 +192,8 @@ export async function buildBookkeeperDashboard(userId: string, firmRole: string,
         latestVatSub,
         and(
           eq(vatReturns.companyId, latestVatSub.companyId),
-          eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd)
+          eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
+          activeVatReturnFilter
         )
       ) as Promise<VatRow[]>,
     db

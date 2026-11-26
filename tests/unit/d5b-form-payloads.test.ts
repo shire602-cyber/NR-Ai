@@ -677,6 +677,7 @@ describe("[D5b] cost centre form payload unchanged", () => {
     const { default: CostCenters } = await import("../../client/src/pages/CostCenters");
     await renderPage(CostCenters);
     await click(buttonByText(/add cost cent/i));
+    await flushUntil(() => !!dialog()); // the form dialog is a lazy chunk
     await type(named("code"), "CC-110");
     await type(named("name"), "Retail branch");
     await type(named("nameAr"), "فرع التجزئة");

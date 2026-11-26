@@ -14,6 +14,7 @@
  *   PO goods received    stock in at the PO price, Dr Inventory / Cr GRNI (own transaction:
  *                        the purchase-order module calls it after its commit).
  */
+import { todayDubai } from "@shared/accounting-date";
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { DomainError } from "../../errors";
@@ -63,7 +64,7 @@ const isoDate = (v: unknown): string => {
   const s = String(v ?? "");
   return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : new Date(s).toISOString().slice(0, 10);
 };
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => todayDubai();
 
 function wholeQty(raw: unknown, context: Record<string, unknown>): number {
   const n = Math.abs(Number(raw ?? 1));

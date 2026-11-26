@@ -30,6 +30,9 @@ export function normaliseVatRate(raw: number | string | null | undefined): numbe
 }
 
 /** Legacy document-level calculator. Sales documents use computeSalesDocument. */
+// F01: round each line's net and VAT separately (half-up to fils) before
+// accumulating, so the document total equals the sum of per-line rounded
+// amounts. This matches shared/document-totals.ts (the shared editor rule).
 export function calculateDocumentTotals(lines: DocumentLineInput[] | undefined | null): {
   subtotal: number;
   vatAmount: number;
@@ -39,15 +42,19 @@ export function calculateDocumentTotals(lines: DocumentLineInput[] | undefined |
   let vatAmountD = new Decimal(0);
 
   for (const line of lines ?? []) {
-    const lineTotal = new Decimal(Number(line.unitPrice) || 0).times(Number(line.quantity) || 0);
-    subtotalD = subtotalD.plus(lineTotal);
-    vatAmountD = vatAmountD.plus(lineTotal.times(normaliseVatRate(line.vatRate)));
+    const lineNet = new Decimal(Number(line.unitPrice) || 0)
+      .times(Number(line.quantity) || 0)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    subtotalD = subtotalD.plus(lineNet);
+    vatAmountD = vatAmountD.plus(
+      lineNet.times(normaliseVatRate(line.vatRate)).toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+    );
   }
 
   return {
-    subtotal: subtotalD.toDecimalPlaces(2).toNumber(),
-    vatAmount: vatAmountD.toDecimalPlaces(2).toNumber(),
-    total: subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber(),
+    subtotal: subtotalD.toNumber(),
+    vatAmount: vatAmountD.toNumber(),
+    total: subtotalD.plus(vatAmountD).toNumber(),
   };
 }
 
