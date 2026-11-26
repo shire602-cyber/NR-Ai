@@ -63,7 +63,9 @@ import { defaultChartOfAccounts } from "../defaultChartOfAccounts";
 import { allocateInvoiceNumber, type InvoiceDocType } from "./invoice-numbering.service";
 import {
   computeSalesDocument,
+  readStoredInvoiceLineAmounts,
   storedLineToTotalsInput,
+  sumSalesLines,
   type SalesDocumentTotals,
 } from "./document-totals.service";
 import { invoiceMachine, settlementStatus } from "./invoice-state-machine";
@@ -77,6 +79,22 @@ import { receivableSettlementPartsSql } from "../reporting/settlement";
 type InventoryHook = (tx: LedgerTx, args: Record<string, unknown>) => Promise<unknown>;
 async function inventoryHook(name: string, tx: LedgerTx, args: Record<string, unknown>) {
   if (has(name)) await resolve<InventoryHook>(name)(tx, args);
+}
+
+/** Locked bundle-component snapshot returned by inventory.lockSalesProducts (opaque here). */
+type SalesLockSnapshot = Map<string, Array<{ productId: string; quantity: number }>>;
+type SalesLockHook = (
+  tx: LedgerTx,
+  args: { companyId: string; lines: unknown[] }
+) => Promise<SalesLockSnapshot>;
+/** Lock the document's products and return the snapshot (undefined when inventory is absent). */
+async function lockSalesProductsHook(
+  tx: LedgerTx,
+  companyId: string,
+  lines: unknown[]
+): Promise<SalesLockSnapshot | undefined> {
+  if (!has("inventory.lockSalesProducts")) return undefined;
+  return resolve<SalesLockHook>("inventory.lockSalesProducts")(tx, { companyId, lines });
 }
 
 const log = createLogger("invoice-posting");
@@ -301,20 +319,32 @@ export function totalsForStoredDocument(
   >,
   lines: InvoiceLine[]
 ): SalesDocumentTotals {
-  const totals = computeSalesDocument(
-    lines.map((l) =>
-      storedLineToTotalsInput({
-        ...l,
-        quantity: Math.abs(Number(l.quantity)),
-        unitPrice: Math.abs(Number(l.unitPrice)),
-      })
-    ),
-    {
-      discountType: invoice.discountType,
-      discountValue: invoice.discountValue,
-      reverseCharge: invoice.reverseCharge,
-    }
-  );
+  const stored = readStoredInvoiceLineAmounts(invoice, lines).map((amount, i) => {
+    const line = lines[i];
+    if (!amount || line.documentDiscountAmount == null) return null;
+    const lineDiscountFils = Math.abs(toFils(line.discountAmount));
+    const documentDiscountFils = Math.abs(toFils(line.documentDiscountAmount));
+    const priceFils = amount.netFils + (line.marginScheme ? amount.vatFils : 0);
+    return {
+      ...amount,
+      grossFils: priceFils + lineDiscountFils + documentDiscountFils,
+      lineDiscountFils,
+      documentDiscountFils,
+    };
+  });
+  const legacy = stored.some((line) => line === null)
+    ? computeSalesDocument(
+        lines.map((line) =>
+          storedLineToTotalsInput({
+            ...line,
+            quantity: Math.abs(Number(line.quantity)),
+            unitPrice: Math.abs(Number(line.unitPrice)),
+          })
+        ),
+        invoice
+      )
+    : null;
+  const totals = sumSalesLines(stored.map((line, i) => line ?? legacy!.lines[i]));
   // Use the tax printed on the document, including on invoices issued under the earlier
   // rounding method and credits that clear the exact VAT remaining after partial credits.
   const vatFils = toFils(Math.abs(Number(invoice.vatAmount)), { rounding: "halfUp" });
@@ -628,6 +658,12 @@ async function postRevenueInTx(tx: LedgerTx, invoice: Invoice, userId: string): 
     accounts: acc,
     baseCurrency,
   });
+  // Lock order: products (id order), then the journal-number lock inside postJournal. A stocktake
+  // holds product locks while it asks for that journal lock, so the reverse order deadlocks.
+  const bundles =
+    invoice.invoiceType !== "debit_note"
+      ? await lockSalesProductsHook(tx, invoice.companyId, lines)
+      : undefined;
   const docMemoKey = invoice.invoiceType === "debit_note" ? "debitNote" : "salesInvoice";
   const { replayed, entry } = await postJournal(
     {
@@ -655,7 +691,8 @@ async function postRevenueInTx(tx: LedgerTx, invoice: Invoice, userId: string): 
       userId,
     });
   }
-  if (!replayed) await inventoryHook("inventory.onInvoiceIssued", tx, { invoice, lines, userId });
+  if (!replayed)
+    await inventoryHook("inventory.onInvoiceIssued", tx, { invoice, lines, userId, bundles });
   return !replayed;
 }
 
@@ -836,6 +873,12 @@ export async function voidInvoice(
         "This invoice has credit notes or applied customer credits. Void those first, or credit the remaining balance instead of voiding."
       );
     }
+    // Products before any journal-number lock (see postRevenueInTx).
+    await inventoryHook("inventory.lockDocumentProducts", tx, {
+      companyId,
+      sourceType: "invoice",
+      sourceId: invoiceId,
+    });
     const reversals = await reverseBySource(
       companyId,
       "invoice",
@@ -1345,7 +1388,12 @@ export async function insertCreditNoteDocument(
     .from(invoiceLines)
     .where(eq(invoiceLines.invoiceId, original.id));
   let mode: "lines" | "remaining" = "lines";
-  let docLines: Array<Omit<CreditNoteLineInput, "unitPriceFils"> & { unitPrice: number }>;
+  let docLines: Array<
+    Omit<CreditNoteLineInput, "unitPriceFils"> & {
+      unitPrice: number;
+      documentDiscountAmount?: InvoiceLine["documentDiscountAmount"];
+    }
+  >;
   let header: Partial<Invoice> = {};
   let totals: SalesDocumentTotals;
   if (args.lines && args.lines.length) {
@@ -1381,6 +1429,7 @@ export async function insertCreditNoteDocument(
         vatSupplyType: (l.vatSupplyType ?? "standard_rated") as SupplyType,
         discountType: l.discountType,
         discountValue: l.discountValue,
+        documentDiscountAmount: l.documentDiscountAmount,
         productId: l.productId,
         costCenterId: l.costCenterId,
         marginScheme: l.marginScheme,
@@ -1455,6 +1504,7 @@ export async function insertCreditNoteDocument(
       discountType: l.discountType ?? null,
       discountValue: l.discountValue ?? null,
       discountAmount: totals.lines[i] ? Number(fromFils(totals.lines[i].lineDiscountFils)) : 0,
+      documentDiscountAmount: l.documentDiscountAmount ?? null,
       netAmount: totals.lines[i] ? -Number(fromFils(totals.lines[i].netFils)) : null,
       productId: l.productId ?? null,
       costCenterId: l.costCenterId ?? null,
@@ -1671,6 +1721,11 @@ async function issueCreditNoteLocked(
   );
   if (!issued) throw new DomainError("CREDIT_NOTE_NOT_DRAFT", 409);
 
+  // Products before the credit note's journal-number lock (see postRevenueInTx).
+  const bundles =
+    issued.restock !== false
+      ? await lockSalesProductsHook(tx, original.companyId, cnLines)
+      : undefined;
   const posted = await postCreditNoteInTx({
     tx,
     original,
@@ -1698,6 +1753,7 @@ async function issueCreditNoteLocked(
     userId,
     // S1: "return to stock?" — false writes the goods off (no stock in, COGS stays).
     restock: issued.restock !== false,
+    bundles,
   });
   await refreshSettlementStatus(tx, original.id);
   return {
@@ -1800,6 +1856,11 @@ export async function voidCreditNote(
         );
       }
     }
+    await inventoryHook("inventory.lockDocumentProducts", tx, {
+      companyId,
+      sourceType: "credit_note",
+      sourceId: creditNoteId,
+    });
     await reverseBySource(
       companyId,
       "invoice",

@@ -592,5 +592,8 @@
   "invoices.recurring.freq.quarterly": "ربع سنوي",
   "invoices.recurring.freq.yearly": "سنوي",
   "invoices.recurring.status.active": "نشطة",
-  "invoices.recurring.status.paused": "متوقفة مؤقتًا"
+  "invoices.recurring.status.paused": "متوقفة مؤقتًا",
+  "invoices.emptyWidenDateFilter": "جرّب توسيع نطاق التاريخ أو مسح عامل التصفية لعرض جميع الفواتير.",
+  "invoices.emptyClearFilter": "مسح عامل التصفية",
+  "invoices.createPaymentAccount": "إنشاء حساب بنكي أو نقدي"
 }

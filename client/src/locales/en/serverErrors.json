@@ -239,6 +239,8 @@
   "serverErrors.EINVOICE_NOT_SUBMITTED": "This e-invoice has not been sent to the service provider yet.",
   "serverErrors.EINVOICE_PARTNER_REQUIRED": "Choose an e-invoicing partner first.",
   "serverErrors.EINVOICE_PARTNER_UNKNOWN": "This e-invoicing partner is not recognised.",
+  "serverErrors.EINVOICE_ACCEPTANCE_REVISION_MISMATCH": "The terms acceptance changed. Review the appointment before confirming.",
+  "serverErrors.EINVOICE_PROVIDER_MISMATCH": "The e-invoicing provider changed. Review the current provider before continuing.",
   "serverErrors.EINVOICE_PROVIDER_NOT_CONFIGURED": "Complete the e-invoicing provider setup for this company before sending.",
   "serverErrors.EINVOICE_RETRY_PROVIDER_CHANGED": "Restore the original e-invoicing provider connection before retrying this invoice.",
   "serverErrors.EINVOICE_PROVIDER_UNAVAILABLE": "The e-invoicing service is not available right now. Try again later.",
@@ -563,6 +565,7 @@
   "serverErrors.PREPAYMENT_INSUFFICIENT": "The prepayment balance is not enough for this amount.",
   "serverErrors.PREPAYMENT_NOT_FOUND": "The prepayment could not be found.",
   "serverErrors.PRODUCT_HAS_POSTED_MOVEMENTS": "This product has posted stock movements. Deactivate it instead of deleting.",
+  "serverErrors.PRODUCT_HAS_POSTED_STOCKTAKE": "This product is on a posted stocktake. Deactivate it instead of deleting it.",
   "serverErrors.PRODUCT_HAS_STOCK": "Bring the stock to zero before changing the product type or tracking.",
   "serverErrors.PRODUCT_NOT_BUNDLE": "Only bundle products have components.",
   "serverErrors.PRODUCT_NOT_FOUND": "The product could not be found.",
@@ -668,6 +671,7 @@
   "serverErrors.STATUS_DERIVED": "This status is worked out automatically and cannot be set by hand.",
   "serverErrors.STOCKTAKE_NOT_DRAFT": "Only a draft stocktake can be changed.",
   "serverErrors.STOCKTAKE_NOT_FOUND": "The stocktake could not be found.",
+  "serverErrors.STOCKTAKE_STALE": "Stock levels changed after this count. Create a new stocktake before posting.",
   "serverErrors.SUPPLY_TYPE_RATE_MISMATCH": "The VAT rate does not match the supply type. Choose a matching one.",
   "serverErrors.SUPPLY_TYPE_REQUIRED": "Choose the supply type for this line.",
   "serverErrors.SYSTEM_ACCOUNT_LOCKED": "System accounts cannot be changed, archived or deleted; they are needed for bookkeeping.",
@@ -1096,5 +1100,7 @@
   "serverErrors.UNRESOLVED_FIRM_ACCESS": "A company owner must review the remaining client access before this access change can finish.",
   "serverErrors.DEBIT_NOTE_APPLIED": "This debit note has been applied to a bill. Reverse those applications before voiding it.",
   "serverErrors.DEBIT_NOTE_ASSET_RECOSTED": "This debit note lowered the cost of a fixed asset. Adjust the asset before voiding the note.",
-  "serverErrors.FX_RECONCILIATION_UNSUPPORTED": "This foreign-currency account cannot be reconciled yet because some ledger entries on it have no amount in the account currency. Reconcile it after correcting those entries, or use a base-currency statement."
+  "serverErrors.FX_RECONCILIATION_UNSUPPORTED": "This foreign-currency account cannot be reconciled yet because some ledger entries on it have no amount in the account currency. Reconcile it after correcting those entries, or use a base-currency statement.",
+  "serverErrors.FAF_RANGE_TOO_LONG": "The FTA audit file covers at most 366 days. Choose a shorter date range.",
+  "serverErrors.INVALID_RANGE": "The start date must be on or before the end date."
 }

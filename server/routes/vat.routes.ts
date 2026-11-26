@@ -641,8 +641,7 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       if (!(await requireCompanyAccess(req, res, companyId))) return;
-      const vatReturns = await storage.getVatReturnsByCompanyId(companyId);
-      res.json(vatReturns);
+      res.json(await storage.getVatReturnsByCompanyId(companyId));
     })
   );
 

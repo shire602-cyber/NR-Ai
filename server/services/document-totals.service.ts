@@ -4,7 +4,8 @@
 // decimal.js so NUMERIC(15,2) columns never accumulate binary-float drift.
 
 import Decimal from "decimal.js";
-import { allocate, sumFils } from "../../shared/money";
+import { allocate, sumFils, toFils } from "../../shared/money";
+import type { Invoice, InvoiceLine } from "../../shared/schema";
 import {
   classifySupply,
   resolveSupplyType,
@@ -264,19 +265,87 @@ export function computeSalesDocument(
     };
   });
 
-  const subtotalFils = sumFils(out.map((l) => l.netFils));
-  const vatFils = sumFils(out.map((l) => l.vatFils));
-  const lineDiscountTotal = sumFils(out.map((l) => l.lineDiscountFils));
+  return sumSalesLines(out);
+}
+
+export function sumSalesLines(lines: SalesLineTotals[]): SalesDocumentTotals {
+  const subtotalFils = sumFils(lines.map((l) => l.netFils));
+  const vatFils = sumFils(lines.map((l) => l.vatFils));
+  const lineDiscountFils = sumFils(lines.map((l) => l.lineDiscountFils));
+  const documentDiscountFils = sumFils(lines.map((l) => l.documentDiscountFils));
   return {
-    lines: out,
-    grossFils: sumFils(out.map((l) => l.grossFils)),
-    lineDiscountFils: lineDiscountTotal,
+    lines,
+    grossFils: sumFils(lines.map((l) => l.grossFils)),
+    lineDiscountFils,
     documentDiscountFils,
-    discountFils: lineDiscountTotal + documentDiscountFils,
+    discountFils: lineDiscountFils + documentDiscountFils,
     subtotalFils,
     vatFils,
     totalFils: subtotalFils + vatFils,
   };
+}
+
+/** Read posted nets and their VAT without repricing quantities stored as PostgreSQL real. */
+export function readStoredInvoiceLineAmounts(
+  invoice: Pick<Invoice, "discountType" | "reverseCharge" | "vatAmount">,
+  lines: InvoiceLine[]
+) {
+  const amounts = lines.map((line) => {
+    if (line.netAmount == null) return null;
+    const netFils = Math.abs(toFils(line.netAmount));
+    const classification = classifySupply({
+      supplyType: line.vatSupplyType,
+      vatRate: line.vatRate,
+      reverseCharge: invoice.reverseCharge,
+    });
+    const vatRate = classification.chargedVatRate;
+    const marginFils = line.marginScheme
+      ? Math.max(0, netFils - Math.abs(toFils(line.marginPurchaseCost ?? 0)))
+      : null;
+    const tax = new Decimal(marginFils ?? netFils).times(vatRate);
+    if (marginFils === null || marginFils === 0) {
+      const vatFils = halfUp(tax);
+      return {
+        netFils,
+        vatFils,
+        vatRate,
+        classification,
+        marginFils,
+        minVatFils: vatFils,
+        maxVatFils: vatFils,
+      };
+    }
+
+    // Invert VAT = round((net + VAT - cost) × rate / (1 + rate)).
+    // At a rounding boundary two VAT amounts can produce the same stored net.
+    const halfStep = new Decimal(1).plus(vatRate).div(2);
+    const minVatFils = tax.minus(halfStep).floor().plus(1).toNumber();
+    const maxVatFils = tax.plus(halfStep).floor().toNumber();
+    let vatFils = minVatFils;
+    if (minVatFils !== maxVatFils && !invoice.discountType) {
+      // Prefer the stored quantity's result when it distinguishes the two candidates.
+      const grossFils = halfUp(
+        new Decimal(line.quantity).abs().times(Math.abs(toFils(line.unitPrice)))
+      );
+      const estimatedVatFils = grossFils - Math.abs(toFils(line.discountAmount ?? 0)) - netFils;
+      if (estimatedVatFils === maxVatFils) vatFils = maxVatFils;
+    }
+    return { netFils, vatFils, vatRate, classification, marginFils, minVatFils, maxVatFils };
+  });
+
+  if (amounts.every((amount) => amount !== null)) {
+    let remainingVatFils =
+      Math.abs(toFils(invoice.vatAmount)) - sumFils(amounts.map((amount) => amount.vatFils));
+    for (const amount of amounts) {
+      const adjustment = Math.min(
+        Math.max(amount.minVatFils - amount.vatFils, remainingVatFils),
+        amount.maxVatFils - amount.vatFils
+      );
+      amount.vatFils += adjustment;
+      remainingVatFils -= adjustment;
+    }
+  }
+  return amounts;
 }
 
 /** Stored invoice/quote line row → totals input (unit price numeric → fils). */

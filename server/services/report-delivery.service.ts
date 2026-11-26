@@ -13,6 +13,7 @@ import {
   type ReportPersona,
   type ReportWorkflowGapFilter,
 } from "../../client/src/lib/reportCatalog";
+import arabicReportCatalog from "../../client/src/locales/ar-catalog/reportCatalog.json";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { EMAIL_NOT_SET_UP_MESSAGE } from "../../shared/notification-copy";
 import { renderServerCopy } from "../../shared/server-copy";
@@ -189,7 +190,12 @@ export function buildReportDeliveryPlan(
   now = new Date(),
   setting?: ReportDeliverySetting | null
 ): ReportDeliveryPlan {
-  const cadence = setting?.cadenceOverride || subscription.cadence;
+  const cadenceOverride = setting?.cadenceOverride;
+  const cadenceKey = `reportCatalog.delivery.${subscription.id}.cadence`;
+  const arabicCadence = (arabicReportCatalog as Record<string, string>)[cadenceKey];
+  // Saved catalog labels represent the same schedule in either locale.
+  const cadence =
+    cadenceOverride && cadenceOverride !== arabicCadence ? cadenceOverride : subscription.cadence;
   const channel = resolveReportDeliveryChannel(subscription, setting?.channelOverride);
   const format = setting?.formatOverride || subscription.format;
   const recipients = setting?.recipientsOverride || subscription.recipients;

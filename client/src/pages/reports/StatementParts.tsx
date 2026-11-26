@@ -6,16 +6,20 @@
  * - StatementDownloads: server-rendered PDF / Excel for a statement (R11-12).
  * - DataBasisBadge: "Indicator" badge for document/snapshot-based reports (R12-13).
  */
+import { useState } from "react";
 import { Download, FileText, ScrollText } from "lucide-react";
 import { Link } from "wouter";
 import { T } from "@/components/layout/T";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { apiUrl } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { serverErrorCopy } from "@/lib/validation-messages";
+import { FAF_MAX_DAYS, fafRangeError, fafShiftDay } from "@shared/faf-range";
 import {
   pdfLanguageOptions,
   statementDownloadPath,
@@ -386,19 +390,7 @@ export function StatementsQuickPanel({
               <T k="reportCenter.accountantPack" />
             </a>
           </Button>
-          {from && to ? (
-            <Button asChild size="sm" variant="outline">
-              <a
-                href={apiUrl(`/api/companies/${companyId}/reports/faf?${range}`)}
-                download
-                title={t["reportCenter.ftaAuditFileHint"]}
-                data-testid="link-fta-audit-file"
-              >
-                <FileText className="h-4 w-4" aria-hidden />
-                <T k="reportCenter.ftaAuditFile" />
-              </a>
-            </Button>
-          ) : null}
+          {from && to ? <FtaAuditFileControl companyId={companyId} from={from} to={to} /> : null}
           {/* S4 (R12-09): statements of account per customer / supplier (W4-D service). */}
           <Button asChild size="sm" variant="outline">
             <Link
@@ -422,5 +414,83 @@ export function StatementsQuickPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * FTA Audit File download. The server caps the range at FAF_MAX_DAYS, so the date inputs here are
+ * bounded to the same span and an out-of-range selection shows the localized server error copy
+ * instead of offering a download that would be rejected.
+ */
+export function FtaAuditFileControl(props: { companyId: string; from: string; to: string }) {
+  // Keyed so a change of the page range resets the local inputs without an effect.
+  return <FtaAuditFileInputs key={`${props.from}|${props.to}`} {...props} />;
+}
+
+function FtaAuditFileInputs({
+  companyId,
+  from,
+  to,
+}: {
+  companyId: string;
+  from: string;
+  to: string;
+}) {
+  const { t, locale } = useTranslation();
+  const lang = locale === "ar" ? "ar" : "en";
+  const [fafFrom, setFafFrom] = useState(from);
+  const [fafTo, setFafTo] = useState(to);
+  const code = fafFrom && fafTo ? fafRangeError(fafFrom, fafTo) : "INVALID_RANGE";
+  const message = code ? serverErrorCopy(lang, code) : undefined;
+  const query = toQuery({ from: fafFrom, to: fafTo }).replace(/^&/, "");
+  const label = t["reportCenter.ftaAuditFile"];
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-testid="fta-audit-file-control">
+      <DatePicker
+        aria-label={`${label} - ${t["consolidation.from"] ?? "From"}`}
+        className="h-8 w-40"
+        value={fafFrom}
+        min={fafTo ? fafShiftDay(fafTo, -(FAF_MAX_DAYS - 1)) : undefined}
+        max={fafTo || undefined}
+        onChange={setFafFrom}
+        data-testid="input-faf-from"
+      />
+      <DatePicker
+        aria-label={`${label} - ${t["consolidation.to"] ?? "To"}`}
+        className="h-8 w-40"
+        value={fafTo}
+        min={fafFrom || undefined}
+        max={fafFrom ? fafShiftDay(fafFrom, FAF_MAX_DAYS - 1) : undefined}
+        onChange={setFafTo}
+        data-testid="input-faf-to"
+      />
+      {code ? (
+        <>
+          <Button size="sm" variant="outline" disabled data-testid="link-fta-audit-file">
+            <FileText className="h-4 w-4" aria-hidden />
+            {label}
+          </Button>
+          <p
+            role="alert"
+            className="w-full text-small text-destructive"
+            data-testid="faf-range-error"
+          >
+            {message}
+          </p>
+        </>
+      ) : (
+        <Button asChild size="sm" variant="outline">
+          <a
+            href={apiUrl(`/api/companies/${companyId}/reports/faf?${query}`)}
+            download
+            title={t["reportCenter.ftaAuditFileHint"]}
+            data-testid="link-fta-audit-file"
+          >
+            <FileText className="h-4 w-4" aria-hidden />
+            {label}
+          </a>
+        </Button>
+      )}
+    </div>
   );
 }

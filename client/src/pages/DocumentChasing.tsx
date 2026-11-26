@@ -11,7 +11,7 @@ import { formatDate, formatEmbeddedDates, parseCalendarDate } from "@/lib/format
 import { CheckCircle2, Plus, Send } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,6 +49,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { hasReadData, queryReadState } from "@/lib/queryReadState";
 import { DOCUMENT_TYPES, COMPLIANCE_EVENT_TYPES } from "@shared/schema-values";
 
 // ── Types echoed from server response shape ───────────────────────────
@@ -100,6 +103,17 @@ function enumLabel(
   return t[`firmOps.${kind}_${value}`] ?? value.replace(/_/g, " ");
 }
 
+/** A duration in days, with the number and unit word formatted for the locale. */
+function formatDays(days: number, locale: string): string {
+  return new Intl.NumberFormat(locale === "ar" ? "ar-AE" : "en-AE", {
+    style: "unit",
+    unit: "day",
+    unitDisplay: "long",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(days);
+}
+
 function levelBadgeColor(level: string) {
   switch (level) {
     case "friendly":
@@ -116,9 +130,15 @@ function levelBadgeColor(level: string) {
 }
 
 export default function DocumentChasing() {
-  const { t, locale } = useTranslation();
+  // The documentChasing.* copy lives in documentsEvidence, which the cold /firm scope does not load.
+  const { t, locale } = useTranslation(["documentsEvidence"]);
   const { toast } = useToast();
-  const { companyId, isLoading: companyLoading } = useDefaultCompany();
+  const {
+    companyId,
+    companyListState,
+    retryCompanyList,
+    error: companyError,
+  } = useDefaultCompany();
   const [showAddRequirement, setShowAddRequirement] = useState(false);
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [previewItem, setPreviewItem] = useState<ChaseQueueItem | null>(null);
@@ -159,15 +179,9 @@ export default function DocumentChasing() {
         description: translateNow("toasts.markedAsSent"),
       });
       if (data?.whatsappLink) window.open(data.whatsappLink, "_blank", "noopener,noreferrer");
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-chases", "queue"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-chases", "effectiveness"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-requirements"],
-      });
+      refreshAfterWrite(["/api/companies", companyId, "document-chases", "queue"]);
+      refreshAfterWrite(["/api/companies", companyId, "document-chases", "effectiveness"]);
+      refreshAfterWrite(["/api/companies", companyId, "document-requirements"]);
       setPreviewItem(null);
     },
     onError: (e: Error) =>
@@ -188,12 +202,8 @@ export default function DocumentChasing() {
           sentCount: data.sentCount,
         }),
       });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-chases", "queue"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-chases", "effectiveness"],
-      });
+      refreshAfterWrite(["/api/companies", companyId, "document-chases", "queue"]);
+      refreshAfterWrite(["/api/companies", companyId, "document-chases", "effectiveness"]);
     },
     onError: (e: Error) =>
       toast({
@@ -210,12 +220,8 @@ export default function DocumentChasing() {
       }),
     onSuccess: () => {
       toast({ title: t["documentChasing.markedReceived"] });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-requirements"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "document-chases", "queue"],
-      });
+      refreshAfterWrite(["/api/companies", companyId, "document-requirements"]);
+      refreshAfterWrite(["/api/companies", companyId, "document-chases", "queue"]);
     },
     onError: (e: Error) =>
       toast({
@@ -225,9 +231,20 @@ export default function DocumentChasing() {
       }),
   });
 
-  const requirements = useMemo(() => requirementsQuery.data ?? [], [requirementsQuery.data]);
-  const queue = queueQuery.data ?? [];
-  const events = eventsQuery.data ?? [];
+  const requirementsState = queryReadState(requirementsQuery);
+  const queueState = queryReadState(queueQuery);
+  const eventsState = queryReadState(eventsQuery);
+  const effectivenessState = queryReadState(effectivenessQuery);
+  const effectiveness = hasReadData(effectivenessState) ? effectivenessQuery.data : undefined;
+  const requirements = useMemo(
+    () => (hasReadData(requirementsState) ? (requirementsQuery.data ?? []) : []),
+    [requirementsState, requirementsQuery.data]
+  );
+  const queue = hasReadData(queueState) ? (queueQuery.data ?? []) : [];
+  // Bulk send rebuilds the queue on the server. Keep the action disabled until a refresh succeeds.
+  const queuePaused = queueQuery.fetchStatus === "paused";
+  const queueCurrent = queueState === "ready" && queueQuery.fetchStatus === "idle";
+  const events = hasReadData(eventsState) ? (eventsQuery.data ?? []) : [];
 
   const missingDocs = useMemo(
     () => requirements.filter((r) => r.status !== "received" && r.status !== "waived"),
@@ -245,48 +262,34 @@ export default function DocumentChasing() {
     return { overdue, dueSoon, total: missingDocs.length };
   }, [missingDocs]);
 
-  if (companyLoading) {
+  if (!companyId) {
+    if (companyListState === "error") {
+      return (
+        <div className="p-6">
+          <LoadErrorState
+            error={companyError}
+            onRetry={retryCompanyList}
+            testId="document-chasing-company-error"
+          />
+        </div>
+      );
+    }
+    if (companyListState === "empty") {
+      return (
+        <div className="p-6 text-muted-foreground" data-testid="document-chasing-no-company">
+          <T k="pages.noCompanySelected" />
+        </div>
+      );
+    }
     return (
-      <div className="p-6">
+      <div className="p-6" data-testid="document-chasing-loading">
+        {companyListState === "waiting" && (
+          <p className="mb-4 text-sm text-muted-foreground" data-testid="document-chasing-waiting">
+            {t["banking.query.paused"]}
+          </p>
+        )}
         <Skeleton className="h-8 w-64 mb-6" />
         <Skeleton className="h-32 w-full" />
-      </div>
-    );
-  }
-
-  if (!companyId) {
-    return (
-      <div className="p-6 text-muted-foreground" data-testid="document-chasing-no-company">
-        <T k="pages.noCompanySelected" />
-      </div>
-    );
-  }
-
-  if (requirementsQuery.isError || queueQuery.isError) {
-    const err = requirementsQuery.error ?? queueQuery.error;
-    return (
-      <div
-        role="alert"
-        className="m-6 rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm"
-        data-testid="document-chasing-error"
-      >
-        <div className="font-medium mb-1">
-          <T k="pages.failedToLoadDocumentChasingData" />
-        </div>
-        <div className="text-muted-foreground">
-          {err instanceof Error ? err.message : "An unexpected error occurred."}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-3"
-          onClick={() => {
-            requirementsQuery.refetch();
-            queueQuery.refetch();
-          }}
-        >
-          <T k="pages.retry" />
-        </Button>
       </div>
     );
   }
@@ -294,7 +297,7 @@ export default function DocumentChasing() {
   return (
     <div className="space-y-6" data-testid="page-document-chasing">
       <PageHeader
-        eyebrow="Compliance"
+        eyebrow={t["pages.eyebrowCompliance"]}
         title={t["documentChasing.documentChasingAutopilot"]}
         description={t["documentChasing.trackMissingUaeComplianceDocuments"]}
         actions={
@@ -304,7 +307,8 @@ export default function DocumentChasing() {
               <AlertDialogTrigger asChild>
                 <Button
                   variant="default"
-                  disabled={bulkSendMutation.isPending}
+                  disabled={bulkSendMutation.isPending || !queueCurrent}
+                  title={queueCurrent ? undefined : t["firmOps.chaseBulkSendUnavailable"]}
                   data-testid="btn-bulk-send"
                 >
                   <Send className="w-4 h-4 me-2" />
@@ -322,7 +326,10 @@ export default function DocumentChasing() {
                   <AlertDialogCancel>
                     <T k="pages.cancel" />
                   </AlertDialogCancel>
-                  <AlertDialogAction onClick={() => bulkSendMutation.mutate()}>
+                  <AlertDialogAction
+                    disabled={bulkSendMutation.isPending || !queueCurrent}
+                    onClick={() => bulkSendMutation.mutate()}
+                  >
                     <T k="pages.sendAll" />
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -334,21 +341,29 @@ export default function DocumentChasing() {
 
       {/* Top stats. Fable P-g: hidden until something is missing or has been chased, so an
           empty workspace does not open on four zero tiles. */}
-      {(stats.total > 0 || (effectivenessQuery.data?.totalChased ?? 0) > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4" data-testid="document-chasing-stats">
-          <StatCard label={t["pages.missingDocuments"]} value={stats.total} />
-          <StatCard label={t["components.statusOverdue"]} value={stats.overdue} />
-          <StatCard label={t["documentChasing.dueIn14Days"]} value={stats.dueSoon} />
-          <StatCard
-            label={t["documentChasing.responseRate2"]}
-            value={
-              effectivenessQuery.data
-                ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
-                : "—"
-            }
-          />
-        </div>
-      )}
+      {hasReadData(requirementsState) &&
+        (stats.total > 0 || (effectiveness?.totalChased ?? 0) > 0) && (
+          <div
+            className="grid grid-cols-1 md:grid-cols-4 gap-4"
+            data-testid="document-chasing-stats"
+          >
+            <StatCard label={t["pages.missingDocuments"]} value={stats.total} />
+            <StatCard label={t["components.statusOverdue"]} value={stats.overdue} />
+            <StatCard label={t["documentChasing.dueIn14Days"]} value={stats.dueSoon} />
+            {effectiveness && (
+              <StatCard
+                label={
+                  t[
+                    effectivenessState === "stale"
+                      ? "firmOps.chaseResponseRateCached"
+                      : "documentChasing.responseRate2"
+                  ]
+                }
+                value={`${Math.round(effectiveness.responseRate * 100)}%`}
+              />
+            )}
+          </div>
+        )}
 
       <Tabs defaultValue="missing" className="w-full">
         <TabsList>
@@ -356,7 +371,11 @@ export default function DocumentChasing() {
             <T k="pages.missing" />
           </TabsTrigger>
           <TabsTrigger value="queue">
-            {formatMessage(t["documentChasing.chaseQueueCount"], { count: queue.length })}
+            {hasReadData(queueState) ? (
+              formatMessage(t["documentChasing.chaseQueueCount"], { count: queue.length })
+            ) : (
+              <T k="pages.chaseQueue" />
+            )}
           </TabsTrigger>
           <TabsTrigger value="calendar">
             <T k="pages.complianceCalendar" />
@@ -383,8 +402,21 @@ export default function DocumentChasing() {
               </Button>
             </CardHeader>
             <CardContent>
-              {requirementsQuery.isLoading ? (
-                <Skeleton className="h-24 w-full" />
+              {requirementsState === "stale" && (
+                <StaleDataNotice
+                  onRetry={() => void requirementsQuery.refetch()}
+                  testId="requirements-stale"
+                />
+              )}
+              {requirementsState === "pending" ? (
+                <Skeleton className="h-24 w-full" data-testid="requirements-loading" />
+              ) : requirementsState === "error" ? (
+                <LoadErrorState
+                  compact
+                  error={requirementsQuery.error}
+                  onRetry={() => void requirementsQuery.refetch()}
+                  testId="requirements-error"
+                />
               ) : missingDocs.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-6 text-center">
                   {t["documentChasing.nothingMissingAllCaughtUp"]}
@@ -450,8 +482,32 @@ export default function DocumentChasing() {
               <CardDescription>{t["documentChasing.autoBuiltFromDueDates"]}</CardDescription>
             </CardHeader>
             <CardContent>
-              {queueQuery.isLoading ? (
-                <Skeleton className="h-24 w-full" />
+              {queueState === "stale" && (
+                <div className="mb-3">
+                  <StaleDataNotice onRetry={() => void queueQuery.refetch()} testId="queue-stale" />
+                </div>
+              )}
+              {queuePaused && queueState === "ready" && (
+                <p className="mb-3 text-sm text-muted-foreground" data-testid="queue-paused">
+                  {t["banking.query.pausedCached"]}
+                </p>
+              )}
+              {queueState === "pending" ? (
+                <div data-testid="queue-loading">
+                  {queuePaused && (
+                    <p className="mb-3 text-sm text-muted-foreground" data-testid="queue-waiting">
+                      {t["banking.query.paused"]}
+                    </p>
+                  )}
+                  <Skeleton className="h-24 w-full" />
+                </div>
+              ) : queueState === "error" ? (
+                <LoadErrorState
+                  compact
+                  error={queueQuery.error}
+                  onRetry={() => void queueQuery.refetch()}
+                  testId="queue-error"
+                />
               ) : queue.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-6 text-center">
                   <T k="pages.noPendingChasesRightNow" />
@@ -500,7 +556,7 @@ export default function DocumentChasing() {
                         disabled={sendChaseMutation.isPending}
                         data-testid="btn-send-chase"
                       >
-                        <SiWhatsapp className="w-4 h-4 me-2" /> Send
+                        <SiWhatsapp className="w-4 h-4 me-2" /> {t["firmOps.chasingSend"]}
                       </Button>
                     </div>
                   ))}
@@ -525,8 +581,23 @@ export default function DocumentChasing() {
               </Button>
             </CardHeader>
             <CardContent>
-              {eventsQuery.isLoading ? (
-                <Skeleton className="h-24 w-full" />
+              {eventsState === "stale" && (
+                <div className="mb-3">
+                  <StaleDataNotice
+                    onRetry={() => void eventsQuery.refetch()}
+                    testId="events-stale"
+                  />
+                </div>
+              )}
+              {eventsState === "pending" ? (
+                <Skeleton className="h-24 w-full" data-testid="events-loading" />
+              ) : eventsState === "error" ? (
+                <LoadErrorState
+                  compact
+                  error={eventsQuery.error}
+                  onRetry={() => void eventsQuery.refetch()}
+                  testId="events-error"
+                />
               ) : events.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-6 text-center">
                   <T k="pages.noDeadlinesTrackedYet" />
@@ -593,31 +664,42 @@ export default function DocumentChasing() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {effectivenessQuery.isLoading ? (
-                <Skeleton className="h-24 w-full" />
+              {effectivenessState === "stale" && (
+                <div className="mb-3">
+                  <StaleDataNotice
+                    onRetry={() => void effectivenessQuery.refetch()}
+                    testId="effectiveness-stale"
+                  />
+                </div>
+              )}
+              {effectivenessState === "error" ? (
+                <LoadErrorState
+                  compact
+                  error={effectivenessQuery.error}
+                  onRetry={() => void effectivenessQuery.refetch()}
+                  testId="effectiveness-error"
+                />
+              ) : !effectiveness ? (
+                <Skeleton className="h-24 w-full" data-testid="effectiveness-loading" />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <Metric
                     label={t["documentChasing.totalChased"]}
-                    value={effectivenessQuery.data?.totalChased ?? 0}
+                    value={effectiveness.totalChased}
                   />
                   <Metric
                     label={t["documentChasing.totalReceived"]}
-                    value={effectivenessQuery.data?.totalReceived ?? 0}
+                    value={effectiveness.totalReceived}
                   />
                   <Metric
                     label={t["documentChasing.responseRate2"]}
-                    value={
-                      effectivenessQuery.data
-                        ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
-                        : "—"
-                    }
+                    value={`${Math.round(effectiveness.responseRate * 100)}%`}
                   />
                   <Metric
                     label={t["documentChasing.avgTimeToUpload"]}
                     value={
-                      effectivenessQuery.data?.avgDaysToUpload != null
-                        ? `${effectivenessQuery.data.avgDaysToUpload.toFixed(1)} days`
+                      effectiveness.avgDaysToUpload != null
+                        ? formatDays(effectiveness.avgDaysToUpload, locale)
                         : "—"
                     }
                   />
@@ -738,12 +820,8 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
       }),
     onSuccess: () => {
       toast({ title: t["documentChasing.requirementAdded"] });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", props.companyId, "document-requirements"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", props.companyId, "document-chases", "queue"],
-      });
+      refreshAfterWrite(["/api/companies", props.companyId, "document-requirements"]);
+      refreshAfterWrite(["/api/companies", props.companyId, "document-chases", "queue"]);
       props.onClose();
     },
     onError: (e: Error) =>
@@ -831,7 +909,16 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
                   className="w-32"
                   aria-label={t["documentChasing.recurringIntervalInDays"]}
                 />
-                <span className="text-sm text-muted-foreground">days</span>
+                <span
+                  className="text-sm text-muted-foreground"
+                  data-testid="recurring-interval-unit"
+                >
+                  {formatMessage(t["firmOps.recurringIntervalUnit"], {
+                    count: form.recurringIntervalDays,
+                    day: t["firmOps.recurringIntervalDay"],
+                    days: t["firmOps.recurringIntervalDays"],
+                  })}
+                </span>
               </>
             )}
           </div>
@@ -875,9 +962,7 @@ function AddComplianceEventDialog(props: {
       }),
     onSuccess: () => {
       toast({ title: t["documentChasing.deadlineAdded"] });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", props.companyId, "compliance-calendar"],
-      });
+      refreshAfterWrite(["/api/companies", props.companyId, "compliance-calendar"]);
       props.onClose();
     },
     onError: (e: Error) =>

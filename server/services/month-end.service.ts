@@ -83,6 +83,7 @@ export interface ClosingLine {
   accountId: string;
   accountCode: string;
   accountName: string;
+  accountNameAr: string | null;
   debit: number;
   credit: number;
 }
@@ -151,7 +152,8 @@ export async function getCloseChecklist(
      FROM bank_transactions
      WHERE company_id = $1
        AND transaction_date >= $2::date
-       AND transaction_date <= $3::date`,
+       AND transaction_date <= $3::date
+       AND deleted_at IS NULL`,
     [companyId, periodStart, periodEnd]
   );
   const bankTotal = parseInt(bankResult.rows[0]?.total || "0");
@@ -630,6 +632,7 @@ export async function computeCloseSummary(
       accountId: a.id,
       accountCode: a.code,
       accountName: a.nameEn,
+      accountNameAr: a.nameAr,
       debit: aed(debit),
       credit: aed(credit),
     });
@@ -644,6 +647,7 @@ export async function computeCloseSummary(
       accountId: re.id,
       accountCode: re.code,
       accountName: re.nameEn,
+      accountNameAr: re.nameAr,
       debit: aed(debit),
       credit: aed(credit),
     });

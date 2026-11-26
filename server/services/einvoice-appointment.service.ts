@@ -8,7 +8,7 @@
 //   2. an owner/CFO confirmed they appointed that partner in EmaraTax.
 // The gate below is pure so it can be tested without a database.
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { einvoiceAspAppointments, type EInvoiceAspAppointment } from "../../shared/schema";
 
@@ -19,7 +19,7 @@ export interface EInvoicePartner {
   /** Partner's own end-user terms. Null until configured; acceptance is then blocked. */
   termsUrl: string | null;
   termsVersion: string;
-  /** Mock/dev providers skip the gate; nothing real is transmitted. */
+  /** The mock provider skips the gate; nothing real is transmitted. */
   requiresAppointment: boolean;
 }
 
@@ -28,15 +28,20 @@ const DISPLAY_NAMES: Record<string, string> = {
   mock: "Test provider (no real transmission)",
 };
 
-/** Describe the active partner from env. Terms URL/version are config, never hard-coded. */
-export function activeEInvoicePartner(env: NodeJS.ProcessEnv = process.env): EInvoicePartner {
-  const provider = (env.EINVOICE_PROVIDER || "mock").toLowerCase();
-  const termsUrl = env.EINVOICE_ASP_TERMS_URL?.trim() || null;
+/** Describe the tenant's selected or resolved provider using its configured terms. */
+export function eInvoicePartner(
+  provider = "mock",
+  env: NodeJS.ProcessEnv = process.env
+): EInvoicePartner {
+  const prefix = `EINVOICE_ASP_${provider.toUpperCase()}_`;
+  const legacy = env.EINVOICE_PROVIDER?.toLowerCase() === provider;
+  const setting = (key: string) =>
+    env[prefix + key]?.trim() || (legacy ? env[`EINVOICE_ASP_${key}`]?.trim() : undefined);
   return {
     provider,
-    displayName: env.EINVOICE_ASP_DISPLAY_NAME?.trim() || DISPLAY_NAMES[provider] || provider,
-    termsUrl,
-    termsVersion: env.EINVOICE_ASP_TERMS_VERSION?.trim() || "unversioned",
+    displayName: setting("DISPLAY_NAME") || DISPLAY_NAMES[provider] || provider,
+    termsUrl: setting("TERMS_URL") || null,
+    termsVersion: setting("TERMS_VERSION") || "unversioned",
     requiresAppointment: provider !== "mock",
   };
 }
@@ -88,14 +93,13 @@ export function appointmentGate(
   return { code: "EINVOICE_APPOINTMENT_REQUIRED", message: GATE_MESSAGES[state], state };
 }
 
-/** Company roles that may bind the company to the partner's terms. */
-export const APPOINTMENT_ROLES = new Set(["owner", "cfo"]);
-
 export async function getAppointment(
   companyId: string,
-  provider: string
+  provider: string,
+  conn: Pick<typeof db, "select"> = db,
+  lock?: "share" | "update"
 ): Promise<EInvoiceAspAppointment | null> {
-  const [row] = await db
+  const query = conn
     .select()
     .from(einvoiceAspAppointments)
     .where(
@@ -105,21 +109,32 @@ export async function getAppointment(
       )
     )
     .limit(1);
+  const [row] = await (lock ? query.for(lock) : query);
   return row ?? null;
+}
+
+export async function submissionAppointmentGate(
+  companyId: string,
+  provider: string,
+  conn: Pick<typeof db, "select">
+) {
+  const partner = eInvoicePartner(provider);
+  if (!partner.requiresAppointment) return null;
+  return appointmentGate(await getAppointment(companyId, provider, conn, "share"), partner);
 }
 
 /** Record acceptance of the current terms. Accepting a newer terms version keeps
  *  the EmaraTax confirmation (same partner, still appointed). Accepting after a
  *  revocation clears it, because the client may have removed the partner. */
-export async function acceptPartnerTerms(args: {
-  companyId: string;
-  partner: EInvoicePartner;
-  userId: string;
-}): Promise<EInvoiceAspAppointment> {
+export async function acceptPartnerTerms(
+  args: { companyId: string; partner: EInvoicePartner; userId: string },
+  conn: Pick<typeof db, "insert"> = db
+): Promise<EInvoiceAspAppointment> {
   const now = new Date();
-  const existing = await getAppointment(args.companyId, args.partner.provider);
-  const reappointing = Boolean(existing?.revokedAt);
-  const [row] = await db
+  // The EmaraTax confirmation is cleared atomically when the row's current
+  // revokedAt is non-null at write time (not at the earlier read time),
+  // closing the TOCTOU window where a concurrent revocation could be lost.
+  const [row] = await conn
     .insert(einvoiceAspAppointments)
     .values({
       companyId: args.companyId,
@@ -132,12 +147,15 @@ export async function acceptPartnerTerms(args: {
       target: [einvoiceAspAppointments.companyId, einvoiceAspAppointments.provider],
       set: {
         termsVersion: args.partner.termsVersion,
-        termsAcceptedAt: now,
+        // Keep acceptance distinct even if revocation and reacceptance share a clock tick.
+        termsAcceptedAt: sql`GREATEST(${now.toISOString()}::timestamp, ${einvoiceAspAppointments.termsAcceptedAt} + interval '1 millisecond')`,
         termsAcceptedBy: args.userId,
         revokedAt: null,
         revokedBy: null,
-        // After a revocation the client must re-appoint in EmaraTax.
-        ...(reappointing ? { emarataxConfirmedAt: null, emarataxConfirmedBy: null } : {}),
+        // After a revocation the client must re-appoint in EmaraTax. Evaluate
+        // revokedAt at write time so a concurrent revocation is not silently cleared.
+        emarataxConfirmedAt: sql`CASE WHEN ${einvoiceAspAppointments.revokedAt} IS NOT NULL THEN NULL ELSE ${einvoiceAspAppointments.emarataxConfirmedAt} END`,
+        emarataxConfirmedBy: sql`CASE WHEN ${einvoiceAspAppointments.revokedAt} IS NOT NULL THEN NULL ELSE ${einvoiceAspAppointments.emarataxConfirmedBy} END`,
         updatedAt: now,
       },
     })
@@ -145,19 +163,29 @@ export async function acceptPartnerTerms(args: {
   return row;
 }
 
-export async function confirmEmaraTaxAppointment(args: {
-  companyId: string;
-  provider: string;
-  userId: string;
-}): Promise<EInvoiceAspAppointment | null> {
+export async function confirmEmaraTaxAppointment(
+  args: {
+    accepted: Pick<
+      EInvoiceAspAppointment,
+      "id" | "companyId" | "provider" | "termsVersion" | "termsAcceptedAt"
+    >;
+    userId: string;
+  },
+  conn: Pick<typeof db, "update"> = db
+): Promise<EInvoiceAspAppointment | null> {
   const now = new Date();
-  const [row] = await db
+  const { accepted } = args;
+  const [row] = await conn
     .update(einvoiceAspAppointments)
     .set({ emarataxConfirmedAt: now, emarataxConfirmedBy: args.userId, updatedAt: now })
     .where(
       and(
-        eq(einvoiceAspAppointments.companyId, args.companyId),
-        eq(einvoiceAspAppointments.provider, args.provider)
+        eq(einvoiceAspAppointments.id, accepted.id),
+        eq(einvoiceAspAppointments.companyId, accepted.companyId),
+        eq(einvoiceAspAppointments.provider, accepted.provider),
+        eq(einvoiceAspAppointments.termsVersion, accepted.termsVersion),
+        eq(einvoiceAspAppointments.termsAcceptedAt, accepted.termsAcceptedAt),
+        isNull(einvoiceAspAppointments.revokedAt)
       )
     )
     .returning();

@@ -16,7 +16,9 @@
 
 import { randomUUID } from "node:crypto";
 import { lineNetAmount, lineVatAmount } from "../../shared/document-totals";
-import { pool } from "../db";
+import { db, pool } from "../db";
+import { and, desc, inArray, sql } from "drizzle-orm";
+import { vatReturns } from "../../shared/schema";
 import { UAE_VAT_RATE } from "../constants";
 import { DomainError } from "../errors";
 import { resolveNrClientVatPeriodStartMonth } from "./firm-clients.service";
@@ -25,6 +27,11 @@ import { computeVat201, type VatComputation } from "../tax/vat-engine";
 import { EMIRATE_BOX_PREFIX, type Vat201Key } from "../tax/vat-boxes";
 import type { VatReconciliation } from "../tax/vat-reconciliation";
 import { assertCompanyTrn } from "../tax/vat-returns.service";
+import {
+  activeVatReturnFilter,
+  effectiveVatFilingStatus,
+  vatFilingVersionOrder,
+} from "../tax/vat-filing-filter";
 import { EMIRATES } from "../../shared/validators/primitives";
 import type { QueryResultRow } from "pg";
 
@@ -186,25 +193,31 @@ export async function loadReturnLifecycle(
   if (companyIds.length === 0) return out;
   // period_end is stored as the period's last instant in UTC (vat-returns.service toEndTs), so
   // the calendar date is its UTC date part (as in compliance-obligations.service).
-  const r = await pool.query(
-    `SELECT id, company_id, (period_end::date)::text AS period_end, status, payment_status, fta_reference_number,
-            payment_date::date::text AS payment_date, box12_total_due_tax::numeric AS output_vat,
-            box13_recoverable_tax::numeric AS input_vat,
-            box14_payable_tax::numeric AS net_vat
-       FROM vat_returns
-      WHERE company_id = ANY($1::uuid[])
-      ORDER BY created_at`,
-    [companyIds]
-  );
-  for (const row of r.rows as Array<Record<string, unknown>>) {
-    const cid = String(row.company_id);
-    const byEnd = out.get(cid) ?? new Map<string, ReturnLifecycle>();
-    out.set(cid, byEnd);
-    const status = String(row.status);
-    const filed = isFiledReturnStatus(status, row.fta_reference_number as string | null);
-    const paid = filed && row.payment_status === "paid";
+  const periodEnd = sql<string>`${vatReturns.periodEnd}::date::text`;
+  const rows = await db
+    .selectDistinctOn([vatReturns.companyId, periodEnd], {
+      id: vatReturns.id,
+      companyId: vatReturns.companyId,
+      periodEnd,
+      status: effectiveVatFilingStatus,
+      paymentStatus: vatReturns.paymentStatus,
+      reference: vatReturns.ftaReferenceNumber,
+      paymentDate: sql<string | null>`${vatReturns.paymentDate}::date::text`,
+      outputVat: vatReturns.box12TotalDueTax,
+      inputVat: vatReturns.box13RecoverableTax,
+      netVat: vatReturns.box14PayableTax,
+    })
+    .from(vatReturns)
+    .where(and(inArray(vatReturns.companyId, companyIds), activeVatReturnFilter))
+    .orderBy(vatReturns.companyId, desc(periodEnd), ...vatFilingVersionOrder);
+  for (const row of rows) {
+    const byEnd = out.get(row.companyId) ?? new Map<string, ReturnLifecycle>();
+    out.set(row.companyId, byEnd);
+    const { status } = row;
+    const filed = isFiledReturnStatus(status, row.reference);
+    const paid = filed && row.paymentStatus === "paid";
     const entry: ReturnLifecycle = {
-      returnId: String(row.id),
+      returnId: row.id,
       returnStatus: status,
       stage: paid
         ? "paid"
@@ -214,15 +227,12 @@ export async function loadReturnLifecycle(
             ? "ready"
             : "draft",
       filed,
-      paymentDate: row.payment_date as string | null,
-      outputVat: Number(row.output_vat) || 0,
-      inputVat: Number(row.input_vat) || 0,
-      netVatPayable: Number(row.net_vat) || 0,
+      paymentDate: row.paymentDate,
+      outputVat: Number(row.outputVat) || 0,
+      inputVat: Number(row.inputVat) || 0,
+      netVatPayable: Number(row.netVat) || 0,
     };
-    const key = String(row.period_end);
-    const prev = byEnd.get(key);
-    // A filed return wins over a draft for the same period; later rows win ties (amendments).
-    if (!prev || filed || !prev.filed) byEnd.set(key, entry);
+    byEnd.set(row.periodEnd, entry);
   }
   return out;
 }
