@@ -1055,7 +1055,13 @@ async function postCreditNoteInTx(args: {
   mode: "lines" | "remaining";
   creditDocFils: number;
   userId: string;
-}): Promise<{ entryId: string; customerCreditId: string | null; customerCreditFils: number }> {
+}): Promise<{
+  entryId: string;
+  customerCreditId: string | null;
+  customerCreditFils: number;
+  /** AED amount posted (negative), stored on the credit note. */
+  baseCurrencyAmount: number;
+}> {
   const { tx, original, creditNote, totals, mode, userId, creditDocFils } = args;
   const companyId = original.companyId;
   const baseCurrency = await loadBaseCurrency(companyId, tx);
@@ -1221,6 +1227,12 @@ async function postCreditNoteInTx(args: {
     },
     { actorId: userId, tx }
   );
+  // F07: the stored AED amount is what the journal posted (sum of the rounded legs), not the
+  // document total converted once, so the credit-note header ties to the ledger to the fil.
+  await tx
+    .update(invoices)
+    .set({ baseCurrencyAmount: -Number(fromFils(debitBase)) })
+    .where(eq(invoices.id, creditNote.id));
 
   if (excessDocFils > 0 && liabilityId) {
     const [credit] = await tx
@@ -1243,7 +1255,12 @@ async function postCreditNoteInTx(args: {
       .returning({ id: customerCredits.id });
     customerCreditId = credit.id;
   }
-  return { entryId: entry.id, customerCreditId, customerCreditFils: excessDocFils };
+  return {
+    entryId: entry.id,
+    customerCreditId,
+    customerCreditFils: excessDocFils,
+    baseCurrencyAmount: -Number(fromFils(debitBase)),
+  };
 }
 
 export interface CreditNoteLineInput {
@@ -1684,7 +1701,7 @@ async function issueCreditNoteLocked(
   });
   await refreshSettlementStatus(tx, original.id);
   return {
-    creditNote: issued,
+    creditNote: { ...issued, baseCurrencyAmount: posted.baseCurrencyAmount },
     journalEntryId: posted.entryId,
     customerCreditId: posted.customerCreditId,
     customerCreditFils: posted.customerCreditFils,
