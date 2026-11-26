@@ -26,7 +26,7 @@ export interface VatReturnVersionLike {
   box14PayableTax?: number | string | null;
 }
 
-const EFFECTIVE_STATUSES = new Set(["submitted", "filed"]);
+const EFFECTIVE_STATUSES = new Set(["submitted", "filed", "amended"]);
 
 function dayKey(d: string | Date): string {
   const date = d instanceof Date ? d : new Date(d);
@@ -43,8 +43,10 @@ export function vatReturnPeriodKey(r: VatReturnVersionLike): string {
   return `${r.companyId}|${dayKey(r.periodStart)}|${dayKey(r.periodEnd)}`;
 }
 
-/** One effective return per company + period (never drafts or superseded rows). */
-export function selectEffectiveVatReturns<T extends VatReturnVersionLike>(returns: readonly T[]): T[] {
+/** One effective return per company + period (never drafts). */
+export function selectEffectiveVatReturns<T extends VatReturnVersionLike>(
+  returns: readonly T[]
+): T[] {
   const best = new Map<string, T>();
   for (const r of returns) {
     if (!EFFECTIVE_STATUSES.has(r.status)) continue;
