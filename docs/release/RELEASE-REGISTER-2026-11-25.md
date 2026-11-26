@@ -180,3 +180,34 @@ Follow-up commit (F06 storesBusinessDate — journal.routes pattern + period-loc
 npx vitest run tests/unit/accounting-date-period-lock.test.ts
 # 6 passed, 4 failed (source-inspection test now passes; remaining 4 = ECONNREFUSED DB tests)
 ```
+
+Campaign 2026-11-26 fixes (F01 CN-line path, F02 bookkeeper-dashboard, F03 secondary queries,
+F04 test updates, S01 bill_date retention, S02+S03 test update, S08 test update, F07 test update):
+
+```
+# F02: bookkeeper-dashboard VAT filter + firm-command-center source-inspection tests
+npx vitest run tests/unit/firm-command-center.test.ts                                          # 58 passed
+
+# F03: extended to 32 secondaryLoadErrors entries
+npx vitest run tests/unit/report-read-state.test.ts tests/unit/report-discovery.test.ts \
+  tests/unit/report-export-helpers.test.ts tests/unit/report-catalog-routes.test.ts           # 66 passed (exit 0)
+
+# S01: bill_date retention guard
+npx vitest run tests/unit/retention-model-review.test.ts                                       # 10 passed
+
+# F01 CN-line path: document-totals.service per-line rounding restored + CN path tests
+npx vitest run tests/unit/document-totals-rounding.test.ts tests/unit/vat-autopilot.test.ts \
+  tests/unit/einvoice.test.ts                                                                   # 99 passed
+
+# S02+S03 audit-trail test update (F07 route refactor)
+npx vitest run tests/unit/audit-trail-coverage.test.ts                                         # 8 passed
+
+# F04 source-invariant updates (merge-integrated closeChecklistStatus / enforceChecklist)
+npx vitest run tests/unit/month-end-readiness.test.ts                                          # 10 passed
+
+# S08 role-matrix source-invariant updates (merge-integrated RBAC patterns)
+npx vitest run tests/unit/role-matrix.test.ts                                                  # 20 passed
+
+# Full campaign suite
+npx vitest run <14 campaign files>                                                              # 311 passed
+```
