@@ -6,6 +6,7 @@
  * (7.5).
  */
 import { describe, expect, it, vi } from "vitest";
+import { drainDomainEvents, onDomainEvent } from "../../server/platform/domain-events";
 import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -226,6 +227,75 @@ describe("WQ1 receive payment over several invoices (7.6)", () => {
     expect(r.status, r.text).toBe(404);
     expect(await linesBySource(t, ["payment"])).toEqual([]);
     expect(await linesBySource(other, ["payment"])).toEqual([]);
+  });
+
+  it("PR129: the bank fee limit is the cash the payment journals debit to the bank", async () => {
+    const t = await h.createTenant();
+    const bank = await bankAccount(t);
+    const c = await contact(t, "Export Partner FZE");
+    const events: string[] = [];
+    const off = onDomainEvent("payment.received", (e) => void events.push(e.payload.invoiceId));
+    const usd = (exchangeRate: number) =>
+      issued(t, {
+        contactId: c.id,
+        currency: "USD",
+        exchangeRate,
+        lines: [
+          {
+            description: "Export consulting",
+            quantity: 1,
+            unitPrice: 100,
+            vatRate: 0,
+            vatSupplyType: "zero_rated",
+          },
+        ],
+      });
+    const high = await usd(4);
+    const low = await usd(3);
+    // No typed rate: the service settles at the payment-date rate (3.6725), whatever the invoices
+    // were booked at. Each USD 25 leg books AED 91.81, so the bank gets AED 183.62 (not 183.63).
+    const receive = (bankFee: number, ...invoices: Array<{ id: string }>) =>
+      t.as.post(`${base(t)}/receive-payments`, {
+        contactId: c.id,
+        paymentAccountId: bank.glAccountId,
+        date: "2026-11-12",
+        amount: 50,
+        bankFee,
+        allocations: invoices.map((i) => ({ invoiceId: i.id, amount: 25 })),
+      });
+
+    try {
+      for (const fee of [190, 183.62]) {
+        for (const order of [
+          [high, low],
+          [low, high],
+        ]) {
+          const refused = await receive(fee, ...order);
+          expect(refused.status, refused.text).toBe(422);
+          expect(refused.body.code).toBe("BANK_FEE_TOO_LARGE");
+        }
+      }
+      // Rolled back: no payments, journals or credits, and no after-commit events.
+      await drainDomainEvents();
+      expect(events).toEqual([]);
+      expect(await linesBySource(t, ["payment", "customer_receipt_fee"])).toEqual([]);
+      expect(
+        await h.sql(`SELECT id FROM invoice_payments WHERE company_id = $1`, [t.company.id])
+      ).toEqual([]);
+      expect(
+        await h.sql(`SELECT status FROM invoices WHERE company_id = $1`, [t.company.id])
+      ).toEqual([{ status: "sent" }, { status: "sent" }]);
+
+      const accepted = await receive(183.61, low, high);
+      expect(accepted.status, accepted.text).toBe(201);
+      expect(accepted.body.bankFee).toBe("183.61");
+      await drainDomainEvents();
+      expect(events.sort()).toEqual([high.id, low.id].sort());
+      // AED 183.62 debited by the two payments, less the fee.
+      expect(await balanceOf(t, bank.glAccount.code)).toBe(0.01);
+    } finally {
+      off();
+    }
   });
 
   it("a USD invoice received at a later rate books realised FX", async () => {
@@ -499,10 +569,7 @@ describe("WQ1 attachments, document language, sent / viewed log (7.2g, 7.21, 7.2
       async () => {
         const log = await t.as.get(`/api/invoices/${inv.id}/activity`);
         expect(log.status, log.text).toBe(200);
-        expect(log.body.map((e: { kind: string }) => e.kind).sort()).toEqual([
-          "emailed",
-          "viewed",
-        ]);
+        expect(log.body.map((e: { kind: string }) => e.kind).sort()).toEqual(["emailed", "viewed"]);
         const emailed = log.body.find((e: { kind: string }) => e.kind === "emailed");
         expect(emailed).toMatchObject({
           recipient: "ap@gulfretail.example",
@@ -520,9 +587,8 @@ describe("WQ1 attachments, document language, sent / viewed log (7.2g, 7.21, 7.2
     if (!h.concurrencySupported) return ctx.skip();
     const t = await h.createTenant();
     const { id } = await issued(t, { customerName: "Gulf Retail LLC" });
-    const { recordInvoiceView, VIEW_THROTTLE_MS } = await import(
-      "../../server/services/invoice-activity.service"
-    );
+    const { recordInvoiceView, VIEW_THROTTLE_MS } =
+      await import("../../server/services/invoice-activity.service");
     const invoice = { id, companyId: t.company.id };
     const now = new Date();
 

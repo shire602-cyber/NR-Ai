@@ -160,8 +160,11 @@ export function portalQuery<T = any>(
 ) {
   return {
     queryKey: [path.replace(PORTAL_API_PREFIX, "portal-"), selection] as const,
-    queryFn: (): Promise<T> =>
-      requestWithHeaders("GET", path, undefined, portalRequestHeaders(selection)),
+    // Reading `signal` lets React Query abort the request once its last observer leaves.
+    queryFn: ({ signal }: { signal?: AbortSignal } = {}): Promise<T> =>
+      requestWithHeaders("GET", path, undefined, portalRequestHeaders(selection), undefined, {
+        signal,
+      }),
   };
 }
 
@@ -171,7 +174,7 @@ export function apiRequest(
   data?: unknown | undefined,
   /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
   extraHeaders?: Record<string, string>,
-  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean; signal?: AbortSignal }
 ): Promise<any> {
   const authHeaders = PORTAL_API_PREFIX.test(url) ? portalRequestHeaders() : getAuthHeaders();
   return requestWithHeaders(method, url, data, authHeaders, extraHeaders, options);
@@ -183,7 +186,7 @@ async function requestWithHeaders(
   data: unknown,
   authHeaders: Record<string, string>,
   extraHeaders?: Record<string, string>,
-  options?: { queueWhenOffline?: boolean; keepalive?: boolean }
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean; signal?: AbortSignal }
 ): Promise<any> {
   const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
   const upperMethod = method.toUpperCase();
@@ -208,6 +211,7 @@ async function requestWithHeaders(
       body,
       credentials: "include",
       keepalive: options?.keepalive,
+      signal: options?.signal,
     });
 
   // If we're offline and this is a mutation, queue it for the service worker
@@ -275,7 +279,8 @@ const ANONYMOUS_SKIP_KEYS = new Set(["/api/companies", "/api/auth/me"]);
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
+  async (context) => {
+    const { queryKey } = context;
     const url = apiUrl(queryKey.join("/") as string);
     // R18-04: anonymous visitors have no session, so skip the bootstrap probes
     // that would only produce 401 console noise. This resolves exactly as the
@@ -285,20 +290,24 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
       if (unauthorizedBehavior === "returnNull") return null as never;
       throw new ApiError("Not signed in", 401);
     }
-    let res =
-      (await takeBootFetch(url)) ??
-      (await fetch(url, {
+    // `context.signal` is read only where it is needed: reading it tells react-query to abort the
+    // query when its last observer leaves, which would waste an adopted boot response.
+    const send = () =>
+      fetch(url, {
         credentials: "include",
         headers: getAuthHeaders(),
-      }));
+        signal: context.signal,
+      });
+    let res = (await takeBootFetch(url)) ?? (await send());
 
     if (res.status === 401) {
+      // The refresh is shared by every caller, so cancelling this query must not cancel it.
       const refreshed = await refreshSession();
       if (refreshed) {
-        res = await fetch(url, {
-          credentials: "include",
-          headers: getAuthHeaders(),
-        });
+        if (context.signal?.aborted) {
+          throw new DOMException("The request was cancelled.", "AbortError");
+        }
+        res = await send();
       }
     }
 
@@ -309,6 +318,15 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
     await throwIfResNotOk(res);
     return await parseResponseBody(res);
   };
+
+/**
+ * After a write: cancel in-flight reads for the affected queries (a GET that started before the
+ * write must not land afterwards), then invalidate so they refetch. Not awaited: the caller closes
+ * its dialog and toasts straight away.
+ */
+export function refreshAfterWrite(queryKey: readonly unknown[]): void {
+  void queryClient.cancelQueries({ queryKey }).then(() => queryClient.invalidateQueries({ queryKey }));
+}
 
 // Don't retry client errors (4xx) — only retry network failures and 5xx
 function shouldRetry(failureCount: number, error: unknown): boolean {

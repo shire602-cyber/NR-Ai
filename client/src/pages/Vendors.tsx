@@ -1,19 +1,10 @@
-import { useState } from "react";
-import {
-  ErrorSummary,
-  Field,
-  FormActions,
-  FormGrid,
-  FormSection,
-} from "@/components/ui/form-layout";
-import { useFormGate } from "@/hooks/use-form-gate";
+import { Suspense, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -30,17 +21,31 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/format-date";
+import { Alert } from "@/components/ui/alert";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { formatDate } from "@/lib/format";
-import { DataTableCard } from "@/components/ui/data-table";
+import { filterVendors } from "@/lib/vendor-filter";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import {
+  QueryNoCompany,
+  QueryStaleNotice,
+  QueryTableCard,
+  QueryWaiting,
+} from "@/components/contacts/query-state";
+import { queryView } from "@/lib/query-view";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
-import { FileText, Link2, Plus, Truck } from "lucide-react";
+import { lazyWithReload } from "@/lib/lazyWithReload";
+import { FileText, Link2, Plus, Search, Truck } from "lucide-react";
 
 // Vendor master (W3-B, R04-16): TRN-validated, deduplicated suppliers with statements and aging.
+
+const NewVendorDialog = lazyWithReload(() => import("@/components/vendors/NewVendorDialog"));
 
 const COPY = {
   en: {
@@ -48,17 +53,8 @@ const COPY = {
     subtitle: "Supplier master: TRN, payment terms, bank details, statements and aging",
     newVendor: "New supplier",
     name: "Name",
-    nameAr: "Arabic name",
-    trn: "TRN (15 digits)",
     email: "Email",
-    phone: "Phone",
-    terms: "Payment terms (days)",
     currency: "Currency",
-    iban: "IBAN",
-    bank: "Bank",
-    save: "Save",
-    cancel: "Cancel",
-    saved: "Supplier saved",
     list: "Suppliers",
     aging: "Payables aging",
     statement: "Statement",
@@ -88,17 +84,8 @@ const COPY = {
     subtitle: "سجل الموردين: الرقم الضريبي وشروط الدفع والبيانات البنكية والكشوف والأعمار",
     newVendor: "مورد جديد",
     name: "الاسم",
-    nameAr: "الاسم بالعربية",
-    trn: "الرقم الضريبي (15 رقمًا)",
     email: "البريد الإلكتروني",
-    phone: "الهاتف",
-    terms: "شروط الدفع (أيام)",
     currency: "العملة",
-    iban: "رقم الآيبان",
-    bank: "البنك",
-    save: "حفظ",
-    cancel: "إلغاء",
-    saved: "تم حفظ المورد",
     list: "الموردون",
     aging: "أعمار الذمم الدائنة",
     statement: "كشف حساب",
@@ -158,69 +145,81 @@ interface VendorAging {
   };
 }
 
-const EMPTY = {
-  name: "",
-  name_ar: "",
-  trn: "",
-  email: "",
-  phone: "",
-  payment_terms_days: "30",
-  currency: "AED",
-  iban: "",
-  bank_name: "",
-};
-
 export default function Vendors() {
   const { t, locale } = useTranslation();
   const c = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
-  const { companyId } = useDefaultCompany();
+  const {
+    companyId,
+    isLoading: companyLoading,
+    isPaused: companyPaused,
+    error: companyError,
+  } = useDefaultCompany();
   const { gate: permissionGate } = useCompanyPermission();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<Record<string, string>>({ ...EMPTY });
+  // The create form's chunk loads on first request; it then stays mounted and keeps typed values.
+  const [formRequested, setFormRequested] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
   const [statementFor, setStatementFor] = useState<Vendor | null>(null);
 
-  const { data: vendors = [] } = useQuery<Vendor[]>({
+  const vendorsQuery = useQuery<Vendor[]>({
     queryKey: ["/api/companies", companyId, "vendors"],
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/vendors`),
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/vendors`, undefined, undefined, { signal }),
     enabled: !!companyId,
   });
-  const { data: aging } = useQuery<VendorAging>({
+  const agingQuery = useQuery<VendorAging>({
     queryKey: ["/api/companies", companyId, "vendors", "aging"],
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/vendors/aging`),
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/vendors/aging`, undefined, undefined, {
+        signal,
+      }),
     enabled: !!companyId,
   });
-  const { data: statement } = useQuery<{ lines: StatementLine[]; closingBalance: number }>({
+  const statementQuery = useQuery<{ lines: StatementLine[]; closingBalance: number }>({
     queryKey: ["/api/companies", companyId, "vendors", statementFor?.id, "statement"],
-    queryFn: () =>
-      apiRequest("GET", `/api/companies/${companyId}/vendors/${statementFor!.id}/statement`),
+    queryFn: ({ signal }) =>
+      apiRequest(
+        "GET",
+        `/api/companies/${companyId}/vendors/${statementFor!.id}/statement`,
+        undefined,
+        undefined,
+        { signal }
+      ),
     enabled: !!companyId && !!statementFor,
   });
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vendors"] });
+  const vendors = vendorsQuery.data ?? [];
+  const aging = agingQuery.data;
+  const statement = statementQuery.data;
+  const filteredVendors = useMemo(
+    () => filterVendors(vendorsQuery.data ?? [], searchTerm),
+    [vendorsQuery.data, searchTerm]
+  );
+  const company = {
+    companyId,
+    isLoading: companyLoading,
+    isPaused: companyPaused,
+    error: companyError,
+  };
+  const listView = queryView(vendorsQuery, company);
+  const agingView = queryView(agingQuery, company);
+  const statementView = queryView(statementQuery, company);
+  // Credits and the GL reconciliation are facts only about a current, successful answer: a
+  // paused/failed refresh (status can still be "success" with cached data) or stale data hides them.
+  const agingVerified = agingView.kind === "data" && !agingView.stale && !agingQuery.isStale;
+  // Merely expired (no paused or failed refresh): say how old the rows are and offer a refresh.
+  const agingExpired = agingView.kind === "data" && !agingView.stale && agingQuery.isStale;
+  const noMatch = !!searchTerm.trim() && vendors.length > 0;
+  const statementTypeLabel = (type: string) => {
+    const key = `pages.vendorsStatementType.${type}`;
+    const label = t[key];
+    // While catalogs preload, a missing key reads as the key itself: never show that.
+    return label && label !== key ? label : type.replace(/_/g, " ");
+  };
 
-  const create = useMutation({
-    mutationFn: () =>
-      apiRequest("POST", `/api/companies/${companyId}/vendors`, {
-        name: form.name,
-        name_ar: form.name_ar || null,
-        trn: form.trn || null,
-        email: form.email || null,
-        phone: form.phone || null,
-        payment_terms_days: Number(form.payment_terms_days) || 0,
-        currency: form.currency || "AED",
-        iban: form.iban || null,
-        bank_name: form.bank_name || null,
-      }),
-    onSuccess: () => {
-      invalidate();
-      toast({ title: c.saved });
-      setOpen(false);
-      setForm({ ...EMPTY });
-    },
-    onError: (e: Error) => toast({ variant: "destructive", title: e.message }),
-  });
+  // Cancels in-flight reads first, so a GET started before the write cannot land after it.
+  const invalidate = () => refreshAfterWrite(["/api/companies", companyId, "vendors"]);
 
   const backfill = useMutation({
     mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/vendors/backfill`, {}),
@@ -231,37 +230,19 @@ export default function Vendors() {
     onError: (e: Error) => toast({ variant: "destructive", title: e.message }),
   });
 
-  const gate = useFormGate([{ id: "vendor-name", label: c.name, invalid: !form.name }]);
-  const field = (
-    key: keyof typeof EMPTY,
-    label: string,
-    props: Record<string, string> = {},
-    opts: { required?: boolean; help?: string; ltr?: boolean } = {}
-  ) => (
-    <Field
-      id={`vendor-${key}`}
-      label={label}
-      required={opts.required}
-      help={opts.help}
-      error={gate.errorFor(`vendor-${key}`)}
-    >
-      <Input
-        ltr={opts.ltr}
-        value={form[key] ?? ""}
-        onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-        {...props}
-      />
-    </Field>
-  );
+  const openForm = () => {
+    setFormRequested(true);
+    setOpen(true);
+  };
 
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Purchases"
+        eyebrow={t["pages.vendorsEyebrow"]}
         title={c.title}
         description={c.subtitle}
         primaryAction={
-          <Button onClick={() => setOpen(true)} {...permissionGate("documents.write")}>
+          <Button onClick={openForm} {...permissionGate("documents.write")}>
             <Plus aria-hidden />
             {c.newVendor}
           </Button>
@@ -279,18 +260,62 @@ export default function Vendors() {
           <TabsTrigger value="aging">{c.aging}</TabsTrigger>
         </TabsList>
         <TabsContent value="list">
-          <DataTableCard
-            status={vendors.length === 0 ? "empty" : "ready"}
-            empty={{
-              icon: Truck,
-              title: c.noVendors,
-              description: c.emptyBody,
-              action: {
-                label: c.newVendor,
-                onClick: () => setOpen(true),
-                permission: "documents.write",
-              },
-            }}
+          {vendors.length > 0 && (
+            <div className="relative max-w-sm">
+              <Search
+                aria-hidden
+                className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                type="search"
+                className="ps-9"
+                placeholder={t["pages.vendorsSearchPlaceholder"]}
+                aria-label={t["pages.vendorsSearchPlaceholder"]}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                data-testid="input-search-vendors"
+              />
+            </div>
+          )}
+          <QueryStaleNotice view={listView} onRetry={() => void vendorsQuery.refetch()} />
+          <QueryTableCard
+            view={listView}
+            rowCount={filteredVendors.length}
+            onRetry={() => void vendorsQuery.refetch()}
+            columnLabels={[c.name, c.trnShort, c.email, c.termsShort, c.currency]}
+            empty={
+              listView.kind === "data" && listView.stale
+                ? {
+                    icon: noMatch ? Search : Truck,
+                    title: noMatch
+                      ? t["pages.listStaleNoMatchTitle"]
+                      : t["pages.listStaleEmptyTitle"],
+                    description: t["pages.listStaleEmptyBody"],
+                    secondaryAction: noMatch
+                      ? { label: t["pages.vendorsClearSearch"], onClick: () => setSearchTerm("") }
+                      : undefined,
+                  }
+                : noMatch
+                  ? {
+                      icon: Search,
+                      title: t["pages.vendorsNoMatchTitle"],
+                      description: t["pages.vendorsNoMatchBody"],
+                      secondaryAction: {
+                        label: t["pages.vendorsClearSearch"],
+                        onClick: () => setSearchTerm(""),
+                      },
+                    }
+                  : {
+                      icon: Truck,
+                      title: c.noVendors,
+                      description: c.emptyBody,
+                      action: {
+                        label: c.newVendor,
+                        onClick: openForm,
+                        permission: "documents.write",
+                      },
+                    }
+            }
           >
             <Table className="row-cards">
               <TableHeader>
@@ -306,7 +331,7 @@ export default function Vendors() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {vendors.map((v) => (
+                {filteredVendors.map((v) => (
                   <TableRow key={v.id}>
                     <TableCell
                       data-truncate=""
@@ -353,14 +378,46 @@ export default function Vendors() {
                 ))}
               </TableBody>
             </Table>
-          </DataTableCard>
+          </QueryTableCard>
         </TabsContent>
         <TabsContent value="aging" className="space-y-3">
-          <DataTableCard
-            status={(aging?.vendors ?? []).length === 0 ? "empty" : "ready"}
-            empty={{ icon: Truck, title: c.noPayables, description: c.noPayablesBody }}
+          <QueryStaleNotice view={agingView} onRetry={() => void agingQuery.refetch()} />
+          {agingExpired && (
+            <Alert
+              tone="info"
+              data-testid="aging-expired"
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={agingQuery.isFetching}
+                  onClick={() => void agingQuery.refetch()}
+                >
+                  {t["pages.refresh"]}
+                </Button>
+              }
+            >
+              {formatMessage(t["pages.vendorsAgingExpired"], {
+                time: formatDateTime(agingQuery.dataUpdatedAt, locale),
+              })}
+            </Alert>
+          )}
+          <QueryTableCard
+            view={agingView}
+            rowCount={aging?.vendors.length ?? 0}
+            onRetry={() => void agingQuery.refetch()}
+            columnLabels={[c.name, c.total]}
+            empty={
+              agingView.kind === "data" && !agingVerified
+                ? {
+                    icon: Truck,
+                    title: t["pages.listStaleEmptyTitle"],
+                    description: t["pages.listStaleEmptyBody"],
+                  }
+                : { icon: Truck, title: c.noPayables, description: c.noPayablesBody }
+            }
             footer={
-              aging ? (
+              aging && agingVerified ? (
                 <>
                   <span>
                     {c.unappliedCredits}: <Money amount={aging.unappliedCredits} />
@@ -398,78 +455,21 @@ export default function Vendors() {
                 ))}
               </TableBody>
             </Table>
-          </DataTableCard>
+          </QueryTableCard>
         </TabsContent>
       </Tabs>
 
-      <Dialog
-        open={open}
-        onOpenChange={(o) => {
-          setOpen(o);
-          if (!o) gate.reset();
-        }}
-      >
-        <DialogContent size="md" data-testid="dialog-vendor-form">
-          <DialogHeader>
-            <DialogTitle>{c.newVendor}</DialogTitle>
-            <DialogDescription>{t["forms.vendor.desc"]}</DialogDescription>
-          </DialogHeader>
-          <form
-            noValidate
-            className="space-y-6"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (create.isPending || !gate.attempt()) return;
-              create.mutate();
-            }}
-          >
-            <ErrorSummary items={gate.summary} />
-            <FormSection title={t["forms.section.vendor"]}>
-              <FormGrid>
-                {field("name", c.name, { dir: "auto" }, { required: true })}
-                {field("name_ar", c.nameAr, { dir: "rtl", lang: "ar" })}
-              </FormGrid>
-            </FormSection>
-            <FormSection title={t["forms.section.tax"]} description={t["forms.section.taxDesc"]}>
-              <FormGrid>
-                {field(
-                  "trn",
-                  c.trn,
-                  { inputMode: "numeric", maxLength: "15" },
-                  { ltr: true, help: t["forms.contact.trnHelp"] }
-                )}
-                {field(
-                  "payment_terms_days",
-                  c.terms,
-                  { inputMode: "numeric" },
-                  { ltr: true, help: t["forms.vendor.termsHelp"] }
-                )}
-                {field("currency", c.currency, { maxLength: "3" }, { ltr: true })}
-              </FormGrid>
-            </FormSection>
-            <FormSection title={t["forms.section.contact"]}>
-              <FormGrid>
-                {field("email", c.email, { type: "email", dir: "ltr", autoComplete: "email" })}
-                {field("phone", c.phone, { type: "tel", dir: "ltr", autoComplete: "tel" })}
-              </FormGrid>
-            </FormSection>
-            <FormSection title={t["forms.section.bank"]}>
-              <FormGrid>
-                {field("iban", c.iban, { autoComplete: "off" }, { ltr: true })}
-                {field("bank_name", c.bank, { dir: "auto" })}
-              </FormGrid>
-            </FormSection>
-            <FormActions sticky>
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                {c.cancel}
-              </Button>
-              <Button type="submit" className="sm:min-w-32" disabled={create.isPending}>
-                {create.isPending ? t["forms.saving"] : c.save}
-              </Button>
-            </FormActions>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {formRequested && (
+        <Suspense fallback={null}>
+          <NewVendorDialog
+            open={open}
+            onOpenChange={setOpen}
+            companyId={companyId}
+            onSaved={invalidate}
+            labels={{ title: c.newVendor, name: c.name, email: c.email, currency: c.currency }}
+          />
+        </Suspense>
+      )}
 
       <Dialog open={!!statementFor} onOpenChange={(o) => !o && setStatementFor(null)}>
         <DialogContent size="lg">
@@ -478,37 +478,66 @@ export default function Vendors() {
               {c.statement}: <span dir="auto">{statementFor?.name}</span>
             </DialogTitle>
           </DialogHeader>
+          {statementFor && (
+            <QueryStaleNotice view={statementView} onRetry={() => void statementQuery.refetch()} />
+          )}
           <div className="overflow-hidden rounded-lg border border-border">
-            <Table density="compact" className="mobile-fit">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{c.date}</TableHead>
-                  <TableHead>{c.type}</TableHead>
-                  <TableHead>{c.reference}</TableHead>
-                  <TableHead data-numeric="">{c.charge}</TableHead>
-                  <TableHead data-numeric="">{c.credit}</TableHead>
-                  <TableHead data-numeric="">{c.balance}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(statement?.lines ?? []).map((l) => (
-                  <TableRow key={`${l.type}-${l.documentId}`}>
-                    <TableCell data-nowrap="">{formatDate(l.date, locale)}</TableCell>
-                    <TableCell data-nowrap="" className="text-muted-foreground">
-                      {l.type.replace(/_/g, " ")}
-                    </TableCell>
-                    <TableCell data-nowrap="">
-                      <span dir="ltr" className="[unicode-bidi:isolate]">
-                        {l.reference ?? "—"}
-                      </span>
-                    </TableCell>
-                    <MoneyCell amount={l.charge} showCurrency={false} />
-                    <MoneyCell amount={l.credit} showCurrency={false} />
-                    <MoneyCell amount={l.balance} showCurrency={false} className="font-medium" />
+            {!statementFor ? null : statementView.kind === "loading" ? (
+              <TableSkeleton
+                rows={3}
+                columnLabels={[c.date, c.type, c.reference, c.charge, c.credit, c.balance]}
+              />
+            ) : statementView.kind === "noCompany" ? (
+              <QueryNoCompany />
+            ) : statementView.kind === "waiting" ? (
+              <QueryWaiting />
+            ) : statementView.kind === "error" ? (
+              <LoadErrorState
+                compact
+                error={statementView.error}
+                onRetry={statementView.canRetry ? () => void statementQuery.refetch() : undefined}
+              />
+            ) : (statement?.lines ?? []).length === 0 ? (
+              <p
+                className="p-4 text-center text-sm text-muted-foreground"
+                data-testid="statement-empty"
+              >
+                {statementView.stale
+                  ? t["pages.vendorsStatementStaleEmpty"]
+                  : t["pages.vendorsStatementEmpty"]}
+              </p>
+            ) : (
+              <Table density="compact" className="mobile-fit">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{c.date}</TableHead>
+                    <TableHead>{c.type}</TableHead>
+                    <TableHead>{c.reference}</TableHead>
+                    <TableHead data-numeric="">{c.charge}</TableHead>
+                    <TableHead data-numeric="">{c.credit}</TableHead>
+                    <TableHead data-numeric="">{c.balance}</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {(statement?.lines ?? []).map((l) => (
+                    <TableRow key={`${l.type}-${l.documentId}`}>
+                      <TableCell data-nowrap="">{formatDate(l.date, locale)}</TableCell>
+                      <TableCell data-nowrap="" className="text-muted-foreground">
+                        {statementTypeLabel(l.type)}
+                      </TableCell>
+                      <TableCell data-nowrap="">
+                        <span dir="ltr" className="[unicode-bidi:isolate]">
+                          {l.reference ?? "—"}
+                        </span>
+                      </TableCell>
+                      <MoneyCell amount={l.charge} showCurrency={false} />
+                      <MoneyCell amount={l.credit} showCurrency={false} />
+                      <MoneyCell amount={l.balance} showCurrency={false} className="font-medium" />
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStatementFor(null)}>

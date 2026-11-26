@@ -114,6 +114,7 @@
   "cashFlowForecast.historyDescription": "Monthly income and expense totals from posted journal entries (accrual basis, not bank movement)",
   "cashFlowForecast.emptyTitle": "No forecast yet",
   "cashFlowForecast.emptyBody": "The forecast starts from your bank and cash balances and the due dates of open invoices and bills. Record them and the next weeks appear here.",
+  "cashFlowForecast.removeItemFailedTitle": "Could not remove item",
   "budgets.summaryIncome": "Income",
   "budgets.summaryExpense": "Expenses",
   "budgets.summaryNet": "Net profit",

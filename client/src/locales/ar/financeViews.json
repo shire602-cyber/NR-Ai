@@ -114,6 +114,7 @@
   "cashFlowForecast.historyDescription": "إجمالي الإيرادات والمصروفات الشهرية من قيود اليومية المرحّلة (على أساس الاستحقاق وليس الحركة البنكية)",
   "cashFlowForecast.emptyTitle": "لا توجد توقعات بعد",
   "cashFlowForecast.emptyBody": "تبدأ التوقعات من أرصدة البنك والنقد وتواريخ استحقاق الفواتير المفتوحة وفواتير الموردين. سجّلها لتظهر الأسابيع القادمة هنا.",
+  "cashFlowForecast.removeItemFailedTitle": "تعذر حذف البند",
   "budgets.summaryIncome": "الإيرادات",
   "budgets.summaryExpense": "المصروفات",
   "budgets.summaryNet": "صافي الربح",
