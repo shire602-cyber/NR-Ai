@@ -402,7 +402,10 @@ export async function renderCashFlow(
   };
 }
 
-/** PDF output caps the GL at this many lines; the XLSX always has every line. */
+/**
+ * PDF output caps the GL at this many lines; the XLSX is not subject to this cap. Both are
+ * subject to the source ledger's own detail-line limit (`GeneralLedger.truncated`).
+ */
 export const GL_PDF_LINE_CAP = 4000;
 
 export async function renderGeneralLedger(
@@ -414,7 +417,7 @@ export async function renderGeneralLedger(
   const cap = opts.lineCap ?? Number.POSITIVE_INFINITY;
   const rows: RenderRow[] = [];
   let lineCount = 0;
-  let truncated = gl.truncated;
+  let pdfTruncated = false;
   for (const account of gl.accounts) {
     rows.push({
       cells: {
@@ -430,7 +433,7 @@ export async function renderGeneralLedger(
     });
     for (const line of account.lines) {
       if (lineCount >= cap) {
-        truncated = true;
+        pdfTruncated = true;
         break;
       }
       lineCount += 1;
@@ -483,14 +486,30 @@ export async function renderGeneralLedger(
         rows,
       },
     ],
-    notes: truncated
-      ? [
-          {
-            en: "Line listing truncated in this PDF; the Excel workbook has every line.",
-            ar: "تم اختصار القائمة في ملف PDF؛ يحتوي ملف Excel على جميع البنود.",
-          },
-        ]
-      : [],
+    notes: [
+      // The ledger query itself stopped at its limit: no export format has the remaining lines.
+      ...(gl.truncated
+        ? [
+            {
+              en: "Line listing truncated at the general ledger detail limit, in both PDF and Excel. Totals and closing balances include every line; choose a shorter period to list the rest.",
+              ar: "تم اختصار القائمة عند الحد الأقصى لتفاصيل دفتر الأستاذ، في ملفي PDF وExcel. تشمل الإجماليات والأرصدة الختامية جميع البنود؛ اختر فترة أقصر لعرض بقية البنود.",
+            },
+          ]
+        : []),
+      ...(pdfTruncated
+        ? [
+            gl.truncated
+              ? {
+                  en: "This PDF lists fewer lines than the Excel workbook.",
+                  ar: "يعرض ملف PDF بنودًا أقل مما يعرضه ملف Excel.",
+                }
+              : {
+                  en: "Line listing truncated in this PDF; the Excel workbook has every line.",
+                  ar: "تم اختصار القائمة في ملف PDF؛ يحتوي ملف Excel على جميع البنود.",
+                },
+          ]
+        : []),
+    ],
   };
 }
 

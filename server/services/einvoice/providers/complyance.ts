@@ -715,7 +715,7 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     }
     let gets;
     try {
-      gets = ublToGets(submission.xml);
+      gets = ublToGets(submission.xml, submission.documentCurrencyLines);
     } catch (err) {
       return this.outcome("rejected", "pending", {
         providerMessageId: "",
