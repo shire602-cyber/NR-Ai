@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/ui/page-header";
-import { FileDrop } from "@/components/ui/file-drop";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
-import { DatePicker } from "@/components/ui/date-picker";
+import { OnDemandDialogStatus } from "@/components/team/onDemandDialog";
+import { useOnDemandDialog } from "@/components/team/useOnDemandDialog";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { differenceInDays } from "date-fns";
@@ -11,7 +11,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -22,14 +21,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
   Table,
   TableBody,
   TableCell,
@@ -37,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
+import { freshChunkUrl } from "@/lib/dialogChunk";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -57,11 +48,20 @@ import {
   CheckCircle2,
   FolderOpen,
   Calendar,
-  Loader2,
   Plus,
   Eye,
   Filter,
 } from "lucide-react";
+
+type UploadDialogModule = typeof import("@/components/documents/DocumentUploadDialog");
+
+function loadUploadDialog(retry: string | null): Promise<UploadDialogModule> {
+  if (retry === null) return import("@/components/documents/DocumentUploadDialog");
+  const path = import.meta.env.DEV
+    ? "../components/documents/DocumentUploadDialog.tsx"
+    : "__MUHASIB_DIALOG_CHUNK__DocumentUploadDialog__";
+  return import(/* @vite-ignore */ freshChunkUrl(new URL(path, import.meta.url), retry));
+}
 
 interface Document {
   id: string;
@@ -101,13 +101,17 @@ const DOCUMENT_CATEGORIES = [
 ];
 
 export default function DocumentVault() {
-  const { t } = useTranslation();
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany, error: companyError } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const uploadDialog = useOnDemandDialog(loadUploadDialog, "DocumentUploadDialog");
+  const openUploadDialog = () => {
+    setUploadDialogOpen(true);
+    uploadDialog.request();
+  };
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [newDocument, setNewDocument] = useState({
@@ -386,11 +390,17 @@ export default function DocumentVault() {
               : t["documentVault.storeAndManageYourImportant"]
           }
           actions={
-            <Button onClick={() => setUploadDialogOpen(true)} data-testid="button-upload-document">
+            <Button onClick={openUploadDialog} data-testid="button-upload-document">
               <Plus className="h-4 w-4" aria-hidden />
               {locale === "ar" ? "رفع مستند" : t["pages.uploadDocument"]}
             </Button>
           }
+        />
+
+        <OnDemandDialogStatus
+          status={uploadDialog.status}
+          onRetry={openUploadDialog}
+          testId="vault-upload-dialog"
         />
 
         {/* A failed background refresh keeps the loaded list, search and upload usable. */}
@@ -430,7 +440,7 @@ export default function DocumentVault() {
             action={{
               label: locale === "ar" ? "رفع أول مستند" : t["documentVault.uploadYourFirstDocument"],
               icon: Plus,
-              onClick: () => setUploadDialogOpen(true),
+              onClick: openUploadDialog,
               testId: "button-upload-first-document",
             }}
           />
@@ -653,145 +663,23 @@ export default function DocumentVault() {
           </Card>
         )}
 
-        <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>
-                {locale === "ar" ? "رفع مستند جديد" : t["documentVault.uploadNewDocument"]}
-              </DialogTitle>
-              <DialogDescription>
-                {locale === "ar"
-                  ? "ارفع مستنداً مهماً مثل الرخصة التجارية أو العقود"
-                  : t["documentVault.uploadAnImportantDocumentLike"]}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>
-                    {locale === "ar" ? "اسم المستند (إنجليزي)" : "Document name (English)"}
-                  </Label>
-                  <Input
-                    dir="ltr"
-                    value={newDocument.name}
-                    onChange={(e) => setNewDocument({ ...newDocument, name: e.target.value })}
-                    placeholder={t["documentVault.tradeLicense2025"]}
-                    data-testid="input-document-name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>{locale === "ar" ? "اسم المستند (عربي)" : "Document name (Arabic)"}</Label>
-                  <Input
-                    value={newDocument.nameAr}
-                    onChange={(e) => setNewDocument({ ...newDocument, nameAr: e.target.value })}
-                    placeholder="الرخصة التجارية 2025"
-                    dir="rtl"
-                    data-testid="input-document-name-ar"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>{locale === "ar" ? "الفئة" : "Category"}</Label>
-                <Select
-                  value={newDocument.category}
-                  onValueChange={(val) => setNewDocument({ ...newDocument, category: val })}
-                >
-                  <SelectTrigger
-                    data-testid="select-document-category"
-                    aria-label={t["documentVault.documentCategory"]}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DOCUMENT_CATEGORIES.map((cat) => (
-                      <SelectItem key={cat.value} value={cat.value}>
-                        {locale === "ar" ? cat.labelAr : cat.labelEn}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>{locale === "ar" ? "الوصف (اختياري)" : "Description (optional)"}</Label>
-                <Textarea
-                  value={newDocument.description}
-                  onChange={(e) => setNewDocument({ ...newDocument, description: e.target.value })}
-                  placeholder={
-                    locale === "ar"
-                      ? "أضف ملاحظات حول هذا المستند..."
-                      : "Add notes about this document..."
-                  }
-                  data-testid="input-document-description"
-                />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>
-                    {locale === "ar" ? "تاريخ الانتهاء (اختياري)" : "Expiry date (optional)"}
-                  </Label>
-                  <DatePicker
-                    value={newDocument.expiryDate}
-                    onChange={(v) => setNewDocument({ ...newDocument, expiryDate: v })}
-                    data-testid="input-expiry-date"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>{locale === "ar" ? "تذكير قبل (أيام)" : "Remind before (days)"}</Label>
-                  <Input
-                    type="number"
-                    value={newDocument.reminderDays}
-                    onChange={(e) =>
-                      setNewDocument({
-                        ...newDocument,
-                        reminderDays: parseInt(e.target.value) || 30,
-                      })
-                    }
-                    min="1"
-                    max="365"
-                    data-testid="input-reminder-days"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>{locale === "ar" ? "الملف" : "File"}</Label>
-                <FileDrop
-                  accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx,.csv,.txt"
-                  inputTestId="input-document-file"
-                  value={
-                    selectedFile
-                      ? `${selectedFile.name} (${(selectedFile.size / 1024).toFixed(1)} KB)`
-                      : undefined
-                  }
-                  onFiles={([f]) => setSelectedFile(f ?? null)}
-                  onClear={() => setSelectedFile(null)}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setUploadDialogOpen(false);
-                  resetForm();
-                }}
-              >
-                {locale === "ar" ? "إلغاء" : "Cancel"}
-              </Button>
-              <Button
-                onClick={handleUpload}
-                disabled={isUploading}
-                data-testid="button-confirm-upload"
-              >
-                {isUploading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-                {locale === "ar" ? "رفع" : "Upload"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {uploadDialog.Component && (
+          <uploadDialog.Component
+            open={uploadDialogOpen}
+            onOpenChange={setUploadDialogOpen}
+            newDocument={newDocument}
+            setNewDocument={setNewDocument}
+            selectedFile={selectedFile}
+            setSelectedFile={setSelectedFile}
+            categories={DOCUMENT_CATEGORIES}
+            isUploading={isUploading}
+            onCancel={() => {
+              setUploadDialogOpen(false);
+              resetForm();
+            }}
+            onUpload={handleUpload}
+          />
+        )}
       </div>
     </SettingsLayout>
   );
