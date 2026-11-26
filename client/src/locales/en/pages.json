@@ -766,6 +766,7 @@
   "pages.inventoryNoMatch": "No products match your search.",
   "pages.inventoryLoadError": "Products could not be loaded. Try again in a moment.",
   "pages.inventoryEmpty": "No products yet. Add your first product to get started.",
+  "pages.inventoryWaiting": "Waiting to load products.",
   "pages.coaDebitTotal": "Dr: {amount}",
   "pages.coaCreditTotal": "Cr: {amount}",
   "pages.subscriptionGetStartedWithBasicAccounting": "Get started with basic accounting",

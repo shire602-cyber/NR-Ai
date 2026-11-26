@@ -86,7 +86,7 @@ import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, refreshAfterWrite } from "@/lib/queryClient";
 import { formatCurrency, formatDate } from "@/lib/format";
 import type { Product, InventoryMovement } from "@shared/schema";
 import { isValidGtin, RCM_GOODS_TYPES } from "@shared/vat-classification";
@@ -182,14 +182,17 @@ export default function Inventory() {
   // ─── Queries ──────────────────────────────────────────
 
   const {
-    data: productsList = [],
-    isLoading: isLoadingProducts,
-    isError: isProductsError,
+    data: productsData,
+    fetchStatus: productsFetchStatus,
+    isLoadingError: isProductsLoadError,
     refetch: refetchProducts,
   } = useQuery<Product[]>({
     queryKey: [`/api/companies/${companyId}/products`],
     enabled: !!companyId,
   });
+  const productsList = productsData ?? [];
+  // Paused before the first response (offline or otherwise): nothing is known about the catalogue yet.
+  const isWaitingForProducts = productsData === undefined && productsFetchStatus === "paused";
 
   const { data: movementsList = [], isLoading: isLoadingMovements } = useQuery<InventoryMovement[]>(
     {
@@ -239,7 +242,7 @@ export default function Inventory() {
     mutationFn: (data: ProductFormData) =>
       apiRequest("POST", `/api/companies/${companyId}/products`, productPayload(data)),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
+      refreshAfterWrite([`/api/companies/${companyId}/products`]);
       toast({
         title: translateNow("toasts.productCreated"),
         description: translateNow("toasts.theProductHasBeenAddedSuccessfully"),
@@ -260,7 +263,7 @@ export default function Inventory() {
     mutationFn: ({ id, data }: { id: string; data: Partial<ProductFormData> }) =>
       apiRequest("PATCH", `/api/products/${id}`, productPayload(data)),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
+      refreshAfterWrite([`/api/companies/${companyId}/products`]);
       toast({
         title: translateNow("toasts.productUpdated"),
         description: translateNow("toasts.theProductHasBeenUpdatedSuccessfully"),
@@ -281,7 +284,7 @@ export default function Inventory() {
   const deleteProductMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/products/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
+      refreshAfterWrite([`/api/companies/${companyId}/products`]);
       toast({
         title: translateNow("toasts.productDeleted"),
         description: translateNow("toasts.theProductHasBeenDeleted"),
@@ -307,7 +310,7 @@ export default function Inventory() {
         ...(data.type === "purchase" ? { counterAccountId: data.counterAccountId } : {}),
       }),
     onSuccess: (res: { warnings?: string[] }) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
+      refreshAfterWrite([`/api/companies/${companyId}/products`]);
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/inventory-movements`],
       });
@@ -534,19 +537,24 @@ export default function Inventory() {
                 className="h-9 ps-9"
               />
             </div>
-            <p className="text-small text-muted-foreground">
-              {formatMessage(t["pages.inventoryProductCount"], { count: productsList.length })}
-            </p>
+            {productsData !== undefined && (
+              <p className="text-small text-muted-foreground">
+                {formatMessage(t["pages.inventoryProductCount"], { count: productsData.length })}
+              </p>
+            )}
           </div>
           <DataTableCard
+            // A failed refresh keeps the cached answer; only a failed first load blocks the card.
             status={
-              isLoadingProducts
-                ? "loading"
-                : isProductsError
-                  ? "error"
-                  : filteredProducts.length === 0
-                    ? "empty"
-                    : "ready"
+              isProductsLoadError
+                ? "error"
+                : isWaitingForProducts
+                  ? "ready"
+                  : productsData === undefined
+                    ? "loading"
+                    : filteredProducts.length === 0
+                      ? "empty"
+                      : "ready"
             }
             error={{
               testId: "inventory-products-error",
@@ -563,107 +571,121 @@ export default function Inventory() {
                   : { label: t["pageLabels.addProduct"], onClick: handleOpenCreateDialog },
             }}
           >
-            <Table className="row-cards">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-full">{t["screens.product"]}</TableHead>
-                  <TableHead>{t["screens.sku"]}</TableHead>
-                  <TableHead data-numeric="">
-                    <T k="pages.unitPrice" />
-                  </TableHead>
-                  <TableHead data-numeric="">
-                    <T k="pages.costPrice" />
-                  </TableHead>
-                  <TableHead data-numeric="">
-                    <T k="reportCenter.stock" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pages.status" />
-                  </TableHead>
-                  <TableHead>
-                    <span className="sr-only">{t.actions || "Actions"}</span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredProducts.map((product) => {
-                  const isLowStock =
-                    (product as Product & { productType?: string }).productType !== "service" &&
-                    product.currentStock < (product.lowStockThreshold || 0);
-                  return (
-                    <TableRow key={product.id}>
-                      <TableCell data-truncate="" data-cell="title">
-                        <span dir="auto" className="font-medium">
-                          {locale === "ar" && product.nameAr ? product.nameAr : product.name}
-                        </span>
-                        {product.nameAr && locale !== "ar" && (
-                          <span dir="rtl" className="ms-2 text-caption text-muted-foreground">
-                            {product.nameAr}
+            {isWaitingForProducts ? (
+              <p
+                role="status"
+                data-testid="inventory-products-waiting"
+                className="px-4 py-8 text-center text-small text-muted-foreground"
+              >
+                {t["pages.inventoryWaiting"]}
+              </p>
+            ) : (
+              <Table className="row-cards">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-full">{t["screens.product"]}</TableHead>
+                    <TableHead>{t["screens.sku"]}</TableHead>
+                    <TableHead data-numeric="">
+                      <T k="pages.unitPrice" />
+                    </TableHead>
+                    <TableHead data-numeric="">
+                      <T k="pages.costPrice" />
+                    </TableHead>
+                    <TableHead data-numeric="">
+                      <T k="reportCenter.stock" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
+                    <TableHead>
+                      <span className="sr-only">{t.actions || "Actions"}</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredProducts.map((product) => {
+                    const isLowStock =
+                      (product as Product & { productType?: string }).productType !== "service" &&
+                      product.currentStock < (product.lowStockThreshold || 0);
+                    return (
+                      <TableRow key={product.id}>
+                        <TableCell data-truncate="" data-cell="title">
+                          <span dir="auto" className="font-medium">
+                            {locale === "ar" && product.nameAr ? product.nameAr : product.name}
                           </span>
-                        )}
-                      </TableCell>
-                      <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
-                        <span dir="ltr" className="[unicode-bidi:isolate]">
-                          {product.sku || "—"}
-                        </span>
-                      </TableCell>
-                      <MoneyCell amount={product.unitPrice} className="text-muted-foreground" />
-                      <MoneyCell
-                        amount={product.costPrice || 0}
-                        className="text-muted-foreground"
-                      />
-                      <TableCell data-numeric="" data-cell="amount">
-                        <span className={cn("font-medium", isLowStock && "text-warning")}>
-                          {product.currentStock}
-                        </span>{" "}
-                        <span className="text-caption text-muted-foreground">
-                          {unitLabel(product.unit)}
-                        </span>
-                      </TableCell>
-                      <TableCell data-nowrap="" data-cell="status">
-                        {isLowStock ? (
-                          <Badge variant="warning" dot>
-                            <AlertTriangle className="h-3 w-3" aria-hidden />
-                            {t["screens.lowStock"]}
-                          </Badge>
-                        ) : (
-                          <StatusBadge status={product.isActive ? "active" : "inactive"} />
-                        )}
-                      </TableCell>
-                      <TableCell data-cell="actions">
-                        <RowActions
-                          maxInline={1}
-                          collapseOnMobile
-                          menu={
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onSelect={() => setProductToDelete(product.id)}
-                              disabled={!can("documents.write")}
-                            >
-                              <Trash2 aria-hidden />
-                              {t.delete}
-                            </DropdownMenuItem>
-                          }
+                          {product.nameAr && locale !== "ar" && (
+                            <span dir="rtl" className="ms-2 text-caption text-muted-foreground">
+                              {product.nameAr}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell
+                          data-nowrap=""
+                          data-cell="meta"
+                          className="text-muted-foreground"
                         >
-                          <RowActionButton
-                            label={t["screens.addStock"]}
-                            icon={PackagePlus}
-                            onClick={() => handleOpenAddStockDialog(product)}
-                            {...gate("documents.write")}
-                          />
-                          <RowActionButton
-                            label={t.edit}
-                            icon={Edit}
-                            onClick={() => handleOpenEditDialog(product)}
-                            {...gate("documents.write")}
-                          />
-                        </RowActions>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                          <span dir="ltr" className="[unicode-bidi:isolate]">
+                            {product.sku || "—"}
+                          </span>
+                        </TableCell>
+                        <MoneyCell amount={product.unitPrice} className="text-muted-foreground" />
+                        <MoneyCell
+                          amount={product.costPrice || 0}
+                          className="text-muted-foreground"
+                        />
+                        <TableCell data-numeric="" data-cell="amount">
+                          <span className={cn("font-medium", isLowStock && "text-warning")}>
+                            {product.currentStock}
+                          </span>{" "}
+                          <span className="text-caption text-muted-foreground">
+                            {unitLabel(product.unit)}
+                          </span>
+                        </TableCell>
+                        <TableCell data-nowrap="" data-cell="status">
+                          {isLowStock ? (
+                            <Badge variant="warning" dot>
+                              <AlertTriangle className="h-3 w-3" aria-hidden />
+                              {t["screens.lowStock"]}
+                            </Badge>
+                          ) : (
+                            <StatusBadge status={product.isActive ? "active" : "inactive"} />
+                          )}
+                        </TableCell>
+                        <TableCell data-cell="actions">
+                          <RowActions
+                            maxInline={1}
+                            collapseOnMobile
+                            menu={
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onSelect={() => setProductToDelete(product.id)}
+                                disabled={!can("documents.write")}
+                              >
+                                <Trash2 aria-hidden />
+                                {t.delete}
+                              </DropdownMenuItem>
+                            }
+                          >
+                            <RowActionButton
+                              label={t["screens.addStock"]}
+                              icon={PackagePlus}
+                              onClick={() => handleOpenAddStockDialog(product)}
+                              {...gate("documents.write")}
+                            />
+                            <RowActionButton
+                              label={t.edit}
+                              icon={Edit}
+                              onClick={() => handleOpenEditDialog(product)}
+                              {...gate("documents.write")}
+                            />
+                          </RowActions>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
           </DataTableCard>
         </TabsContent>
 
@@ -1464,11 +1486,11 @@ function InventoryAccountingTabs({
       "inventory/reorder",
       "warehouses",
       "stocktakes",
-      "products",
       "inventory-movements",
     ]) {
       queryClient.invalidateQueries({ queryKey: [`${base}/${k}`] });
     }
+    refreshAfterWrite([`${base}/products`]);
   };
 
   const [wh, setWh] = useState({ code: "", name: "", nameAr: "" });

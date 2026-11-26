@@ -766,6 +766,7 @@
   "pages.inventoryNoMatch": "لا توجد منتجات مطابقة لبحثك.",
   "pages.inventoryLoadError": "تعذّر تحميل المنتجات. حاول مرة أخرى بعد قليل.",
   "pages.inventoryEmpty": "لا توجد منتجات بعد. أضف منتجك الأول للبدء.",
+  "pages.inventoryWaiting": "بانتظار تحميل المنتجات.",
   "pages.coaDebitTotal": "مدين: {amount}",
   "pages.coaCreditTotal": "دائن: {amount}",
   "pages.subscriptionGetStartedWithBasicAccounting": "ابدأ بالمحاسبة الأساسية",
