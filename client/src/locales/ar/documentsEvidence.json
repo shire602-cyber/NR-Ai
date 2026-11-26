@@ -206,6 +206,8 @@
   "documentVault.waitingBody": "يُستأنف التحميل عند تنشيط النافذة وتوفر الاتصال.",
   "documentVault.refreshFailedTitle": "تعذّر تحديث مستنداتك",
   "documentVault.refreshFailedBody": "هذه آخر قائمة محمّلة وقد لا تكون محدّثة.",
+  "documentVault.refreshPausedTitle": "التحديث متوقف مؤقتًا",
+  "documentVault.refreshPausedBody": "هذه آخر قائمة محمّلة. يُستأنف التحديث عند تنشيط النافذة وتوفر الاتصال.",
   "documentVault.deleteUnconfirmedTitle": "لم يتم تأكيد الحذف",
   "documentVault.deleteUnconfirmedBody": "ربما حُذف المستند. تحقق من القائمة قبل إعادة المحاولة.",
   "documentVault.unsupportedFileBody": "مرجع الملف غير مدعوم، فلا يمكن فتحه أو تنزيله.",

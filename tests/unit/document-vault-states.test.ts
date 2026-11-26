@@ -273,6 +273,49 @@ describe("delete", () => {
     expect(byId(`row-document-${FILE_ID}`)).toBeNull();
   });
 
+  it("says the refresh is paused, over an older error, until the reconnect answers", async () => {
+    let reads = 0;
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "DELETE") {
+        // The connection drops after the delete is confirmed, before the list is re-read.
+        onlineManager.setOnline(false);
+        return new Response(null, { status: 204 });
+      }
+      reads += 1;
+      return reads === 1 ? json({ message: "no" }, 400) : json([]);
+    });
+    await render();
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: KEY });
+    });
+    await waitFor(() => expect(byId("vault-refresh-error")).not.toBeNull());
+
+    await click(`button-delete-${FILE_ID}`);
+    await waitFor(() => expect(byId("vault-refresh-paused")).not.toBeNull());
+    expect(queryClient.getQueryState(KEY)).toMatchObject({
+      status: "error",
+      fetchStatus: "paused",
+    });
+    expect(byId("vault-refresh-paused")!.textContent).toContain(
+      t.en["documentVault.refreshPausedTitle"]
+    );
+    expect(byId("vault-refresh-paused")!.textContent).toContain(
+      t.en["documentVault.refreshPausedBody"]
+    );
+    expect(byId("vault-refresh-error")).toBeNull();
+    expect(byId(`row-document-${FILE_ID}`)).not.toBeNull();
+    expect(reads).toBe(1);
+
+    await act(async () => {
+      onlineManager.setOnline(true);
+    });
+    await waitFor(() => expect(byId("button-upload-first-document")).not.toBeNull());
+    expect(byId(`row-document-${FILE_ID}`)).toBeNull();
+    expect(byId("vault-refresh-paused")).toBeNull();
+    expect(byId("vault-refresh-error")).toBeNull();
+    expect(reads).toBe(2);
+  });
+
   it("cancels a read issued before the delete was confirmed", async () => {
     const signals: AbortSignal[] = [];
     fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {

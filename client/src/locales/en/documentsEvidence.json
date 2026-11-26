@@ -206,6 +206,8 @@
   "documentVault.waitingBody": "Loading resumes once this window is focused and online.",
   "documentVault.refreshFailedTitle": "Could not refresh documents",
   "documentVault.refreshFailedBody": "This is the last loaded list and may be outdated.",
+  "documentVault.refreshPausedTitle": "Refresh paused",
+  "documentVault.refreshPausedBody": "This is the last loaded list. Refresh resumes once this window is focused and online.",
   "documentVault.deleteUnconfirmedTitle": "Deletion not confirmed",
   "documentVault.deleteUnconfirmedBody": "The document might be deleted. Check the list before retrying.",
   "documentVault.unsupportedFileBody": "Unsupported file reference. It cannot be opened or downloaded.",

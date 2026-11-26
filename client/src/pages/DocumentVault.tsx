@@ -403,8 +403,17 @@ export default function DocumentVault() {
           testId="vault-upload-dialog"
         />
 
-        {/* A failed background refresh keeps the loaded list, search and upload usable. */}
-        {isError && (
+        {/* A paused or failed background refresh keeps the loaded list, search and upload usable.
+            Paused wins: an earlier error stays on the query while the next read waits. */}
+        {fetchStatus === "paused" ? (
+          <Alert
+            tone="info"
+            title={t["documentVault.refreshPausedTitle"]}
+            data-testid="vault-refresh-paused"
+          >
+            {t["documentVault.refreshPausedBody"]}
+          </Alert>
+        ) : isError ? (
           <Alert
             tone="warning"
             title={t["documentVault.refreshFailedTitle"]}
@@ -417,7 +426,7 @@ export default function DocumentVault() {
           >
             {t["documentVault.refreshFailedBody"]}
           </Alert>
-        )}
+        ) : null}
 
         {/* Fable B9: no tile row. Expiry is the only signal worth a line, and only when a
             document is expiring or has expired. */}
