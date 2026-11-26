@@ -50,7 +50,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import { hasReadData, queryReadState } from "@/lib/queryReadState";
 import { StaleDataNotice } from "@/components/ui/stale-data-notice";
 import { apiUrl } from "@/lib/api";
@@ -58,7 +58,7 @@ import { formatDate, formatDateTime } from "@/lib/format-date";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ErrorState } from "@/components/ui/error-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import type { Backup } from "@shared/schema";
 import { formatMessage, useI18n, useTranslation, translateNow } from "@/lib/i18n";
 
@@ -196,7 +196,8 @@ export default function BackupRestore() {
       const res = await fetch(apiUrl(`/api/companies/${selectedCompanyId}/backups`), {
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to fetch backups");
+      // Status-bearing, so a revoked 401/403 shows the access state instead of cached rows.
+      if (!res.ok) throw new ApiError("Failed to fetch backups", res.status);
       return res.json();
     },
     // A role without backups.manage gets 403: show "no access", never an empty list.
@@ -546,7 +547,12 @@ export default function BackupRestore() {
                 <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : backupsState === "error" ? (
-              <ErrorState compact onRetry={refetchBackups} testId="state-backups-error" />
+              <LoadErrorState
+                compact
+                error={backupsQuery.error}
+                onRetry={refetchBackups}
+                testId="state-backups-error"
+              />
             ) : backups.length === 0 ? (
               <EmptyState
                 icon={Database}

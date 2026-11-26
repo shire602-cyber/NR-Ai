@@ -8,6 +8,9 @@ import { apiRequest } from "@/lib/queryClient";
 import { VatInputTrnWarnings, type VatIssueLike } from "./VatInputTrnWarnings";
 import { VatTiesToGl } from "@/components/reports/TiesToGlBadge";
 import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { hasReadData, queryReadState } from "@/lib/queryReadState";
 
 export interface VatPreviewBoxes {
   box12TotalDueTax?: number;
@@ -32,7 +35,7 @@ export function VatPeriodPreview({
   compact?: boolean;
 }) {
   const { t, locale } = useTranslation();
-  const { data, isLoading, isError } = useQuery<{
+  const preview = useQuery<{
     boxes?: VatPreviewBoxes;
     issues?: VatIssueLike[];
     reconciliation?: Parameters<typeof VatTiesToGl>[0]["reconciliation"];
@@ -46,8 +49,12 @@ export function VatPeriodPreview({
     enabled: !!companyId && !!periodStart && !!periodEnd,
     retry: false,
   });
-  const boxes = data?.boxes ?? {};
-  const net = Number(boxes.box14PayableTax ?? 0);
+  // Figures, warnings and actions exist only for a computation that succeeded (a paused or
+  // disabled first read is still pending, never zero).
+  const state = queryReadState(preview);
+  const data = hasReadData(state) ? preview.data : undefined;
+  const boxes = data?.boxes;
+  const net = Number(boxes?.box14PayableTax ?? 0);
 
   return (
     <div
@@ -64,9 +71,20 @@ export function VatPeriodPreview({
           })}
         </span>
       </div>
-      {isLoading ? (
-        <Skeleton className="h-10 w-full" />
-      ) : isError ? (
+      {state === "stale" && boxes && (
+        <StaleDataNotice onRetry={() => void preview.refetch()} testId="vat-preview-stale" />
+      )}
+      {state === "pending" ? (
+        <Skeleton className="h-10 w-full" data-testid="vat-preview-loading" />
+      ) : state === "error" ? (
+        <LoadErrorState
+          compact
+          error={preview.error}
+          onRetry={() => void preview.refetch()}
+          description={t["compliance.vatPreview.unavailable"]}
+          testId="vat-preview-error"
+        />
+      ) : !boxes ? (
         <p className="text-small text-muted-foreground">{t["compliance.vatPreview.unavailable"]}</p>
       ) : (
         <dl
@@ -97,7 +115,7 @@ export function VatPeriodPreview({
         </dl>
       )}
       <VatInputTrnWarnings issues={data?.issues} />
-      {!isLoading && !isError && (
+      {boxes && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <VatTiesToGl reconciliation={data?.reconciliation} />
           <AskNajmaButton

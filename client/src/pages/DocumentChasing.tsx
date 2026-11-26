@@ -103,6 +103,17 @@ function enumLabel(
   return t[`firmOps.${kind}_${value}`] ?? value.replace(/_/g, " ");
 }
 
+/** A duration in days, with the number and unit word formatted for the locale. */
+function formatDays(days: number, locale: string): string {
+  return new Intl.NumberFormat(locale === "ar" ? "ar-AE" : "en-AE", {
+    style: "unit",
+    unit: "day",
+    unitDisplay: "long",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(days);
+}
+
 function levelBadgeColor(level: string) {
   switch (level) {
     case "friendly":
@@ -230,12 +241,15 @@ export default function DocumentChasing() {
 
   const requirementsState = queryReadState(requirementsQuery);
   const queueState = queryReadState(queueQuery);
+  const eventsState = queryReadState(eventsQuery);
+  const effectivenessState = queryReadState(effectivenessQuery);
+  const effectiveness = hasReadData(effectivenessState) ? effectivenessQuery.data : undefined;
   const requirements = useMemo(
     () => (hasReadData(requirementsState) ? (requirementsQuery.data ?? []) : []),
     [requirementsState, requirementsQuery.data]
   );
   const queue = hasReadData(queueState) ? (queueQuery.data ?? []) : [];
-  const events = eventsQuery.data ?? [];
+  const events = hasReadData(eventsState) ? (eventsQuery.data ?? []) : [];
 
   const missingDocs = useMemo(
     () => requirements.filter((r) => r.status !== "received" && r.status !== "waived"),
@@ -314,7 +328,7 @@ export default function DocumentChasing() {
       {/* Top stats. Fable P-g: hidden until something is missing or has been chased, so an
           empty workspace does not open on four zero tiles. */}
       {hasReadData(requirementsState) &&
-        (stats.total > 0 || (effectivenessQuery.data?.totalChased ?? 0) > 0) && (
+        (stats.total > 0 || (effectiveness?.totalChased ?? 0) > 0) && (
           <div
             className="grid grid-cols-1 md:grid-cols-4 gap-4"
             data-testid="document-chasing-stats"
@@ -322,14 +336,18 @@ export default function DocumentChasing() {
             <StatCard label={t["pages.missingDocuments"]} value={stats.total} />
             <StatCard label={t["components.statusOverdue"]} value={stats.overdue} />
             <StatCard label={t["documentChasing.dueIn14Days"]} value={stats.dueSoon} />
-            <StatCard
-              label={t["documentChasing.responseRate2"]}
-              value={
-                effectivenessQuery.data
-                  ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
-                  : "—"
-              }
-            />
+            {effectiveness && (
+              <StatCard
+                label={
+                  t[
+                    effectivenessState === "stale"
+                      ? "firmOps.chaseResponseRateCached"
+                      : "documentChasing.responseRate2"
+                  ]
+                }
+                value={`${Math.round(effectiveness.responseRate * 100)}%`}
+              />
+            )}
           </div>
         )}
 
@@ -537,8 +555,23 @@ export default function DocumentChasing() {
               </Button>
             </CardHeader>
             <CardContent>
-              {eventsQuery.isLoading ? (
-                <Skeleton className="h-24 w-full" />
+              {eventsState === "stale" && (
+                <div className="mb-3">
+                  <StaleDataNotice
+                    onRetry={() => void eventsQuery.refetch()}
+                    testId="events-stale"
+                  />
+                </div>
+              )}
+              {eventsState === "pending" ? (
+                <Skeleton className="h-24 w-full" data-testid="events-loading" />
+              ) : eventsState === "error" ? (
+                <LoadErrorState
+                  compact
+                  error={eventsQuery.error}
+                  onRetry={() => void eventsQuery.refetch()}
+                  testId="events-error"
+                />
               ) : events.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-6 text-center">
                   <T k="pages.noDeadlinesTrackedYet" />
@@ -605,31 +638,42 @@ export default function DocumentChasing() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {effectivenessQuery.isLoading ? (
-                <Skeleton className="h-24 w-full" />
+              {effectivenessState === "stale" && (
+                <div className="mb-3">
+                  <StaleDataNotice
+                    onRetry={() => void effectivenessQuery.refetch()}
+                    testId="effectiveness-stale"
+                  />
+                </div>
+              )}
+              {effectivenessState === "error" ? (
+                <LoadErrorState
+                  compact
+                  error={effectivenessQuery.error}
+                  onRetry={() => void effectivenessQuery.refetch()}
+                  testId="effectiveness-error"
+                />
+              ) : !effectiveness ? (
+                <Skeleton className="h-24 w-full" data-testid="effectiveness-loading" />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <Metric
                     label={t["documentChasing.totalChased"]}
-                    value={effectivenessQuery.data?.totalChased ?? 0}
+                    value={effectiveness.totalChased}
                   />
                   <Metric
                     label={t["documentChasing.totalReceived"]}
-                    value={effectivenessQuery.data?.totalReceived ?? 0}
+                    value={effectiveness.totalReceived}
                   />
                   <Metric
                     label={t["documentChasing.responseRate2"]}
-                    value={
-                      effectivenessQuery.data
-                        ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
-                        : "—"
-                    }
+                    value={`${Math.round(effectiveness.responseRate * 100)}%`}
                   />
                   <Metric
                     label={t["documentChasing.avgTimeToUpload"]}
                     value={
-                      effectivenessQuery.data?.avgDaysToUpload != null
-                        ? `${effectivenessQuery.data.avgDaysToUpload.toFixed(1)} days`
+                      effectiveness.avgDaysToUpload != null
+                        ? formatDays(effectiveness.avgDaysToUpload, locale)
                         : "—"
                     }
                   />

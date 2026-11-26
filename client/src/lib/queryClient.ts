@@ -13,6 +13,7 @@ import { loadNamespaces, useI18n } from "./i18n";
 import offlineAr from "../locales/offline/ar.json";
 import offlineEn from "../locales/offline/en.json";
 import { announcePlanLimit } from "./plan-limit";
+import { createQueryCache } from "./queryReadState";
 import {
   clearRevokedPortalSelection,
   getPortalAccountSelection,
@@ -363,6 +364,7 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
 // Mutations still call queryClient.invalidateQueries to force-refresh after
 // writes, so freshness guarantees don't depend on the timer alone.
 export const queryClient = new QueryClient({
+  queryCache: createQueryCache(),
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),

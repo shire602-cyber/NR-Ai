@@ -61,7 +61,9 @@ beforeEach(async () => {
     })
   );
   const { getQueryFn } = await import("../../client/src/lib/queryClient");
+  const { createQueryCache } = await import("../../client/src/lib/queryReadState");
   client = new QueryClient({
+    queryCache: createQueryCache(),
     defaultOptions: { queries: { queryFn: getQueryFn({ on401: "throw" }), retry: false } },
   });
   container = document.createElement("div");
@@ -112,10 +114,53 @@ describe("queryReadState", () => {
     expect(queryReadState({ data: undefined, isError: true, error: server })).toBe("error");
     expect(queryReadState({ data: [], isError: false })).toBe("ready");
     expect(queryReadState({ data: [], isError: true, error: server })).toBe("stale");
-    // Cached rows stay visible even when the failed refresh was a 403.
-    expect(queryReadState({ data: [], isError: true, error: new ApiError("no", 403) })).toBe(
-      "stale"
-    );
+    // Lost access is not a stale read: cached rows must not be shown.
+    for (const status of [401, 403]) {
+      expect(queryReadState({ data: [], isError: true, error: new ApiError("no", status) })).toBe(
+        "error"
+      );
+    }
+  });
+
+  it("drops cached rows when access is revoked, and restores them on a later success", async () => {
+    const { queryReadState } = await import("../../client/src/lib/queryReadState");
+    const scoped = ["/api/companies", "c-1", "documents"];
+    const unscoped = ["/api/firm/staff"];
+    const url = "/api/companies/c-1/documents";
+    const read = async (queryKey: string[]) => {
+      await client.fetchQuery({ queryKey, staleTime: 0 }).catch(() => undefined);
+      const state = client.getQueryState(queryKey)!;
+      return {
+        data: state.data,
+        error: state.error,
+        view: queryReadState({
+          data: state.data,
+          isError: state.status === "error",
+          error: state.error,
+        }),
+      };
+    };
+
+    for (const status of [401, 403, 404]) {
+      routes[url] = { body: [{ id: "d1" }] };
+      expect((await read(scoped)).view).toBe("ready");
+      routes[url] = failed;
+      expect(await read(scoped)).toMatchObject({ view: "stale", data: [{ id: "d1" }] });
+      routes[url] = { status, body: { message: "gone" } };
+      const revoked = await read(scoped);
+      expect(revoked.view).toBe("error");
+      expect(revoked.data).toBeUndefined();
+      expect(revoked.error).toMatchObject({ status });
+      expect(client.getQueryState(scoped)!.isInvalidated).toBe(true);
+    }
+    routes[url] = { body: [{ id: "d2" }] };
+    expect(await read(scoped)).toMatchObject({ view: "ready", data: [{ id: "d2" }] });
+
+    // A 404 outside a tenant path is an ordinary failed refresh.
+    routes["/api/firm/staff"] = { body: [] };
+    await read(unscoped);
+    routes["/api/firm/staff"] = { status: 404, body: { message: "missing" } };
+    expect(await read(unscoped)).toMatchObject({ view: "stale", data: [] });
   });
 });
 
@@ -167,6 +212,18 @@ describe("ClientDashboard read states", () => {
     await refresh();
     expect(byTestId("client-documents-count")?.textContent).toBe("2");
     expect(byTestId("client-dashboard-stale")).not.toBeNull();
+  });
+
+  it("drops cached documents when a refresh is 403: access copy, no old count, no stale notice", async () => {
+    routes[documents] = { body: [{ id: "d1" }, { id: "d2" }] };
+    await mount(await load());
+    expect(byTestId("client-documents-count")?.textContent).toBe("2");
+    routes[documents] = { status: 403, body: { message: "forbidden" } };
+    await refresh();
+    const t = await catalog();
+    expect(byTestId("client-documents-count")?.textContent).not.toBe("2");
+    expect(byTestId("client-dashboard-stale")).toBeNull();
+    expect(text()).toContain(t.en["firm.loadForbiddenBody"]);
   });
 });
 
@@ -271,11 +328,11 @@ describe("DocumentChasing handles its two lists independently", () => {
   const load = async () => (await import("../../client/src/pages/DocumentChasing")).default;
 
   /** Radix tabs activate on mousedown, not click. */
-  async function openQueueTab() {
+  async function openTab(name: "queue" | "calendar" | "metrics") {
     const tab = Array.from(document.querySelectorAll('[role="tab"]')).find(
       (el) =>
-        el.id.endsWith("-trigger-queue") ||
-        el.getAttribute("aria-controls")?.endsWith("-content-queue")
+        el.id.endsWith(`-trigger-${name}`) ||
+        el.getAttribute("aria-controls")?.endsWith(`-content-${name}`)
     );
     expect(tab).toBeDefined();
     await act(async () => {
@@ -283,6 +340,7 @@ describe("DocumentChasing handles its two lists independently", () => {
     });
     await flush();
   }
+  const openQueueTab = () => openTab("queue");
 
   it("a failed queue does not block the requirements list", async () => {
     routes[queue] = failed;
@@ -312,6 +370,51 @@ describe("DocumentChasing handles its two lists independently", () => {
     await refresh();
     expect(byTestId("document-chasing-error")).toBeNull();
     expect(byTestId("requirements-stale")).not.toBeNull();
+  });
+
+  it("calendar and effectiveness: failure with retry, then cached rows marked stale", async () => {
+    const calendar = "/api/companies/c-1/compliance-calendar";
+    const t = await catalog();
+    routes[calendar] = failed;
+    routes[effectiveness] = failed;
+    await mount(await load());
+
+    await openTab("calendar");
+    expect(byTestId("events-error")?.querySelector("button")).toBeTruthy();
+    expect(byTestId("events-stale")).toBeNull();
+    await openTab("metrics");
+    expect(byTestId("effectiveness-error")?.querySelector("button")).toBeTruthy();
+    expect(text()).not.toContain(t.en["documentChasing.totalChased"]);
+    expect(text()).not.toContain(t.en["documentChasing.responseRate2"]);
+
+    routes[calendar] = {
+      body: [
+        {
+          id: "e1",
+          eventType: "vat_return",
+          description: "Quarterly VAT return",
+          eventDate: "2030-01-01",
+          reminderDays: "7",
+          status: "pending",
+        },
+      ],
+    };
+    routes[effectiveness] = {
+      body: { totalChased: 4, totalReceived: 3, responseRate: 0.75, avgDaysToUpload: 2 },
+    };
+    await refresh();
+    expect(text()).toContain(t.en["documentChasing.totalChased"]);
+
+    routes[calendar] = failed;
+    routes[effectiveness] = failed;
+    await refresh();
+    // Kept metrics are labelled stale on the tab and next to the response-rate tile.
+    expect(byTestId("effectiveness-stale")).not.toBeNull();
+    expect(text()).toContain(t.en["firmOps.chaseResponseRateCached"]);
+    expect(text()).toContain(t.en["documentChasing.totalChased"]);
+    await openTab("calendar");
+    expect(byTestId("events-stale")).not.toBeNull();
+    expect(byTestId("row-event")).not.toBeNull();
   });
 });
 

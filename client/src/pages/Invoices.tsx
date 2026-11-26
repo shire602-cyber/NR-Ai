@@ -119,7 +119,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import { StaleDataNotice } from "@/components/ui/stale-data-notice";
-import { queryReadState } from "@/lib/queryReadState";
+import { hasReadData, queryReadState } from "@/lib/queryReadState";
 import {
   downloadServerFile,
   exportToExcel,
@@ -380,7 +380,13 @@ export default function Invoices() {
   const editor = isNewRoute ? "new" : isEditRoute ? editParams?.id : undefined;
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { company, companyId: selectedCompanyId } = useDefaultCompany();
+  const {
+    company,
+    companyId: selectedCompanyId,
+    companyListState,
+    error: companyError,
+    retryCompanyList,
+  } = useDefaultCompany();
   const { can: canDo, gate } = useCompanyPermission();
   // Issuing or voiding writes the ledger (PATCH /status needs ledger.post, like POST /post).
   const canChangeStatus = canDo("ledger.post");
@@ -502,12 +508,13 @@ export default function Invoices() {
     getNextPageParam: (last) => last.nextCursor,
     enabled: !!selectedCompanyId,
   });
-  const invoices = useMemo<Invoice[]>(
-    () => invoicePages.data?.pages.flatMap((p) => p.items) ?? [],
-    [invoicePages.data]
-  );
-  const isLoading = invoicePages.isLoading;
+  // "pending" also covers a paused or not-yet-enabled first read, which is not an empty list.
   const invoiceReadState = queryReadState(invoicePages);
+  const invoices = useMemo<Invoice[]>(
+    () =>
+      hasReadData(invoiceReadState) ? (invoicePages.data?.pages.flatMap((p) => p.items) ?? []) : [],
+    [invoiceReadState, invoicePages.data]
+  );
   // A failed next page keeps the loaded rows; Retry asks for that page again.
   const retryInvoicePages = () =>
     void (invoicePages.isFetchNextPageError
@@ -2594,8 +2601,20 @@ export default function Invoices() {
             </div>
           </div>
 
-          {isLoading ? (
-            <TableSkeleton rows={8} columns={6} />
+          {!selectedCompanyId && companyListState === "empty" ? (
+            <p className="text-sm text-muted-foreground" data-testid="invoices-no-company">
+              <T k="pages.noCompanySelected" />
+            </p>
+          ) : !selectedCompanyId && companyListState === "error" ? (
+            <LoadErrorState
+              error={companyError}
+              onRetry={retryCompanyList}
+              testId="invoices-company-error"
+            />
+          ) : invoiceReadState === "pending" ? (
+            <div data-testid="invoices-loading">
+              <TableSkeleton rows={8} columns={6} />
+            </div>
           ) : invoiceReadState === "error" ? (
             <LoadErrorState
               error={invoicePages.error}
@@ -3575,11 +3594,16 @@ function InvoiceStatusTiles({
   onSelect: (status: InvoiceStatusFilter | null) => void;
 }) {
   const { t } = useTranslation();
-  const { data: all = [], isError } = useQuery<InvoiceListItem[]>({
+  const totalsQuery = useQuery<InvoiceListItem[]>({
     queryKey: ["/api/companies", companyId, "invoices"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/invoices?all=true`),
     enabled: !!companyId,
   });
+  const totalsState = queryReadState(totalsQuery);
+  const all = useMemo(
+    () => (hasReadData(totalsState) ? (totalsQuery.data ?? []) : []),
+    [totalsState, totalsQuery.data]
+  );
   const buckets = useMemo(() => {
     const labels: Record<string, string> = {
       draft: t["invoices.statusFilter.draft"],
@@ -3593,10 +3617,24 @@ function InvoiceStatusTiles({
     }));
   }, [all, t]);
 
-  // A failed load must not read as "0 invoices": the list shows the error and the tiles hide.
-  if (isError) return null;
+  // Without a company there are no totals to wait for: the list below says why.
+  if (!companyId) return null;
+  // Neither a pending nor a failed load may read as "0 invoices".
+  if (totalsState === "pending") {
+    return <Skeleton className="h-24 w-full rounded-xl" data-testid="invoice-tiles-loading" />;
+  }
+  if (totalsState === "error") {
+    return (
+      <LoadErrorState
+        compact
+        error={totalsQuery.error}
+        onRetry={() => void totalsQuery.refetch()}
+        testId="invoice-tiles-error"
+      />
+    );
+  }
 
-  return (
+  const tiles = (
     <div
       className="mobile-keep-cols grid grid-cols-2 gap-3 lg:grid-cols-4"
       data-testid="invoice-status-tiles"
@@ -3644,6 +3682,15 @@ function InvoiceStatusTiles({
           </button>
         );
       })}
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      {totalsState === "stale" && (
+        <StaleDataNotice onRetry={() => void totalsQuery.refetch()} testId="invoice-tiles-stale" />
+      )}
+      {tiles}
     </div>
   );
 }

@@ -973,7 +973,7 @@ export default function FirmCommandCenter() {
                       <TableCell>
                         {Object.entries(w.rolesByName).map(([role, n]) => (
                           <Badge key={role} variant="outline" className="me-1">
-                            {role} × {n}
+                            {t[`firm.assignmentRole.${role}`] ?? role} × {n}
                           </Badge>
                         ))}
                       </TableCell>

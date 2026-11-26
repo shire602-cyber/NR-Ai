@@ -189,7 +189,13 @@ export default function EmailIntake() {
         </TabsContent>
 
         <TabsContent value="tasks" className="mt-4">
-          <EmailTasksTab clients={clients} status={sourcesData?.emailToTask} toast={toast} />
+          <EmailTasksTab
+            clients={clients}
+            status={sourcesData?.emailToTask}
+            statusState={sourcesState}
+            onRetryStatus={() => void sourcesQuery.refetch()}
+            toast={toast}
+          />
         </TabsContent>
       </Tabs>
     </div>
@@ -480,8 +486,6 @@ function CompletenessTab({
       }),
   });
 
-  const coveragePct = result ? Math.round(result.summary.coverageRatio * 100) : null;
-
   return (
     <div className="space-y-6">
       <Card>
@@ -546,7 +550,7 @@ function CompletenessTab({
                 <AlertTriangle className="h-5 w-5 text-warning" />
               )}
               {formatMessage(t["firmOps.intakeCoverage"], {
-                percent: coveragePct,
+                percent: Math.round(result.summary.coverageRatio * 100),
                 count: result.summary.gapCount,
               })}
             </CardTitle>
@@ -637,21 +641,28 @@ function Stat({ label, value }: { label: string; value: string }) {
 function EmailTasksTab({
   clients,
   status,
+  statusState,
+  onRetryStatus,
   toast,
 }: {
   clients: ClientCompany[];
   status: EmailToTaskStatus | undefined;
+  /** Read state of the query `status` comes from: unknown must not read as "no mailbox". */
+  statusState: QueryReadState;
+  onRetryStatus: () => void;
   toast: ReturnType<typeof useToast>["toast"];
 }) {
   const { t, locale } = useTranslation();
   const [companyId, setCompanyId] = useState("");
   const messagesKey = [`/api/firm/email-intake/messages/${companyId}`];
+  // Another tenant's company is a 404: that must drop cached messages, like a 403.
+  const messagesOptions = { queryKey: messagesKey, meta: { tenantScoped: true } };
   const messagesQuery = useQuery<{ messages: IntakeMessage[] }>({
-    queryKey: messagesKey,
+    ...messagesOptions,
     queryFn: () => apiRequest("GET", `/api/firm/email-intake/messages/${companyId}`),
     enabled: !!companyId,
   });
-  const messagesState = queryReadState(messagesQuery);
+  const messagesState = queryReadState({ ...messagesQuery, ...messagesOptions });
   const createTask = useMutation({
     mutationFn: (messageId: string) =>
       apiRequest("POST", `/api/firm/email-intake/messages/${messageId}/task`, {}),
@@ -666,13 +677,24 @@ function EmailTasksTab({
 
   return (
     <div className="space-y-4">
+      {statusState === "stale" && (
+        <StaleDataNotice onRetry={onRetryStatus} testId="email-task-mailbox-stale" />
+      )}
       <Alert data-testid="email-task-boundary">
         <Mail className="h-4 w-4" />
         <AlertTitle>
-          {status?.mailbox === "connected" ? (
+          {statusState === "pending" ? (
+            <T k="firm.emailTasksMailboxChecking" />
+          ) : statusState === "error" ? (
+            <T k="firm.emailTasksMailboxUnavailable" />
+          ) : status?.mailbox === "connected" ? (
             <T k="firm.emailTasksMailboxConnected" />
-          ) : (
+          ) : status?.mailbox === "requires_external" ? (
             <T k="firm.emailTasksMailboxExternal" />
+          ) : status?.mailbox === "disabled" ? (
+            <T k="firm.emailTasksMailboxDisabled" />
+          ) : (
+            <T k="firm.emailTasksMailboxUnavailable" />
           )}
         </AlertTitle>
         <AlertDescription>
