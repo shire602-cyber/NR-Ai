@@ -7,7 +7,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
-import { Plus, Trash2, Undo2 } from "lucide-react";
+import { Ban, Plus, Trash2, Undo2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { EditorShell } from "@/components/ui/editor-shell";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -112,6 +112,7 @@ function DebitNoteList() {
   const { gate } = useCompanyPermission();
   const [, navigate] = useLocation();
   const [applying, setApplying] = useState<DebitNoteRow | null>(null);
+  const [voiding, setVoiding] = useState<DebitNoteRow | null>(null);
   const { data: notes = [], isLoading } = useQuery<DebitNoteRow[]>({
     queryKey: ["/api/companies", companyId, "debit-notes"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/debit-notes`),
@@ -176,7 +177,8 @@ function DebitNoteList() {
           </TableHeader>
           <TableBody>
             {notes.map((n) => {
-              const remaining = debitNoteRemaining(n);
+              const isVoid = n.status === "void";
+              const remaining = isVoid ? 0 : debitNoteRemaining(n);
               return (
                 <TableRow key={n.id} data-testid={`debit-note-row-${n.id}`}>
                   <TableCell data-nowrap="" data-cell="meta" className="font-medium">
@@ -202,16 +204,25 @@ function DebitNoteList() {
                     className="text-muted-foreground"
                   />
                   <TableCell data-cell="status" data-nowrap="">
-                    <StatusBadge status={remaining > 0 ? "open" : "applied"} />
+                    <StatusBadge status={isVoid ? "void" : remaining > 0 ? "open" : "applied"} />
                   </TableCell>
                   <TableCell data-cell="actions">
-                    <RowActions maxInline={1}>
+                    <RowActions maxInline={2}>
                       {remaining > 0 && (
                         <RowActionButton
                           label={t["purchases.debitNote.apply"]}
                           icon={Undo2}
                           onClick={() => setApplying(n)}
                           {...gate("payments.release")}
+                        />
+                      )}
+                      {!isVoid && (
+                        <RowActionButton
+                          label={t["purchases.debitNote.void"]}
+                          icon={Ban}
+                          onClick={() => setVoiding(n)}
+                          data-testid={`button-void-debit-note-${n.id}`}
+                          {...gate("ledger.post")}
                         />
                       )}
                     </RowActions>
@@ -228,7 +239,80 @@ function DebitNoteList() {
         bills={bills}
         onClose={() => setApplying(null)}
       />
+      <VoidDialog companyId={companyId} note={voiding} onClose={() => setVoiding(null)} />
     </div>
+  );
+}
+
+function VoidDialog({
+  companyId,
+  note,
+  onClose,
+}: {
+  companyId: string | undefined;
+  note: DebitNoteRow | null;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const { toast } = useToast();
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const close = () => {
+    setReason("");
+    setError(null);
+    onClose();
+  };
+  const voidNote = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/companies/${companyId}/debit-notes/${note!.id}/void`, {
+        reason: reason.trim(),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
+      toast({ title: t["purchases.debitNote.voided"] });
+      close();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+  return (
+    <Dialog open={!!note} onOpenChange={(o) => !o && close()}>
+      <DialogContent className="sm:max-w-md" data-testid="void-debit-note-dialog">
+        <DialogHeader>
+          <DialogTitle>{t["purchases.debitNote.voidTitle"]}</DialogTitle>
+          <DialogDescription>{t["purchases.debitNote.voidDesc"]}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="void-reason">{t["purchases.debitNote.voidReason"]}</Label>
+          <Textarea
+            id="void-reason"
+            dir="auto"
+            rows={2}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            data-testid="void-debit-note-reason"
+          />
+        </div>
+        {error && (
+          <p className="text-sm text-destructive" role="alert" data-testid="void-debit-note-error">
+            {error}
+          </p>
+        )}
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={close}>
+            {t["pages.cancel"]}
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={!reason.trim() || voidNote.isPending}
+            onClick={() => voidNote.mutate()}
+            data-testid="button-confirm-void-debit-note"
+          >
+            {t["purchases.debitNote.voidConfirm"]}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
