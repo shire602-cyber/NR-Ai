@@ -1,6 +1,6 @@
 // F07 — foreign-currency documents post and reverse in AED. Hand-calculated expectations.
 // USD invoice @ 3.6725: standard USD 700 (5%) + zero-rated USD 300.
-//   AED legs: 4010 2,570.75 · 4060 1,101.75 · 2020 128.54 · 1040 3,801.04
+//   AED legs: 4020 (service revenue: unlinked service lines) 2,570.75 · 4060 1,101.75 · 2020 128.54 · 1040 3,801.04
 import { expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
 
@@ -96,7 +96,7 @@ it("A: partial then final credit clears every AED leg to the fil; voids mirror e
   );
   expect(await legs([orig.id])).toEqual({
     "1040": 3801.04,
-    "4010": -2570.75,
+    "4020": -2570.75,
     "4060": -1101.75,
     "2020": -128.54,
   });
@@ -107,7 +107,7 @@ it("A: partial then final credit clears every AED leg to the fil; voids mirror e
   // At the ORIGINAL rate, standard revenue only: 350 x 3.6725 = 1,285.38 ; VAT 17.50 x 3.6725 = 64.27
   expect(await legs([partial.body.journalEntryId])).toEqual({
     "1040": -1349.65,
-    "4010": 1285.38,
+    "4020": 1285.38,
     "2020": 64.27,
   });
   expect(Number(partial.body.exchangeRate)).toBe(3.6725);
@@ -118,11 +118,11 @@ it("A: partial then final credit clears every AED leg to the fil; voids mirror e
   expect(final.status, final.text).toBe(201);
   expect(await legs([final.body.journalEntryId])).toEqual({
     "1040": -2451.39,
-    "4010": 1285.37,
+    "4020": 1285.37,
     "4060": 1101.75,
     "2020": 64.27,
   });
-  for (const code of ["1040", "4010", "4060", "2020"]) expect(await glNet(t, code)).toBe(0);
+  for (const code of ["1040", "4020", "4060", "2020"]) expect(await glNet(t, code)).toBe(0);
   await expectSettlementTiesToGl(t);
 
   // Void the final credit: the reversal mirrors its AED lines exactly.
@@ -134,7 +134,7 @@ it("A: partial then final credit clears every AED leg to the fil; voids mirror e
   );
   expect(await legs([rev.id])).toEqual({
     "1040": 2451.39,
-    "4010": -1285.37,
+    "4020": -1285.37,
     "4060": -1101.75,
     "2020": -64.27,
   });
