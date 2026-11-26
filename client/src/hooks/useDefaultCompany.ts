@@ -10,8 +10,18 @@ import { useActiveCompany } from "@/components/ActiveCompanyProvider";
  * call sites continue to work without changes.
  */
 export function useDefaultCompany() {
-  const { company, companyId, companies, isLoading, error, hasNoCompanies, isPaused, refetch } =
-    useActiveCompany();
+  const {
+    company,
+    companyId,
+    companies,
+    isLoading,
+    error,
+    hasNoCompanies,
+    companyListState,
+    retryCompanyList,
+    isPaused,
+    refetch,
+  } = useActiveCompany();
   return {
     isPaused,
     refetch,
@@ -21,5 +31,7 @@ export function useDefaultCompany() {
     hasNoCompanies,
     isLoading,
     error,
+    companyListState,
+    retryCompanyList,
   };
 }
