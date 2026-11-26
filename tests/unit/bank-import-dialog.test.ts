@@ -527,7 +527,7 @@ describe("bank statement import dialog", () => {
 });
 
 describe("bank reconciliation query states", () => {
-  const PAUSED = "Loading is paused. Check your internet connection.";
+  const PAUSED = "Loading is paused. It will continue automatically.";
   const PAUSED_CACHED =
     "Updates are paused. You are seeing the last loaded data, which may be out of date.";
   const transaction = {

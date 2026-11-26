@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { MARKETING_BRAND } from "@shared/marketing-brand";
-import { ComparisonTable } from "../home/ComparisonTable";
+import { ComparisonTable } from "./ComparisonTable";
 import { VENDOR_NAME } from "../home/comparison";
 import { useMarketingText } from "../home/text";
 import type { SectionProps } from "../home/types";
@@ -35,9 +35,14 @@ export function CompareTop({ base, locale, vendor }: CompareProps) {
           <p className="mz-page-note">{text("hxCmpPageFair")}</p>
         </div>
       </section>
-      <ComparisonTable base={base} locale={locale} focus={vendor} headingLevel={2} />
+      <ComparisonTable base={base} locale={locale} focus={vendor} />
     </div>
   );
+}
+
+/** The three-way table on the /compare hub. */
+export function CompareAll({ base, locale }: SectionProps) {
+  return <ComparisonTable base={base} locale={locale} />;
 }
 
 /** Closing migration call to action for a compare page. */

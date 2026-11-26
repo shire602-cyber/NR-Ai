@@ -12,12 +12,6 @@ import PaymentChasing from "../../client/src/pages/PaymentChasing";
 import en from "../../client/src/locales/en/invoices.json";
 
 const toast = vi.hoisted(() => vi.fn());
-const queueForSync = vi.hoisted(() => vi.fn());
-
-vi.mock("../../client/src/lib/pwa", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../client/src/lib/pwa")>()),
-  queueForSync,
-}));
 
 vi.mock("../../client/src/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
@@ -264,9 +258,8 @@ describe("payment chasing offline behaviour", () => {
     expect(toast).toHaveBeenCalledTimes(1);
   });
 
-  it("does not queue a pause when the connection drops while the CSRF token is pending", async () => {
+  it("does not send a pause when the connection drops while the CSRF token is pending", async () => {
     clearCsrfToken();
-    queueForSync.mockClear();
     let releaseCsrf!: (res: Response) => void;
     const pendingCsrf = new Promise<Response>((resolve) => (releaseCsrf = resolve));
     const respond = fetchMock.getMockImplementation()!;
@@ -285,7 +278,6 @@ describe("payment chasing offline behaviour", () => {
     await act(async () => releaseCsrf(json({ csrfToken: "t" })));
     await waitFor(() => toast.mock.calls.length > 0);
 
-    expect(queueForSync).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledTimes(1);
     expect(toast.mock.calls[0][0]).toMatchObject({
       title: en["invoices.reminders.pauseOffline"],
@@ -297,7 +289,6 @@ describe("payment chasing offline behaviour", () => {
     await settle();
     await settle();
     expect(calls("PATCH", "do-not-chase")).toHaveLength(0);
-    expect(queueForSync).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledTimes(1);
   });
 

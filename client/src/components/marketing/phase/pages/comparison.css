@@ -84,7 +84,13 @@
   flex-wrap: wrap;
   gap: 4px 16px;
 }
+.phase-site .mz-cmp .mz-cmp-sources {
+  align-items: center;
+}
 .phase-site .mz-cmp .mz-cmp-foot a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
   color: var(--mz-emerald-deep);
   text-decoration: underline;
 }
