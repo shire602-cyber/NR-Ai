@@ -46,7 +46,7 @@ import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, refreshAfterWrite } from "@/lib/queryClient";
 import { fiscalYearContaining } from "@/lib/fiscal-year";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
@@ -300,9 +300,7 @@ export default function CorporateTax() {
     mutationFn: (id: string) =>
       apiRequest("POST", `/api/corporate-tax/returns/${id}/pull-from-books`),
     onSuccess: (result: any) => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/corporate-tax/returns`],
-      });
+      refreshReturns();
       toast({
         title: formatMessage(translateNow("toasts.workpaperRowsPulledFromBooks"), {
           rows: result?.rows ?? 0,
@@ -391,8 +389,10 @@ export default function CorporateTax() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
 
   // Fetch existing returns
+  const returnsKey = ["/api/companies", companyId, "corporate-tax", "returns"];
+  const refreshReturns = () => refreshAfterWrite(returnsKey);
   const returnsQuery = useQuery<CorporateTaxReturn[]>({
-    queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
+    queryKey: returnsKey,
     enabled: !!companyId,
   });
   const returnsState = returnsListState(returnsQuery);
@@ -450,9 +450,7 @@ export default function CorporateTax() {
     mutationFn: (body: NonNullable<ReturnType<typeof buildDraftBody>>) =>
       apiRequest("POST", `/api/companies/${companyId}/corporate-tax/returns`, body),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
-      });
+      refreshReturns();
       toast({
         title: translateNow("toasts.draftSaved"),
         description: translateNow("toasts.corporateTaxReturnSavedAsDraft"),
@@ -487,10 +485,6 @@ export default function CorporateTax() {
   };
 
   // Lifecycle transitions (R08-04): computed -> reviewed -> filed -> paid; void; amend.
-  const invalidateReturns = () =>
-    queryClient.invalidateQueries({
-      queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
-    });
   const transitionMutation = useMutation({
     mutationFn: ({
       id,
@@ -514,7 +508,7 @@ export default function CorporateTax() {
         ...(filedDate ? { filedOn: filedDate } : {}),
       }),
     onSuccess: () => {
-      invalidateReturns();
+      refreshReturns();
       setFileTarget(null);
       toast({ title: t["corporateTax.statusUpdated"] });
     },
@@ -532,7 +526,7 @@ export default function CorporateTax() {
         reason: t["corporateTax.amendDefaultReason"],
       }),
     onSuccess: () => {
-      invalidateReturns();
+      refreshReturns();
       toast({ title: t["corporateTax.amendmentCreated"] });
     },
     onError: (error: Error) =>
@@ -547,7 +541,7 @@ export default function CorporateTax() {
   const accrueMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/corporate-tax/returns/${id}/accrue`, {}),
     onSuccess: (data: { accrual?: { changed?: boolean } }) => {
-      invalidateReturns();
+      refreshReturns();
       toast({
         title: data?.accrual?.changed
           ? t["corporateTax.accrued"]
@@ -565,7 +559,7 @@ export default function CorporateTax() {
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       apiRequest("POST", `/api/corporate-tax/returns/${id}/unfile`, { reason }),
     onSuccess: () => {
-      invalidateReturns();
+      refreshReturns();
       setUnfileTarget(null);
       setUnfileReason("");
       toast({ title: t["corporateTax.markedNotFiled"] });

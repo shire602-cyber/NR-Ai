@@ -16,7 +16,7 @@ import {
 import { MoneyCell } from "@/components/ui/money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { loadFailure } from "./screenState";
 
 interface ExternalReturn {
@@ -73,7 +73,7 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
         filingReference: ext.reference || null,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: extKey });
+      refreshAfterWrite(extKey);
       setExt({ start: "", end: "", revenue: "", loss: "", reference: "" });
       toast({ title: t["corporateTax.externalSaved"] });
     },
@@ -82,7 +82,7 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
   const removeExternal = useMutation({
     mutationFn: (id: string) =>
       apiRequest("DELETE", `/api/companies/${companyId}/corporate-tax/external-returns/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: extKey }),
+    onSuccess: () => refreshAfterWrite(extKey),
     onError,
   });
   const postDeferred = useMutation({
@@ -94,7 +94,7 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
         note: dt.note || null,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: dtKey });
+      refreshAfterWrite(dtKey);
       setDt({ asOf: "", asset: "", liability: "", note: "" });
       toast({ title: t["corporateTax.deferredPosted"] });
     },
