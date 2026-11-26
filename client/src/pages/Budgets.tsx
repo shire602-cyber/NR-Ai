@@ -14,7 +14,7 @@ import {
   lineLabelClass,
 } from "@/components/ui/form-layout";
 import { useState, useCallback } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, type UseQueryResult } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
@@ -280,6 +280,41 @@ function isoDay(v: string | null | undefined): string {
   return calendarDayKey(v) || String(v).slice(0, 10);
 }
 
+function BudgetQueryStatus({
+  query,
+  errorTestId,
+}: {
+  query: Pick<
+    UseQueryResult,
+    "isPending" | "fetchStatus" | "isError" | "isLoadingError" | "error" | "refetch"
+  >;
+  errorTestId: string;
+}) {
+  const { t } = useTranslation();
+
+  if (query.isPending) {
+    return (
+      <div role="status" className="text-center py-8 text-muted-foreground">
+        {query.fetchStatus === "paused" ? t["budgets.loadPaused"] : t.loading || "Loading..."}
+      </div>
+    );
+  }
+
+  if (query.isError) {
+    return (
+      <LoadErrorState
+        error={query.error}
+        onRetry={() => void query.refetch()}
+        compact={!query.isLoadingError}
+        title={query.isLoadingError ? undefined : t["budgets.refreshFailedTitle"]}
+        testId={errorTestId}
+      />
+    );
+  }
+
+  return null;
+}
+
 export default function Budgets() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -301,35 +336,24 @@ export default function Budgets() {
 
   // ─── Queries ────────────────────────────────────────────
 
-  const {
-    data: budgetPlans = [],
-    isLoading: isLoadingBudgets,
-    error: budgetsError,
-    refetch: refetchBudgets,
-  } = useQuery<BudgetPlan[]>({
+  const budgetPlansQuery = useQuery<BudgetPlan[]>({
     queryKey: [`/api/companies/${companyId}/budget-plans`],
     enabled: !!companyId,
   });
 
-  const {
-    data: budgetLines = [],
-    isLoading: isLoadingLines,
-    error: linesError,
-    refetch: refetchLines,
-  } = useQuery<BudgetLine[]>({
+  const budgetLinesQuery = useQuery<BudgetLine[]>({
     queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
     enabled: !!selectedBudget?.id,
   });
 
-  const {
-    data: varianceData,
-    isLoading: isLoadingVariance,
-    error: varianceError,
-    refetch: refetchVariance,
-  } = useQuery<VarianceData>({
+  const varianceQuery = useQuery<VarianceData>({
     queryKey: [`/api/budget-plans/${selectedBudget?.id}/variance`],
     enabled: !!selectedBudget?.id && activeTab === "variance",
   });
+
+  const budgetPlans = budgetPlansQuery.data ?? [];
+  const budgetLines = budgetLinesQuery.data ?? [];
+  const varianceData = varianceQuery.data;
 
   // E2 (J3-r2): every line budgets one P&L account (not a control account), so actuals come
   // from the ledger and income is never added to expenses.
@@ -972,12 +996,14 @@ export default function Budgets() {
               <CardTitle>
                 <T k="pages.budgetPlans" />
               </CardTitle>
-              <CardDescription>
-                {budgetPlans.length}{" "}
-                {budgetPlans.length === 1
-                  ? tr(locale, "budget plan", "خطة موازنة")
-                  : tr(locale, "budget plans", "خطط موازنة")}
-              </CardDescription>
+              {budgetPlansQuery.data && (
+                <CardDescription>
+                  {budgetPlans.length}{" "}
+                  {budgetPlans.length === 1
+                    ? tr(locale, "budget plan", "خطة موازنة")
+                    : tr(locale, "budget plans", "خطط موازنة")}
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent>
               {budgetPlans.length > 0 && (
@@ -997,33 +1023,23 @@ export default function Budgets() {
                   />
                 </div>
               )}
-              {isLoadingBudgets ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {t.loading || "Loading..."}
-                </div>
-              ) : budgetsError ? (
-                <LoadErrorState
-                  error={budgetsError}
-                  onRetry={() => void refetchBudgets()}
-                  testId="budgets-load-error"
-                />
-              ) : budgetPlans.length === 0 ? (
+              <BudgetQueryStatus query={budgetPlansQuery} errorTestId="budgets-load-error" />
+              <div role="status">
+                {budgetPlans.length > 0 && visibleBudgets.length === 0 && (
+                  <EmptyState
+                    icon={Search}
+                    title={t["budgets.noSearchMatches"]}
+                    testId="budgets-no-match"
+                  />
+                )}
+              </div>
+              {!budgetPlansQuery.data ? null : budgetPlans.length === 0 ? (
                 <EmptyState
                   icon={PiggyBank}
                   title={t["pages.noBudgetPlansYetCreateYourFirstBudgetToGetStarte"]}
                   testId="budgets-empty"
                 />
-              ) : visibleBudgets.length === 0 ? (
-                <EmptyState
-                  icon={Search}
-                  title={tr(
-                    locale,
-                    "No budgets match your search.",
-                    "لا توجد موازنات مطابقة لبحثك."
-                  )}
-                  testId="budgets-no-match"
-                />
-              ) : (
+              ) : visibleBudgets.length > 0 ? (
                 <>
                   {/* Below 768px: stacked row-cards (line 1 name + total, line 2 year/period + status, actions). */}
                   <ul className="divide-hairline md:hidden" data-testid="mobile-budget-list">
@@ -1135,7 +1151,7 @@ export default function Budgets() {
                     </Table>
                   </div>
                 </>
-              )}
+              ) : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1191,17 +1207,8 @@ export default function Budgets() {
                 </div>
               </CardHeader>
               <CardContent>
-                {isLoadingLines ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    {t.loading || "Loading..."}
-                  </div>
-                ) : linesError ? (
-                  <LoadErrorState
-                    error={linesError}
-                    onRetry={() => void refetchLines()}
-                    testId="budget-lines-load-error"
-                  />
-                ) : budgetLines.length === 0 ? (
+                <BudgetQueryStatus query={budgetLinesQuery} errorTestId="budget-lines-load-error" />
+                {!budgetLinesQuery.data ? null : budgetLines.length === 0 ? (
                   <EmptyState
                     size="sm"
                     title={t["pages.noBudgetLinesYetAddCategoriesAndMonthlyAllocatio"]}
@@ -1334,17 +1341,8 @@ export default function Budgets() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {isLoadingVariance ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    {t.loading || "Loading..."}
-                  </div>
-                ) : varianceError ? (
-                  <LoadErrorState
-                    error={varianceError}
-                    onRetry={() => void refetchVariance()}
-                    testId="budget-variance-load-error"
-                  />
-                ) : !varianceData || varianceData.varianceLines.length === 0 ? (
+                <BudgetQueryStatus query={varianceQuery} errorTestId="budget-variance-load-error" />
+                {!varianceData ? null : varianceData.varianceLines.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     {t["budgets.noVarianceDataAvailableAdd"]}
                   </div>
@@ -1366,7 +1364,9 @@ export default function Budgets() {
                                 <span className="flex-1 text-end pe-1">
                                   <T k="pages.actual" />
                                 </span>
-                                <span className="flex-1 text-end">Var</span>
+                                <span className="flex-1 text-end">
+                                  {t["budgets.varianceAmount"]}
+                                </span>
                               </div>
                             </TableHead>
                           ))}
@@ -1381,7 +1381,9 @@ export default function Budgets() {
                               <span className="flex-1 text-end pe-1">
                                 <T k="pages.actual" />
                               </span>
-                              <span className="flex-1 text-end">Var %</span>
+                              <span className="flex-1 text-end">
+                                {t["budgets.variancePercent"]}
+                              </span>
                             </div>
                           </TableHead>
                         </TableRow>
