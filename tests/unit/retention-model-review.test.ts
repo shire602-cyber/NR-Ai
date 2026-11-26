@@ -27,10 +27,13 @@ describe("S01 retention model — financial record DELETE routes", () => {
     expect(s).toContain('from "../services/retention.service"');
   });
 
-  it("vendor bill DELETE calls assertRetentionExpired", () => {
+  it("vendor bill DELETE calls assertRetentionExpired using bill_date", () => {
     const s = src("server/routes/bill-pay.routes.ts");
     expect(s).toContain("assertRetentionExpired");
     expect(s).toContain('from "../services/retention.service"');
+    // S01: guard must use bill_date (document date), not created_at or the
+    // generated retention_expires_at column (which is based on created_at).
+    expect(s).toMatch(/assertRetentionExpired[\s\S]{0,200}bill\.bill_date/);
   });
 
   it("journal entry DELETE calls assertRetentionExpired", () => {
@@ -45,11 +48,12 @@ describe("S01 retention model — financial record DELETE routes", () => {
     expect(s).toContain('from "../services/retention.service"');
   });
 
-  it("credit-note DELETE is disabled (legacy-write guard), not a live route", () => {
+  it("credit-note DELETE restricts to draft status; issued notes are voided", () => {
     const s = src("server/routes/credit-notes.routes.ts");
-    // The route exists but always returns sendLegacyWriteDisabled before any
-    // storage call; retention is moot until the route is re-enabled.
-    expect(s).toContain("sendLegacyWriteDisabled");
+    // Issued credit notes cannot be deleted — only voided. Only draft credit
+    // notes (pre-financial-record) may be deleted.
+    expect(s).toContain("An issued credit note cannot be deleted");
+    expect(s).toContain("voidCreditNote");
   });
 
   it("fixed-asset DELETE blocks any asset that has posted journal entries", () => {
@@ -73,9 +77,9 @@ describe("S01 retention model — financial record DELETE routes", () => {
   });
 
   it("company delete is a soft delete, not a hard cascade", () => {
-    const s = src("server/storage.ts");
-    // The deleteCompany implementation must set deletedAt, not use db.delete.
-    // This prevents financial records from being hard-deleted with the company.
+    // deleteCompany is in the domain module, not the barrel.
+    const s = src("server/storage/companies.ts");
+    // The implementation must set deletedAt (and isActive: false), not db.delete.
     const deleteCompanyMatch = s.match(/async deleteCompany[\s\S]{0,500}?deletedAt/);
     expect(deleteCompanyMatch).not.toBeNull();
   });

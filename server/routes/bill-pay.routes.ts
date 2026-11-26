@@ -648,12 +648,11 @@ export function registerBillPayRoutes(app: Express) {
             "This bill was posted to the ledger; void it instead of deleting it"
           );
         }
-        // FTA 5-year retention applies to posted documents.
+        // FTA 5-year retention: use bill_date (document date), not created_at.
+        // The generated retention_expires_at column uses created_at; we override
+        // here so the guard reflects when the document was issued, not entered.
         assertRetentionExpired(
-          {
-            createdAt: bill.created_at as string,
-            retentionExpiresAt: bill.retention_expires_at as string | null,
-          },
+          { createdAt: bill.bill_date as string },
           "Vendor bill"
         );
       }
