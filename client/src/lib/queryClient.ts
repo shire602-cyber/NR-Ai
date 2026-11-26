@@ -329,6 +329,15 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
     return await parseResponseBody(res);
   };
 
+/**
+ * After a write: cancel in-flight reads for the affected queries (a GET that started before the
+ * write must not land afterwards), then invalidate so they refetch. Not awaited: the caller closes
+ * its dialog and toasts straight away.
+ */
+export function refreshAfterWrite(queryKey: readonly unknown[]): void {
+  void queryClient.cancelQueries({ queryKey }).then(() => queryClient.invalidateQueries({ queryKey }));
+}
+
 // Don't retry client errors (4xx) — only retry network failures and 5xx
 function shouldRetry(failureCount: number, error: unknown): boolean {
   if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
