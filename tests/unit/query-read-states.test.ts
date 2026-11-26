@@ -5,8 +5,9 @@
  */
 import { createElement, act, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { queryClient as client } from "../../client/src/lib/queryClient";
 
 vi.mock("@/hooks/useCurrentUser", () => ({
   useCurrentUser: () => ({ data: { name: "Test User" } }),
@@ -26,7 +27,7 @@ type Route = Reply | ((init?: RequestInit) => Reply | Promise<Reply>);
 
 let container: HTMLDivElement;
 let root: Root;
-let client: QueryClient;
+const defaultOptions = client.getDefaultOptions();
 let routes: Record<string, Route> = {};
 
 const byTestId = (id: string) => document.querySelector(`[data-testid="${id}"]`);
@@ -62,11 +63,8 @@ beforeEach(async () => {
       });
     })
   );
-  const { getQueryFn } = await import("../../client/src/lib/queryClient");
-  const { createQueryCache } = await import("../../client/src/lib/queryReadState");
-  client = new QueryClient({
-    queryCache: createQueryCache(),
-    defaultOptions: { queries: { queryFn: getQueryFn({ on401: "throw" }), retry: false } },
+  client.setDefaultOptions({
+    queries: { queryFn: defaultOptions.queries?.queryFn, retry: false },
   });
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -76,8 +74,11 @@ beforeEach(async () => {
 afterEach(async () => {
   act(() => root.unmount());
   client.clear();
+  client.setDefaultOptions(defaultOptions);
+  onlineManager.setOnline(true);
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   const { useI18n } = await import("../../client/src/lib/i18n");
   useI18n.getState().setLocale("en");
 });
@@ -249,6 +250,11 @@ describe("ClientDashboard read states", () => {
 });
 
 describe("firm list read states", () => {
+  const staffUrl = "/api/firm/staff";
+  const clientsUrl = "/api/firm/clients";
+  const alertsUrl = "/api/firm/command-center/alerts";
+  const comparisonUrl = "/api/firm/command-center/metrics/comparison";
+  const alerts = [{ id: "a1", severity: "warning", message: "VAT deadline approaching" }];
   const staff = [
     {
       id: "s1",
@@ -261,6 +267,111 @@ describe("firm list read states", () => {
       assignedClientCount: 0,
     },
   ];
+
+  it("StaffManagement: distinguishes paused first reads from paused refreshes", async () => {
+    const Page = (await import("../../client/src/pages/firm/StaffManagement")).default;
+    const t = await catalog();
+    onlineManager.setOnline(false);
+    await mount(Page);
+    expect(byTestId("staff-waiting")?.textContent).toBe(t.en["banking.query.paused"]);
+    expect(text()).not.toContain(t.en["pages.loadingStaff"]);
+
+    await act(async () => client.setQueryData([staffUrl], staff));
+    await flush();
+    expect(byTestId("staff-paused-cached")?.textContent).toBe(t.en["banking.query.pausedCached"]);
+    expect(byTestId("staff-clients-waiting")?.textContent).toBe(t.en["banking.query.paused"]);
+    expect(byTestId("staff-client-count")?.textContent).toBe("—");
+    expect(text()).toContain("Sara Staff");
+
+    await act(async () => client.setQueryData([clientsUrl], [{ id: "c-1" }]));
+    await flush();
+    expect(byTestId("staff-clients-paused-cached")?.textContent).toBe(
+      t.en["banking.query.pausedCached"]
+    );
+    expect(byTestId("staff-client-count")?.textContent).toBe("1");
+  });
+
+  it("StaffManagement: cancels both lists before invalidating after an assignment", async () => {
+    const Page = (await import("../../client/src/pages/firm/StaffManagement")).default;
+    const t = await catalog();
+    routes[staffUrl] = { body: staff };
+    routes[clientsUrl] = { body: [{ id: "c-1", name: "Example Client", assignedStaff: [] }] };
+    routes["/api/csrf-token"] = { body: { csrfToken: "test-token" } };
+    const write = vi.fn(() => ({ body: {} }));
+    routes["/api/firm/clients/c-1/assign-staff"] = write;
+    const cancel = vi.spyOn(client, "cancelQueries");
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    await mount(Page);
+    await act(async () => byTestId("firm-role-s1")?.closest("div")?.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[role="checkbox"]')?.click());
+    await clickButton(t.en["pages.saveChanges"]);
+
+    expect(write).toHaveBeenCalledOnce();
+    for (const [index, url] of [staffUrl, clientsUrl].entries()) {
+      expect(cancel).toHaveBeenNthCalledWith(index + 1, { queryKey: [url] });
+      expect(invalidate).toHaveBeenNthCalledWith(index + 1, { queryKey: [url] });
+      expect(cancel.mock.invocationCallOrder[index]).toBeLessThan(
+        invalidate.mock.invocationCallOrder[index]
+      );
+    }
+  });
+
+  it("FirmCommandCenter: shows waiting first and keeps rows with a paused refresh notice", async () => {
+    const Page = (await import("../../client/src/pages/FirmCommandCenter")).default;
+    const t = await catalog();
+    routes[comparisonUrl] = "never";
+    routes[alertsUrl] = { body: alerts };
+    onlineManager.setOnline(false);
+    await mount(Page);
+    await openTab("alerts");
+    expect(byTestId("alerts-waiting")?.textContent).toBe(t.en["banking.query.paused"]);
+    expect(byTestId("alerts-loading")).toBeNull();
+    expect(text()).not.toContain(t.en["firmCommandCenter.noActiveAlertsClickRefresh"]);
+
+    await act(async () => onlineManager.setOnline(true));
+    await flush();
+    expect(byTestId("alert-a1")).not.toBeNull();
+    expect(byTestId("alerts-waiting")).toBeNull();
+
+    await act(async () => {
+      onlineManager.setOnline(false);
+      await client.invalidateQueries({ queryKey: [alertsUrl] });
+    });
+    await flush();
+    expect(byTestId("alerts-paused-cached")?.textContent).toBe(t.en["banking.query.pausedCached"]);
+    expect(byTestId("alert-a1")).not.toBeNull();
+  });
+
+  it("FirmCommandCenter: aborts an in-flight first alerts read after Refresh Alerts writes", async () => {
+    const Page = (await import("../../client/src/pages/FirmCommandCenter")).default;
+    routes[comparisonUrl] = "never";
+    let firstSignal: AbortSignal | null | undefined;
+    let finishFirst!: (reply: Reply) => void;
+    const firstRead = new Promise<Reply>((resolve) => {
+      finishFirst = resolve;
+    });
+    routes[alertsUrl] = (init) => {
+      firstSignal = init?.signal;
+      return firstRead;
+    };
+    routes["/api/csrf-token"] = { body: { csrfToken: "test-token" } };
+    routes[alertsUrl + "/refresh"] = () => {
+      routes[alertsUrl] = { body: alerts };
+      return { body: {} };
+    };
+    await mount(Page);
+    await openTab("alerts");
+    expect(byTestId("alerts-loading")).not.toBeNull();
+
+    await act(async () => (byTestId("button-refresh-alerts") as HTMLButtonElement).click());
+    await flush();
+    expect(firstSignal?.aborted).toBe(true);
+    expect(byTestId("alert-a1")).not.toBeNull();
+
+    await act(async () => finishFirst({ body: [] }));
+    await flush();
+    expect(byTestId("alert-a1")).not.toBeNull();
+  });
 
   it("StaffManagement: first-load failure, then cached rows on a failed refresh", async () => {
     const Page = (await import("../../client/src/pages/firm/StaffManagement")).default;
@@ -433,6 +544,37 @@ describe("firm list read states", () => {
     );
     expect(text()).toContain(t.ar["pages.checkAPeriodForMissingDocuments"]);
   }, 15_000);
+
+  it("EmailIntake: keeps other tabs available and retries a failed completeness import", async () => {
+    const Page = (await import("../../client/src/pages/firm/EmailIntake")).default;
+    const { t, useI18n } = await import("../../client/src/lib/i18n");
+    const modulePath = "../../client/src/pages/firm/EmailIntakeCompletenessTab";
+    vi.doMock(modulePath, () => {
+      throw new TypeError("Failed to fetch dynamically imported module");
+    });
+    try {
+      await mount(Page);
+      await openTab("completeness");
+      const error = () => byTestId("email-intake-completeness-error");
+      expect(error()?.textContent).toContain(t.en["emailIntake.completenessLoadFailed"]);
+      await openTab("tasks");
+      expect(byTestId("email-task-boundary")).not.toBeNull();
+      await openTab("senders");
+      expect(byTestId("button-add-sender")).not.toBeNull();
+
+      await act(async () => useI18n.getState().setLocale("ar"));
+      await openTab("completeness");
+      expect(error()?.textContent).toContain(t.ar["emailIntake.completenessLoadFailed"]);
+      expect(error()?.querySelector("button")?.textContent).toBe(t.ar["components.errorRetry"]);
+
+      vi.doUnmock(modulePath);
+      await clickButton(t.ar["components.errorRetry"]);
+      expect(error()).toBeNull();
+      expect(byTestId("select-completeness-client")).not.toBeNull();
+    } finally {
+      vi.doUnmock(modulePath);
+    }
+  });
 });
 
 describe("DocumentChasing handles its two lists independently", () => {

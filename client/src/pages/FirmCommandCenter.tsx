@@ -8,6 +8,7 @@ import type * as React from "react";
 import { PracticeNav } from "@/components/firm/PracticeNav";
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { PausedReadNotice } from "@/components/ui/paused-read-notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { hasReadData, queryReadState } from "@/lib/queryReadState";
 import { loadErrorMessage } from "@/lib/loadError";
@@ -20,7 +21,7 @@ import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   ArrowDownRight,
@@ -83,7 +84,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import {
   FirmEInvoicingCell,
   type FirmEInvoicingValue,
@@ -224,7 +225,7 @@ export default function FirmCommandCenter() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { t } = useTranslation();
-  const qc = useQueryClient();
+  const refreshAlertList = () => refreshAfterWrite(["/api/firm/command-center/alerts"]);
 
   const [search, setSearch] = useState("");
   const [rankBy, setRankBy] = useState<RankBy>("health");
@@ -242,18 +243,24 @@ export default function FirmCommandCenter() {
 
   const healthQuery = useQuery<ClientHealthRow[]>({
     queryKey: ["/api/firm/command-center/clients/health", rankBy],
-    queryFn: () =>
-      apiRequest("GET", `/api/firm/command-center/clients/health?by=${rankBy}&dir=desc`),
+    queryFn: ({ signal }) =>
+      apiRequest(
+        "GET",
+        `/api/firm/command-center/clients/health?by=${rankBy}&dir=desc`,
+        undefined,
+        undefined,
+        { signal }
+      ),
   });
 
   const alertsQuery = useQuery<FirmAlertRow[]>({
     queryKey: ["/api/firm/command-center/alerts", severityFilter],
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       const url =
         severityFilter === "all"
           ? "/api/firm/command-center/alerts"
           : `/api/firm/command-center/alerts?severity=${severityFilter}`;
-      return apiRequest("GET", url);
+      return apiRequest("GET", url, undefined, undefined, { signal });
     },
   });
 
@@ -263,15 +270,21 @@ export default function FirmCommandCenter() {
 
   const comparisonQuery = useQuery<ComparisonResponse>({
     queryKey: ["/api/firm/command-center/metrics/comparison", granularity],
-    queryFn: () =>
-      apiRequest("GET", `/api/firm/command-center/metrics/comparison?granularity=${granularity}`),
+    queryFn: ({ signal }) =>
+      apiRequest(
+        "GET",
+        `/api/firm/command-center/metrics/comparison?granularity=${granularity}`,
+        undefined,
+        undefined,
+        { signal }
+      ),
   });
 
   // ─── Mutations ─────────────────────────────────────────────────────
   const refreshAlerts = useMutation({
     mutationFn: () => apiRequest("POST", "/api/firm/command-center/alerts/refresh"),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] });
+      refreshAlertList();
       toast({ title: t["firmCommandCenter.alertsRefreshed"] });
     },
     onError: (e: Error) =>
@@ -285,13 +298,13 @@ export default function FirmCommandCenter() {
   const markRead = useMutation({
     mutationFn: (alertId: string) =>
       apiRequest("PATCH", `/api/firm/command-center/alerts/${alertId}/read`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] }),
+    onSuccess: refreshAlertList,
   });
 
   const resolveAlert = useMutation({
     mutationFn: (alertId: string) =>
       apiRequest("PATCH", `/api/firm/command-center/alerts/${alertId}/resolve`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] }),
+    onSuccess: refreshAlertList,
   });
 
   const batchVat = useMutation({
@@ -338,7 +351,7 @@ export default function FirmCommandCenter() {
     mutationFn: (companyIds: string[]) =>
       apiRequest("POST", "/api/firm/command-center/batch/chase-documents", { companyIds }),
     onSuccess: (data: { chasedClientCount?: number }) => {
-      qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] });
+      refreshAlertList();
       toast({
         title: translateNow("toasts.documentChaseQueued"),
         description: formatMessage(translateNow("toasts.clientsNotified"), {
@@ -359,6 +372,7 @@ export default function FirmCommandCenter() {
   const dashboardState = queryReadState(dashboardQuery);
   const healthState = queryReadState(healthQuery);
   const alertsState = queryReadState(alertsQuery);
+  const alertsPaused = alertsQuery.fetchStatus === "paused";
   const workloadState = queryReadState(workloadQuery);
   const comparisonState = queryReadState(comparisonQuery);
   const alerts = hasReadData(alertsState) ? (alertsQuery.data ?? []) : [];
@@ -839,15 +853,21 @@ export default function FirmCommandCenter() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {alertsState === "stale" && (
+                {alertsPaused && hasReadData(alertsState) && (
+                  <PausedReadNotice cached testId="alerts-paused-cached" />
+                )}
+                {!alertsPaused && alertsState === "stale" && (
                   <StaleDataNotice
                     onRetry={() => void alertsQuery.refetch()}
                     testId="alerts-stale"
                   />
                 )}
-                {alertsState === "pending" && (
-                  <Skeleton className="h-24 w-full" data-testid="alerts-loading" />
-                )}
+                {alertsState === "pending" &&
+                  (alertsPaused ? (
+                    <PausedReadNotice testId="alerts-waiting" />
+                  ) : (
+                    <Skeleton className="h-24 w-full" data-testid="alerts-loading" />
+                  ))}
                 {alerts.map((a) => (
                   <div
                     key={a.id}

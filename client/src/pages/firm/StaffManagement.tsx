@@ -11,8 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import type { Company } from "@shared/schema";
+import { PausedReadNotice } from "@/components/ui/paused-read-notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import { StaleDataNotice } from "@/components/ui/stale-data-notice";
@@ -66,17 +67,20 @@ export default function StaffManagement() {
     queryKey: ["/api/firm/clients"],
   });
   const staffState = queryReadState(staffQuery);
+  const staffPaused = staffQuery.fetchStatus === "paused";
+  const clientsPaused = clientsQuery.fetchStatus === "paused";
   const clientsState = queryReadState(clientsQuery);
   const staff = hasReadData(staffState) ? (staffQuery.data ?? []) : [];
   const clientsReady = hasReadData(clientsState);
   const clients = clientsReady ? (clientsQuery.data ?? []) : [];
 
-  const filteredStaff = staff.filter(
-    (s) =>
-      !search ||
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.email.toLowerCase().includes(search.toLowerCase())
-  );
+  const searchTerm = search.toLowerCase();
+  const filteredStaff = searchTerm
+    ? staff.filter(
+        (s) =>
+          s.name.toLowerCase().includes(searchTerm) || s.email.toLowerCase().includes(searchTerm)
+      )
+    : staff;
 
   const toggleExpand = (staffId: string) => {
     setExpandedStaff((prev) => {
@@ -88,24 +92,19 @@ export default function StaffManagement() {
   };
 
   const isAssigned = (staffMember: StaffMember, companyId: string): boolean => {
-    const key = `${staffMember.id}:${companyId}`;
-    if (pendingChanges.has(key)) {
-      return pendingChanges.get(key)!.action === "assign";
-    }
-    return staffMember.assignedClients.some((c) => c.companyId === companyId);
+    const pending = pendingChanges.get(`${staffMember.id}:${companyId}`);
+    return pending
+      ? pending.action === "assign"
+      : staffMember.assignedClients.some((c) => c.companyId === companyId);
   };
 
   const toggleAssignment = (staffMember: StaffMember, companyId: string) => {
     const key = `${staffMember.id}:${companyId}`;
     const currentlyAssigned = staffMember.assignedClients.some((c) => c.companyId === companyId);
-    const pendingAction = pendingChanges.get(key)?.action;
-
     setPendingChanges((prev) => {
       const next = new Map(prev);
-      if (pendingAction) {
-        // Toggle removes the pending change (reverts to original)
-        next.delete(key);
-      } else {
+      // Toggle removes the pending change (reverts to original).
+      if (!next.delete(key)) {
         next.set(key, {
           staffId: staffMember.id,
           companyId,
@@ -137,8 +136,8 @@ export default function StaffManagement() {
 
     setSaving(false);
     setPendingChanges(new Map());
-    queryClient.invalidateQueries({ queryKey: ["/api/firm/staff"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
+    refreshAfterWrite(["/api/firm/staff"]);
+    refreshAfterWrite(["/api/firm/clients"]);
 
     if (failed === 0) {
       toast({ title: formatMessage(translateNow("toasts.assignmentsSaved"), { success }) });
@@ -153,19 +152,39 @@ export default function StaffManagement() {
   if (staffState === "pending") {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
-        <T k="pages.loadingStaff" />
+        {staffPaused ? <PausedReadNotice testId="staff-waiting" /> : <T k="pages.loadingStaff" />}
       </div>
     );
   }
 
+  const header = (
+    <PageHeader
+      eyebrow={t["firm.eyebrowFirm"]}
+      title={t["firm.staffManagementTitle"]}
+      description={t["firm.staffManagementDescription"]}
+      actions={
+        staffState !== "error" &&
+        pendingChanges.size > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">
+              {formatMessage(t["firmOps.staffPendingChanges"], { count: pendingChanges.size })}
+            </span>
+            <Button variant="outline" size="sm" onClick={() => setPendingChanges(new Map())}>
+              <T k="pages.discard" />
+            </Button>
+            <Button size="sm" onClick={saveChanges} disabled={saving}>
+              {saving ? t["pages.notificationPrefsSaving"] : t["pages.saveChanges"]}
+            </Button>
+          </div>
+        )
+      }
+    />
+  );
+
   if (staffState === "error") {
     return (
       <div className="space-y-6">
-        <PageHeader
-          eyebrow={t["firm.eyebrowFirm"]}
-          title={t["firm.staffManagementTitle"]}
-          description={t["firm.staffManagementDescription"]}
-        />
+        {header}
         <LoadErrorState
           error={staffQuery.error}
           onRetry={() => void staffQuery.refetch()}
@@ -175,33 +194,34 @@ export default function StaffManagement() {
     );
   }
 
+  const summaryCards = [
+    { label: t["pages.totalStaff"], value: staff.length },
+    {
+      label: t["pages.clientCompanies"],
+      value: clientsReady ? clients.length : "—",
+      testId: "staff-client-count",
+    },
+    {
+      label: t["pages.unassignedClients"],
+      value: clientsReady ? clients.filter((c) => c.assignedStaff?.length === 0).length : "—",
+    },
+  ];
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow={t["firm.eyebrowFirm"]}
-        title={t["firm.staffManagementTitle"]}
-        description={t["firm.staffManagementDescription"]}
-        actions={
-          pendingChanges.size > 0 && (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground">
-                {formatMessage(t["firmOps.staffPendingChanges"], { count: pendingChanges.size })}
-              </span>
-              <Button variant="outline" size="sm" onClick={() => setPendingChanges(new Map())}>
-                <T k="pages.discard" />
-              </Button>
-              <Button size="sm" onClick={saveChanges} disabled={saving}>
-                {saving ? t["pages.notificationPrefsSaving"] : t["pages.saveChanges"]}
-              </Button>
-            </div>
-          )
-        }
-      />
+      {header}
 
-      {staffState === "stale" && (
+      {staffPaused && <PausedReadNotice cached testId="staff-paused-cached" />}
+      {!staffPaused && staffState === "stale" && (
         <StaleDataNotice onRetry={() => void staffQuery.refetch()} testId="staff-stale" />
       )}
-      {clientsState === "stale" && (
+      {clientsPaused && (clientsReady || clientsState === "pending") && (
+        <PausedReadNotice
+          cached={clientsReady}
+          testId={clientsReady ? "staff-clients-paused-cached" : "staff-clients-waiting"}
+        />
+      )}
+      {!clientsPaused && clientsState === "stale" && (
         <StaleDataNotice onRetry={() => void clientsQuery.refetch()} testId="staff-clients-stale" />
       )}
       {clientsState === "error" && (
@@ -226,34 +246,16 @@ export default function StaffManagement() {
 
       {/* Summary row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">
-              <T k="pages.totalStaff" />
-            </p>
-            <p className="text-2xl font-bold mt-0.5">{staff.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">
-              <T k="pages.clientCompanies" />
-            </p>
-            <p className="text-2xl font-bold mt-0.5" data-testid="staff-client-count">
-              {clientsReady ? clients.length : "—"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">
-              <T k="pages.unassignedClients" />
-            </p>
-            <p className="text-2xl font-bold mt-0.5">
-              {clientsReady ? clients.filter((c) => c.assignedStaff?.length === 0).length : "—"}
-            </p>
-          </CardContent>
-        </Card>
+        {summaryCards.map(({ label, value, testId }) => (
+          <Card key={label}>
+            <CardContent className="pt-4 pb-3">
+              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className="text-2xl font-bold mt-0.5" data-testid={testId}>
+                {value}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* Staff list */}
@@ -336,9 +338,9 @@ export default function StaffManagement() {
                       <p className="text-xs font-medium text-muted-foreground mb-3">
                         <T k="pages.clientAssignments" />
                       </p>
-                      {clientsState === "pending" ? (
+                      {clientsState === "pending" && !clientsPaused ? (
                         <Skeleton className="h-16 w-full" data-testid="staff-clients-loading" />
-                      ) : clientsState === "error" ? null : clients.length === 0 ? (
+                      ) : !clientsReady ? null : clients.length === 0 ? (
                         <p className="text-sm text-muted-foreground">
                           <T k="pages.noClientCompaniesYet" />
                         </p>

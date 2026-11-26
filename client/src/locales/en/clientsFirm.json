@@ -101,6 +101,8 @@
   "firmAnalytics.percentVsLastMonth": "{percent}% vs last month",
   "emailIntake.labelOptional": "Label (optional)",
   "emailIntake.linkedSendersCount": "Linked senders ({count})",
+  "emailIntake.completenessLoadFailed": "Completeness Check couldn’t load",
+  "emailIntake.completenessLoadHelp": "Try again. If the problem continues, reload this page.",
   "emailIntake.nraCenter": "NRA Center",
   "leadPipeline.leadsLeadsRateConversion": "{leads} leads · {rate}% conversion",
   "leadPipeline.daysDAvgToConvert": "{days}d avg to convert",

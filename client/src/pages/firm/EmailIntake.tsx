@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { Suspense, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
 import { SetupNotice } from "@/components/ui/setup-notice";
@@ -27,12 +27,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { lazyWithReload } from "@/lib/lazyWithReload";
 import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { Plus, Trash2, Mail, CheckCircle2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LoadErrorState } from "@/components/ui/load-error-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { PausedReadNotice } from "@/components/ui/paused-read-notice";
 import { StaleDataNotice } from "@/components/ui/stale-data-notice";
 import { hasReadData, queryReadState, type QueryReadState } from "@/lib/queryReadState";
 
@@ -71,10 +72,42 @@ export interface ClientCompany {
   name: string;
 }
 
-const EmailIntakeCompletenessTab = lazyWithReload(
-  () => import("./EmailIntakeCompletenessTab"),
-  "email-intake-completeness"
-);
+function CompletenessPanel({ clients }: { clients: ClientCompany[] }) {
+  const { t } = useTranslation();
+  const [attempt, setAttempt] = useState(0);
+  const [result, setResult] = useState<{
+    attempt: number;
+    Tab?: typeof import("./EmailIntakeCompletenessTab").default;
+  }>();
+
+  useEffect(() => {
+    let active = true;
+    void import("./EmailIntakeCompletenessTab").then(
+      ({ default: Tab }) => {
+        if (active) setResult({ attempt, Tab });
+      },
+      () => {
+        if (active) setResult({ attempt });
+      }
+    );
+    return () => {
+      active = false;
+    };
+  }, [attempt]);
+
+  if (result?.attempt !== attempt) return <Skeleton className="h-24 w-full" />;
+  if (result.Tab) return <result.Tab clients={clients} />;
+
+  return (
+    <ErrorState
+      compact
+      title={t["emailIntake.completenessLoadFailed"]}
+      description={t["emailIntake.completenessLoadHelp"]}
+      onRetry={() => setAttempt(attempt + 1)}
+      testId="email-intake-completeness-error"
+    />
+  );
+}
 
 export default function EmailIntake() {
   const { t } = useTranslation();
@@ -169,9 +202,7 @@ export default function EmailIntake() {
         </TabsContent>
 
         <TabsContent value="completeness" className="mt-4">
-          <Suspense fallback={<Skeleton className="h-24 w-full" />}>
-            <EmailIntakeCompletenessTab clients={clients} />
-          </Suspense>
+          <CompletenessPanel clients={clients} />
         </TabsContent>
 
         <TabsContent value="tasks" className="mt-4">
@@ -516,13 +547,7 @@ function EmailTasksTab({
           {companyId &&
             messagesState === "pending" &&
             (messagesPaused ? (
-              <p
-                className="text-sm text-muted-foreground"
-                role="status"
-                data-testid="email-intake-messages-waiting"
-              >
-                {t["banking.query.paused"]}
-              </p>
+              <PausedReadNotice testId="email-intake-messages-waiting" />
             ) : (
               <Skeleton className="h-24 w-full" data-testid="email-intake-messages-loading" />
             ))}
@@ -535,13 +560,7 @@ function EmailTasksTab({
             />
           )}
           {companyId && messagesPaused && hasReadData(messagesState) && (
-            <p
-              className="text-sm text-muted-foreground"
-              role="status"
-              data-testid="email-intake-messages-paused-cached"
-            >
-              {t["banking.query.pausedCached"]}
-            </p>
+            <PausedReadNotice cached testId="email-intake-messages-paused-cached" />
           )}
           {companyId && !messagesPaused && messagesState === "stale" && (
             <StaleDataNotice
