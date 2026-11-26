@@ -198,12 +198,18 @@
   "complianceCalendar.overdue": "متأخرة",
   "complianceCalendar.noEventsOnDay": "لا توجد مواعيد في هذا اليوم.",
   "complianceCalendar.noDeadlinesYet": "لا توجد مواعيد بعد. أضف بيانات ضريبة القيمة المضافة وضريبة الشركات والرخصة في الإعدادات وستظهر مواعيد تقديمك هنا.",
-  "complianceCalendar.loadErrorTitle": "تعذّر تحميل تقويم الامتثال",
+  "complianceCalendar.loadErrorTitle": "تعذّر تحميل مهام الامتثال",
   "complianceCalendar.obligationsErrorTitle": "تعذّر تحميل بعض مواعيد التقديم",
   "complianceCalendar.status.upcoming": "قادم",
   "complianceCalendar.status.completed": "مكتمل",
   "complianceCalendar.status.overdue": "متأخر",
   "complianceCalendar.status.dismissed": "مُستبعد",
   "complianceCalendar.status.pending": "قيد الانتظار",
-  "complianceCalendar.status.in_progress": "قيد التنفيذ"
+  "complianceCalendar.status.in_progress": "قيد التنفيذ",
+  "complianceCalendar.status.cancelled": "ملغى",
+  "complianceCalendar.stillLoading": "لا يزال تحميل المواعيد جاريًا.",
+  "complianceCalendar.waitingForConnection": "في انتظار الاتصال. قد تكون المواعيد ناقصة أو غير محدَّثة.",
+  "complianceCalendar.deadlinesIncomplete": "ليست كل المواعيد متاحة.",
+  "complianceCalendar.tasksRefreshErrorTitle": "تعذّر تحديث مهامك. تُعرض آخر بيانات تم تحميلها.",
+  "complianceCalendar.obligationsRefreshErrorTitle": "تعذّر تحديث مواعيد التقديم. تُعرض آخر بيانات تم تحميلها."
 }

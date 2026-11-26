@@ -198,12 +198,18 @@
   "complianceCalendar.overdue": "Overdue",
   "complianceCalendar.noEventsOnDay": "No deadlines on this day.",
   "complianceCalendar.noDeadlinesYet": "No deadlines yet. Add your VAT, corporate tax and licence details in settings and your filing dates will appear here.",
-  "complianceCalendar.loadErrorTitle": "Couldn't load the compliance calendar",
+  "complianceCalendar.loadErrorTitle": "Couldn't load compliance tasks",
   "complianceCalendar.obligationsErrorTitle": "Some filing deadlines couldn't be loaded",
   "complianceCalendar.status.upcoming": "Upcoming",
   "complianceCalendar.status.completed": "Completed",
   "complianceCalendar.status.overdue": "Overdue",
   "complianceCalendar.status.dismissed": "Dismissed",
   "complianceCalendar.status.pending": "Pending",
-  "complianceCalendar.status.in_progress": "In progress"
+  "complianceCalendar.status.in_progress": "In progress",
+  "complianceCalendar.status.cancelled": "Cancelled",
+  "complianceCalendar.stillLoading": "Deadlines are still loading.",
+  "complianceCalendar.waitingForConnection": "Waiting for a connection. Deadlines may be incomplete or out of date.",
+  "complianceCalendar.deadlinesIncomplete": "Not all deadlines are available.",
+  "complianceCalendar.tasksRefreshErrorTitle": "Couldn't refresh your tasks. Showing the last loaded data.",
+  "complianceCalendar.obligationsRefreshErrorTitle": "Couldn't refresh filing deadlines. Showing the last loaded data."
 }

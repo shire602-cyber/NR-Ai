@@ -6,7 +6,7 @@ import { useLocation } from "wouter";
 import { StatCard } from "@/components/ui/stat-card";
 import { cn } from "@/lib/utils";
 import { T } from "@/components/layout/T";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { differenceInDays, isBefore } from "date-fns";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
-import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, Search, Calendar, Loader2, ListTodo, MoreHorizontal, Trash2 } from "lucide-react";
 import {
@@ -44,7 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-interface ComplianceTask {
+export interface ComplianceTask {
   id: string;
   companyId: string;
   title: string;
@@ -52,7 +51,7 @@ interface ComplianceTask {
   description: string | null;
   category: string;
   priority: string;
-  status: string;
+  status: string | null;
   dueDate: string;
   reminderDate: string | null;
   isRecurring: boolean;
@@ -66,7 +65,7 @@ interface ComplianceTask {
   legalSource?: string | null;
 }
 
-interface CalendarObligation {
+export interface CalendarObligation {
   id: string;
   source: "manual" | "generated";
   obligationType: string | null;
@@ -153,10 +152,23 @@ export default function TaskCenter() {
   return <Skeleton className="h-96 w-full" />;
 }
 
-export function TaskListPanel() {
+/**
+ * The parent (ComplianceCalendar) owns both queries, their errors and retries. `ready` means both
+ * succeeded; until then rows still show, but no empty claim or total is made.
+ */
+export function TaskListPanel({
+  manualTasks,
+  obligations,
+  companyId,
+  ready,
+}: {
+  manualTasks: ComplianceTask[] | undefined;
+  obligations: CalendarObligation[] | undefined;
+  companyId: string | undefined;
+  ready: boolean;
+}) {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("active");
@@ -179,16 +191,8 @@ export function TaskListPanel() {
     notes: "",
   });
 
-  const { data: manualTasks, isLoading } = useQuery<ComplianceTask[]>({
-    queryKey: ["/api/companies", companyId, "compliance-tasks"],
-    enabled: !!companyId,
-  });
   // R13-34: generated obligations (VAT, CT, UBO, licence, excise, e-invoicing,
   // WPS) appear alongside manual tasks.
-  const { data: obligations } = useQuery<CalendarObligation[]>({
-    queryKey: ["/api/companies", companyId, "compliance-calendar"],
-    enabled: !!companyId,
-  });
   const tasks = useMemo<ComplianceTask[]>(
     () => [
       ...(manualTasks ?? []),
@@ -363,35 +367,22 @@ export function TaskListPanel() {
     overdue: tasks?.filter((t) => getTaskStatus(t) === "overdue").length || 0,
   };
 
-  if (isLoadingCompany || isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-24" />
-          ))}
-        </div>
-        <Skeleton className="h-96" />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label={locale === "ar" ? "مفتوحة" : "Open"}
-          value={stats.open}
+          value={ready ? stats.open : "—"}
           testId="stat-tasks-open"
         />
         <StatCard
           label={t["compliance.tasksDueThisWeek"]}
-          value={stats.dueThisWeek}
+          value={ready ? stats.dueThisWeek : "—"}
           testId="stat-tasks-due-week"
         />
         <StatCard
           label={locale === "ar" ? "متأخرة" : "Overdue"}
-          value={stats.overdue}
+          value={ready ? stats.overdue : "—"}
           testId="stat-tasks-overdue"
         />
       </div>
@@ -463,8 +454,16 @@ export function TaskListPanel() {
           </div>
         </CardHeader>
         <CardContent>
-          {filteredTasks.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
+          {filteredTasks.length === 0 && !ready ? (
+            <div
+              className="text-center py-12 text-muted-foreground"
+              data-testid="task-list-incomplete"
+            >
+              <ListTodo className="w-12 h-12 mx-auto mb-4 opacity-50" aria-hidden />
+              <p>{t["complianceCalendar.deadlinesIncomplete"]}</p>
+            </div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground" data-testid="task-list-empty">
               <ListTodo className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p>{t["pages.taskCenterNoTasksFound"]}</p>
               <Button variant="ghost" onClick={() => setAddDialogOpen(true)}>

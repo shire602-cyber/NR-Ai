@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTranslation, formatMessage } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import type { CalendarObligation, ComplianceTask } from "@/pages/TaskCenter";
 import {
   ChevronLeft,
   ChevronRight,
@@ -39,27 +40,9 @@ import {
   CreditCard,
 } from "lucide-react";
 
-interface ComplianceTask {
-  id: string;
-  title: string;
-  titleAr: string | null;
-  category: string;
-  priority: string;
-  status: string;
-  dueDate: string;
-}
-
 /** Generated + manual obligations from /compliance-calendar (W4-A, R08-21). */
-interface ComplianceObligation {
-  id: string;
-  source: "manual" | "generated";
-  obligationType: string | null;
+interface ComplianceObligation extends CalendarObligation {
   eventType: string;
-  title: string;
-  titleAr: string | null;
-  dueDate: string;
-  status: "upcoming" | "completed" | "overdue" | "dismissed";
-  legalSource: string | null;
   daysUntilDue: number;
 }
 
@@ -121,26 +104,31 @@ export default function ComplianceCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
-  const {
-    data: tasks,
-    isLoading: isLoadingTasks,
-    error: tasksError,
-    refetch: refetchTasks,
-  } = useQuery<ComplianceTask[]>({
+  // The only observers of both sources: the List view gets the data as props.
+  const tasksQuery = useQuery<ComplianceTask[]>({
     queryKey: ["/api/companies", companyId, "compliance-tasks"],
     enabled: !!companyId,
   });
 
   // Generated obligations: VAT by stagger, CT 9 months after year end, UBO,
   // licence, excise, e-invoicing and WPS. Status follows the return state.
-  const {
-    data: obligations,
-    error: obligationsError,
-    refetch: refetchObligations,
-  } = useQuery<ComplianceObligation[]>({
+  const obligationsQuery = useQuery<ComplianceObligation[]>({
     queryKey: ["/api/companies", companyId, "compliance-calendar"],
     enabled: !!companyId,
   });
+  const tasks = tasksQuery.data;
+  const obligations = obligationsQuery.data;
+
+  // Nothing may be reported as empty (or totalled) until both sources have succeeded.
+  const sourcesReady = tasksQuery.isSuccess && obligationsQuery.isSuccess;
+  const sourcesPaused = tasksQuery.isPaused || obligationsQuery.isPaused;
+  const sourcesLoading = tasksQuery.isLoading || obligationsQuery.isLoading;
+  const progressText = sourcesPaused
+    ? t["complianceCalendar.waitingForConnection"]
+    : sourcesLoading
+      ? t["complianceCalendar.stillLoading"]
+      : null;
+  const notReadyText = progressText ?? t["complianceCalendar.deadlinesIncomplete"];
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -155,7 +143,7 @@ export default function ComplianceCalendar() {
       date: Date;
       title: string;
       category: string;
-      status: string;
+      status: string | null;
       type: "task" | "obligation";
     }> = [];
 
@@ -214,7 +202,8 @@ export default function ComplianceCalendar() {
     return t[key] && t[key] !== key ? t[key] : status.replace(/_/g, " ");
   };
 
-  if (isLoadingCompany || isLoadingTasks) {
+  // No skeleton for the sources: one slow request must not hide the other's rows.
+  if (isLoadingCompany) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
@@ -256,26 +245,48 @@ export default function ComplianceCalendar() {
         </TabsList>
       </Tabs>
 
-      {obligationsError && view !== "list" && (
+      {tasksQuery.error && (
         <LoadErrorState
           compact
-          error={obligationsError}
-          onRetry={() => void refetchObligations()}
-          title={t["complianceCalendar.obligationsErrorTitle"]}
+          error={tasksQuery.error}
+          onRetry={() => void tasksQuery.refetch()}
+          title={
+            tasksQuery.isLoadingError
+              ? t["complianceCalendar.loadErrorTitle"]
+              : t["complianceCalendar.tasksRefreshErrorTitle"]
+          }
+          testId="compliance-calendar-error"
+        />
+      )}
+      {obligationsQuery.error && (
+        <LoadErrorState
+          compact
+          error={obligationsQuery.error}
+          onRetry={() => void obligationsQuery.refetch()}
+          title={
+            obligationsQuery.isLoadingError
+              ? t["complianceCalendar.obligationsErrorTitle"]
+              : t["complianceCalendar.obligationsRefreshErrorTitle"]
+          }
           testId="compliance-calendar-obligations-error"
         />
       )}
+      <p
+        role="status"
+        data-testid="compliance-sources-status"
+        className={progressText ? "text-sm text-muted-foreground" : "sr-only"}
+      >
+        {progressText}
+      </p>
 
-      {tasksError && view !== "list" ? (
-        <LoadErrorState
-          error={tasksError}
-          onRetry={() => void refetchTasks()}
-          title={t["complianceCalendar.loadErrorTitle"]}
-          testId="compliance-calendar-error"
-        />
-      ) : view === "list" ? (
+      {view === "list" ? (
         <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-          <TaskListPanel />
+          <TaskListPanel
+            manualTasks={tasks}
+            obligations={obligations}
+            companyId={companyId}
+            ready={sourcesReady}
+          />
         </Suspense>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -401,14 +412,24 @@ export default function ComplianceCalendar() {
             </CardContent>
           </Card>
 
-          <div className="space-y-6">
-            {selectedDate && selectedDateEvents.length === 0 && (
-              <Card>
-                <CardContent className="py-4 text-sm text-muted-foreground" role="status">
-                  {formatDate(selectedDate, locale)}: {t["complianceCalendar.noEventsOnDay"]}
-                </CardContent>
-              </Card>
-            )}
+          {/* Flex gap (not space-y): the hidden, absolutely positioned status adds no gap. */}
+          <div className="flex min-w-0 flex-col gap-6">
+            {/* Always mounted, so screen readers announce each selection's empty-day text. */}
+            <div
+              role="status"
+              data-testid="compliance-day-status"
+              className={
+                selectedDate && selectedDateEvents.length === 0
+                  ? "rounded-md border bg-card p-4 text-sm text-muted-foreground"
+                  : "sr-only"
+              }
+            >
+              {selectedDate && selectedDateEvents.length === 0
+                ? `${formatDate(selectedDate, locale)}: ${
+                    sourcesReady ? t["complianceCalendar.noEventsOnDay"] : notReadyText
+                  }`
+                : ""}
+            </div>
             {selectedDate && selectedDateEvents.length > 0 && (
               <Card>
                 <CardHeader>
@@ -432,9 +453,15 @@ export default function ComplianceCalendar() {
                               <Icon className="w-4 h-4" />
                               <span className="font-medium text-sm">{event.title}</span>
                             </div>
-                            <Badge variant="outline" className="mt-1 text-xs">
-                              {statusLabel(event.status)}
-                            </Badge>
+                            {event.status && (
+                              <Badge
+                                variant="outline"
+                                className="mt-1 text-xs"
+                                data-testid="compliance-event-status"
+                              >
+                                {statusLabel(event.status)}
+                              </Badge>
+                            )}
                           </div>
                         );
                       })}
@@ -455,14 +482,23 @@ export default function ComplianceCalendar() {
               <CardContent>
                 <ScrollArea className="h-64">
                   {upcomingEvents.length === 0 ? (
-                    <div className="text-center py-4 text-muted-foreground">
-                      <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <div
+                      className="text-center py-4 text-muted-foreground"
+                      data-testid="compliance-upcoming-empty"
+                    >
+                      {sourcesReady ? (
+                        <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50" aria-hidden />
+                      ) : (
+                        <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" aria-hidden />
+                      )}
                       <p className="text-sm">
-                        {allEvents.length === 0
-                          ? t["complianceCalendar.noDeadlinesYet"]
-                          : locale === "ar"
-                            ? "لا توجد مواعيد قادمة"
-                            : t["pageLabels.noUpcomingDeadlines"]}
+                        {!sourcesReady
+                          ? notReadyText
+                          : allEvents.length === 0
+                            ? t["complianceCalendar.noDeadlinesYet"]
+                            : locale === "ar"
+                              ? "لا توجد مواعيد قادمة"
+                              : t["pageLabels.noUpcomingDeadlines"]}
                       </p>
                     </div>
                   ) : (
