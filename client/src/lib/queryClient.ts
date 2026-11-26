@@ -314,12 +314,7 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
         headers: getAuthHeaders(),
         signal: context.signal,
       });
-    const booted = await takeBootFetch(url);
-    // The boot request does not carry this query's signal, so don't adopt it after cancel.
-    if (context.signal?.aborted) {
-      throw new DOMException("The request was cancelled.", "AbortError");
-    }
-    let res = booted ?? (await send());
+    let res = (await takeBootFetch(url)) ?? (await send());
 
     if (res.status === 401) {
       // The refresh is shared by every caller, so cancelling this query must not cancel it.
