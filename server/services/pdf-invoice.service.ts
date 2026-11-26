@@ -2,10 +2,9 @@
 import PDFDocument from "pdfkit";
 import Decimal from "decimal.js";
 import { loadCompanyLogo } from "./pdf-logo";
-import { mulRate, toFils } from "../../shared/money";
+import { toFils } from "../../shared/money";
 import { calendarParts } from "../../shared/uae-date";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
-import { classifySupply } from "../../shared/vat-classification";
 import { renderInvoiceShareQrPng } from "./einvoice-qr.service";
 import {
   isArabic,
@@ -32,7 +31,11 @@ import {
   trnLine,
   type Bi,
 } from "./pdf-ledger";
-import { computeSalesDocument, storedLineToTotalsInput } from "./document-totals.service";
+import {
+  computeSalesDocument,
+  readStoredInvoiceLineAmounts,
+  storedLineToTotalsInput,
+} from "./document-totals.service";
 
 const PAGE_WIDTH = 595.28;
 const NR_GREEN = "#6F9E3A";
@@ -182,20 +185,10 @@ type PdfLineAmount = { net: number; vat: number; total: number; rate: number };
 
 function computePdfLineAmounts(invoice: Invoice, lines: InvoiceLine[]): PdfLineAmount[] {
   const { discountType, discountValue, reverseCharge } = invoice;
-  // Stored net already includes both discounts. The real quantity may have lost precision.
-  const storedAmounts = lines.map((line) => {
-    if (line.marginScheme || line.netAmount == null) return null;
-    const netFils = Math.abs(toFils(line.netAmount));
-    const { chargedVatRate: vatRate } = classifySupply({
-      supplyType: line.vatSupplyType,
-      vatRate: line.vatRate,
-      reverseCharge,
-    });
-    return { netFils, vatFils: vatRate ? mulRate(netFils, vatRate) : 0, vatRate };
-  });
+  const storedAmounts = readStoredInvoiceLineAmounts(invoice, lines);
 
-  // Margin VAT and legacy lines without a stored net need the sales engine. Keep all
-  // lines in the allocation, using the posted line discount for ordinary stored lines.
+  // Legacy lines without a stored net need the sales engine. Keep all lines in
+  // the allocation, using the posted line discount where available.
   const computed = storedAmounts.some((amount) => amount === null)
     ? computeSalesDocument(
         lines.map((line, i) => {
@@ -204,14 +197,15 @@ function computePdfLineAmounts(invoice: Invoice, lines: InvoiceLine[]): PdfLineA
           const stored = storedAmounts[i];
           if (!stored) return storedLineToTotalsInput({ ...line, quantity, unitPrice });
 
+          const storedPriceFils = stored.netFils + (line.marginScheme ? stored.vatFils : 0);
           const afterLineDiscount =
             discountType && discountValue
               ? toFils(new Decimal(quantity).times(unitPrice).toFixed(), { rounding: "halfUp" }) -
                 Math.abs(toFils(line.discountAmount ?? 0))
-              : stored.netFils;
+              : storedPriceFils;
           return {
             quantity: 1,
-            unitPriceFils: Math.max(stored.netFils, afterLineDiscount),
+            unitPriceFils: Math.max(storedPriceFils, afterLineDiscount),
             vatRate: line.vatRate,
             vatSupplyType: line.vatSupplyType,
           };

@@ -2,9 +2,8 @@
  * UAE e-invoice generator: UBL 2.1 in the Peppol PINT AE profile.
  *
  * Every tax category comes from shared/vat-classification.ts (classifySupply)
- * and every amount from server/services/document-totals.service.ts
- * (computeSalesDocument), so the XML can never disagree with the posted
- * invoice, the PDF or the VAT 201. The output is checked against the UBL 2.1
+ * and line amounts come from the posted invoice or the sales totals engine for
+ * legacy rows. The output is checked against the UBL 2.1
  * XSD, the OpenPeppol PINT AE schematron and the PINT AE rule list in
  * server/services/einvoice/validate.ts.
  *
@@ -18,9 +17,14 @@ import Decimal from "decimal.js";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { UNSPECIFIED_CARD_PAYMENT_MEANS_CODE } from "../../shared/einvoice-payment-means";
 import { classifySupply, type SupplyClassification } from "../../shared/vat-classification";
-import { fromFils, toFils, tryToFils } from "../../shared/money";
+import { allocate, fromFils, sumFils, toFils, tryToFils } from "../../shared/money";
 import { calendarDateKey, calendarTimeKey } from "../../shared/uae-date";
-import { computeSalesDocument, storedLineToTotalsInput } from "./document-totals.service";
+import {
+  computeSalesDocument,
+  readStoredInvoiceLineAmounts,
+  storedLineToTotalsInput,
+  sumSalesLines,
+} from "./document-totals.service";
 import { dueDateFromTerms } from "./invoice-lifecycle";
 import { comment, el, opt, serializeXml, type XmlElement } from "./einvoice/xml";
 import { all, attr, first, parseXml, partyVatTrn, text, textAt } from "./einvoice/dom";
@@ -228,28 +232,53 @@ export interface ComputedEInvoiceLine {
   vatRate: number;
 }
 
-/** Amounts for the XML, from the same engine that priced the stored invoice. */
+/** Amounts for XML and provider snapshots, using posted nets when available. */
 export function computeEInvoiceAmounts(invoice: InvoiceLike, lines: InvoiceLine[]) {
   const sign = invoice.invoiceType === "credit_note" ? -1 : 1;
-  const totals = computeSalesDocument(
-    lines.map((l) => {
-      const input = storedLineToTotalsInput({
-        quantity: Math.abs(Number(l.quantity)),
-        unitPrice: Math.abs(Number(l.unitPrice)),
-        vatRate: l.vatRate,
-        vatSupplyType: l.vatSupplyType,
-        marginScheme: l.marginScheme,
-        marginPurchaseCost: l.marginPurchaseCost,
-        discountType: (l as InvoiceLine & { discountType?: string | null }).discountType ?? null,
-        discountValue: (l as InvoiceLine & { discountValue?: number | null }).discountValue ?? null,
-      });
-      return input;
-    }),
-    {
-      discountType: invoice.discountType ?? null,
-      discountValue: invoice.discountValue ?? null,
-      reverseCharge: invoice.reverseCharge ?? null,
-    }
+  const inputs = lines.map((line) =>
+    storedLineToTotalsInput({
+      ...line,
+      quantity: Math.abs(Number(line.quantity)),
+      unitPrice: Math.abs(Number(line.unitPrice)),
+    })
+  );
+  const stored = readStoredInvoiceLineAmounts(invoice, lines);
+  const legacy = stored.some((line) => line === null)
+    ? computeSalesDocument(inputs, invoice)
+    : null;
+  const lineDiscounts = lines.map((line, i) =>
+    stored[i] ? Math.abs(toFils(line.discountAmount ?? 0)) : legacy!.lines[i].lineDiscountFils
+  );
+  const estimatedGross = inputs.map((line) =>
+    new Decimal(line.quantity).times(line.unitPriceFils).toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+  );
+  // Quantity only estimates the relative allowance weights. The posted discount
+  // fixes their sum, and each posted net fixes the amount after allowances.
+  const documentDiscountFils = invoice.discountType
+    ? Math.max(0, Math.abs(toFils(invoice.discountAmount ?? 0)) - sumFils(lineDiscounts))
+    : 0;
+  const weights = estimatedGross.map((gross, i) =>
+    Math.max(0, gross.toNumber() - lineDiscounts[i])
+  );
+  const shares =
+    legacy?.lines.map((line) => line.documentDiscountFils) ??
+    (documentDiscountFils > 0 && lines.length
+      ? allocate(
+          documentDiscountFils,
+          weights.some((weight) => weight > 0) ? weights : weights.map(() => 1)
+        )
+      : lines.map(() => 0));
+  const totals = sumSalesLines(
+    stored.map((amount, i) => {
+      if (!amount) return legacy!.lines[i];
+      const priceFils = amount.netFils + (lines[i].marginScheme ? amount.vatFils : 0);
+      return {
+        ...amount,
+        grossFils: priceFils + lineDiscounts[i] + shares[i],
+        lineDiscountFils: lineDiscounts[i],
+        documentDiscountFils: shares[i],
+      };
+    })
   );
   const computed: ComputedEInvoiceLine[] = totals.lines.map((t, i) => {
     const line = lines[i];
@@ -257,11 +286,17 @@ export function computeEInvoiceAmounts(invoice: InvoiceLike, lines: InvoiceLine[
     // forbids a document allowance tagged N, so include its allocated share on each line.
     const margin = line.marginScheme;
     const lineDiscountFils = t.lineDiscountFils + (margin ? t.documentDiscountFils : 0);
+    const { unitPriceFils } = inputs[i];
+    // PINT AE requires quantity × unit price to reconcile to gross at fils precision.
+    const quantity =
+      unitPriceFils > 0 && !estimatedGross[i].eq(t.grossFils)
+        ? new Decimal(t.grossFils).div(unitPriceFils).toNumber()
+        : Math.abs(Number(line.quantity));
     return {
       line,
       category: margin ? "N" : t.classification.ublCategory,
-      quantity: Math.abs(Number(line.quantity)),
-      unitPriceFils: Math.abs(toFils(line.unitPrice)),
+      quantity,
+      unitPriceFils,
       grossFils: t.grossFils,
       lineDiscountFils,
       documentDiscountFils: margin ? 0 : t.documentDiscountFils,

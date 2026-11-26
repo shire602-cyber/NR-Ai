@@ -1,10 +1,11 @@
 import { expect, it } from "vitest";
 import { PINT_AE_FIXTURES, fixtureCompany } from "../fixtures/pint-ae/fixtures";
 import { generateEInvoiceXML } from "../../server/services/einvoice.service";
+import { prepareEInvoiceSubmission } from "../../server/services/einvoice-submit.service";
 import { attr, first, parseXml, text, textAt } from "../../server/services/einvoice/dom";
 import { ublToGets } from "../../server/services/einvoice/providers/complyance-gets";
 import { generateInvoicePDF } from "../../server/services/pdf-invoice.service";
-import { pdfToText } from "./pdf-test-helpers";
+import { pdfToText, pdfWords } from "./pdf-test-helpers";
 
 const standard = PINT_AE_FIXTURES[0];
 const invoice = {
@@ -95,6 +96,80 @@ it.each([
   },
   60_000
 );
+
+it("renders zero line amounts after a fixed document discount on a mixed invoice", async () => {
+  const pdf = await generateInvoicePDF(
+    {
+      ...invoice,
+      discountType: "amount",
+      discountValue: 1_001_050.01,
+      discountAmount: 1_001_050.01,
+      subtotal: 0,
+      vatAmount: 0,
+      total: 0,
+    },
+    [
+      {
+        ...standard.lines[1],
+        description: "Consulting",
+        quantity: Math.fround(10_000.0001),
+        unitPrice: 100,
+        netAmount: 0,
+      },
+      { ...line, description: "Equipment", netAmount: 0 },
+    ],
+    fixtureCompany
+  );
+  const words = await pdfWords(pdf);
+  for (const [description, price] of [
+    ["Consulting", "100.00"],
+    ["Equipment", "1,050.00"],
+  ]) {
+    const row = words.find((word) => word.text === description);
+    expect(row).toBeDefined();
+    const amounts = words
+      .filter((word) => Math.abs(word.yMin - row!.yMin) < 1 && /^[\d,]+\.\d{2}$/.test(word.text))
+      .sort((a, b) => a.xMin - b.xMin)
+      .map((word) => word.text);
+    expect(amounts).toEqual([price, "0.00", "0.00", "0.00"]);
+  }
+}, 60_000);
+
+it("preserves the stored net in validated XML and the frozen provider amounts", async () => {
+  const foreign = PINT_AE_FIXTURES.find((fixture) => fixture.name === "foreign currency")!;
+  const result = await prepareEInvoiceSubmission({
+    invoice: {
+      ...foreign.invoice,
+      status: "sent",
+      subtotal: 1_000_000.01,
+      vatAmount: 50_000,
+      total: 1_050_000.01,
+    },
+    lines: [
+      {
+        ...foreign.lines[0],
+        quantity: Math.fround(10_000.0001),
+        unitPrice: 100,
+        netAmount: 1_000_000.01,
+      },
+    ],
+    company: fixtureCompany,
+    ctx: { customer: foreign.customer, options: foreign.opts },
+    now: new Date("2027-01-15T12:00:00Z"),
+  });
+  expect(result).toMatchObject({
+    ok: true,
+    documentCurrencyLines: [{ taxAmount: 50_000, lineTotal: 1_050_000.01 }],
+  });
+  if (!result.ok) return;
+  const root = parseXml(result.xml).documentElement;
+  expect(textAt(root, "cac:InvoiceLine/cbc:LineExtensionAmount")).toBe("1000000.01");
+  expect(textAt(root, "cac:LegalMonetaryTotal/cbc:PayableAmount")).toBe("1050000.01");
+  expect(textAt(root, "cac:InvoiceLine/cac:ItemPriceExtension/cbc:Amount")).toBe("3856125.04");
+  expect(textAt(root, "cac:InvoiceLine/cac:ItemPriceExtension/cac:TaxTotal/cbc:TaxAmount")).toBe(
+    "183625.00"
+  );
+}, 60_000);
 
 it("expresses both UAE line extension amounts in AED on a USD tax invoice", () => {
   // PINT AE BTAE-08 and BTAE-10 are denominated in AED, even when the invoice is in USD.
