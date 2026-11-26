@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { ArrowRight } from "lucide-react";
 import { PAID_PLAN_IDS, type PaidPlanId } from "@shared/plans";
@@ -6,7 +6,6 @@ import { trialSignupPath } from "../route-content";
 import type { SectionProps } from "./types";
 import { SectionHead } from "./SectionHead";
 import { useMarketingRich, useMarketingText, type MarketingKey, type MarketingText } from "./text";
-import { useCountUp, useInView } from "./motion";
 import {
   COMPARATORS,
   COMPETITOR_PRICES,
@@ -88,7 +87,6 @@ export function SavingsCalculator({ locale }: SectionProps) {
   const [rate, setRate] = useState<number>(SLIDERS.rate.default);
   const [comparatorId, setComparatorId] = useState<CompetitorId>(DEFAULT_COMPARATOR);
   const [plan, setPlan] = useState<PaidPlanId>(DEFAULT_PLAN);
-  const [touched, setTouched] = useState(false);
 
   const result = useMemo(
     () => computeSavings({ invoices, receipts, hours, rate, comparator: comparatorId, plan }),
@@ -96,17 +94,8 @@ export function SavingsCalculator({ locale }: SectionProps) {
   );
   const comparator = COMPARATORS.find((c) => c.id === comparatorId) ?? COMPARATORS[0];
 
-  const resultsRef = useRef<HTMLDivElement>(null);
-  const inView = useInView(resultsRef);
-  const yearAed = Math.round(result.valueYearFils / 100);
-  const animated = useCountUp(yearAed, { enabled: inView });
-  const shownYear = touched ? yearAed : Math.round(animated);
-
   const aed = (amount: string) => text("hxSavAed", { amount });
-  const change = (setter: (value: number) => void) => (value: number) => {
-    setTouched(true);
-    setter(value);
-  };
+  const annualValue = aed(formatAedWhole(result.valueYearFils));
 
   const { software } = result;
   let softwareLine: string;
@@ -146,7 +135,7 @@ export function SavingsCalculator({ locale }: SectionProps) {
               spec={SLIDERS.invoices}
               value={invoices}
               valueText={text("hxSavValInvoices", { n: invoices })}
-              onChange={change(setInvoices)}
+              onChange={setInvoices}
             />
             <Slider
               id={`${uid}-receipts`}
@@ -154,7 +143,7 @@ export function SavingsCalculator({ locale }: SectionProps) {
               spec={SLIDERS.receipts}
               value={receipts}
               valueText={text("hxSavValReceipts", { n: receipts })}
-              onChange={change(setReceipts)}
+              onChange={setReceipts}
             />
             <Slider
               id={`${uid}-hours`}
@@ -162,7 +151,7 @@ export function SavingsCalculator({ locale }: SectionProps) {
               spec={SLIDERS.hours}
               value={hours}
               valueText={text("hxSavValHours", { n: hours })}
-              onChange={change(setHours)}
+              onChange={setHours}
             />
             <Slider
               id={`${uid}-rate`}
@@ -170,7 +159,7 @@ export function SavingsCalculator({ locale }: SectionProps) {
               spec={SLIDERS.rate}
               value={rate}
               valueText={text("hxSavValRate", { n: rate })}
-              onChange={change(setRate)}
+              onChange={setRate}
             />
             <div className="mz-sav-selects">
               <div className="mz-sav-field">
@@ -179,10 +168,7 @@ export function SavingsCalculator({ locale }: SectionProps) {
                   id={`${uid}-software`}
                   className="mz-sav-select"
                   value={comparatorId}
-                  onChange={(event) => {
-                    setTouched(true);
-                    setComparatorId(event.target.value as CompetitorId);
-                  }}
+                  onChange={(event) => setComparatorId(event.target.value as CompetitorId)}
                 >
                   {COMPARATORS.map((c) => (
                     <option
@@ -201,10 +187,7 @@ export function SavingsCalculator({ locale }: SectionProps) {
                   id={`${uid}-plan`}
                   className="mz-sav-select"
                   value={plan}
-                  onChange={(event) => {
-                    setTouched(true);
-                    setPlan(event.target.value as PaidPlanId);
-                  }}
+                  onChange={(event) => setPlan(event.target.value as PaidPlanId)}
                 >
                   {PAID_PLAN_IDS.map((id) => (
                     <option key={id} value={id}>
@@ -216,11 +199,11 @@ export function SavingsCalculator({ locale }: SectionProps) {
             </div>
             <div className="mz-sav-mini" aria-hidden="true" data-testid="savings-mini">
               <span>{text("hxSavTimeYear")}</span>
-              <strong>{aed(formatAmount(yearAed))}</strong>
+              <strong>{annualValue}</strong>
             </div>
           </div>
 
-          <div className="mz-card mz-sav-results" ref={resultsRef}>
+          <div className="mz-card mz-sav-results">
             <div className="mz-sav-results-head">
               <h3 className="mz-sav-h3">{text("hxSavResults")}</h3>
               <span className="mz-badge">{text("hxSavEstimate")}</span>
@@ -229,9 +212,9 @@ export function SavingsCalculator({ locale }: SectionProps) {
             <div className="mz-sav-big" data-testid="savings-headline">
               <p className="mz-sav-big-label">{text("hxSavHeadline")}</p>
               <p className="mz-sav-big-num" aria-hidden="true">
-                {aed(formatAmount(shownYear))}
+                {annualValue}
               </p>
-              {yearAed === 0 && (
+              {result.valueYearFils === 0 && (
                 <p className="mz-sav-big-hint" data-testid="savings-empty">
                   {text("hxSavZeroHint")}
                 </p>
@@ -240,7 +223,7 @@ export function SavingsCalculator({ locale }: SectionProps) {
 
             <div aria-live="polite" aria-atomic="true" data-testid="savings-live">
               <p className="mz-sav-sr">
-                {text("hxSavHeadline")}: {aed(formatAmount(yearAed))}
+                {text("hxSavHeadline")}: {annualValue}
               </p>
               <dl className="mz-sav-stats">
                 <div>
@@ -255,7 +238,7 @@ export function SavingsCalculator({ locale }: SectionProps) {
                 </div>
                 <div>
                   <dt>{text("hxSavTimeYear")}</dt>
-                  <dd data-testid="savings-year">{aed(formatAedWhole(result.valueYearFils))}</dd>
+                  <dd data-testid="savings-year">{annualValue}</dd>
                 </div>
               </dl>
 

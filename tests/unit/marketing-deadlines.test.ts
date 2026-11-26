@@ -138,7 +138,7 @@ describe("DeadlineFinder render", () => {
     expect(q('[data-testid="deadline-result"]').textContent).toContain(
       "If your business or government entity is in scope"
     );
-    expect(q('[data-testid="deadline-sentence"]').textContent).toContain("127 days");
+    expect(q('[data-testid="deadline-sentence"]').textContent).toContain("127\u00a0days");
     expect(q('[data-testid="deadline-milestone-appoint"]').textContent).toContain("31 March 2027");
     expect(q('[data-testid="deadline-milestone-live"]').textContent).toContain("1 July 2027");
     expect(container.textContent).not.toContain("Deadline passed - act now");
@@ -146,7 +146,7 @@ describe("DeadlineFinder render", () => {
     await pick("large");
     expect(q('[data-testid="deadline-segment-large"]').getAttribute("aria-checked")).toBe("true");
     expect(q('[data-testid="deadline-count"]').textContent).toBe("38");
-    expect(q('[data-testid="deadline-sentence"]').textContent).toContain("38 days");
+    expect(q('[data-testid="deadline-sentence"]').textContent).toContain("38\u00a0days");
     expect(q('[data-testid="deadline-flag"]').textContent).toContain("Deadline passed - act now");
     expect(q('[data-testid="deadline-milestone-appoint"]').textContent).toContain(
       "30 October 2026"
@@ -226,7 +226,7 @@ describe("DeadlineFinder render", () => {
     expect(q('[data-testid="deadline-count"]').textContent).toBe("127");
     expect(q('[data-testid="deadline-result"]').textContent).toContain("خاضعة للنظام");
     expect(q('[data-testid="deadline-sources"]').textContent).toContain("المجموعة الضريبية نفسها");
-    expect(q('[data-testid="deadline-sentence"]').textContent).toContain("127 يومًا");
+    expect(q('[data-testid="deadline-sentence"]').textContent).toContain("127\u00a0يومًا");
     expect(q('[data-testid="deadline-milestone-appoint"]').textContent).toMatch(/31 \S+ 2027/);
     expect(q('[data-testid="deadline-penalty"]').textContent).toContain("5,000");
     expect(q('[data-testid="deadline-cta"]').getAttribute("href")).toBe(
