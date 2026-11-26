@@ -5,8 +5,109 @@
  *   R19-11 referral reward recorded on the referred customer's first paid invoice
  *   R19-16 VAT-inclusive subscription invoices/receipts, dunning through the outbox
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import type { Queryable } from "../../server/services/connectors/pq";
+
+/**
+ * Test-only synchronisation. The usage meter is written by `addUsage` through `pq`, and in some
+ * paths (an unlimited plan's meter, the release after a failed create) the write is issued after
+ * the response is sent, so the HTTP response alone does not say when the counter row is final.
+ * `pq` is wrapped here (it forwards every call to the real implementation, so SQL still runs
+ * against the harness database). A test registers a watcher for one specific counter write before
+ * it makes the request and awaits the moment that write has actually returned. Nothing sleeps,
+ * polls or retries, and no production code is changed.
+ *
+ * `vi.mock` is hoisted above the imports, but the server modules (and so `pq`) are only loaded
+ * lazily by `useHarness()`, so wrapping the module does not change import order.
+ */
+type Deferred<T = void> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+};
+
+function deferred<T = void>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+type UsageWatch = {
+  companyId: string;
+  metric: string;
+  delta: number;
+  /** When set, the real query is not sent until it resolves (a controlled pending write). */
+  hold: Deferred | null;
+  claimed: boolean;
+  started: Deferred;
+  done: Deferred;
+};
+
+const usageWatchers = vi.hoisted(() => [] as UsageWatch[]);
+
+vi.mock("../../server/services/connectors/pq", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../server/services/connectors/pq")>();
+  return {
+    ...actual,
+    pq: async <T = Record<string, unknown>>(
+      text: string,
+      params: unknown[] = [],
+      client?: Queryable
+    ) => {
+      // addUsage is the only statement of this shape; params are [companyId, period, metric, delta].
+      const watch = text.includes("GREATEST(usage_counters.count + $4, 0)")
+        ? usageWatchers.find(
+            (w) =>
+              !w.claimed &&
+              params[0] === w.companyId &&
+              params[2] === w.metric &&
+              params[3] === w.delta
+          )
+        : undefined;
+      if (!watch) return actual.pq<T>(text, params, client);
+      watch.claimed = true;
+      watch.started.resolve();
+      try {
+        await watch.hold?.promise;
+        const result = await actual.pq<T>(text, params, client);
+        watch.done.resolve();
+        return result;
+      } catch (error) {
+        watch.done.reject(error);
+        throw error;
+      }
+    },
+  };
+});
+
+/**
+ * Watch the next `addUsage(companyId, metric, delta)` write. Register it BEFORE the request that
+ * causes the write. `started` settles when the write is issued, `done` when the real SQL has
+ * returned (it rejects if the SQL fails). With `hold`, the SQL is not sent until `release()`.
+ */
+function watchUsageWrite(companyId: string, metric: string, delta: number, hold = false) {
+  const watch: UsageWatch = {
+    companyId,
+    metric,
+    delta,
+    hold: hold ? deferred() : null,
+    claimed: false,
+    started: deferred(),
+    done: deferred(),
+  };
+  watch.done.promise.catch(() => undefined); // the awaiting test sees the rejection; no unhandled one
+  usageWatchers.push(watch);
+  return {
+    started: watch.started.promise,
+    done: watch.done.promise,
+    release: () => watch.hold?.resolve(),
+  };
+}
 
 const h = useHarness();
 const today = () => new Date().toISOString().slice(0, 10);
@@ -24,7 +125,10 @@ async function invoice(t: Tenant) {
   });
 }
 
-afterEach(() => setEnforcement(undefined));
+afterEach(() => {
+  setEnforcement(undefined);
+  usageWatchers.length = 0;
+});
 
 describe("W5-B usage quotas", () => {
   it("[R19-04] with enforcement on, Starter's 201st invoice of the month is 402 (WQ7 limits)", async () => {
@@ -55,13 +159,16 @@ describe("W5-B usage quotas", () => {
 
   it("[R19-04] a failed create does not burn quota, and enforcement off never blocks (but still meters)", async () => {
     setEnforcement("true");
-    const t = await h.createTenant();
+    // Starter has a finite invoice limit, so the request reserves a unit and releases it (-1) once
+    // the handler answers 400; the release runs after the response, so wait for that exact write.
+    const t = await h.createTenant({ planId: "starter" });
+    const release = watchUsageWrite(t.company.id, "invoices", -1);
     const bad = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
       date: today(),
       lines: [],
     });
     expect(bad.status).toBe(400);
-    await new Promise((r) => setTimeout(r, 50));
+    await release.done;
     const used = await h.sql(
       `SELECT COALESCE(SUM(count), 0)::int AS n FROM usage_counters WHERE company_id = $1 AND metric = 'invoices'`,
       [t.company.id]
@@ -75,14 +182,47 @@ describe("W5-B usage quotas", () => {
        ON CONFLICT (company_id, period, metric) DO UPDATE SET count = 500`,
       [t.company.id]
     );
+    // Unlimited requests are metered after the response: wait for that exact write to return.
+    const meter = watchUsageWrite(t.company.id, "invoices", 1);
     const ok = await invoice(t);
     expect(ok.status, ok.text).toBe(200);
-    await new Promise((r) => setTimeout(r, 50));
+    await meter.done;
     const after = await h.sql(
       `SELECT count::int AS n FROM usage_counters WHERE company_id = $1 AND metric = 'invoices'`,
       [t.company.id]
     );
     expect(after[0].n).toBe(501);
+  });
+
+  it("[R19-04] enforcement off: the meter is written after the response, and a test must await that write", async () => {
+    setEnforcement("false");
+    const t = await h.createTenant();
+    await h.sql(
+      `INSERT INTO usage_counters (company_id, period, metric, count)
+       SELECT $1, to_char(now() + interval '4 hours', 'YYYY-MM'), 'invoices', 500`,
+      [t.company.id]
+    );
+    const count = async () =>
+      (
+        await h.sql(
+          `SELECT count::int AS n FROM usage_counters WHERE company_id = $1 AND metric = 'invoices'`,
+          [t.company.id]
+        )
+      )[0].n;
+    // Controlled regression: hold the meter write so it cannot have landed, then check both states.
+    // This shows the create can answer while the write is still pending (so reading the count
+    // straight after the response is not safe); it does not pin production response timing.
+    const meter = watchUsageWrite(t.company.id, "invoices", 1, true);
+    try {
+      const ok = await invoice(t);
+      expect(ok.status, ok.text).toBe(200);
+      await meter.started; // the write was issued and is parked
+      expect(await count()).toBe(500); // the state a fixed wait could read
+    } finally {
+      meter.release(); // never leave the write held, even if an assertion above failed
+    }
+    await meter.done; // the real SQL has returned
+    expect(await count()).toBe(501);
   });
 
   it("[R19-04] team seats: unlimited users on every plan, so a second invitation is never 402 (WQ7)", async () => {
