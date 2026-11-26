@@ -19,7 +19,7 @@ import { applySignupChange, readSignupPlan } from "../../client/src/components/a
 import { planCta, planPhase } from "../../client/src/lib/plan-state";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-vi.setConfig({ testTimeout: 120000, hookTimeout: 120000 });
+// File-level timeout is vitest's default (5 s); per-test overrides cover the two slow cases:
 
 const sub = vi.hoisted(() => ({
   state: {} as Record<string, unknown>,
@@ -917,7 +917,7 @@ describe("read-only forms follow what the server gates", () => {
         expect(featureForRequest("POST", `/api/${samples[feature]}`), prefix).toBe(feature);
       }
     },
-    180000
+    30000 // dynamic-import chain may take up to ~10 s on cold transforms; 30 s is the ceiling
   );
 });
 
@@ -1140,7 +1140,7 @@ describe("the server process runs in UTC", () => {
       // A zone-less timestamp read as local time stays the same wall time in UTC.
       iso: "2026-11-19T10:00:00.000Z",
     });
-  });
+  }, 15000); // spawnSync startup + cold tsx transforms can take up to ~10 s
 
   it("the Dockerfile and both compose files set TZ=UTC", () => {
     // Source inspection: the container configs have no behaviour to run in a unit test.
