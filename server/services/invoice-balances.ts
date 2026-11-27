@@ -21,7 +21,7 @@ export async function getInvoiceBalances(
     `WITH calc AS (
        SELECT i.id, ${receivableSettlementPartsSql("i").paid} AS paid,
               COALESCE((SELECT SUM(wo.amount) FROM invoice_payments wo
-                         WHERE wo.invoice_id = i.id AND wo.method = 'write_off'), 0) AS written_off,
+                         WHERE wo.invoice_id = i.id AND wo.method IN ('write_off', 'write_off_reinstatement')), 0) AS written_off,
               (${receivableSettlementPartsSql("i").credited}
                  + ${receivableSettlementPartsSql("i").applied}) AS credited,
               CASE WHEN ${receivableStatusSql("i")} THEN ${receivableOpenSql("i")} ELSE 0 END AS open,

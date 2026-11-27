@@ -12,7 +12,7 @@ export function salesTaxPointSql(invoice: string, excludePaymentIdSql?: string):
     ELSE LEAST(${invoice}.date::date, ${invoice}.supply_date::date, (
       SELECT MIN(${localDateSql("sp.date")}) FROM invoice_payments sp
        WHERE sp.invoice_id = ${invoice}.id AND sp.company_id = ${invoice}.company_id
-         AND sp.method <> 'write_off' AND ${appliedReceiptAmountSql("sp")} >= ${invoice}.total
+         AND sp.method NOT IN ('write_off', 'write_off_reinstatement') AND ${appliedReceiptAmountSql("sp")} >= ${invoice}.total
          ${excludePaymentIdSql ? `AND sp.id <> ${excludePaymentIdSql}` : ""}
     )) END`;
 }

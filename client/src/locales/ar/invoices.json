@@ -190,6 +190,8 @@
   "invoices.toastExportFailed": "فشل التصدير",
   "invoices.endDateOptional": "تاريخ الانتهاء (اختياري)",
   "invoices.recordPaymentDesc": "سجّل دفعة مستلمة للفاتورة {number} (الإجمالي: {total})",
+  "invoices.methodWriteOff": "شطب دين معدوم",
+  "invoices.methodWriteOffReinstatement": "إعادة إثبات المشطوب",
   "invoices.methodCash": "نقدًا",
   "invoices.noCashBankAccounts": "لا توجد حسابات نقدية أو بنكية. أنشئ حسابًا في دليل الحسابات.",
   "invoices.referenceOptional": "المرجع (اختياري)",
