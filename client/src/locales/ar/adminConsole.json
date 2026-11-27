@@ -455,7 +455,7 @@
   "adminConsole.planHelp": "عيّن الخطة التي اختارها العميل ما دام الدفع عبر الإنترنت غير متاح. يُسجَّل التغيير في سجل التدقيق.",
   "adminConsole.planLabel": "الخطة",
   "adminConsole.planCycle": "الفوترة",
-  "adminConsole.planNone": "بلا خطة (تجربة ثم تُقفل مساحة العمل)",
+  "adminConsole.planNone": "بلا خطة (تجربة ثم للقراءة فقط)",
   "adminConsole.planApply": "تطبيق الخطة",
   "adminConsole.planExtendTrial": "تمديد التجربة {days} يومًا",
   "adminConsole.planSaved": "تم تحديث الخطة",
