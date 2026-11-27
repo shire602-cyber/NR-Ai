@@ -2,10 +2,13 @@
  * F06: period locks and stored journal dates use the Dubai business date, not the UTC date.
  * journal_entries.date is a timestamp without time zone holding the Dubai calendar day, so
  * `date::date` reads it back independent of the session time zone.
+ *
+ * The locked-period reversal test freezes the clock at 2026-01-31T20:30:00Z — UTC is still
+ * Jan 31 but Dubai is already Feb 1 (UTC+4). The stored reversal date must be "2026-02-01",
+ * not "2026-01-31", proving the server used the Dubai business date.
  */
 import { expect, it } from "vitest";
-import { todayDubai } from "../../shared/accounting-date";
-import { useHarness } from "./harness";
+import { freezeTime, useHarness } from "./harness";
 
 const h = useHarness();
 
@@ -26,6 +29,9 @@ async function storedDate(id: string): Promise<string> {
 }
 
 it("F06: Dubai business date drives period locks, stored dates and reversal defaults", async () => {
+  // Freeze at 2026-01-31T20:30:00Z: UTC is Jan 31, Dubai is Feb 1 (UTC+4).
+  // The locked-period reversal must store "2026-02-01" (Dubai), not "2026-01-31" (UTC).
+  const thaw = freezeTime("2026-01-31T20:30:00Z");
   const t = await h.createTenant({ name: "F06Dates" });
   const base = `/api/companies/${t.company.id}`;
   const debit = await accountId(t.company.id, "1060");
@@ -75,13 +81,16 @@ it("F06: Dubai business date drives period locks, stored dates and reversal defa
   expect(revStored).toBe("2026-02-10");
   if (rev.body.reversalDate) expect(String(rev.body.reversalDate).slice(0, 10)).toBe(revStored);
 
-  // Reversal without a date once the original's period is locked: today (Dubai).
+  // Reversal without a date once the original's period is locked: today in Dubai.
+  // Clock is frozen at 2026-01-31T20:30Z → Dubai date is 2026-02-01, UTC date is 2026-01-31.
+  // The stored date must be "2026-02-01" (Dubai), not "2026-01-31" (UTC).
   await lock("2026-02-28");
   const rev2 = await t.as.post(`/api/journal/${next.body.id}/reverse`, {});
   expect(rev2.status, rev2.text).toBe(200);
   const rev2Stored = await storedDate(rev2.body.reversalId);
-  expect(rev2Stored).toBe(todayDubai());
+  expect(rev2Stored).toBe("2026-02-01");
   if (rev2.body.reversalDate) {
-    expect(String(rev2.body.reversalDate).slice(0, 10)).toBe(rev2Stored);
+    expect(String(rev2.body.reversalDate).slice(0, 10)).toBe("2026-02-01");
   }
+  thaw();
 });

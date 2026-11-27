@@ -1,10 +1,11 @@
 /**
  * F02: amending a filed/submitted VAT return. On staging (9e5fa726) POST /api/vat-returns/:id/amend
- * answered 409 DUPLICATE_VALUE (Postgres 23505) repeatedly — both for a filed return and for the
- * exact staging scenario: a record-only submission (transmittedByMuhasib:false, no ftaReferenceNumber)
- * which produces "submitted" status. The amendment must be created (201), the original keeps
- * counting as the period's effective return while the amendment is a draft, and only the amendment
- * counts once it is filed.
+ * answered 409 DUPLICATE_VALUE (Postgres 23505) repeatedly. The recorded staging run submitted with
+ * ftaReferenceNumber:"TEST-REF-0001" (producing "filed" status, transmittedByMuhasib:false) and then
+ * the amendment returned 409. Both submission modes return transmittedByMuhasib:false on staging
+ * (the server records the return but does not transmit to the FTA). Root cause unconfirmed.
+ * The amendment must be created (201), the original keeps counting as the period's effective return
+ * while the amendment is a draft, and only the amendment counts once it is filed.
  */
 import { expect, it } from "vitest";
 import {
@@ -103,9 +104,10 @@ it("amends a filed return: the original stays effective until the amendment is f
   expect(original.body.status).toBe("amended");
 });
 
-it("amends a submitted (record-only) return: exact staging scenario that produced 409 DUPLICATE_VALUE", async () => {
-  // The staging failure was with transmittedByMuhasib:false (no ftaReferenceNumber) which produces
-  // "submitted" status. POST /api/vat-returns/:id/amend repeatedly returned 409 DUPLICATE_VALUE.
+it("amends a submitted (record-only) return: DB regression coverage for the submitted path", async () => {
+  // Additional coverage for the record-only path (no ftaReferenceNumber → "submitted" status).
+  // The recorded staging failure used "filed" status (see file header); this case is kept as
+  // regression coverage so that both submission modes are proven by DB test.
   const t = await h.createTenant({
     companyColumns: {
       trn_vat_number: "100000000000004",
