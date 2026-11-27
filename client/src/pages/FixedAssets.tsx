@@ -460,13 +460,14 @@ export default function FixedAssets() {
       }),
     onSuccess: (data: any) => {
       refreshAssetReads();
-      const glType = data.gainLossType === "gain" ? "Gain" : "Loss";
       toast({
         title: translateNow("toasts.assetDisposed"),
-        description: formatMessage(translateNow("toasts.glOnDisposal"), {
-          glType,
-          amount: formatCurrency(Math.abs(data.gainLoss), "AED", locale),
-        }),
+        description: formatMessage(
+          translateNow(
+            data.gainLossType === "gain" ? "fixedAssets.disposalGain" : "fixedAssets.disposalLoss"
+          ),
+          { amount: formatCurrency(Math.abs(data.gainLoss), "AED", locale) }
+        ),
       });
       setDisposeDialogOpen(false);
       setDisposingAsset(null);
@@ -652,7 +653,7 @@ export default function FixedAssets() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={t["shell.nav.accounting"]}
         title={t["pages.fixedAssets"]}
         description={t["pageLabels.manageFixedAssetsDepreciationAndDisposals"]}
         primaryAction={
@@ -820,7 +821,7 @@ export default function FixedAssets() {
                   <T k="pages.status" />
                 </TableHead>
                 <TableHead>
-                  <span className="sr-only">{t.actions || "Actions"}</span>
+                  <span className="sr-only">{t.actions}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -1335,7 +1336,16 @@ export default function FixedAssets() {
             </DialogTitle>
             <DialogDescription>
               {disposingAsset
-                ? `Record disposal for "${disposingAsset.asset_name}" (NBV: ${formatCurrency(parseFloat(disposingAsset.net_book_value || "0"), "AED", locale)})`
+                ? formatMessage(t["fixedAssets.disposalDetails"], {
+                    asset:
+                      (locale === "ar" && disposingAsset.asset_name_ar) ||
+                      disposingAsset.asset_name,
+                    amount: formatCurrency(
+                      parseFloat(disposingAsset.net_book_value || "0"),
+                      "AED",
+                      locale
+                    ),
+                  })
                 : t["fixedAssets.recordAssetDisposal"]}
             </DialogDescription>
           </DialogHeader>
@@ -1477,12 +1487,10 @@ export default function FixedAssets() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setDisposeDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button type="submit" variant="destructive" disabled={disposeMutation.isPending}>
-                  {disposeMutation.isPending
-                    ? t.loading || "Loading..."
-                    : t["pageLabels.disposeAsset"]}
+                  {disposeMutation.isPending ? t.loading : t["pageLabels.disposeAsset"]}
                 </Button>
               </div>
             </form>
@@ -1665,7 +1673,7 @@ export default function FixedAssets() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setDepRunDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button
                   type="submit"
@@ -1673,7 +1681,7 @@ export default function FixedAssets() {
                   data-testid="button-confirm-depreciation"
                 >
                   {runDepreciationMutation.isPending || depreciateMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t.loading
                     : depAsset
                       ? t["screens.recordDepreciation"]
                       : t["pageLabels.runDepreciation"]}
