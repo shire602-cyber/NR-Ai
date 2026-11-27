@@ -5,7 +5,7 @@ import { EmptyState, type EmptyStateProps } from "@/components/ui/empty-state";
 import { ErrorState, type ErrorStateProps } from "@/components/ui/error-state";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
 
-export type DataTableStatus = "ready" | "loading" | "empty" | "error";
+export type DataTableStatus = "ready" | "loading" | "empty" | "error" | "no-match";
 
 export interface DataTableCardProps {
   /** Toolbar row above the table: search, filters, bulk actions. */
@@ -15,6 +15,7 @@ export interface DataTableCardProps {
   columnLabels?: string[];
   loadingRows?: number;
   empty?: EmptyStateProps;
+  noMatch?: EmptyStateProps;
   error?: ErrorStateProps;
   /** Footer row: pagination, totals note. */
   footer?: ReactNode;
@@ -26,7 +27,7 @@ export interface DataTableCardProps {
 
 /**
  * DataTableCard — the standard frame for a list screen's table. It owns the
- * four data states (loading skeleton, empty, error with retry, ready) so every
+ * loading, empty, no-match, error and ready states so every
  * table in the app behaves the same. Put a `<Table>` from ./table inside; use
  * `<MoneyCell>` / `data-numeric` on amount columns so they end-align.
  */
@@ -36,6 +37,7 @@ export function DataTableCard({
   columnLabels,
   loadingRows = 6,
   empty,
+  noMatch,
   error,
   footer,
   className,
@@ -57,6 +59,9 @@ export function DataTableCard({
         />
       )}
       {status === "empty" && empty && <EmptyState compact {...empty} />}
+      {noMatch && (
+        <div role="status">{status === "no-match" && <EmptyState compact {...noMatch} />}</div>
+      )}
       {status === "error" && <ErrorState compact {...error} />}
       {status === "ready" && children}
       {footer && (

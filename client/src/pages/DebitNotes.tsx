@@ -13,6 +13,7 @@ import { matchesDocumentSearch } from "@/lib/document-search";
 import { PageHeader } from "@/components/ui/page-header";
 import { EditorShell } from "@/components/ui/editor-shell";
 import { DataTableCard } from "@/components/ui/data-table";
+import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -115,23 +116,34 @@ function DebitNoteList() {
   const [, navigate] = useLocation();
   const [applying, setApplying] = useState<DebitNoteRow | null>(null);
   const [voiding, setVoiding] = useState<DebitNoteRow | null>(null);
-  const { data: notes = [], isLoading } = useQuery<DebitNoteRow[]>({
+  const notesQuery = useQuery<DebitNoteRow[]>({
     queryKey: ["/api/companies", companyId, "debit-notes"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/debit-notes`),
     enabled: !!companyId,
   });
-  const { data: bills = [] } = useQuery<BillRow[]>({
+  const billsQuery = useQuery<BillRow[]>({
     queryKey: ["/api/companies", companyId, "bills"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills`),
     enabled: !!companyId,
   });
-  const billNumber = (id: string | null) =>
-    id ? (bills.find((b) => b.id === id)?.bill_number ?? "—") : "—";
   const [search, setSearch] = useState("");
-  const searching = search.trim() !== "";
-  const visibleNotes = notes.filter((n) =>
-    matchesDocumentSearch(search, n.debit_note_number, n.vendor_name, billNumber(n.bill_id))
-  );
+  const notes = notesQuery.data ?? [];
+  const bills = billsQuery.data ?? [];
+  const billNumber = (id: string | null) => bills.find((bill) => bill.id === id)?.bill_number;
+  const needsBills = notes.some((note) => note.bill_id !== null);
+  const billsLoading = needsBills && billsQuery.isPending;
+  const billsFailed = needsBills && billsQuery.isError;
+  const visibleNotes =
+    billsLoading || billsFailed
+      ? notes
+      : notes.filter((note) =>
+          matchesDocumentSearch(
+            search,
+            note.debit_note_number,
+            note.vendor_name,
+            billNumber(note.bill_id)
+          )
+        );
 
   return (
     <div className="space-y-6">
@@ -158,8 +170,37 @@ function DebitNoteList() {
         placeholder={t["screens.searchDebitNotes"]}
         testId="input-search-debit-notes"
       />
+      {billsLoading && (
+        <p role="status" className="text-small text-muted-foreground">
+          {t["purchases.debitNote.billsLoading"]}
+        </p>
+      )}
+      {billsFailed && (
+        <ErrorState
+          compact
+          title={t["purchases.debitNote.billsLoadFailed"]}
+          description={t["common.loadFailedBody"]}
+          onRetry={() => void billsQuery.refetch()}
+          retrying={billsQuery.isFetching}
+        />
+      )}
       <DataTableCard
-        status={isLoading ? "loading" : visibleNotes.length === 0 ? "empty" : "ready"}
+        status={
+          notesQuery.isPending
+            ? "loading"
+            : visibleNotes.length > 0
+              ? "ready"
+              : notesQuery.isError
+                ? "error"
+                : notes.length > 0
+                  ? "no-match"
+                  : "empty"
+        }
+        error={{
+          title: t["common.loadFailedTitle"],
+          description: t["common.loadFailedBody"],
+          onRetry: () => void notesQuery.refetch(),
+        }}
         columnLabels={[
           t["purchases.debitNote.number"],
           t["purchases.supplier.label"],
@@ -167,19 +208,16 @@ function DebitNoteList() {
           t["purchases.debitNote.total"],
         ]}
         testId="debit-notes-table"
-        empty={
-          searching
-            ? {
-                icon: Undo2,
-                title: t["screens.noMatchingDocuments"],
-                description: t["screens.noMatchingDocumentsBody"],
-              }
-            : {
-                icon: Undo2,
-                title: t["purchases.debitNote.emptyTitle"],
-                description: t["purchases.debitNote.emptyBody"],
-              }
-        }
+        noMatch={{
+          icon: Undo2,
+          title: t["screens.noMatchingDocuments"],
+          description: t["screens.noMatchingDocumentsBody"],
+        }}
+        empty={{
+          icon: Undo2,
+          title: t["purchases.debitNote.emptyTitle"],
+          description: t["purchases.debitNote.emptyBody"],
+        }}
       >
         <Table className="row-cards">
           <TableHeader>
@@ -212,7 +250,7 @@ function DebitNoteList() {
                     {formatDate(n.note_date, locale)}
                   </TableCell>
                   <TableCell data-nowrap="" className="text-muted-foreground">
-                    {billNumber(n.bill_id)}
+                    {billNumber(n.bill_id) ?? "—"}
                   </TableCell>
                   <MoneyCell
                     amount={Number(n.total_amount)}

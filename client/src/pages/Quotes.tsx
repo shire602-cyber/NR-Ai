@@ -143,13 +143,17 @@ export default function Quotes() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
 
-  const { data: quotes, isLoading } = useQuery<Quote[]>({
+  const {
+    data: quotes = [],
+    isPending,
+    isError,
+    refetch,
+  } = useQuery<Quote[]>({
     queryKey: ["/api/companies", selectedCompanyId, "quotes"],
     enabled: !!selectedCompanyId,
   });
   const [search, setSearch] = useState("");
-  const searching = search.trim() !== "";
-  const visibleQuotes = (quotes ?? []).filter((q) =>
+  const visibleQuotes = quotes.filter((q) =>
     matchesDocumentSearch(search, q.number, q.customerName)
   );
 
@@ -814,31 +818,41 @@ export default function Quotes() {
       />
 
       <DataTableCard
-        status={isLoading ? "loading" : visibleQuotes.length > 0 ? "ready" : "empty"}
+        status={
+          isPending
+            ? "loading"
+            : visibleQuotes.length > 0
+              ? "ready"
+              : isError
+                ? "error"
+                : quotes.length > 0
+                  ? "no-match"
+                  : "empty"
+        }
+        error={{
+          title: t["common.loadFailedTitle"],
+          description: t["common.loadFailedBody"],
+          onRetry: () => void refetch(),
+        }}
         columnLabels={[t.date, t.total, t.status]}
         testId="quotes-table"
-        empty={
-          searching
-            ? {
-                icon: FileText,
-                title: t["screens.noMatchingDocuments"],
-                description: t["screens.noMatchingDocumentsBody"],
-                testId: "empty-quotes-no-match",
-              }
-            : {
-                icon: FileText,
-                title: (t as any).noQuotesYet ?? "No quotes yet",
-                description:
-                  (t as any).quotesEmptyDesc ??
-                  "Send a professional quote in minutes — accepted quotes convert to invoices with one click.",
-                action: {
-                  label: (t as any).newQuote ?? "New quote",
-                  onClick: openNewQuote,
-                  permission: "documents.write",
-                },
-                testId: "empty-quotes",
-              }
-        }
+        noMatch={{
+          icon: FileText,
+          title: t["screens.noMatchingDocuments"],
+          description: t["screens.noMatchingDocumentsBody"],
+          testId: "empty-quotes-no-match",
+        }}
+        empty={{
+          icon: FileText,
+          title: t.noQuotesYet,
+          description: t.quotesEmptyDesc,
+          action: {
+            label: t.newQuote,
+            onClick: openNewQuote,
+            permission: "documents.write",
+          },
+          testId: "empty-quotes",
+        }}
       >
         <Table className="row-cards">
           <TableHeader>

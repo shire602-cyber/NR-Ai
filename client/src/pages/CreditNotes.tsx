@@ -128,13 +128,17 @@ export default function CreditNotes() {
   const { routed, editor, toNew, toList } = useEditorRoute("/credit-notes");
   const [editorOpen, setEditorOpen] = useState(false);
 
-  const { data: creditNotes, isLoading } = useQuery<CreditNote[]>({
+  const {
+    data: creditNotes = [],
+    isPending,
+    isError,
+    refetch,
+  } = useQuery<CreditNote[]>({
     queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
     enabled: !!selectedCompanyId,
   });
   const [search, setSearch] = useState("");
-  const searching = search.trim() !== "";
-  const visibleCreditNotes = (creditNotes ?? []).filter((c) =>
+  const visibleCreditNotes = creditNotes.filter((c) =>
     matchesDocumentSearch(search, c.number, c.customerName, c.invoiceNumber)
   );
 
@@ -782,31 +786,41 @@ export default function CreditNotes() {
       />
 
       <DataTableCard
-        status={isLoading ? "loading" : visibleCreditNotes.length > 0 ? "ready" : "empty"}
+        status={
+          isPending
+            ? "loading"
+            : visibleCreditNotes.length > 0
+              ? "ready"
+              : isError
+                ? "error"
+                : creditNotes.length > 0
+                  ? "no-match"
+                  : "empty"
+        }
+        error={{
+          title: t["common.loadFailedTitle"],
+          description: t["common.loadFailedBody"],
+          onRetry: () => void refetch(),
+        }}
         columnLabels={[t.date, t.total, t.status]}
         testId="credit-notes-table"
-        empty={
-          searching
-            ? {
-                icon: FileText,
-                title: t["screens.noMatchingDocuments"],
-                description: t["screens.noMatchingDocumentsBody"],
-                testId: "empty-credit-notes-no-match",
-              }
-            : {
-                icon: FileText,
-                title: (t as any).noCreditNotesYet ?? "No credit notes yet",
-                description:
-                  (t as any).creditNotesEmptyDesc ??
-                  "Issue a credit note to correct or refund an invoice — it posts to your ledger and VAT return automatically.",
-                action: {
-                  label: t["pages.createFromInvoice"],
-                  href: "/invoices",
-                  permission: "documents.write",
-                },
-                testId: "empty-credit-notes",
-              }
-        }
+        noMatch={{
+          icon: FileText,
+          title: t["screens.noMatchingDocuments"],
+          description: t["screens.noMatchingDocumentsBody"],
+          testId: "empty-credit-notes-no-match",
+        }}
+        empty={{
+          icon: FileText,
+          title: t.noCreditNotesYet,
+          description: t.creditNotesEmptyDesc,
+          action: {
+            label: t["pages.createFromInvoice"],
+            href: "/invoices",
+            permission: "documents.write",
+          },
+          testId: "empty-credit-notes",
+        }}
       >
         <Table className="row-cards">
           <TableHeader>
