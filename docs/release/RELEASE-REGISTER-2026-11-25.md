@@ -133,12 +133,11 @@ npx eslint <changed files>                                                      
 npx vitest run                                                                                                           # 1026 passed, 1 skipped, 0 failed (91 files)
 ```
 
-The one skipped unit test file was triaged on 2026-11-27 and the gate is closed.
-`tests/unit/first-load-chunks.test.ts` (and one `i18n-code-split` case) read `dist/public`, but CI
-ran `npm test` before `npm run build`, so they skipped on every run. PR #189 (`da1e33d1`) adds a
-CI step "Build-output tests" after the build with `REQUIRE_BUILD_OUTPUT=1`, where a missing build
-fails instead of skipping. It passed in CI run 46032267742 (step 15, all 6 checks green); locally
-7/7 passed against a real build and the run failed with `dist/` removed. Not run on this
+The historical skipped-suite gate is closed. The skipped file was
+`tests/integration/credit-note-consolidation.test.ts`, which the unit configuration now excludes
+and the existing real-Postgres CI job covers. It passed in run 46032267742. Separately, PR #189
+adds a required post-build check for first-load chunks and i18n code splitting. All seven tests
+passed at step 15 of run 46032267742 on `da1e33d1`, and all six commit checks passed. Not run on this
 machine: `npm run build` (Node 18.16 < 20.19), DB integration tests, browser crawl, coverage
 ratchet, dependency audit.
 
