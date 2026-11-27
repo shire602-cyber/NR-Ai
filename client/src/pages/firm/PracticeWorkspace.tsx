@@ -6,14 +6,18 @@
  * happen — the API reports those as in-app / requires_external / manual.
  */
 import { DatePicker } from "@/components/ui/date-picker";
-import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState, type ReactNode } from "react";
+import { useMutation, useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { PausedReadNotice } from "@/components/ui/paused-read-notice";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -34,6 +38,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useFirmPermissions } from "@/hooks/useFirmPermissions";
 import { FIRM_UI_PERMISSIONS } from "@shared/access";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryReadState } from "@/lib/queryReadState";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { displayTaskTitle } from "./task-title";
@@ -154,9 +159,50 @@ function useNotify(t: Dict) {
   };
 }
 
+function WorkspaceRead({
+  query,
+  section,
+  children,
+}: {
+  query: Parameters<typeof queryReadState>[0] & {
+    isPaused: boolean;
+    refetch: UseQueryResult["refetch"];
+  };
+  section: string;
+  children: ReactNode;
+}) {
+  const state = queryReadState(query);
+  const onRetry = () => void query.refetch();
+  const id = `firm-${section}`;
+  if (state === "error") {
+    return <LoadErrorState error={query.error} onRetry={onRetry} testId={`${id}-load-error`} />;
+  }
+  if (state === "pending") {
+    return query.isPaused ? (
+      <PausedReadNotice testId={`${id}-waiting`} />
+    ) : (
+      <p role="status" className="text-sm text-muted-foreground">
+        <T k="common.loading" />
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      {query.isPaused ? (
+        <PausedReadNotice cached testId={`${id}-paused-cached`} />
+      ) : (
+        state === "stale" && <StaleDataNotice onRetry={onRetry} testId={`${id}-stale`} />
+      )}
+      {children}
+    </div>
+  );
+}
+
 function TasksTab({ t, canWrite, locale }: { t: Dict; canWrite: boolean; locale: string }) {
   const notify = useNotify(t);
-  const { data } = useQuery<{ tasks: FirmTaskRow[] }>({ queryKey: ["/api/firm/tasks"] });
+  const query = useQuery<{ tasks: FirmTaskRow[] }>({
+    queryKey: ["/api/firm/tasks"],
+  });
   const generate = useMutation({
     mutationFn: () => apiRequest("POST", "/api/firm/tasks/generate", {}),
     onSuccess: (res: { created: number }) => {
@@ -171,7 +217,7 @@ function TasksTab({ t, canWrite, locale }: { t: Dict; canWrite: boolean; locale:
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/firm/tasks"] }),
     onError: notify.fail,
   });
-  const tasks = data?.tasks ?? [];
+  const tasks = query.data?.tasks ?? [];
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
@@ -183,49 +229,51 @@ function TasksTab({ t, canWrite, locale }: { t: Dict; canWrite: boolean; locale:
         )}
       </CardHeader>
       <CardContent>
-        {tasks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t["firm.noTasks"]}</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t["firm.client"]}</TableHead>
-                <TableHead>{t["firm.task"]}</TableHead>
-                <TableHead>{t["firm.dueDate"]}</TableHead>
-                <TableHead>{t["firm.status"]}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tasks.map((task) => (
-                <TableRow key={task.id}>
-                  <TableCell>{task.companyName}</TableCell>
-                  <TableCell>{displayTaskTitle(task.title, t, locale)}</TableCell>
-                  <TableCell className="whitespace-nowrap tabular-nums">
-                    {formatDate(task.dueDate, locale)}
-                  </TableCell>
-                  <TableCell>
-                    <Select
-                      value={task.status}
-                      disabled={!canWrite}
-                      onValueChange={(status) => setStatus.mutate({ id: task.id, status })}
-                    >
-                      <SelectTrigger className="w-36" aria-label={t["firm.status"]}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(TASK_STATUS_KEYS).map(([value, key]) => (
-                          <SelectItem key={value} value={value}>
-                            {t[key]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
+        <WorkspaceRead query={query} section="tasks">
+          {tasks.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t["firm.noTasks"]}</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t["firm.client"]}</TableHead>
+                  <TableHead>{t["firm.task"]}</TableHead>
+                  <TableHead>{t["firm.dueDate"]}</TableHead>
+                  <TableHead>{t["firm.status"]}</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+              </TableHeader>
+              <TableBody>
+                {tasks.map((task) => (
+                  <TableRow key={task.id}>
+                    <TableCell>{task.companyName}</TableCell>
+                    <TableCell>{displayTaskTitle(task.title, t, locale)}</TableCell>
+                    <TableCell className="whitespace-nowrap tabular-nums">
+                      {formatDate(task.dueDate, locale)}
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={task.status}
+                        disabled={!canWrite}
+                        onValueChange={(status) => setStatus.mutate({ id: task.id, status })}
+                      >
+                        <SelectTrigger className="w-36" aria-label={t["firm.status"]}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(TASK_STATUS_KEYS).map(([value, key]) => (
+                            <SelectItem key={value} value={value}>
+                              {t[key]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </WorkspaceRead>
       </CardContent>
     </Card>
   );
@@ -238,7 +286,9 @@ function TimeTab({ t, clients, canWrite }: { t: Dict; clients: FirmClient[]; can
   const [minutes, setMinutes] = useState("60");
   const [rate, setRate] = useState("");
   const [description, setDescription] = useState("");
-  const { data } = useQuery<{ clients: WipRow[] }>({ queryKey: ["/api/firm/wip"] });
+  const query = useQuery<{ clients: WipRow[] }>({
+    queryKey: ["/api/firm/wip"],
+  });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/firm/wip"] });
   const log = useMutation({
     mutationFn: () =>
@@ -269,7 +319,7 @@ function TimeTab({ t, clients, canWrite }: { t: Dict; clients: FirmClient[]; can
       notify.ok(formatMessage(t["firm.recurringBilled"], { count: res.created })),
     onError: notify.fail,
   });
-  const rows = data?.clients ?? [];
+  const rows = query.data?.clients ?? [];
   return (
     <div className="space-y-4">
       {canWrite && (
@@ -321,46 +371,50 @@ function TimeTab({ t, clients, canWrite }: { t: Dict; clients: FirmClient[]; can
           )}
         </CardHeader>
         <CardContent>
-          {rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t["firm.noWip"]}</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t["firm.client"]}</TableHead>
-                  <TableHead>{t["firm.unbilledMinutes"]}</TableHead>
-                  <TableHead>{t["firm.wipValue"]}</TableHead>
-                  <TableHead>{t["firm.billedAmount"]}</TableHead>
-                  <TableHead>{t["firm.realisation"]}</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((r) => (
-                  <TableRow key={r.companyId}>
-                    <TableCell>{r.companyName}</TableCell>
-                    <TableCell>{r.unbilledMinutes}</TableCell>
-                    <TableCell>{r.wipValue}</TableCell>
-                    <TableCell>{r.billedAmount}</TableCell>
-                    <TableCell>
-                      {r.realisationRate === null ? "—" : `${Math.round(r.realisationRate * 100)}%`}
-                    </TableCell>
-                    <TableCell>
-                      {canWrite && r.unbilledMinutes > 0 && (
-                        <Button
-                          size="sm"
-                          onClick={() => bill.mutate(r.companyId)}
-                          disabled={bill.isPending}
-                        >
-                          {t["firm.billWip"]}
-                        </Button>
-                      )}
-                    </TableCell>
+          <WorkspaceRead query={query} section="wip">
+            {rows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t["firm.noWip"]}</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t["firm.client"]}</TableHead>
+                    <TableHead>{t["firm.unbilledMinutes"]}</TableHead>
+                    <TableHead>{t["firm.wipValue"]}</TableHead>
+                    <TableHead>{t["firm.billedAmount"]}</TableHead>
+                    <TableHead>{t["firm.realisation"]}</TableHead>
+                    <TableHead />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+                </TableHeader>
+                <TableBody>
+                  {rows.map((r) => (
+                    <TableRow key={r.companyId}>
+                      <TableCell>{r.companyName}</TableCell>
+                      <TableCell>{r.unbilledMinutes}</TableCell>
+                      <TableCell>{r.wipValue}</TableCell>
+                      <TableCell>{r.billedAmount}</TableCell>
+                      <TableCell>
+                        {r.realisationRate === null
+                          ? "—"
+                          : `${Math.round(r.realisationRate * 100)}%`}
+                      </TableCell>
+                      <TableCell>
+                        {canWrite && r.unbilledMinutes > 0 && (
+                          <Button
+                            size="sm"
+                            onClick={() => bill.mutate(r.companyId)}
+                            disabled={bill.isPending}
+                          >
+                            {t["firm.billWip"]}
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </WorkspaceRead>
         </CardContent>
       </Card>
     </div>
@@ -383,10 +437,13 @@ function LettersTab({
   const [fee, setFee] = useState("");
   const [cycle, setCycle] = useState("monthly");
   const key = `/api/firm/clients/${companyId}/engagement-letters`;
-  const { data } = useQuery<{ letters: LetterRow[] }>({
+  const options = {
     queryKey: [key],
     enabled: !!companyId,
-  });
+    meta: { tenantScoped: true },
+  };
+  const query = useQuery<{ letters: LetterRow[] }>(options);
+  const letters = query.data?.letters ?? [];
   const create = useMutation({
     mutationFn: () =>
       apiRequest("POST", key, {
@@ -418,70 +475,79 @@ function LettersTab({
       </CardHeader>
       <CardContent className="space-y-4">
         <ClientPicker clients={clients} value={companyId} onChange={setCompanyId} t={t} />
-        {companyId && canWrite && (
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1">
-              <Label>{t["firm.letterTitle"]}</Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label>{t["firm.letterKind"]}</Label>
-              <Select value={kind} onValueChange={setKind}>
-                <SelectTrigger className="w-44" aria-label={t["firm.letterKind"]}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="engagement">{t["firm.kindEngagement"]}</SelectItem>
-                  <SelectItem value="proposal">{t["firm.kindProposal"]}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>{t["firm.fee"]}</Label>
-              <Input type="number" min={0} value={fee} onChange={(e) => setFee(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label>{t["firm.billingCycle"]}</Label>
-              <Select value={cycle} onValueChange={setCycle}>
-                <SelectTrigger className="w-36" aria-label={t["firm.billingCycle"]}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="monthly">{t["firm.cycleMonthly"]}</SelectItem>
-                  <SelectItem value="quarterly">{t["firm.cycleQuarterly"]}</SelectItem>
-                  <SelectItem value="annually">{t["firm.cycleAnnually"]}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button onClick={() => create.mutate()} disabled={!title || create.isPending}>
-              {t["firm.createLetter"]}
-            </Button>
-          </div>
-        )}
-        {companyId && (data?.letters ?? []).length === 0 && (
-          <p className="text-sm text-muted-foreground">{t["firm.noLetters"]}</p>
-        )}
-        {(data?.letters ?? []).map((l) => (
-          <div key={l.id} className="flex items-center justify-between rounded border p-3">
-            <div>
-              <div className="font-medium">{l.title}</div>
-              <div className="text-xs text-muted-foreground">
-                {l.kind === "proposal" ? t["firm.kindProposal"] : t["firm.kindEngagement"]}
-                {l.acceptedName
-                  ? ` · ${formatMessage(t["firm.acceptedBy"], { name: l.acceptedName })}`
-                  : ""}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">{l.status}</Badge>
-              {canWrite && l.status === "draft" && (
-                <Button size="sm" onClick={() => send.mutate(l.id)} disabled={send.isPending}>
-                  {t["firm.sendLetter"]}
+        {companyId && (
+          <WorkspaceRead query={{ ...query, ...options }} section="letters">
+            {canWrite && (
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <Label>{t["firm.letterTitle"]}</Label>
+                  <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>{t["firm.letterKind"]}</Label>
+                  <Select value={kind} onValueChange={setKind}>
+                    <SelectTrigger className="w-44" aria-label={t["firm.letterKind"]}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="engagement">{t["firm.kindEngagement"]}</SelectItem>
+                      <SelectItem value="proposal">{t["firm.kindProposal"]}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>{t["firm.fee"]}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={fee}
+                    onChange={(e) => setFee(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>{t["firm.billingCycle"]}</Label>
+                  <Select value={cycle} onValueChange={setCycle}>
+                    <SelectTrigger className="w-36" aria-label={t["firm.billingCycle"]}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="monthly">{t["firm.cycleMonthly"]}</SelectItem>
+                      <SelectItem value="quarterly">{t["firm.cycleQuarterly"]}</SelectItem>
+                      <SelectItem value="annually">{t["firm.cycleAnnually"]}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button onClick={() => create.mutate()} disabled={!title || create.isPending}>
+                  {t["firm.createLetter"]}
                 </Button>
-              )}
-            </div>
-          </div>
-        ))}
+              </div>
+            )}
+            {letters.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t["firm.noLetters"]}</p>
+            )}
+            {letters.map((l) => (
+              <div key={l.id} className="flex items-center justify-between rounded border p-3">
+                <div>
+                  <div className="font-medium">{l.title}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {l.kind === "proposal" ? t["firm.kindProposal"] : t["firm.kindEngagement"]}
+                    {l.acceptedName
+                      ? ` · ${formatMessage(t["firm.acceptedBy"], { name: l.acceptedName })}`
+                      : ""}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">{l.status}</Badge>
+                  {canWrite && l.status === "draft" && (
+                    <Button size="sm" onClick={() => send.mutate(l.id)} disabled={send.isPending}>
+                      {t["firm.sendLetter"]}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </WorkspaceRead>
+        )}
       </CardContent>
     </Card>
   );
@@ -640,7 +706,9 @@ function LinksTab({ t, canWrite }: { t: Dict; canWrite: boolean }) {
   // `canWrite` is the firm.clients.link permission here (the routes require it, not "any write").
   const notify = useNotify(t);
   const [email, setEmail] = useState("");
-  const { data } = useQuery<{ links: LinkRow[] }>({ queryKey: ["/api/firm/client-links"] });
+  const query = useQuery<{ links: LinkRow[] }>({
+    queryKey: ["/api/firm/client-links"],
+  });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/firm/client-links"] });
   const invite = useMutation({
     mutationFn: () => apiRequest("POST", "/api/firm/client-links", { inviteeEmail: email }),
@@ -656,7 +724,7 @@ function LinksTab({ t, canWrite }: { t: Dict; canWrite: boolean }) {
     onSuccess: refresh,
     onError: notify.fail,
   });
-  const links = data?.links ?? [];
+  const links = query.data?.links ?? [];
   return (
     <Card>
       <CardHeader>
@@ -679,38 +747,40 @@ function LinksTab({ t, canWrite }: { t: Dict; canWrite: boolean }) {
             </Button>
           </div>
         )}
-        {links.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t["firm.noLinks"]}</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t["firm.client"]}</TableHead>
-                <TableHead>{t["firm.linkStatus"]}</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {links.map((l) => (
-                <TableRow key={l.id}>
-                  <TableCell>{l.companyName ?? l.inviteeEmail}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {t[LINK_STATUS_KEYS[l.status] ?? ""] ?? l.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {canWrite && (l.status === "active" || l.status === "invited") && (
-                      <Button size="sm" variant="outline" onClick={() => end.mutate(l.id)}>
-                        {t["firm.endLink"]}
-                      </Button>
-                    )}
-                  </TableCell>
+        <WorkspaceRead query={query} section="links">
+          {links.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t["firm.noLinks"]}</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t["firm.client"]}</TableHead>
+                  <TableHead>{t["firm.linkStatus"]}</TableHead>
+                  <TableHead />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+              </TableHeader>
+              <TableBody>
+                {links.map((l) => (
+                  <TableRow key={l.id}>
+                    <TableCell>{l.companyName ?? l.inviteeEmail}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {t[LINK_STATUS_KEYS[l.status] ?? ""] ?? l.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {canWrite && (l.status === "active" || l.status === "invited") && (
+                        <Button size="sm" variant="outline" onClick={() => end.mutate(l.id)}>
+                          {t["firm.endLink"]}
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </WorkspaceRead>
       </CardContent>
     </Card>
   );
@@ -731,7 +801,7 @@ export default function PracticeWorkspace() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
+        eyebrow={dict["firm.eyebrowFirm"]}
         title={dict["firm.practiceWorkspace"]}
         description={dict["firm.practiceSubtitle"]}
       />
