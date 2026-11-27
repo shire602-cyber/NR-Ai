@@ -104,11 +104,18 @@ copy is changed. The UI labels the dates with their source and points to mof.gov
 
 ## To verify against the live A-Cube sandbox
 
+How to run it, in plain language: [einvoicing-acube-sandbox-runbook.md](einvoicing-acube-sandbox-runbook.md)
+(`npm run test:acube-sandbox`). The adapter is also covered against a local stand-in HTTP server
+(`tests/fixtures/pint-ae/asp/acube/mock-server.ts`), which proves our side only: one POST per document,
+lost-reply reconciliation, and the 422/400/404/429/503/401 paths.
+
 1. Confirm that `POST /invoices` and `POST /credit-notes` select the legal entity from the supplier
    EndpointID and accept our PINT AE fixtures. [A-Cube UAE OpenAPI](https://docs.acubeapi.com/openapi/gov-ae-api.json)
-2. Real 422 body and status words; whether a re-post with the same UUID is refused.
+2. Real 422 body and status words; whether a re-post with the same UUID is refused (no idempotency
+   header, duplicate-POST, 401/409/429/5xx or rate-limit behaviour is documented: ask A-Cube).
 3. The separate FTA acknowledgment and rejection events for the reporting track.
-4. Webhook event names actually delivered (`document.*` vs `invoice.outbound` etc.), the
+4. Which webhook authentication A-Cube really sends: the documented shared token, the RFC 9421 signature,
+   or both (we verify both). Webhook event names actually delivered (`document.*` vs `invoice.outbound` etc.), the
    delivery-error payload, retry re-signing, the public-key format, and `@target-uri` behind our
    proxy (set `ACUBE_WEBHOOK_BASE_URL`).
 5. Legal-entity status casing (`RESERVED` vs `Active`), reservation expiry, and the sandbox

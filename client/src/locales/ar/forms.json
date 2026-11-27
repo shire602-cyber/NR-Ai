@@ -439,6 +439,7 @@
   "forms.serverErrors.USE_PAYMENT_ENDPOINT": "سجّل الدفعة من إجراء تسجيل دفعة بدلًا من تغيير الحالة.",
   "forms.serverErrors.USE_CREDIT_NOTE_ENDPOINT": "أصدر إشعارًا دائنًا بدلًا من تغيير الحالة.",
   "forms.serverErrors.NO_WRITE_OFF": "لا يوجد شطب على هذه الفاتورة.",
+  "forms.serverErrors.REINSTATE_BLOCKED_VAT_RELIEF_CLAIMED": "لهذه الفاتورة مطالبة سارية بإعفاء ضريبة القيمة المضافة عن الديون المعدومة، لذلك لا يمكن إعادة إثبات الدين المشطوب. اعكس مطالبة إعفاء الديون المعدومة أولًا، ثم أعد إثبات الدين المشطوب.",
   "forms.serverErrors.INVOICE_NOT_FOUND": "تعذّر العثور على الفاتورة.",
   "forms.serverErrors.INVOICE_NOT_ISSUED": "هذه الفاتورة ما زالت مسودة. أصدرها أولًا.",
   "forms.serverErrors.INVOICE_NOT_OPEN": "لا يوجد رصيد مفتوح على هذه الفاتورة.",
