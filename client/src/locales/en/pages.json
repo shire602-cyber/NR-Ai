@@ -1068,6 +1068,7 @@
   "pages.contactsDeleteAllButton": "Delete all contacts",
   "pages.contactsDeleteOneBody": "Are you sure you want to delete {name}? This action cannot be undone.",
   "pages.vendorsEyebrow": "Purchases",
+  "pages.vendorsBackfillSkipped": "Older bills skipped: {count}. These bills need their VAT treatment reclassified before they can be linked to a supplier.",
   "pages.vendorsSearchPlaceholder": "Search suppliers by name, TRN or email...",
   "pages.vendorsNoMatchTitle": "No matching suppliers",
   "pages.vendorsNoMatchBody": "Try a different name, TRN or email.",

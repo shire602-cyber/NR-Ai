@@ -344,6 +344,7 @@
   "serverErrors.INSUFFICIENT_STOCK": "لا يوجد مخزون كافٍ. سجّل استلام مخزون أولًا أو خفّض الكمية.",
   "serverErrors.INTEGRATION_NOT_CONNECTED": "أعد ربط هذا التكامل ببيانات اعتماد صالحة قبل تفعيله.",
   "serverErrors.INTERNAL_ERROR": "حدث خطأ من جانبنا. حاول مرة أخرى بعد قليل.",
+  "serverErrors.IMPORT_VAT_AMOUNT_REQUIRED": "أدخل مبلغ ضريبة القيمة المضافة المصرّح به لدى الجمارك عند تحويل هذه الفاتورة إلى معاملة استيراد.",
   "serverErrors.INVALID_ACCOUNT_ID": "الحساب المحدد غير صالح.",
   "serverErrors.INVALID_ACTION": "هذا الإجراء غير معروف.",
   "serverErrors.INVALID_BANK_TRANSACTION": "حركة البنك هذه غير صالحة. راجع تاريخها ومبلغها ووصفها.",

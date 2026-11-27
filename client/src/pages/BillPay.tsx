@@ -1059,7 +1059,11 @@ export default function BillPay() {
     editingBill &&
     isLegacyBill(
       Number(editingBill.vat_amount ?? 0),
-      editingBill.line_items.map((line) => ({ ...line, vatFils: Number(line.vat_amount ?? 0) }))
+      editingBill.line_items.map((line) => ({ ...line, vatFils: Number(line.vat_amount ?? 0) })),
+      {
+        isImport: editingBill.is_import,
+        declaredVatFils: Number(editingBill.import_vat_amount ?? 0),
+      }
     );
   const lineVat = (line: (typeof valuedLines)[number]) => line.savedVat ?? line.calculatedVat;
   const subtotal =

@@ -521,7 +521,10 @@ export async function planBillJournal(
   // (it is not charged at all) and cannot recover the VAT a supplier charged: that VAT is part
   // of the line's cost, nothing goes to Input VAT 1050.
   const valuedLines = lineItems.map((line) => ({ ...line, vatFils: filsOf(line.vat_amount) }));
-  const legacy = isLegacyBill(vatDoc, valuedLines);
+  const legacy = isLegacyBill(vatDoc, valuedLines, {
+    isImport: bill.is_import,
+    declaredVatFils: filsOf(bill.import_vat_amount),
+  });
   const rcVatDoc = isBillWideReverseCharge(bill.reverse_charge, bill.is_import)
     ? vatDoc
     : sumFils(

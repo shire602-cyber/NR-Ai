@@ -299,7 +299,10 @@ interface PreparedBill {
 }
 
 /** Load and classify persisted lines before an edit performs any writes. */
-export async function editableBillLines(bill: Pick<BillRow, "id" | "vat_amount">, tx: LedgerTx) {
+export async function editableBillLines(
+  bill: Pick<BillRow, "id" | "vat_amount" | "is_import" | "import_vat_amount">,
+  tx: LedgerTx
+) {
   const lines = await txRows<SavedBillLine>(
     tx,
     `SELECT id, quantity, unit_price, amount, vat_amount, vat_rate, vat_supply_type,
@@ -310,7 +313,8 @@ export async function editableBillLines(bill: Pick<BillRow, "id" | "vat_amount">
   if (
     isLegacyBill(
       filsOf(bill.vat_amount),
-      lines.map((line) => ({ ...line, vatFils: filsOf(line.vat_amount) }))
+      lines.map((line) => ({ ...line, vatFils: filsOf(line.vat_amount) })),
+      { isImport: bill.is_import, declaredVatFils: filsOf(bill.import_vat_amount) }
     )
   ) {
     throw new DomainError("LEGACY_BILL_RECLASSIFY_REQUIRED", 409);
@@ -392,6 +396,9 @@ async function prepareBill(
   const reverseCharge =
     get("reverse_charge", existing?.reverse_charge && !existing.is_import) === true;
   const isImport = get("is_import", existing?.is_import ?? false) === true;
+  if (existing && !existing.is_import && isImport && input.import_vat_amount == null) {
+    throw new DomainError("IMPORT_VAT_AMOUNT_REQUIRED", 400);
+  }
   const billWide = isBillWideReverseCharge(reverseCharge, isImport);
   if (
     !existing ||
@@ -413,6 +420,14 @@ async function prepareBill(
 
   const wasBillWide = isBillWideReverseCharge(existing?.reverse_charge, existing?.is_import);
   const billWideChanged = wasBillWide !== billWide;
+  const declaredImportVat =
+    input.import_vat_amount === undefined
+      ? filsOf(existing?.import_vat_amount)
+      : (input.import_vat_amount ?? 0);
+  const importVatFils = isImport ? declaredImportVat : 0;
+  if (!existing || input.is_import === false || input.import_vat_amount !== undefined) {
+    header.import_vat_amount = fromFils(importVatFils);
+  }
 
   let lines: Array<Record<string, unknown>> | null = null;
   const recomputeNeeded =
@@ -507,11 +522,6 @@ async function prepareBill(
         { tx }
       );
     }
-    const declaredImportVat =
-      input.import_vat_amount === undefined
-        ? filsOf(existing?.import_vat_amount)
-        : (input.import_vat_amount ?? 0);
-    const importVatFils = isImport ? declaredImportVat : 0;
     const tax = {
       reverseCharge,
       isImport,
@@ -537,9 +547,6 @@ async function prepareBill(
     header.total_amount = fromFils(totals.totalFils);
     if (!existing || input.withholding_amount !== undefined) {
       header.withholding_amount = fromFils(totals.withholdingFils);
-    }
-    if (!existing || input.import_vat_amount !== undefined) {
-      header.import_vat_amount = fromFils(importVatFils);
     }
     if (src && replacement) {
       lines = src.map((l, i) => ({

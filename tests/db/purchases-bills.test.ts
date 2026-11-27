@@ -642,8 +642,28 @@ describe("W3-B debit notes, prepayments, vendors, approval rules, services", () 
       (await other.as.get(`/api/companies/${other.company.id}/vendors/${v.body.id}`)).status
     ).toBe(404);
     await h.sql(`UPDATE vendor_bills SET vendor_id = NULL WHERE id = $1`, [legacy.body.id]);
+    const headerOnly = await createBill(t, {
+      vendor_name: "Acme Hosting LLC",
+      bill_number: "LEGACY-HEADER-VAT",
+      save_as_draft: true,
+    });
+    expect(headerOnly.status, headerOnly.text).toBe(200);
+    await h.sql("UPDATE vendor_bills SET vendor_id = NULL WHERE id = $1", [headerOnly.body.id]);
+    await h.sql("UPDATE bill_line_items SET vat_amount = 0 WHERE bill_id = $1", [
+      headerOnly.body.id,
+    ]);
     const bf = await t.as.post(`${url}/backfill`, {});
+    expect(bf.status, bf.text).toBe(200);
     expect(bf.body.billsLinked).toBe(1);
+    expect(bf.body.legacyBillsSkipped).toMatchObject({
+      count: 1,
+      status: 409,
+      code: "LEGACY_BILL_RECLASSIFY_REQUIRED",
+      message: expect.any(String),
+    });
+    expect(
+      await h.sql("SELECT vendor_id FROM vendor_bills WHERE id = $1", [headerOnly.body.id])
+    ).toEqual([{ vendor_id: null }]);
   });
 
   it("[R04-11][R04-19] maker-checker on bills and amount rules: '> 10,000 needs approver' blocks others", async () => {

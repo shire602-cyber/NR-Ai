@@ -21,13 +21,19 @@ export function hasHeaderOnlyBillVat(headerVatFils: number, lineVatFils: readonl
  */
 export function isLegacyBill(
   headerVatFils: number,
-  lines: readonly { vatFils: number; reverse_charge?: boolean | null }[]
+  lines: readonly { vatFils: number; reverse_charge?: boolean | null }[],
+  customs?: { isImport?: boolean | null; declaredVatFils: number }
 ): boolean {
+  // Migration 0096 defaulted these fields to false and zero on historical bills.
+  const hasDeclaredImportVat =
+    customs?.isImport === true && lines.length > 0 && headerVatFils === customs.declaredVatFils;
   return (
-    hasHeaderOnlyBillVat(
-      headerVatFils,
-      lines.map((line) => line.vatFils)
-    ) || lines.some((line) => line.reverse_charge === true)
+    lines.some((line) => line.reverse_charge === true) ||
+    (!hasDeclaredImportVat &&
+      hasHeaderOnlyBillVat(
+        headerVatFils,
+        lines.map((line) => line.vatFils)
+      ))
   );
 }
 

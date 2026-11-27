@@ -223,9 +223,14 @@ export default function Vendors() {
 
   const backfill = useMutation({
     mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/vendors/backfill`, {}),
-    onSuccess: (r: { billsLinked: number }) => {
+    onSuccess: (r: { billsLinked: number; legacyBillsSkipped: { count: number } | null }) => {
       invalidate();
-      toast({ title: `${c.linked}: ${r.billsLinked}` });
+      toast({
+        title: `${c.linked}: ${r.billsLinked}`,
+        description: r.legacyBillsSkipped
+          ? formatMessage(t["pages.vendorsBackfillSkipped"], { count: r.legacyBillsSkipped.count })
+          : undefined,
+      });
     },
     onError: (e: Error) => toast({ variant: "destructive", title: e.message }),
   });

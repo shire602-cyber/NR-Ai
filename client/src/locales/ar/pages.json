@@ -1068,6 +1068,7 @@
   "pages.contactsDeleteAllButton": "حذف جميع جهات الاتصال",
   "pages.contactsDeleteOneBody": "هل أنت متأكد من حذف {name}؟ لا يمكن التراجع عن هذا الإجراء.",
   "pages.vendorsEyebrow": "المشتريات",
+  "pages.vendorsBackfillSkipped": "عدد الفواتير القديمة التي تم تخطيها: {count}. يجب إعادة تصنيف معاملتها الضريبية قبل ربطها بمورد.",
   "pages.vendorsSearchPlaceholder": "ابحث في الموردين بالاسم أو الرقم الضريبي أو البريد...",
   "pages.vendorsNoMatchTitle": "لا يوجد موردون مطابقون",
   "pages.vendorsNoMatchBody": "جرّب اسمًا أو رقمًا ضريبيًا أو بريدًا آخر.",

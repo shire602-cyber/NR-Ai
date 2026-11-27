@@ -221,6 +221,98 @@ describe("Purchase VAT audit", () => {
   });
 });
 
+describe("PR 184 current-format imports", () => {
+  it.each([
+    {
+      name: "exempt supplier line with customs VAT",
+      line: { ...domestic, vat_supply_type: "exempt", vat_rate: 0 },
+      declaredVat: 60,
+      lineVat: "0.00",
+    },
+    {
+      name: "standard supplier line with customs VAT",
+      line: domestic,
+      declaredVat: 60,
+      lineVat: "50.00",
+    },
+    {
+      name: "import valued from line VAT",
+      line: { ...domestic, unit_price: 1200 },
+      declaredVat: undefined,
+      lineVat: "60.00",
+    },
+  ])("keeps $name editable and preserves VAT 201", async ({ line, declaredVat, lineVat }) => {
+    const t = await registeredTenant();
+    const draft = await bill(t, {
+      is_import: true,
+      import_vat_amount: declaredVat,
+      line_items: [line],
+    });
+    const url = `/api/bills/${draft.id}`;
+    const editorPayload = {
+      reverse_charge: false,
+      is_import: true,
+      import_vat_amount: declaredVat === undefined ? null : String(declaredVat),
+      line_items: draft.line_items.map(editorLine),
+    };
+    for (const patch of [
+      { notes: "Header PATCH" },
+      { withholding_amount: 10 },
+      { ...editorPayload, notes: "Editor save" },
+    ]) {
+      const edited = await t.as.patch(url, patch);
+      expect(edited.status, edited.text).toBe(200);
+      expect(edited.body.vat_amount).toBe("60.00");
+      expect(edited.body.line_items[0].vat_amount).toBe(lineVat);
+    }
+
+    const { vat } = await boxes(t, draft.id);
+    expect(vat).toMatchObject({ box6ImportsVat: 60, box10ReverseChargeVat: 60 });
+    const posted = await t.as.get(url);
+    expect(posted.status, posted.text).toBe(200);
+    const revised = await t.as.post(`${url}/revise`, {
+      ...editorPayload,
+      line_items: posted.body.line_items.map(editorLine),
+      notes: "Revised notes",
+      reason: "Correct notes",
+    });
+    expect(revised.status, revised.text).toBe(200);
+    expect(revised.body.vat_amount).toBe("60.00");
+    expect(await vatBoxes(t)).toEqual(vat);
+  });
+
+  it("clears customs VAT when import treatment is removed and requires a new amount to restore it", async () => {
+    const t = await registeredTenant();
+    const draft = await bill(t, { is_import: true, import_vat_amount: 60 });
+    const url = `/api/bills/${draft.id}`;
+    const domesticEdit = await t.as.patch(url, { is_import: false, reverse_charge: false });
+    expect(domesticEdit.status, domesticEdit.text).toBe(200);
+    expect(domesticEdit.body).toMatchObject({
+      is_import: false,
+      import_vat_amount: "0.00",
+      vat_amount: "50.00",
+      total_amount: "1050.00",
+    });
+    for (const patch of [{ is_import: true }, { is_import: true, import_vat_amount: null }]) {
+      const missing = await t.as.patch(url, patch);
+      expect(missing.status, missing.text).toBe(400);
+      expect(missing.body.code).toBe("IMPORT_VAT_AMOUNT_REQUIRED");
+    }
+    const unchanged = await t.as.get(url);
+    expect(unchanged.body).toMatchObject({ is_import: false, import_vat_amount: "0.00" });
+    const restored = await t.as.patch(url, { is_import: true, import_vat_amount: 65 });
+    expect(restored.status, restored.text).toBe(200);
+    expect(restored.body).toMatchObject({
+      is_import: true,
+      import_vat_amount: "65.00",
+      vat_amount: "65.00",
+      total_amount: "1000.00",
+    });
+    const { vat } = await boxes(t, draft.id);
+    expect(vat).toMatchObject({ box6ImportsVat: 65, box10ReverseChargeVat: 65 });
+  });
+});
+
 describe("PR 184 reverse-charge edit matrix", () => {
   const headerStates = [true, false];
   const fixtures = ["reverse_charge", "standard_rated"].flatMap((supply) =>

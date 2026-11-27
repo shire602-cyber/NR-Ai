@@ -269,6 +269,54 @@ describe("[WQ2 8.2] bill editor capture", () => {
     expect(notes.value).toBe("Updated notes");
   });
 
+  it("keeps declared customs VAT when saving notes on an import with an exempt line", async () => {
+    const url = "/api/bills/customs-vat";
+    setFixtures({
+      [url]: {
+        id: "customs-vat",
+        status: "draft",
+        vendor_name: VENDOR.name,
+        vendor_trn: VENDOR.trn,
+        bill_date: "2026-01-15",
+        subtotal: "1000.00",
+        vat_amount: "60.00",
+        total_amount: "1000.00",
+        is_import: true,
+        reverse_charge: true,
+        import_vat_amount: "60.00",
+        line_items: [
+          {
+            id: "exempt-line",
+            description: "Exempt goods",
+            quantity: "1.00",
+            unit_price: "1000.00",
+            vat_rate: "0.00",
+            vat_supply_type: "exempt",
+            amount: "1000.00",
+            vat_amount: "0.00",
+            reverse_charge: false,
+            account_id: null,
+          },
+        ],
+        payments: [],
+      },
+    });
+    const { default: BillPay } = await import("../../client/src/pages/BillPay");
+    await renderAt(BillPay, "/bill-pay/customs-vat/edit");
+    await flushUntil(() => !!byTestId("button-submit-bill"));
+    const notes = editorPage().querySelector<HTMLTextAreaElement>('[name="notes"]')!;
+    await type(notes, "Customs declaration verified");
+    await submit(byTestId("button-submit-bill"));
+    await flushUntil(() => apiCalls("PATCH").some((call) => call.url === url));
+    expect(apiCalls("PATCH").find((call) => call.url === url)?.body).toMatchObject({
+      notes: "Customs declaration verified",
+      reverse_charge: false,
+      is_import: true,
+      import_vat_amount: "60.00",
+      line_items: [{ id: "exempt-line", vat_rate: 0, vat_supply_type: undefined }],
+    });
+  });
+
   it("shows a two-decimal quantity error before sending a save", async () => {
     const { default: BillPay } = await import("../../client/src/pages/BillPay");
     await renderAt(BillPay, "/bill-pay/new");
