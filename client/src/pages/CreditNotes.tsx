@@ -30,9 +30,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/badge";
+import { DocumentListTable } from "@/components/documents/DocumentListTable";
 import { DocumentSearchInput } from "@/components/documents/DocumentSearchInput";
 import { matchesDocumentSearch } from "@/lib/document-search";
-import { DataTableCard } from "@/components/ui/data-table";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { Link } from "wouter";
@@ -128,16 +128,12 @@ export default function CreditNotes() {
   const { routed, editor, toNew, toList } = useEditorRoute("/credit-notes");
   const [editorOpen, setEditorOpen] = useState(false);
 
-  const {
-    data: creditNotes = [],
-    isPending,
-    isError,
-    refetch,
-  } = useQuery<CreditNote[]>({
+  const creditNotesQuery = useQuery<CreditNote[]>({
     queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
     enabled: !!selectedCompanyId,
   });
   const [search, setSearch] = useState("");
+  const creditNotes = creditNotesQuery.data ?? [];
   const visibleCreditNotes = creditNotes.filter((c) =>
     matchesDocumentSearch(search, c.number, c.customerName, c.invoiceNumber)
   );
@@ -785,23 +781,9 @@ export default function CreditNotes() {
         testId="input-search-credit-notes"
       />
 
-      <DataTableCard
-        status={
-          isPending
-            ? "loading"
-            : visibleCreditNotes.length > 0
-              ? "ready"
-              : isError
-                ? "error"
-                : creditNotes.length > 0
-                  ? "no-match"
-                  : "empty"
-        }
-        error={{
-          title: t["common.loadFailedTitle"],
-          description: t["common.loadFailedBody"],
-          onRetry: () => void refetch(),
-        }}
+      <DocumentListTable
+        query={creditNotesQuery}
+        matchCount={visibleCreditNotes.length}
         columnLabels={[t.date, t.total, t.status]}
         testId="credit-notes-table"
         noMatch={{
@@ -929,7 +911,7 @@ export default function CreditNotes() {
             ))}
           </TableBody>
         </Table>
-      </DataTableCard>
+      </DocumentListTable>
     </div>
   );
 }

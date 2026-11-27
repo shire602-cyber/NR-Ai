@@ -4,6 +4,19 @@
  * bill's VAT treatment (blocked / partial recovery / reverse charge) when the note is posted.
  */
 
+export interface DebitNoteBill {
+  id: string;
+  vendor_id?: string | null;
+  vendor_name: string;
+  bill_number: string | null;
+  currency: string;
+  status: string;
+  total_amount: string;
+  open_balance?: number;
+}
+
+export const PAYABLE_BILL_STATUSES = ["approved", "partial", "overdue"];
+
 export interface DebitNoteDraftLine {
   description: string;
   /** Amount before VAT (bill currency), as typed. */

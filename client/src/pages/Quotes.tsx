@@ -46,9 +46,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/badge";
+import { DocumentListTable } from "@/components/documents/DocumentListTable";
 import { DocumentSearchInput } from "@/components/documents/DocumentSearchInput";
 import { matchesDocumentSearch } from "@/lib/document-search";
-import { DataTableCard } from "@/components/ui/data-table";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { Calendar } from "@/components/ui/calendar";
@@ -143,16 +143,12 @@ export default function Quotes() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
 
-  const {
-    data: quotes = [],
-    isPending,
-    isError,
-    refetch,
-  } = useQuery<Quote[]>({
+  const quotesQuery = useQuery<Quote[]>({
     queryKey: ["/api/companies", selectedCompanyId, "quotes"],
     enabled: !!selectedCompanyId,
   });
   const [search, setSearch] = useState("");
+  const quotes = quotesQuery.data ?? [];
   const visibleQuotes = quotes.filter((q) =>
     matchesDocumentSearch(search, q.number, q.customerName)
   );
@@ -817,23 +813,9 @@ export default function Quotes() {
         testId="input-search-quotes"
       />
 
-      <DataTableCard
-        status={
-          isPending
-            ? "loading"
-            : visibleQuotes.length > 0
-              ? "ready"
-              : isError
-                ? "error"
-                : quotes.length > 0
-                  ? "no-match"
-                  : "empty"
-        }
-        error={{
-          title: t["common.loadFailedTitle"],
-          description: t["common.loadFailedBody"],
-          onRetry: () => void refetch(),
-        }}
+      <DocumentListTable
+        query={quotesQuery}
+        matchCount={visibleQuotes.length}
         columnLabels={[t.date, t.total, t.status]}
         testId="quotes-table"
         noMatch={{
@@ -960,7 +942,7 @@ export default function Quotes() {
             ))}
           </TableBody>
         </Table>
-      </DataTableCard>
+      </DocumentListTable>
       {quoteToSend && (
         <Suspense fallback={null}>
           <SendQuoteDialog
