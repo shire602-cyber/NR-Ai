@@ -539,13 +539,18 @@ it("G: foreign margin-scheme mixed invoice — Box 1 margin/VAT and Box 4 throug
   }
 });
 
-it("H: mixed standard + explicit RC lines (no header flag) — Box 1 not double-counted", async () => {
-  // USD 100 standard (5%) + USD 100 reverse_charge (0%, no reverseCharge header).
-  // Both lines post to 4020 (standard_sales). rawPostedNet["standard"] = AED 367.25 + AED 367.25.
-  // Before the fix, hasRcLines=true triggered an unconditional remap standard→reverse_charge,
-  // making the credit's RC Box 1 Amount use the combined GL value (AED 734.50) while the
-  // standard Box 1 Amount still used doc fils (AED 367.25): net Box 1 = -AED 367.25.
-  // After the fix, mixed docs discard the standard GL entry; both families use doc fils.
+it("H: mixed standard + explicit RC lines — full credit ties Box 1 amount and VAT", async () => {
+  // USD 100 standard (5%) + USD 100 reverse_charge (0%, no reverseCharge header) at 3.6725.
+  // Both lines post to 4020 (standard_sales). rawPostedNet["standard"] bundles both families.
+  //
+  // Before the fix: unconditional standard→reverse_charge remap used the combined GL value
+  //   (AED 734.50) for RC Box 1 while standard doc fils (AED 367.25) added again → net = -AED 367.25.
+  // After the fix: rawPostedNet["standard"] is split proportionally by per-CN doc base;
+  //   postedRemainderVat is applied to the standard portion for fil-exact VAT tracking.
+  //
+  // Initial:  std 36725 + rc 36725 = 73450 fils = AED 734.50; VAT 1836 fils = AED 18.36
+  // Full CN:  GL = toBaseFils(20000, 3.6725) = 73450; rcGL = 36725, stdGL = 36725 (exact split)
+  // Net:      Box 1 = 0, VAT = 0
   const t = await h.createTenant({
     companyColumns: {
       emirate: "dubai",
@@ -554,6 +559,7 @@ it("H: mixed standard + explicit RC lines (no header flag) — Box 1 not double-
       vat_period_start_month: 1,
     },
   });
+  const vatPeriod = { periodStart: "2026-01-01", periodEnd: "2026-03-31" };
   const draft = await t.as.post(`${base(t)}/invoices`, {
     customerName: "Mixed LLC",
     date,
@@ -575,16 +581,118 @@ it("H: mixed standard + explicit RC lines (no header flag) — Box 1 not double-
   const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
   expect(issued.status, issued.text).toBe(200);
 
+  // Initial state: standard AED 367.25 + RC AED 367.25 = Box 1 AED 734.50; VAT AED 18.36.
+  {
+    const vatInit = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatInit.status, vatInit.text).toBe(201);
+    expect(Number(vatInit.body.box1bDubaiAmount), "Box 1 initial").toBe(734.5);
+    expect(Number(vatInit.body.box1bDubaiVat), "Box 1 VAT initial").toBe(18.36);
+  }
+
   const cn = await t.as.post(`${base(t)}/invoices/${draft.body.id}/credit-note`, { date });
   expect(cn.status, cn.text).toBe(201);
 
-  const vat = await t.as.post(`${base(t)}/vat-returns/generate`, {
-    periodStart: "2026-01-01",
-    periodEnd: "2026-03-31",
+  // After full credit: Box 1 amount = 0, Box 1 VAT = 0.
+  {
+    const vatFinal = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatFinal.status, vatFinal.text).toBe(201);
+    expect(Number(vatFinal.body.box1bDubaiAmount), "Box 1 = 0 after full credit").toBe(0);
+    expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
+  }
+});
+
+it("I: mixed standard + explicit RC — split credits tie Box 1 amount and VAT to the fil", async () => {
+  // Sol review 6088011118 repro: USD 200 standard (5%) + USD 700 reverse_charge (0%) at 3.6725.
+  // Both lines post to 4020. rawPostedNet["standard"] bundles AED (200+700)×3.6725 = AED 3,305.25.
+  //
+  // Without the proportional split, discarding rawPostedNet["standard"] forces both families to
+  // fall back to doc fils. The final credit's doc fils sum to AED 1,652.63 (36725+128538) but the
+  // GL cleared only AED 1,652.62 — leaving Box 1 at -AED 0.01. VAT is also off by AED 0.01
+  // because two equal USD 5 payments round to AED 18.36 each (total 36.72) but the invoice was
+  // AED 36.73.
+  //
+  // With proportional split:
+  //   CN1 (USD 100 std + USD 350 RC): GL = toBaseFils(45000, 3.6725) = 165263 (exact at .5)
+  //     rcGL = round(165263×128538/165263) = 128538; stdGL = 36725. Sum = 165263 ✓
+  //   CN2 (remainder):                GL remaining = 330525 − 165263 = 165262
+  //     rcGL = round(165262×128538/165263) = 128537; stdGL = 36725. Sum = 165262 ✓
+  //   Net: (73450+257075) − (36725+128538) − (36725+128537) = 330525−165263−165262 = 0 ✓
+  //   VAT: postedRemainderVat for CN1 = 1836 fils; CN2 = 3673−1836 = 1837 fils. Net = 0 ✓
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000008",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
   });
-  expect(vat.status, vat.text).toBe(201);
-  expect(Number(vat.body.box1bDubaiAmount), "Box 1 = 0 after full credit (invoice + CN net)").toBe(
-    0
-  );
-  expect(Number(vat.body.box1bDubaiVat), "Box 1 VAT = 0").toBe(0);
+  const vatPeriod = { periodStart: "2026-01-01", periodEnd: "2026-03-31" };
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Mixed Split LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      { description: "Standard services", quantity: 1, unitPrice: 200, vatRate: 5 },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 700,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  const url = `${base(t)}/invoices/${draft.body.id}/credit-note`;
+
+  // Initial: std 73450 + rc 257075 = AED 3,305.25; VAT 3673 fils = AED 36.73.
+  {
+    const vatInit = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatInit.status, vatInit.text).toBe(201);
+    expect(Number(vatInit.body.box1bDubaiAmount), "Box 1 initial").toBe(3305.25);
+    expect(Number(vatInit.body.box1bDubaiVat), "Box 1 VAT initial").toBe(36.73);
+  }
+
+  // Partial credit: USD 100 standard + USD 350 RC.
+  const cn1 = await t.as.post(url, {
+    date,
+    lines: [
+      { description: "Standard services", quantity: 1, unitPrice: 100, vatRate: 5 },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 350,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(cn1.status, cn1.text).toBe(201);
+
+  // After CN1: GL cleared 165263 fils (exact). Net Box 1 = 330525−165263 = 165262 = AED 1,652.62.
+  // VAT: postedRemainderVat for CN1 = 1836 fils. Net VAT = 3673−1836 = 1837 fils = AED 18.37.
+  {
+    const vatMid = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatMid.status, vatMid.text).toBe(201);
+    expect(Number(vatMid.body.box1bDubaiAmount), "Box 1 after CN1").toBe(1652.62);
+    expect(Number(vatMid.body.box1bDubaiVat), "Box 1 VAT after CN1").toBe(18.37);
+  }
+
+  // Final credit: remainder (USD 100 standard + USD 350 RC).
+  const cn2 = await t.as.post(url, { date });
+  expect(cn2.status, cn2.text).toBe(201);
+
+  // After CN2: GL cleared 165262 fils (1 fil less than CN1 due to rounding at .5).
+  // Proportional split absorbs the 1-fil difference. Net Box 1 = 0, Net VAT = 0.
+  {
+    const vatFinal = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatFinal.status, vatFinal.text).toBe(201);
+    expect(Number(vatFinal.body.box1bDubaiAmount), "Box 1 = 0 after final credit").toBe(0);
+    expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after final credit").toBe(0);
+  }
 });

@@ -755,23 +755,46 @@ async function collectInvoices(
       netByFamily.set(fam, (netByFamily.get(fam) ?? 0) + net);
     });
     const hasMarginScheme = totals.lines.some((lt) => lt.marginFils !== null);
-    // Single pass: collect the set of VAT 201 families present across all lines.
-    // Uses per-line resolved family (not the header flag alone) so explicit reverse_charge
-    // supply types on lines are caught even when inv.reverseCharge is unset.
+    // Single pass: collect the set of VAT 201 families and accumulate per-family doc base
+    // (document fils converted to base currency). Uses per-line resolved family so explicit
+    // reverse_charge supply types on lines are caught even when inv.reverseCharge is unset.
+    // stdDocBase and rcDocBase are used in the mixed-doc proportional split below.
     let hasRcLines = false;
     let hasStandardLines = false;
+    let stdDocBase = 0;
+    let rcDocBase = 0;
     for (let li = 0; li < totals.lines.length; li++) {
+      const lt = totals.lines[li];
+      const dl = docLines[li];
       const fam = classifySupply({
-        supplyType: docLines[li]?.vatSupplyType,
-        vatRate: docLines[li]?.vatRate,
+        supplyType: dl?.vatSupplyType,
+        vatRate: dl?.vatRate,
         reverseCharge: inv.reverseCharge,
       }).vat201Family;
-      if (fam === "reverse_charge") hasRcLines = true;
-      if (fam === "standard") hasStandardLines = true;
-      if (hasRcLines && hasStandardLines) break;
+      if (fam === "reverse_charge") {
+        hasRcLines = true;
+        const lineNetFils =
+          lt.marginFils !== null
+            ? Math.abs(lt.marginFils)
+            : dl?.netAmount !== null && dl?.netAmount !== undefined
+              ? Math.abs(fils(dl.netAmount))
+              : Math.abs(lt.netFils);
+        rcDocBase += toBaseFils(lineNetFils, rate);
+      } else if (fam === "standard") {
+        hasStandardLines = true;
+        const lineNetFils =
+          lt.marginFils !== null
+            ? Math.abs(lt.marginFils)
+            : dl?.netAmount !== null && dl?.netAmount !== undefined
+              ? Math.abs(fils(dl.netAmount))
+              : Math.abs(lt.netFils);
+        stdDocBase += toBaseFils(lineNetFils, rate);
+      }
     }
-    // VAT override: RC supplier charges no VAT; margin VAT is on the VAT-exclusive margin only.
-    const postedVat = !hasRcLines && !hasMarginScheme ? postedRemainderVat.get(inv.id) : undefined;
+    // VAT override: margin VAT is on the VAT-exclusive margin only.
+    // For mixed docs the standard portion still carries VAT, so we use the posted remainder
+    // unconditionally (pure RC has no posted VAT — postedRemainderVat returns 0 for it).
+    const postedVat = !hasMarginScheme ? postedRemainderVat.get(inv.id) : undefined;
     const vatBase = postedVat ?? toBaseFils(totals.vatFils, rate);
     // The last credit can clear base-currency VAT rounding with only zero-rated lines left.
     if (postedVat && !netByFamily.has("standard")) netByFamily.set("standard", 0);
@@ -779,9 +802,11 @@ async function collectInvoices(
     // - Pure RC (all lines reverse_charge): standard entry in POSTED_ROLE_FAMILY came entirely
     //   from RC lines; remap standard→reverse_charge so split credits absorb rounding in the
     //   correct family without double-counting Box 1.
-    // - Mixed standard+RC (no header flag): both supply types post to the same standard_sales
-    //   account; the standard GL entry blends both. Discard it — doc fils for each family avoids
-    //   the ambiguity (at the cost of losing 1-fil rounding correction on the final credit).
+    // - Mixed standard+RC: both supply types post to the same standard_sales account (4020);
+    //   rawPostedNet["standard"] bundles both families. Split it proportionally using this CN's
+    //   per-family doc base (stdDocBase / rcDocBase) so the GL remainder is absorbed in full to
+    //   the fil. The GL clears exactly toBaseFils(combinedNetFils, rate) for each CN; the
+    //   proportional allocation ensures stdGL + rcGL = totalGL exactly (integer arithmetic).
     // - Margin lines: taxable base is the VAT-exclusive margin; strip standard so the GL revenue
     //   (which includes purchase cost) is not used. Zero-rated / exempt families are kept.
     const rawPostedNet = postedRemainderNet.get(inv.id);
@@ -800,8 +825,22 @@ async function collectInvoices(
             )
           );
         } else {
-          // Mixed: discard standard to prevent Box 1 double-counting.
-          mapped = new Map([...mapped].filter(([f]) => f !== "standard"));
+          // Mixed: split rawPostedNet["standard"] proportionally by per-CN doc base.
+          const totalGL = mapped.get("standard") ?? 0;
+          const totalDocBase = stdDocBase + rcDocBase;
+          if (totalGL > 0 && totalDocBase > 0) {
+            const rcGL = Math.round((totalGL * rcDocBase) / totalDocBase);
+            const stdGL = totalGL - rcGL;
+            const others = new Map([...mapped].filter(([f]) => f !== "standard"));
+            mapped = new Map<Vat201Family, number>([
+              ...others,
+              ["standard", stdGL],
+              ["reverse_charge", rcGL],
+            ]);
+          } else {
+            // Fallback: discard to avoid overcounting if GL entry is 0 or no doc base.
+            mapped = new Map([...mapped].filter(([f]) => f !== "standard"));
+          }
         }
       }
       postedNet = mapped.size > 0 ? mapped : undefined;
