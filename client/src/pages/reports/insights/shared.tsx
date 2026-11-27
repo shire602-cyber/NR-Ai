@@ -2,6 +2,7 @@
 // Every figure on these views comes from the server (server/reporting, budget variance); the UI
 // only picks a window, formats and draws.
 import { Download, FileSpreadsheet, FileText } from "lucide-react";
+import type { UseQueryResult } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +19,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
 import { apiUrl } from "@/lib/api";
 import { ChartTooltipContent, type ChartTooltipContentProps } from "@/components/ui/chart-theme";
 import { useTranslation } from "@/lib/i18n";
@@ -191,5 +194,49 @@ export function InsightsSkeleton() {
       </div>
       <Skeleton className="h-72 rounded-xl" />
     </div>
+  );
+}
+
+/** The slice of a query the load-error helpers read. */
+export type InsightsQuery = Pick<
+  UseQueryResult<unknown>,
+  "data" | "error" | "fetchStatus" | "isLoadingError" | "isRefetchError" | "refetch"
+>;
+
+/**
+ * A failed load is not "no data": the view shows this (with retry for every failed query)
+ * instead of its empty state.
+ */
+export function InsightsLoadError({
+  queries,
+  testId = "insights-load-error",
+}: {
+  queries: InsightsQuery[];
+  testId?: string;
+}) {
+  const failed = queries.filter((q) => q.isLoadingError);
+  const first = failed[0];
+  if (!first) return null;
+  return (
+    <div className="rounded-xl border border-border bg-card" data-testid={testId}>
+      <LoadErrorState
+        compact
+        error={first.error}
+        onRetry={() => failed.forEach((q) => void q.refetch())}
+        testId={`${testId}-state`}
+      />
+    </div>
+  );
+}
+
+/** Warning above figures kept from the last successful read after a refresh failed. */
+export function InsightsStaleNotice({ queries }: { queries: InsightsQuery[] }) {
+  const stale = queries.filter((q) => q.isRefetchError);
+  if (stale.length === 0) return null;
+  return (
+    <StaleDataNotice
+      testId="insights-stale-notice"
+      onRetry={() => stale.forEach((q) => void q.refetch())}
+    />
   );
 }

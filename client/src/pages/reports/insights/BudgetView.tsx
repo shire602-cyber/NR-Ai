@@ -28,7 +28,15 @@ import { formatDateRange } from "@/lib/format-date";
 import { formatPercentDelta } from "@/lib/format-money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { type ComparisonMetric, comparisonDelta } from "./model";
-import { ChartCard, ControlsRow, InsightsSkeleton, InsightsTooltip, SeriesKey } from "./shared";
+import {
+  ChartCard,
+  ControlsRow,
+  InsightsLoadError,
+  InsightsSkeleton,
+  InsightsStaleNotice,
+  InsightsTooltip,
+  SeriesKey,
+} from "./shared";
 import { chartAnimates, compactAxisValue, insightsChart } from "./chartStyle";
 
 interface BudgetActualRow {
@@ -94,6 +102,14 @@ export default function BudgetView({ companyId }: { companyId: string }) {
   );
 
   if (rows.isLoading) return <InsightsSkeleton />;
+  if (rows.isLoadingError) {
+    return (
+      <div className="space-y-6" data-testid="insights-view-budget">
+        <ControlsRow start={yearSelect} />
+        <InsightsLoadError queries={[rows]} />
+      </div>
+    );
+  }
   const lines = rows.data ?? [];
   if (lines.length === 0) {
     return (
@@ -159,6 +175,11 @@ export default function BudgetView({ companyId }: { companyId: string }) {
           </>
         }
       />
+
+      <InsightsStaleNotice queries={[rows, plan, comparison]} />
+      {plan.isLoadingError || comparison.isLoadingError ? (
+        <InsightsLoadError queries={[plan, comparison]} testId="insights-budget-detail-error" />
+      ) : null}
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {tile("Total Revenue", "analytics.metricRevenue", "stat-insights-budget-revenue")}

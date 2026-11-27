@@ -15,6 +15,7 @@ import {
   YAxis,
 } from "recharts";
 import { Label } from "@/components/ui/label";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { CashBalance, CashBalanceCell } from "@/components/ui/cash-balance";
 import { StatCard } from "@/components/ui/stat-card";
@@ -33,7 +34,9 @@ import {
   ChartCard,
   ControlsRow,
   ExportMenu,
+  InsightsLoadError,
   InsightsSkeleton,
+  InsightsStaleNotice,
   InsightsTooltip,
   PeriodSelect,
   SmallEmpty,
@@ -135,6 +138,8 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
     key === "projected" ? t["analytics.cashProjected"] : t["analytics.cashPosition"];
   const exportRange = `from=${window.from}&to=${window.to}`;
 
+  const queries = [statement, buckets];
+  const failed = queries.some((q) => q.isLoadingError);
   if (statement.isLoading && buckets.isLoading) return <InsightsSkeleton />;
   const s = statement.data;
   const actualCount = shownBuckets.length;
@@ -181,7 +186,10 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
         }
       />
 
-      {!hasCashActivity && !statement.isLoading && !buckets.isLoading ? (
+      <InsightsStaleNotice queries={[statement, buckets, forecast]} />
+      {failed ? (
+        <InsightsLoadError queries={queries} />
+      ) : !hasCashActivity && !statement.isLoading && !buckets.isLoading ? (
         <div className="rounded-xl border border-border bg-card">
           <EmptyState
             icon={Wallet}
@@ -294,6 +302,16 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
                 </ResponsiveContainer>
               </div>
             )}
+            {showProjection && forecast.isLoadingError ? (
+              <div className="mt-3" data-testid="insights-forecast-error">
+                <LoadErrorState
+                  compact
+                  error={forecast.error}
+                  onRetry={() => void forecast.refetch()}
+                  testId="insights-forecast-error-state"
+                />
+              </div>
+            ) : null}
             {showProjection && forecast.data?.insufficientData ? (
               <p className="mt-3 text-small text-muted-foreground">
                 {t["analytics.projectionUnavailable"]}
