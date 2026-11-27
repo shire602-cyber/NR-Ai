@@ -1088,5 +1088,14 @@
   "pages.listStaleError": "Couldn't refresh. Showing the last saved copy.",
   "pages.listStaleEmptyTitle": "Nothing in the last saved copy",
   "pages.listStaleNoMatchTitle": "No matches in the last saved copy",
-  "pages.listStaleEmptyBody": "It may be out of date."
+  "pages.listStaleEmptyBody": "It may be out of date.",
+  "pages.may": "May",
+  "pages.june": "June",
+  "pages.july": "July",
+  "pages.varShort": "Var",
+  "pages.workpaperLine": "Line",
+  "pages.supportingWorkpaper": "Supporting workpaper:",
+  "pages.apiKeyColName": "Name",
+  "pages.apiKeyColKey": "Key",
+  "pages.apiKeyNamePlaceholder": "e.g., Production Server"
 }

@@ -219,6 +219,8 @@ type DepreciationRunData = z.infer<typeof depreciationRunSchema>;
 
 export default function FixedAssets() {
   const { t, locale } = useTranslation();
+  const assetDisplayName = (asset: FixedAsset) =>
+    (locale === "ar" && asset.asset_name_ar) || asset.asset_name;
   const fa = FA_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -460,13 +462,14 @@ export default function FixedAssets() {
       }),
     onSuccess: (data: any) => {
       refreshAssetReads();
-      const glType = data.gainLossType === "gain" ? "Gain" : "Loss";
       toast({
         title: translateNow("toasts.assetDisposed"),
-        description: formatMessage(translateNow("toasts.glOnDisposal"), {
-          glType,
-          amount: formatCurrency(Math.abs(data.gainLoss), "AED", locale),
-        }),
+        description: formatMessage(
+          translateNow(
+            data.gainLossType === "gain" ? "fixedAssets.disposalGain" : "fixedAssets.disposalLoss"
+          ),
+          { amount: formatCurrency(Math.abs(data.gainLoss), "AED", locale) }
+        ),
       });
       setDisposeDialogOpen(false);
       setDisposingAsset(null);
@@ -652,7 +655,7 @@ export default function FixedAssets() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={t["shell.nav.accounting"]}
         title={t["pages.fixedAssets"]}
         description={t["pageLabels.manageFixedAssetsDepreciationAndDisposals"]}
         primaryAction={
@@ -820,7 +823,7 @@ export default function FixedAssets() {
                   <T k="pages.status" />
                 </TableHead>
                 <TableHead>
-                  <span className="sr-only">{t.actions || "Actions"}</span>
+                  <span className="sr-only">{t.actions}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -835,9 +838,7 @@ export default function FixedAssets() {
                   <TableRow key={asset.id}>
                     <TableCell data-truncate="" data-cell="title">
                       <span dir="auto" className="font-medium">
-                        {locale === "ar" && asset.asset_name_ar
-                          ? asset.asset_name_ar
-                          : asset.asset_name}
+                        {assetDisplayName(asset)}
                       </span>
                       {asset.asset_number && (
                         <span
@@ -1335,7 +1336,14 @@ export default function FixedAssets() {
             </DialogTitle>
             <DialogDescription>
               {disposingAsset
-                ? `Record disposal for "${disposingAsset.asset_name}" (NBV: ${formatCurrency(parseFloat(disposingAsset.net_book_value || "0"), "AED", locale)})`
+                ? formatMessage(t["fixedAssets.disposalDetails"], {
+                    asset: assetDisplayName(disposingAsset),
+                    amount: formatCurrency(
+                      parseFloat(disposingAsset.net_book_value || "0"),
+                      "AED",
+                      locale
+                    ),
+                  })
                 : t["fixedAssets.recordAssetDisposal"]}
             </DialogDescription>
           </DialogHeader>
@@ -1477,12 +1485,10 @@ export default function FixedAssets() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setDisposeDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button type="submit" variant="destructive" disabled={disposeMutation.isPending}>
-                  {disposeMutation.isPending
-                    ? t.loading || "Loading..."
-                    : t["pageLabels.disposeAsset"]}
+                  {disposeMutation.isPending ? t.loading : t["pageLabels.disposeAsset"]}
                 </Button>
               </div>
             </form>
@@ -1569,7 +1575,7 @@ export default function FixedAssets() {
             <DialogTitle>
               {depAsset ? (
                 formatMessage(t["fixedAssets.recordDepreciationFor"], {
-                  name: depAsset.asset_name,
+                  name: assetDisplayName(depAsset),
                 })
               ) : (
                 <T k="pageLabels.runMonthlyDepreciation" />
@@ -1615,9 +1621,15 @@ export default function FixedAssets() {
                           <SelectItem value="4">
                             <T k="pages.april" />
                           </SelectItem>
-                          <SelectItem value="5">May</SelectItem>
-                          <SelectItem value="6">June</SelectItem>
-                          <SelectItem value="7">July</SelectItem>
+                          <SelectItem value="5">
+                            <T k="pages.may" />
+                          </SelectItem>
+                          <SelectItem value="6">
+                            <T k="pages.june" />
+                          </SelectItem>
+                          <SelectItem value="7">
+                            <T k="pages.july" />
+                          </SelectItem>
                           <SelectItem value="8">
                             <T k="pages.august" />
                           </SelectItem>
@@ -1659,7 +1671,7 @@ export default function FixedAssets() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setDepRunDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button
                   type="submit"
@@ -1667,7 +1679,7 @@ export default function FixedAssets() {
                   data-testid="button-confirm-depreciation"
                 >
                   {runDepreciationMutation.isPending || depreciateMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t.loading
                     : depAsset
                       ? t["screens.recordDepreciation"]
                       : t["pageLabels.runDepreciation"]}

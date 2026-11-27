@@ -135,7 +135,30 @@ describe("W4-A corporate tax: adjustments (R08-06, R08-07, R08-08, R08-18)", () 
 
   it("[R08-08] pull-from-books keeps a 100,000 add-back and recomputes the full liability", async () => {
     const t = await tenantWithBooks("CtPull");
+    await h.sql("UPDATE accounts SET name_ar = $2 WHERE company_id = $1 AND code = '4020'", [
+      t.company.id,
+      "إيرادات الخدمات",
+    ]);
     const ret = await createReturn(t);
+    expect(ret.workpaper.rows).toContainEqual(
+      expect.objectContaining({ type: "revenue", amount: 1_000_000, nameAr: "إيرادات الخدمات" })
+    );
+    const oldRows = ret.workpaper.rows.map(
+      ({ nameAr: _nameAr, ...row }: Record<string, unknown>) => row
+    );
+    await h.sql("UPDATE corporate_tax_returns SET workpaper = $2 WHERE id = $1", [
+      ret.id,
+      { ...ret.workpaper, rows: oldRows },
+    ]);
+    const listed = await t.as.get(`/api/companies/${t.company.id}/corporate-tax/returns`);
+    expect(listed.status, listed.text).toBe(200);
+    expect(listed.body[0].workpaper.rows).toContainEqual(
+      expect.objectContaining({ type: "revenue", amount: 1_000_000, nameAr: "إيرادات الخدمات" })
+    );
+    const detail = await t.as.get(`/api/corporate-tax/returns/${ret.id}`);
+    expect(detail.status, detail.text).toBe(200);
+    expect(detail.body.workpaper.rows).toEqual(listed.body[0].workpaper.rows);
+
     const computed = await t.as.post(`/api/corporate-tax/returns/${ret.id}/compute`, {
       adjustments: [{ id: "x1", category: "other_addback", amount: 100_000, notes: "support" }],
       smallBusinessReliefElected: false,
@@ -148,7 +171,9 @@ describe("W4-A corporate tax: adjustments (R08-06, R08-07, R08-08, R08-18)", () 
     expect(pulled.body.workpaper.adjustments).toHaveLength(1);
     expect(pulled.body.workpaper.adjustments[0]).toMatchObject({ id: "x1", amount: 100_000 });
     expect(pulled.body.workpaper.computation.taxPayable).toBe(29_250);
-    expect(pulled.body.workpaper.rows.length).toBeGreaterThan(0);
+    expect(pulled.body.workpaper.rows).toContainEqual(
+      expect.objectContaining({ type: "revenue", amount: 1_000_000, nameAr: "إيرادات الخدمات" })
+    );
   });
 
   it("[R08-18] tagged accounts drive account-based add-backs (entertainment 50%, fines 100%)", async () => {

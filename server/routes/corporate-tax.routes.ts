@@ -87,6 +87,7 @@ import {
   unfileCtReturn,
   uaeIsoDate,
   upsertCtProfile,
+  withLegacyWorkpaperNames,
 } from "../services/corporate-tax";
 
 /** Posted, non-closing journal entries in [from, to] (UAE dates). */
@@ -204,7 +205,7 @@ export function registerCorporateTaxRoutes(app: Express) {
       const { companyId } = req.params;
       await requireAccess(req, companyId);
       const returns = await storage.getCorporateTaxReturnsByCompanyId(companyId);
-      res.json(returns.map(withDeadline));
+      res.json((await withLegacyWorkpaperNames(companyId, returns)).map(withDeadline));
     })
   );
 
@@ -233,7 +234,8 @@ export function registerCorporateTaxRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const ctReturn = await loadReturn(req, req.params.id);
-      res.json(withDeadline(ctReturn));
+      const [localized] = await withLegacyWorkpaperNames(ctReturn.companyId, [ctReturn]);
+      res.json(withDeadline(localized));
     })
   );
 

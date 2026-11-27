@@ -1038,7 +1038,7 @@ export default function Budgets() {
         </Button>
       )}
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={t["shell.nav.accounting"]}
         title={selectedBudget ? selectedBudget.name : tr(locale, "Budgets", "الموازنات")}
         description={
           selectedBudget
@@ -1201,7 +1201,7 @@ export default function Budgets() {
                           <TableHead data-numeric>
                             <T k="pages.totalBudget" />
                           </TableHead>
-                          <TableHead data-numeric>{t.actions || "Actions"}</TableHead>
+                          <TableHead data-numeric>{t.actions}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1334,7 +1334,7 @@ export default function Budgets() {
                             <T k="pages.annualTotal" />
                           </TableHead>
                           <TableHead data-numeric className=" min-w-[80px]">
-                            {t.actions || "Actions"}
+                            {t.actions}
                           </TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1380,6 +1380,7 @@ export default function Budgets() {
                                 size="sm"
                                 onClick={() => setLineToDelete(line.id)}
                                 title={t["hr.delete"]}
+                                aria-label={t["hr.delete"]}
                                 {...gate("documents.write")}
                                 className="text-muted-foreground hover:text-destructive"
                               >

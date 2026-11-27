@@ -44,7 +44,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatDateTime } from "@/lib/format-date";
+import { formatDateTime, formatTimestampDate } from "@/lib/format-date";
 import { Key, Webhook, Plus, Trash2, Copy, Check, Send, Eye, RefreshCw } from "lucide-react";
 
 // ===========================
@@ -323,8 +323,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Key</TableHead>
+                  <TableHead>
+                    <T k="pages.apiKeyColName" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.apiKeyColKey" />
+                  </TableHead>
                   <TableHead>
                     <T k="pages.scopes" />
                   </TableHead>
@@ -357,13 +361,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {key.lastUsedAt
-                        ? new Date(key.lastUsedAt).toLocaleDateString(
-                            locale === "ar" ? "ar-AE" : undefined
-                          )
+                        ? formatTimestampDate(key.lastUsedAt, locale)
                         : t["banking.common.never"]}
                     </TableCell>
                     <TableCell>
                       <Switch
+                        aria-label={t["pages.active"]}
                         checked={key.isActive}
                         onCheckedChange={(checked) =>
                           toggleMutation.mutate({ id: key.id, isActive: checked })
@@ -371,7 +374,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                       />
                     </TableCell>
                     <TableCell data-numeric>
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteId(key.id)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t["pageLabels.revokeKey"]}
+                        onClick={() => setDeleteId(key.id)}
+                      >
                         <Trash2 className="h-4 w-4 text-muted-foreground" />
                       </Button>
                     </TableCell>
@@ -396,10 +404,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="key-name">Name</Label>
+              <Label htmlFor="key-name">
+                <T k="pages.apiKeyColName" />
+              </Label>
               <Input
                 id="key-name"
-                placeholder="e.g., Production Server"
+                placeholder={t["pages.apiKeyNamePlaceholder"]}
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
               />
@@ -441,7 +451,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               }
               disabled={!newKeyName.trim() || newKeyScopes.length === 0 || createMutation.isPending}
             >
-              {createMutation.isPending ? "Creating..." : t["pageLabels.createKey"]}
+              {t[createMutation.isPending ? "pageLabels.creating" : "pageLabels.createKey"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -469,8 +479,13 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-2">
-              <Input readOnly value={createdKey || ""} className="tabular-nums text-sm" />
-              <Button variant="outline" size="icon" onClick={handleCopy}>
+              <Input readOnly dir="ltr" value={createdKey || ""} className="tabular-nums text-sm" />
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={t["developerSettings.copyApiKey"]}
+                onClick={handleCopy}
+              >
                 {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
@@ -486,7 +501,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                 setCopied(false);
               }}
             >
-              Done
+              <T k="developerSettings.done" />
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -754,7 +769,9 @@ function WebhooksTab({ companyId }: { companyId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>URL</TableHead>
+                  <TableHead>
+                    <T k="pageLabels.endpointURL" />
+                  </TableHead>
                   <TableHead>
                     <T k="pages.events" />
                   </TableHead>
@@ -797,6 +814,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                     </TableCell>
                     <TableCell>
                       <Switch
+                        aria-label={t["pages.active"]}
                         checked={wh.isActive}
                         onCheckedChange={(checked) =>
                           toggleMutation.mutate({ id: wh.id, isActive: checked })
@@ -812,8 +830,8 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {wh.lastTriggeredAt
-                        ? new Date(wh.lastTriggeredAt).toLocaleDateString()
-                        : "Never"}
+                        ? formatTimestampDate(wh.lastTriggeredAt, locale)
+                        : t["banking.common.never"]}
                     </TableCell>
                     <TableCell data-numeric>
                       <div className="flex items-center justify-end gap-1">
@@ -821,6 +839,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                           variant="ghost"
                           size="icon"
                           title={t["developerSettings.viewDeliveries"]}
+                          aria-label={t["developerSettings.viewDeliveries"]}
                           onClick={() => setDeliveriesEndpointId(wh.id)}
                         >
                           <Eye className="h-4 w-4" />
@@ -845,7 +864,12 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                             <Send className="h-4 w-4" />
                           )}
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setDeleteId(wh.id)}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t["pageLabels.deleteEndpoint"]}
+                          onClick={() => setDeleteId(wh.id)}
+                        >
                           <Trash2 className="h-4 w-4 text-muted-foreground" />
                         </Button>
                       </div>
@@ -912,7 +936,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               }
               disabled={!newUrl.trim() || newEvents.length === 0 || createMutation.isPending}
             >
-              {createMutation.isPending ? "Creating..." : t["pageLabels.addEndpoint"]}
+              {t[createMutation.isPending ? "pageLabels.creating" : "pageLabels.addEndpoint"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -938,8 +962,13 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-2">
-              <Input readOnly value={createdSecret || ""} className="font-mono text-sm" />
-              <Button variant="outline" size="icon" onClick={handleCopySecret}>
+              <Input readOnly dir="ltr" value={createdSecret || ""} className="font-mono text-sm" />
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={t["developerSettings.copySigningSecret"]}
+                onClick={handleCopySecret}
+              >
                 {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
@@ -955,7 +984,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                 setCopied(false);
               }}
             >
-              Done
+              <T k="developerSettings.done" />
             </Button>
           </DialogFooter>
         </DialogContent>

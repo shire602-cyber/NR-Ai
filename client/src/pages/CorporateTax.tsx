@@ -16,7 +16,6 @@ import {
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -60,7 +59,7 @@ import {
 import {
   formatDate as formatDisplayDate,
   formatDateRange,
-  parseCalendarDate,
+  formatDateTime,
 } from "@/lib/format-date";
 import {
   FileCheck,
@@ -94,6 +93,7 @@ type CorporateTaxWorkpaperRowType = "revenue" | "expense";
 interface CorporateTaxWorkpaperRow {
   id: string;
   label: string;
+  nameAr?: string | null;
   type: CorporateTaxWorkpaperRowType;
   amount: number;
   notes?: string;
@@ -614,8 +614,8 @@ export default function CorporateTax() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Compliance"
-        title={(t as any).corporateTax || "Corporate tax (9%)"}
+        eyebrow={t["pages.eyebrowCompliance"]}
+        title={t["pages.corporateTax"]}
         description={t["corporateTax.pageSubtitle"]}
       />
 
@@ -1306,6 +1306,7 @@ export default function CorporateTax() {
                             <Button
                               variant="ghost"
                               size="sm"
+                              aria-label={t["screens.viewDetails"]}
                               onClick={() => {
                                 setViewReturn(taxReturn);
                                 setViewDialogOpen(true);
@@ -1491,8 +1492,8 @@ export default function CorporateTax() {
             <DialogDescription>
               {viewReturn && (
                 <>
-                  Period: {format(parseCalendarDate(viewReturn.taxPeriodStart), "dd MMM yyyy")}{" "}
-                  &mdash; {format(parseCalendarDate(viewReturn.taxPeriodEnd), "dd MMM yyyy")}
+                  {t["corporateTax.period"]}:{" "}
+                  {formatDateRange(viewReturn.taxPeriodStart, viewReturn.taxPeriodEnd, locale)}
                 </>
               )}
             </DialogDescription>
@@ -1549,7 +1550,7 @@ export default function CorporateTax() {
               </div>
 
               <div className="flex items-center gap-2 pt-2">
-                <span className="text-muted-foreground">Status:</span>
+                <span className="text-muted-foreground">{t["corporateTax.status"]}:</span>
                 {statusBadge(viewReturn.status)}
               </div>
 
@@ -1563,25 +1564,29 @@ export default function CorporateTax() {
               )}
               {viewReturn.filedAt && (
                 <div className="text-muted-foreground text-xs">
-                  Filed on: {format(new Date(viewReturn.filedAt), "dd MMM yyyy, HH:mm")}
+                  {t["corporateTax.filedOn"]}: {formatDateTime(viewReturn.filedAt, locale)}
                 </div>
               )}
 
               {viewReturn.notes && (
                 <div className="pt-2 border-t">
-                  <span className="text-muted-foreground text-xs">Notes:</span>
+                  <span className="text-muted-foreground text-xs">{t["pages.notes"]}:</span>
                   <p className="mt-1">{viewReturn.notes}</p>
                 </div>
               )}
 
               {viewReturn.workpaper?.rows?.length ? (
                 <div className="pt-2 border-t">
-                  <span className="text-muted-foreground text-xs">Supporting workpaper:</span>
+                  <span className="text-muted-foreground text-xs">
+                    <T k="pages.supportingWorkpaper" />
+                  </span>
                   <div className="mt-2 max-h-56 overflow-auto rounded-md border">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Line</TableHead>
+                          <TableHead>
+                            <T k="pages.workpaperLine" />
+                          </TableHead>
                           <TableHead data-numeric>
                             <T k="pages.expense" />
                           </TableHead>
@@ -1593,7 +1598,7 @@ export default function CorporateTax() {
                       <TableBody>
                         {viewReturn.workpaper.rows.map((row) => (
                           <TableRow key={row.id}>
-                            <TableCell>{row.label}</TableCell>
+                            <TableCell>{(locale === "ar" && row.nameAr) || row.label}</TableCell>
                             <TableCell data-numeric>
                               {row.type === "expense"
                                 ? formatCurrency(row.amount, "AED", locale)
@@ -1618,20 +1623,27 @@ export default function CorporateTax() {
               <AskNajmaButton
                 companyId={companyId}
                 topic="corporate_tax"
-                period={`${viewReturn.taxPeriodStart.slice(0, 10)} to ${viewReturn.taxPeriodEnd.slice(0, 10)}`}
+                period={formatDateRange(
+                  viewReturn.taxPeriodStart,
+                  viewReturn.taxPeriodEnd,
+                  locale,
+                  {
+                    plain: true,
+                  }
+                )}
                 reference={viewReturn.id.slice(0, 8)}
                 figures={[
                   {
                     label: t["pages.totalRevenue"],
-                    value: `AED ${Number(viewReturn.totalRevenue).toFixed(2)}`,
+                    value: formatCurrency(viewReturn.totalRevenue, "AED", locale),
                   },
                   {
                     label: t["pages.taxableIncome"],
-                    value: `AED ${Number(viewReturn.taxableIncome).toFixed(2)}`,
+                    value: formatCurrency(viewReturn.taxableIncome, "AED", locale),
                   },
                   {
                     label: t["pages.taxPayable"],
-                    value: `AED ${Number(viewReturn.taxPayable).toFixed(2)}`,
+                    value: formatCurrency(viewReturn.taxPayable, "AED", locale),
                   },
                 ]}
                 testId="button-ask-najma-ct"

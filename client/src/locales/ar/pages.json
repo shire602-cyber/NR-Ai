@@ -1088,5 +1088,14 @@
   "pages.listStaleError": "تعذّر التحديث. تُعرض آخر نسخة محفوظة.",
   "pages.listStaleEmptyTitle": "لا يوجد شيء في آخر نسخة محفوظة",
   "pages.listStaleNoMatchTitle": "لا توجد نتائج مطابقة في آخر نسخة محفوظة",
-  "pages.listStaleEmptyBody": "قد لا تكون محدّثة."
+  "pages.listStaleEmptyBody": "قد لا تكون محدّثة.",
+  "pages.may": "مايو",
+  "pages.june": "يونيو",
+  "pages.july": "يوليو",
+  "pages.varShort": "الفرق",
+  "pages.workpaperLine": "البند",
+  "pages.supportingWorkpaper": "ورقة العمل الداعمة:",
+  "pages.apiKeyColName": "الاسم",
+  "pages.apiKeyColKey": "المفتاح",
+  "pages.apiKeyNamePlaceholder": "مثال: خادم الإنتاج"
 }

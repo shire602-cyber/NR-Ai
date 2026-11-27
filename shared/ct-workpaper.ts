@@ -9,6 +9,7 @@ export type CtWorkpaperRowType = "revenue" | "expense";
 export interface CtWorkpaperRow {
   id: string;
   label: string;
+  nameAr?: string | null;
   type: CtWorkpaperRowType;
   amount: number;
   notes?: string;
