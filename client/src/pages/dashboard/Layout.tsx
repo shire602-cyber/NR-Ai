@@ -12,7 +12,7 @@ export function SectionHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="mb-3 flex items-end justify-between gap-4">
+    <div className="mb-5 flex items-end justify-between gap-6">
       <div className="min-w-0">
         {eyebrow && <div className="eyebrow">{eyebrow}</div>}
         <h2 className="mt-1 text-h2 text-foreground">{title}</h2>

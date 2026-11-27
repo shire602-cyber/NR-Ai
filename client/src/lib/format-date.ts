@@ -85,11 +85,14 @@ function monthName(date: Date, locale: string): string {
   return locale === "ar" ? arabicMonthFormatter.format(date) : EN_MONTHS[date.getMonth()];
 }
 
+function displayDay(date: Date, locale: string): string {
+  return `${date.getDate()} ${monthName(date, locale)} ${date.getFullYear()}`;
+}
+
 /** "16 Nov 2026" / "16 نوفمبر 2026"; "" for an empty or invalid value. */
 export function formatDate(value: DateInput, locale: string = "en"): string {
   const d = toCalendarDate(value);
-  if (!d) return "";
-  return `${d.getDate()} ${monthName(d, locale)} ${d.getFullYear()}`;
+  return d ? displayDay(d, locale) : "";
 }
 
 /** "Nov 2026" / "نوفمبر 2026". */
@@ -185,6 +188,12 @@ function toInstant(value: DateInput): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** The date of an activity timestamp in the viewer's time zone. */
+export function formatTimestampDate(value: DateInput, locale: string = "en"): string {
+  const d = toInstant(value);
+  return d ? displayDay(d, locale) : "";
+}
+
 /** "14:05": 24-hour clock with Latin digits in both languages. */
 export function formatTime(value: DateInput): string {
   const d = toInstant(value);
@@ -209,7 +218,7 @@ function dateTimeParts(
   if (!d) return null;
   // A timestamp: day and time both in the viewer's zone (never the calendar-day reading).
   return {
-    date: `${d.getDate()} ${monthName(d, locale)} ${d.getFullYear()}`,
+    date: displayDay(d, locale),
     time: formatTime(d),
     separator: locale === "ar" ? "، " : ", ",
   };

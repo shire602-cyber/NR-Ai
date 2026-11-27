@@ -19,10 +19,10 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
       {/* ── Recent activity ─────────────────────────────────────────────── */}
       {/* Filing pulse beside the two recent lists: one row of three (CTO 4). */}
       <section aria-label={t["dashboard.recentTitle"]}>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-stack lg:grid-cols-2 xl:grid-cols-3">
           <CompliancePanel m={m} />
           <Card className="flex flex-col">
-            <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 pb-3">
               <CardTitle>{t["dashboard.recentSalesTitle"]}</CardTitle>
               <Button
                 asChild
@@ -48,7 +48,7 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
                   {recentInvoices.slice(0, 4).map((invoice: any) => (
                     <li
                       key={invoice.id}
-                      className="group flex items-center justify-between gap-3 py-2.5"
+                      className="group flex items-center justify-between gap-4 py-3.5"
                       data-testid={`invoice-${invoice.id}`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
@@ -92,7 +92,7 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
           </Card>
 
           <Card className="flex flex-col">
-            <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 pb-3">
               <CardTitle>
                 <T k="pageLabels.recentActivity" />
               </CardTitle>
@@ -112,7 +112,7 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
               {journalEntries && journalEntries.length > 0 ? (
                 <ul className="divide-y divide-border">
                   {journalEntries.slice(0, 4).map((entry: any) => (
-                    <li key={entry.id} className="group flex items-center gap-3 py-2.5">
+                    <li key={entry.id} className="group flex items-center gap-4 py-3.5">
                       <div className="flex-1 min-w-0">
                         <div className="truncate text-sm font-medium text-foreground">
                           {localizeJournalMemo(t, entry.memo, locale, entry) ||

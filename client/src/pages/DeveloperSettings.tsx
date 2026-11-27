@@ -39,11 +39,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { SettingsLoadError } from "@/components/layout/SettingsLoadError";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatDateTime } from "@/lib/format-date";
+import { formatDateTime, formatTimestampDate } from "@/lib/format-date";
 import { Key, Webhook, Plus, Trash2, Copy, Check, Send, Eye, RefreshCw } from "lucide-react";
 
 // ===========================
@@ -138,7 +139,7 @@ export default function DeveloperSettings() {
     return (
       <div className="max-w-narrow">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t["pages.companyProfileEyebrow"]}
           title={t["developerSettings.developerSettings"]}
           className="mb-6"
         />
@@ -156,7 +157,7 @@ export default function DeveloperSettings() {
     <SettingsLayout>
       <div className="max-w-narrow">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t["pages.companyProfileEyebrow"]}
           title={t["developerSettings.developerSettings"]}
           description={t["developerSettings.manageApiKeysAndWebhook"]}
           className="mb-6"
@@ -203,7 +204,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyScopes, setNewKeyScopes] = useState<string[]>(["read:invoices"]);
 
-  const { data: apiKeys, isLoading } = useQuery<ApiKeyItem[]>({
+  const {
+    data: apiKeys,
+    isLoading,
+    error: loadError,
+    refetch,
+  } = useQuery<ApiKeyItem[]>({
     queryKey: ["/api/companies", companyId, "api-keys"],
     enabled: !!companyId,
   });
@@ -301,6 +307,14 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
             <p className="text-muted-foreground py-8 text-center">
               <T k="pages.loading" />
             </p>
+          ) : loadError && !apiKeys ? (
+            <SettingsLoadError
+              compact
+              error={loadError}
+              onRetry={() => refetch()}
+              companyAccessDescription={t["developerSettings.companyAccessForbiddenBody"]}
+              testId="api-keys-load-error"
+            />
           ) : !apiKeys?.length ? (
             <p className="text-muted-foreground py-8 text-center">
               <T k="pageLabels.noAPIKeysCreatedYetCreateOneToGetStarted" />
@@ -309,8 +323,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Key</TableHead>
+                  <TableHead>
+                    <T k="pages.apiKeyColName" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.apiKeyColKey" />
+                  </TableHead>
                   <TableHead>
                     <T k="pages.scopes" />
                   </TableHead>
@@ -343,13 +361,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {key.lastUsedAt
-                        ? new Date(key.lastUsedAt).toLocaleDateString(
-                            locale === "ar" ? "ar-AE" : undefined
-                          )
+                        ? formatTimestampDate(key.lastUsedAt, locale)
                         : t["banking.common.never"]}
                     </TableCell>
                     <TableCell>
                       <Switch
+                        aria-label={t["pages.active"]}
                         checked={key.isActive}
                         onCheckedChange={(checked) =>
                           toggleMutation.mutate({ id: key.id, isActive: checked })
@@ -357,7 +374,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                       />
                     </TableCell>
                     <TableCell data-numeric>
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteId(key.id)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t["pageLabels.revokeKey"]}
+                        onClick={() => setDeleteId(key.id)}
+                      >
                         <Trash2 className="h-4 w-4 text-muted-foreground" />
                       </Button>
                     </TableCell>
@@ -382,10 +404,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="key-name">Name</Label>
+              <Label htmlFor="key-name">
+                <T k="pages.apiKeyColName" />
+              </Label>
               <Input
                 id="key-name"
-                placeholder="e.g., Production Server"
+                placeholder={t["pages.apiKeyNamePlaceholder"]}
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
               />
@@ -427,7 +451,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               }
               disabled={!newKeyName.trim() || newKeyScopes.length === 0 || createMutation.isPending}
             >
-              {createMutation.isPending ? "Creating..." : t["pageLabels.createKey"]}
+              {t[createMutation.isPending ? "pageLabels.creating" : "pageLabels.createKey"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -455,8 +479,13 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-2">
-              <Input readOnly value={createdKey || ""} className="tabular-nums text-sm" />
-              <Button variant="outline" size="icon" onClick={handleCopy}>
+              <Input readOnly dir="ltr" value={createdKey || ""} className="tabular-nums text-sm" />
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={t["developerSettings.copyApiKey"]}
+                onClick={handleCopy}
+              >
                 {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
@@ -472,7 +501,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                 setCopied(false);
               }}
             >
-              Done
+              <T k="developerSettings.done" />
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -573,7 +602,12 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     dead: t["pages.failed"],
   };
 
-  const { data: webhooks, isLoading } = useQuery<WebhookEndpointItem[]>({
+  const {
+    data: webhooks,
+    isLoading,
+    error: loadError,
+    refetch,
+  } = useQuery<WebhookEndpointItem[]>({
     queryKey: ["/api/companies", companyId, "webhooks"],
     enabled: !!companyId,
   });
@@ -719,6 +753,14 @@ function WebhooksTab({ companyId }: { companyId: string }) {
             <p className="text-muted-foreground py-8 text-center">
               <T k="pages.loading" />
             </p>
+          ) : loadError && !webhooks ? (
+            <SettingsLoadError
+              compact
+              error={loadError}
+              onRetry={() => refetch()}
+              companyAccessDescription={t["developerSettings.companyAccessForbiddenBody"]}
+              testId="webhooks-load-error"
+            />
           ) : !webhooks?.length ? (
             <p className="text-muted-foreground py-8 text-center">
               {t["developerSettings.noWebhookEndpointsConfiguredAdd"]}
@@ -727,7 +769,9 @@ function WebhooksTab({ companyId }: { companyId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>URL</TableHead>
+                  <TableHead>
+                    <T k="pageLabels.endpointURL" />
+                  </TableHead>
                   <TableHead>
                     <T k="pages.events" />
                   </TableHead>
@@ -770,6 +814,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                     </TableCell>
                     <TableCell>
                       <Switch
+                        aria-label={t["pages.active"]}
                         checked={wh.isActive}
                         onCheckedChange={(checked) =>
                           toggleMutation.mutate({ id: wh.id, isActive: checked })
@@ -785,8 +830,8 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {wh.lastTriggeredAt
-                        ? new Date(wh.lastTriggeredAt).toLocaleDateString()
-                        : "Never"}
+                        ? formatTimestampDate(wh.lastTriggeredAt, locale)
+                        : t["banking.common.never"]}
                     </TableCell>
                     <TableCell data-numeric>
                       <div className="flex items-center justify-end gap-1">
@@ -794,6 +839,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                           variant="ghost"
                           size="icon"
                           title={t["developerSettings.viewDeliveries"]}
+                          aria-label={t["developerSettings.viewDeliveries"]}
                           onClick={() => setDeliveriesEndpointId(wh.id)}
                         >
                           <Eye className="h-4 w-4" />
@@ -818,7 +864,12 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                             <Send className="h-4 w-4" />
                           )}
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setDeleteId(wh.id)}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t["pageLabels.deleteEndpoint"]}
+                          onClick={() => setDeleteId(wh.id)}
+                        >
                           <Trash2 className="h-4 w-4 text-muted-foreground" />
                         </Button>
                       </div>
@@ -885,7 +936,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               }
               disabled={!newUrl.trim() || newEvents.length === 0 || createMutation.isPending}
             >
-              {createMutation.isPending ? "Creating..." : t["pageLabels.addEndpoint"]}
+              {t[createMutation.isPending ? "pageLabels.creating" : "pageLabels.addEndpoint"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -911,8 +962,13 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-2">
-              <Input readOnly value={createdSecret || ""} className="font-mono text-sm" />
-              <Button variant="outline" size="icon" onClick={handleCopySecret}>
+              <Input readOnly dir="ltr" value={createdSecret || ""} className="font-mono text-sm" />
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={t["developerSettings.copySigningSecret"]}
+                onClick={handleCopySecret}
+              >
                 {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
@@ -928,7 +984,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                 setCopied(false);
               }}
             >
-              Done
+              <T k="developerSettings.done" />
             </Button>
           </DialogFooter>
         </DialogContent>

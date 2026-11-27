@@ -18,8 +18,8 @@ export function EmptyState({
   actionHref?: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
-      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-xs">
+    <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-xs">
         <Icon className="h-5 w-5" strokeWidth={1.5} aria-hidden />
       </div>
       <div className="text-sm font-semibold text-foreground">{title}</div>

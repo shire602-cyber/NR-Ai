@@ -76,12 +76,12 @@ export function DashboardOverview({ m }: { m: DashboardModel }) {
           );
         })()}
 
-      <section className="space-y-4" aria-labelledby="dashboard-kpi-heading">
+      <section className="space-y-stack" aria-labelledby="dashboard-kpi-heading">
         <h2 id="dashboard-kpi-heading" className="sr-only">
           {tt["dashboard.performanceHeading"]}
         </h2>
         {/* ── Performance (selected period) ─────────────────────────────── */}
-        <div className="mobile-keep-cols grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <div className="mobile-keep-cols grid grid-cols-2 gap-3 sm:gap-stack xl:grid-cols-4">
           <KpiCard
             label={tt["dashboard.kpiRevenue"]}
             value={<Money amount={stats?.revenue ?? 0} data-testid="text-revenue" />}
@@ -170,7 +170,7 @@ export function DashboardOverview({ m }: { m: DashboardModel }) {
 
         {/* ── Position (as of today) ─────────────────────────────────────── */}
         <div
-          className="mobile-keep-cols grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4"
+          className="mobile-keep-cols grid grid-cols-2 gap-3 sm:gap-stack xl:grid-cols-4"
           data-testid="dashboard-drill-tiles"
         >
           <KpiCard

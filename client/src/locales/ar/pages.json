@@ -864,6 +864,10 @@
   "pages.notificationPrefsSave": "حفظ التفضيلات",
   "pages.notificationPrefsSaving": "جارٍ الحفظ...",
   "pages.notificationPrefsTitle": "تفضيلات الإشعارات",
+  "pages.notificationPrefsWaiting": "بانتظار الاتصال بالإنترنت لتحميل تفضيلات الإشعارات.",
+  "pages.accountTypeAccessForbiddenBody": "هذه الميزة غير متاحة لنوع حسابك. تواصل مع فريق الدعم إذا كنت تعتقد أنه ينبغي أن تتمكن من استخدامها.",
+  "pages.settingsAccessForbiddenBody": "تم رفض الوصول إلى هذه الإعدادات. تواصل مع فريق الدعم إذا كنت تعتقد أنه ينبغي أن تتمكن من الوصول إليها.",
+  "pages.settingsEnableMfa": "فعّل المصادقة الثنائية في إعدادات الأمان للمتابعة.",
   "pages.notificationPrefsDescription": "تحكّم في كيفية وتوقيت استلام الإشعارات",
   "pages.notificationsAllRead": "تم تحديد جميع الإشعارات كمقروءة",
   "pages.notificationDismissed": "تم تجاهل الإشعار",
@@ -1084,5 +1088,14 @@
   "pages.listStaleError": "تعذّر التحديث. تُعرض آخر نسخة محفوظة.",
   "pages.listStaleEmptyTitle": "لا يوجد شيء في آخر نسخة محفوظة",
   "pages.listStaleNoMatchTitle": "لا توجد نتائج مطابقة في آخر نسخة محفوظة",
-  "pages.listStaleEmptyBody": "قد لا تكون محدّثة."
+  "pages.listStaleEmptyBody": "قد لا تكون محدّثة.",
+  "pages.may": "مايو",
+  "pages.june": "يونيو",
+  "pages.july": "يوليو",
+  "pages.varShort": "الفرق",
+  "pages.workpaperLine": "البند",
+  "pages.supportingWorkpaper": "ورقة العمل الداعمة:",
+  "pages.apiKeyColName": "الاسم",
+  "pages.apiKeyColKey": "المفتاح",
+  "pages.apiKeyNamePlaceholder": "مثال: خادم الإنتاج"
 }

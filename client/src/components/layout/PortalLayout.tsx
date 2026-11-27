@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { Suspense, lazy, useEffect, useRef, useSyncExternalStore } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -39,6 +39,10 @@ import { PortalAccountScope } from "@/lib/portal-scope";
 import { useActiveIntoView, useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { bidiIsolate } from "@/lib/customer-link";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
+import { useAppSurface } from "@/lib/motion/surface";
+
+// The pause control and the pointer-depth loader arrive after first paint, in their own chunk.
+const PortalMotion = lazy(() => import("@/components/layout/PortalMotion"));
 
 const NAV_ITEMS = [
   { labelKey: "shell.portalDashboard", href: "/client-portal/dashboard", icon: LayoutDashboard },
@@ -56,6 +60,7 @@ interface PortalAccountRow {
 }
 
 export function PortalLayout({ children }: { children: React.ReactNode }) {
+  useAppSurface();
   const [location, navigate] = useLocation();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
@@ -177,16 +182,16 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="flex h-screen w-full bg-background supports-[height:100dvh]:h-dvh">
+    <div className="app-canvas flex h-screen w-full bg-background supports-[height:100dvh]:h-dvh">
       {/* Sidebar (desktop) */}
-      <aside className="hidden w-60 flex-shrink-0 flex-col border-e border-border bg-sidebar md:flex">
+      <aside className="hidden w-60 flex-shrink-0 flex-col border-e border-border bg-sidebar/80 md:flex lg:w-64">
         {/* Company header */}
-        <div className="border-b border-border px-5 py-5">
+        <div className="border-b border-border px-5 py-6">
           <div className="flex items-center gap-3">
             {companyMark}
             <div className="min-w-0">
               <p
-                className="truncate text-small font-semibold text-foreground"
+                className="truncate text-body font-medium text-foreground"
                 dir="auto"
                 translate={company?.name ? "no" : undefined}
                 title={company?.name}
@@ -204,7 +209,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
         {removed ? (
           <div className="flex-1" />
         ) : (
-          <nav className="flex-1 space-y-0.5 px-3 py-4" aria-label={t["portal.doc.clientPortal"]}>
+          <nav className="flex-1 space-y-1.5 px-3.5 py-6" aria-label={t["portal.doc.clientPortal"]}>
             {NAV_ITEMS.map(({ labelKey, href, icon: Icon }) => {
               const label = t[labelKey];
               const active = location === href || location.startsWith(href + "/");
@@ -214,9 +219,9 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   href={href}
                   aria-current={active ? "page" : undefined}
                   className={[
-                    "flex h-9 items-center gap-3 rounded-md px-3 text-small font-medium transition-colors duration-fast",
+                    "nav-icon-hover flex h-11 items-center gap-3 rounded-lg px-3.5 text-small font-medium transition-[background-color,color,box-shadow] duration-base",
                     active
-                      ? "bg-sidebar-accent text-foreground"
+                      ? "bg-card text-foreground shadow-card-soft"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
                   ].join(" ")}
                 >
@@ -235,7 +240,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Footer */}
-        <div className="border-t border-border px-3 py-4">
+        <div className="border-t border-border px-3.5 py-5">
           <Button
             variant="ghost"
             size="sm"
@@ -252,11 +257,11 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 md:px-8">
+        <header className="surface-glass relative z-10 flex h-header shrink-0 items-center justify-between gap-4 px-4 md:px-gutter">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="md:hidden">{companyMark}</div>
             {/* Not a heading: each page's PageHeader owns the single h1. */}
-            <p className="truncate text-body font-semibold text-foreground">
+            <p className="truncate text-h3 text-foreground">
               {/* On phones the supplier name shows once: here, or in the switcher when there are several. */}
               <span
                 className={`truncate ${accounts.length > 1 ? "hidden" : "block md:hidden"}`}
@@ -270,6 +275,9 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
+            <Suspense fallback={null}>
+              <PortalMotion />
+            </Suspense>
             {/* While access is removed the brand already reads "Client portal": show it once. */}
             {!removed && (
               <span className="hidden max-w-[280px] truncate text-caption text-muted-foreground sm:inline">
@@ -372,7 +380,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
         {!removed && (
           <nav
             ref={mobileNav}
-            className={`flex min-w-0 shrink-0 snap-x snap-proximity gap-1 overflow-x-auto border-b border-border bg-card px-3 py-1.5 [scrollbar-width:none] md:hidden`}
+            className={`flex min-w-0 shrink-0 snap-x snap-proximity gap-1.5 overflow-x-auto border-b border-border bg-background/70 px-3 py-2 [scrollbar-width:none] md:hidden`}
             aria-label={t["portal.doc.clientPortal"]}
             style={mobileNavFade}
           >
@@ -384,8 +392,8 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   href={href}
                   aria-current={active ? "page" : undefined}
                   className={[
-                    "flex h-11 shrink-0 snap-start items-center gap-2 whitespace-nowrap rounded-md px-3 text-small font-medium",
-                    active ? "bg-muted text-foreground" : "text-muted-foreground",
+                    "flex h-11 shrink-0 snap-start items-center gap-2 whitespace-nowrap rounded-lg px-3.5 text-small font-medium",
+                    active ? "bg-card text-foreground shadow-card-soft" : "text-muted-foreground",
                   ].join(" ")}
                 >
                   <Icon className="h-4 w-4 shrink-0" aria-hidden />

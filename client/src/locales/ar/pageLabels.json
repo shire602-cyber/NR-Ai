@@ -1005,6 +1005,7 @@
   "pageLabels.companySettings.dateFormat.YYYY-MM-DD": "YYYY-MM-DD (مثال: 2026-04-27)",
   "pageLabels.companySettings.title": "إعدادات الشركة",
   "pageLabels.companySettings.description": "هوية الشركة والعملة والسنة المالية وضريبة القيمة المضافة والعنوان واللغة.",
+  "pageLabels.companySettings.companyAccessForbiddenBody": "اطلب من مالك شركتك أو مسؤولها منحك صلاحية الوصول.",
   "pageLabels.companySettings.companyName": "اسم الشركة",
   "pageLabels.companySettings.trn": "رقم التسجيل الضريبي (TRN)",
   "pageLabels.companySettings.trnHelp": "يتكون رقم التسجيل الضريبي في الإمارات من 15 رقمًا.",

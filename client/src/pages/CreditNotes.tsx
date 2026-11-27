@@ -30,7 +30,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/badge";
-import { DataTableCard } from "@/components/ui/data-table";
+import { DocumentListTable } from "@/components/documents/DocumentListTable";
+import { DocumentSearchInput } from "@/components/documents/DocumentSearchInput";
+import { matchesDocumentSearch } from "@/lib/document-search";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { Link } from "wouter";
@@ -126,15 +128,15 @@ export default function CreditNotes() {
   const { routed, editor, toNew, toList } = useEditorRoute("/credit-notes");
   const [editorOpen, setEditorOpen] = useState(false);
 
-  const {
-    data: creditNotes,
-    isLoading,
-    error: listError,
-    refetch: refetchList,
-  } = useQuery<CreditNote[]>({
+  const creditNotesQuery = useQuery<CreditNote[]>({
     queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
     enabled: !!selectedCompanyId,
   });
+  const [search, setSearch] = useState("");
+  const creditNotes = creditNotesQuery.data ?? [];
+  const visibleCreditNotes = creditNotes.filter((c) =>
+    matchesDocumentSearch(search, c.number, c.customerName, c.invoiceNumber)
+  );
 
   const { data: invoices = [] } = useQuery<Invoice[]>({
     queryKey: ["/api/companies", selectedCompanyId, "invoices"],
@@ -750,7 +752,7 @@ export default function CreditNotes() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Sales"
+        eyebrow={t["screens.salesEyebrow"]}
         title={t.creditNotes}
         description={(t as any).creditNotesSubtitle ?? t["creditNotes.viewCreditNotesCreatedFrom"]}
         actions={
@@ -772,17 +774,33 @@ export default function CreditNotes() {
         }
       />
 
-      <DataTableCard
-        status={isLoading ? "loading" : creditNotes && creditNotes.length > 0 ? "ready" : "empty"}
-        loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
+      <DocumentSearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder={t["screens.searchCreditNotes"]}
+        testId="input-search-credit-notes"
+      />
+
+      <DocumentListTable
+        query={creditNotesQuery}
+        matchCount={visibleCreditNotes.length}
+        loadError={
+          creditNotesQuery.isLoadingError
+            ? { error: creditNotesQuery.error, onRetry: () => void creditNotesQuery.refetch() }
+            : null
+        }
         columnLabels={[t.date, t.total, t.status]}
         testId="credit-notes-table"
+        noMatch={{
+          icon: FileText,
+          title: t["screens.noMatchingDocuments"],
+          description: t["screens.noMatchingDocumentsBody"],
+          testId: "empty-credit-notes-no-match",
+        }}
         empty={{
           icon: FileText,
-          title: (t as any).noCreditNotesYet ?? "No credit notes yet",
-          description:
-            (t as any).creditNotesEmptyDesc ??
-            "Issue a credit note to correct or refund an invoice — it posts to your ledger and VAT return automatically.",
+          title: t.noCreditNotesYet,
+          description: t.creditNotesEmptyDesc,
           action: {
             label: t["pages.createFromInvoice"],
             href: "/invoices",
@@ -814,7 +832,7 @@ export default function CreditNotes() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(creditNotes ?? []).map((creditNote) => (
+            {visibleCreditNotes.map((creditNote) => (
               <TableRow key={creditNote.id}>
                 <TableCell data-nowrap="" data-cell="meta" className="font-medium">
                   <MiddleTruncate text={String(creditNote.number ?? "")} />
@@ -898,7 +916,7 @@ export default function CreditNotes() {
             ))}
           </TableBody>
         </Table>
-      </DataTableCard>
+      </DocumentListTable>
     </div>
   );
 }
