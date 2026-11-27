@@ -19,6 +19,8 @@ export interface MoneyProps extends Omit<React.HTMLAttributes<HTMLSpanElement>, 
   showCurrency?: boolean;
   /** "always" adds "+" to positive amounts (variances, deltas). */
   signDisplay?: "auto" | "always";
+  /** Fraction digits (default 2). Cash balances pass the currency's own digits. */
+  fractionDigits?: number;
 }
 
 /**
@@ -40,6 +42,7 @@ export function Money({
   positive = false,
   showCurrency = true,
   signDisplay = "auto",
+  fractionDigits,
   className,
   ...props
 }: MoneyProps) {
@@ -52,7 +55,7 @@ export function Money({
     );
   }
   const value = Number(amount);
-  const parts = formatMoneyParts(value, currency, locale, { signDisplay });
+  const parts = formatMoneyParts(value, currency, locale, { signDisplay, fractionDigits });
   const figure = (
     <span className="money" dir="ltr">
       {parts.sign && <span className="money-sign">{parts.sign}</span>}

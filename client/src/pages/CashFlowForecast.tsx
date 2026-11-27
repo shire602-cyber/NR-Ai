@@ -35,6 +35,7 @@ import {
 } from "@shared/server-copy";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { Money } from "@/components/ui/money";
+import { CashBalance } from "@/components/ui/cash-balance";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatDate, formatDateRange, formatEmbeddedDates } from "@/lib/format-date";
 import { StatCard } from "@/components/ui/stat-card";
@@ -450,7 +451,7 @@ export default function CashFlowForecast() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <StatCard
             label={<T k="pageLabels.currentBalance" />}
-            value={<Money amount={forecast.currentBalance} currency={"AED"} tone="auto" />}
+            value={<CashBalance amount={forecast.currentBalance} currency={"AED"} />}
           />
           <StatCard
             label={`${tr(locale, "Projected inflows", "التدفقات الداخلة المتوقعة")} (${forecastDays}${tr(locale, "d", " يوم")})`}
@@ -558,13 +559,12 @@ export default function CashFlowForecast() {
                           <Money amount={proj.expectedOutflows} currency={"AED"} />
                         </TableCell>
                         <TableCell data-numeric>
-                          <span
-                            className={`font-semibold ${
-                              proj.projectedBalance >= 0 ? "text-foreground" : "text-negative"
-                            }`}
-                          >
-                            <Money amount={proj.projectedBalance} currency={"AED"} />
-                          </span>
+                          <CashBalance
+                            amount={proj.projectedBalance}
+                            currency={"AED"}
+                            kind="projected"
+                            className="font-semibold"
+                          />
                         </TableCell>
                       </TableRow>
                     ))}

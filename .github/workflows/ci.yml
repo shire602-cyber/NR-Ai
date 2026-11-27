@@ -80,6 +80,15 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=6144
         run: npm run build
 
+      # These read dist/public, so they cannot run in the earlier "Unit tests" step; with
+      # REQUIRE_BUILD_OUTPUT=1 a missing build fails instead of skipping.
+      - name: Build-output tests (first-load chunks, i18n code split)
+        env:
+          REQUIRE_BUILD_OUTPUT: "1"
+          DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          SESSION_SECRET: ci_session_secret_that_is_long_enough_for_validation
+        run: npx vitest run tests/unit/first-load-chunks.test.ts tests/unit/i18n-code-split.test.ts
+
       # Fails if any client chunk grows >10% over scripts/qa/bundle-baseline.json.
       - name: Bundle budget
         run: npm run bundle:budget

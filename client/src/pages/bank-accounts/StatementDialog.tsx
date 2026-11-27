@@ -22,7 +22,9 @@ import { STATEMENT_NAMESPACES } from "./statement-namespaces";
 // A new lazy component per opening: React.lazy remembers its first result, failures included.
 const lazyBody = () =>
   lazy(() =>
-    loadWithChunkRetry<{ default: ComponentType<{ companyId: string; accountId: string }> }>(
+    loadWithChunkRetry<{
+      default: ComponentType<{ companyId: string; accountId: string; currency?: string }>;
+    }>(
       async () => {
         const [body] = await Promise.all([
           import("./StatementDialogBody"),
@@ -40,7 +42,7 @@ export function StatementDialog({
   onClose,
 }: {
   companyId: string;
-  account: { id: string; nameEn: string };
+  account: { id: string; nameEn: string; currency?: string };
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -61,7 +63,7 @@ export function StatementDialog({
             </p>
           }
         >
-          <Body companyId={companyId} accountId={account.id} />
+          <Body companyId={companyId} accountId={account.id} currency={account.currency} />
         </Suspense>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

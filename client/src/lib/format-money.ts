@@ -44,6 +44,17 @@ export interface MoneyParts {
 
 export const MINUS_SIGN = "−";
 
+const THREE_DECIMAL_CURRENCIES = new Set(["BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"]);
+const ZERO_DECIMAL_CURRENCIES = new Set(["JPY", "KRW", "VND", "CLP", "ISK", "UGX", "XAF", "XOF"]);
+
+/** ISO 4217 minor-unit digits for the currencies we hold (3 for KWD/BHD/OMR, 0 for JPY, else 2). */
+export function currencyFractionDigits(currency: string | null | undefined): number {
+  const code = (currency || "AED").toUpperCase();
+  if (THREE_DECIMAL_CURRENCIES.has(code)) return 3;
+  if (ZERO_DECIMAL_CURRENCIES.has(code)) return 0;
+  return 2;
+}
+
 const numberFormatters = new Map<number, Intl.NumberFormat>();
 function numberFormatter(digits: number): Intl.NumberFormat {
   let f = numberFormatters.get(digits);

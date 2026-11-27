@@ -9,6 +9,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
 import { ListQueryTable } from "@/components/ui/list-query-table";
 import { Money, MoneyCell } from "@/components/ui/money";
+import { CashBalanceCell } from "@/components/ui/cash-balance";
+import { isCashOrBankAccount } from "@/lib/cash-balance";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
   Table,
@@ -463,14 +465,23 @@ export default function ChartOfAccounts() {
                             showCurrency={false}
                             className="text-muted-foreground"
                           />
-                          <MoneyCell
-                            amount={Math.abs(figures.balance)}
-                            className={cn(
-                              isHeader ? "font-semibold" : "font-medium",
-                              figures.balance < 0 && "text-negative"
-                            )}
-                            data-cell="amount"
-                          />
+                          {isCashOrBankAccount(item.account) ? (
+                            // P2: an overdrawn cash or bank account keeps its sign and says so.
+                            <CashBalanceCell
+                              amount={figures.balance}
+                              className={isHeader ? "font-semibold" : "font-medium"}
+                              data-cell="amount"
+                            />
+                          ) : (
+                            <MoneyCell
+                              amount={Math.abs(figures.balance)}
+                              className={cn(
+                                isHeader ? "font-semibold" : "font-medium",
+                                figures.balance < 0 && "text-negative"
+                              )}
+                              data-cell="amount"
+                            />
+                          )}
                           <TableCell data-cell="actions" className="w-px">
                             <RowActions>
                               <RowActionButton

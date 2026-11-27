@@ -37,7 +37,9 @@ import {
   ChartCard,
   ControlsRow,
   ExportMenu,
+  InsightsLoadError,
   InsightsSkeleton,
+  InsightsStaleNotice,
   InsightsTooltip,
   PeriodSelect,
   SeriesKey,
@@ -143,7 +145,10 @@ export default function ComparisonView({ companyId }: { companyId: string }) {
         }
       />
 
-      {!hasActivity && !metrics.some((m) => m.current || m.previous) ? (
+      <InsightsStaleNotice queries={[query]} />
+      {query.isLoadingError ? (
+        <InsightsLoadError queries={[query]} />
+      ) : !hasActivity && !metrics.some((m) => m.current || m.previous) ? (
         <div className="rounded-xl border border-border bg-card">
           <EmptyState
             icon={BarChart3}

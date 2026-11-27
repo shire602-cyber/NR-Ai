@@ -30,6 +30,7 @@ import { exportToExcel, type ExportData } from "@/lib/export";
 import { currentExportLocale } from "@/lib/export-localize";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Money } from "@/components/ui/money";
+import { CashBalance } from "@/components/ui/cash-balance";
 import {
   BarChart3,
   Scale,
@@ -926,7 +927,7 @@ function CashFlowTab({
                     <T k="statements.openingCash" />
                   </CardDescription>
                   <CardTitle className="text-xl">
-                    <Money amount={data.openingCash} currency={"AED"} />
+                    <CashBalance amount={data.openingCash} currency={"AED"} />
                   </CardTitle>
                 </CardHeader>
               </Card>
@@ -936,7 +937,7 @@ function CashFlowTab({
                     <T k="statements.closingCash" />
                   </CardDescription>
                   <CardTitle className="text-xl">
-                    <Money amount={data.closingCash} currency={"AED"} />
+                    <CashBalance amount={data.closingCash} currency={"AED"} />
                   </CardTitle>
                 </CardHeader>
               </Card>

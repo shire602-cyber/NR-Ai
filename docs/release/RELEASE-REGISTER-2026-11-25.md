@@ -133,7 +133,11 @@ npx eslint <changed files>                                                      
 npx vitest run                                                                                                           # 1026 passed, 1 skipped, 0 failed (91 files)
 ```
 
-The one skipped unit test file is not yet triaged, so that gate stays open. Not run on this
+The historical skipped-suite gate is closed. The skipped file was
+`tests/integration/credit-note-consolidation.test.ts`, which the unit configuration now excludes
+and the existing real-Postgres CI job covers. It passed in run 46032267742. Separately, PR #189
+adds a required post-build check for first-load chunks and i18n code splitting. All seven tests
+passed at step 15 of run 46032267742 on `da1e33d1`, and all six commit checks passed. Not run on this
 machine: `npm run build` (Node 18.16 < 20.19), DB integration tests, browser crawl, coverage
 ratchet, dependency audit.
 
