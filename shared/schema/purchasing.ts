@@ -7,7 +7,6 @@ import {
   integer,
   numeric,
   pgTable,
-  real,
   text,
   timestamp,
   unique,
@@ -84,15 +83,17 @@ export const purchaseOrderLines = pgTable(
       .notNull()
       .references(() => purchaseOrders.id, { onDelete: "cascade" }),
     description: text("description").notNull(),
-    quantity: real("quantity").notNull(),
+    quantity: numeric("quantity", { precision: 16, scale: 4 }).notNull(),
     unitPrice: money("unit_price").notNull(),
     vatRate: vatRateType("vat_rate").notNull().default(0.05),
     vatSupplyType: text("vat_supply_type").default("standard_rated"),
     // W3-B (0096): inventory link, expense account, and 3-way match quantities.
     productId: uuid("product_id"),
     accountId: uuid("account_id").references(() => accounts.id, { onDelete: "set null" }),
-    quantityReceived: real("quantity_received").notNull().default(0),
-    quantityBilled: real("quantity_billed").notNull().default(0),
+    quantityReceived: numeric("quantity_received", { precision: 16, scale: 4 })
+      .notNull()
+      .default("0"),
+    quantityBilled: numeric("quantity_billed", { precision: 16, scale: 4 }).notNull().default("0"),
   },
   (table) => ({
     purchaseOrderIdIdx: index("idx_purchase_order_lines_po_id").on(table.purchaseOrderId),
@@ -144,7 +145,7 @@ export const purchaseOrderReceiptLines = pgTable(
     purchaseOrderLineId: uuid("purchase_order_line_id")
       .notNull()
       .references(() => purchaseOrderLines.id, { onDelete: "cascade" }),
-    quantity: real("quantity").notNull(),
+    quantity: numeric("quantity", { precision: 16, scale: 4 }).notNull(),
   },
   (table) => ({
     receiptIdx: index("idx_po_receipt_lines_receipt").on(table.receiptId),

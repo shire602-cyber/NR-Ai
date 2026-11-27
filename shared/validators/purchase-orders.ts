@@ -4,12 +4,9 @@
  */
 import { z } from "zod";
 import { zCurrency, zDate, zEmail, zMoney, zSupplyType, zText, zTrn, zUuid } from "./primitives";
-import { zBillVatRate, zFxRate } from "./bills";
+import { zBillVatRate, zFxRate, zPositiveQuantity } from "./bills";
 
-const zPoQuantity = z
-  .union([z.number(), z.string()])
-  .transform((v) => Number(v))
-  .refine((n) => Number.isFinite(n) && n > 0 && n <= 1e9, "Quantity must be greater than zero");
+export const zPoQuantity = zPositiveQuantity.refine((n) => n <= 1e9, "Quantity is out of range");
 
 export const poLineSchema = z
   .object({
@@ -76,6 +73,11 @@ export const poConvertSchema = z.object({
   dueDate: zDate.optional().nullable(),
   exchangeRate: zFxRate.optional().nullable(),
   /** Omit to bill everything received and not yet billed (or ordered, when nothing is tracked). */
-  lines: z.array(poQuantityLine).min(1).max(500).optional(),
+  // Keep the original quantity for validation with the route's INVALID_QUANTITY code.
+  lines: z
+    .array(poQuantityLine.extend({ quantity: z.union([z.number(), z.string()]) }))
+    .min(1)
+    .max(500)
+    .optional(),
 });
 export type PoConvertInput = z.output<typeof poConvertSchema>;

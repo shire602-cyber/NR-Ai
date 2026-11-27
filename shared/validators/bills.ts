@@ -40,7 +40,10 @@ export const zFxRate = z.union([z.number(), z.string()]).transform((v, ctx) => {
   return s;
 });
 
-const zPositiveQuantity = zQuantity.refine((n) => n > 0, "Quantity must be greater than zero");
+export const zPositiveQuantity = zQuantity.refine(
+  (n) => n > 0,
+  "Quantity must be greater than zero"
+);
 
 export const billLineSchema = z
   .object({

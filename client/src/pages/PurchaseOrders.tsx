@@ -85,7 +85,10 @@ const poLineSchema = z.object({
   /** Stocked product received on this line (X4/J3): without one the receipt moves no stock. */
   productId: z.string().optional().nullable(),
   description: z.string().min(1, "forms.errors.descriptionRequired"),
-  quantity: z.coerce.number().min(0.01, "forms.errors.quantityPositive"),
+  quantity: z.coerce
+    .number()
+    .min(0.0001, "forms.errors.quantityPositive")
+    .multipleOf(0.0001, "forms.errors.billQuantityPrecision"),
   unitPrice: z.coerce.number().min(0, "forms.errors.pricePositive"),
   vatRate: z.coerce.number().default(0.05),
 });
@@ -752,7 +755,7 @@ export default function PurchaseOrders() {
                         <FormControl>
                           <Input
                             type="number"
-                            step="0.01"
+                            step="0.0001"
                             name={field.name}
                             ref={field.ref}
                             onBlur={field.onBlur}
