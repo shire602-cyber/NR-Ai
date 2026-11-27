@@ -816,11 +816,6 @@ export default function Quotes() {
       <DocumentListTable
         query={quotesQuery}
         matchCount={visibleQuotes.length}
-        loadError={
-          quotesQuery.isLoadingError
-            ? { error: quotesQuery.error, onRetry: () => void quotesQuery.refetch() }
-            : null
-        }
         columnLabels={[t.date, t.total, t.status]}
         testId="quotes-table"
         noMatch={{

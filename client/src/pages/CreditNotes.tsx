@@ -784,11 +784,6 @@ export default function CreditNotes() {
       <DocumentListTable
         query={creditNotesQuery}
         matchCount={visibleCreditNotes.length}
-        loadError={
-          creditNotesQuery.isLoadingError
-            ? { error: creditNotesQuery.error, onRetry: () => void creditNotesQuery.refetch() }
-            : null
-        }
         columnLabels={[t.date, t.total, t.status]}
         testId="credit-notes-table"
         noMatch={{

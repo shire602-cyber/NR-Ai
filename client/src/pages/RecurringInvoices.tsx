@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/badge";
 import { STATUS_NAMESPACES, statusBadgeText } from "@/components/ui/status-meta";
-import { DataTableCard } from "@/components/ui/data-table";
+import { ListQueryTable } from "@/components/ui/list-query-table";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
@@ -147,15 +147,11 @@ export default function RecurringInvoices() {
   const [searchTerm, setSearchTerm] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const {
-    data: recurringInvoices,
-    isLoading,
-    error: listError,
-    refetch: refetchList,
-  } = useQuery<RecurringInvoice[]>({
+  const recurringQuery = useQuery<RecurringInvoice[]>({
     queryKey: ["/api/companies", selectedCompanyId, "recurring-invoices"],
     enabled: !!selectedCompanyId,
   });
+  const { data: recurringInvoices, isLoading } = recurringQuery;
 
   const form = useForm<RecurringInvoiceFormData>({
     resolver: zodResolver(recurringInvoiceSchema),
@@ -887,8 +883,9 @@ export default function RecurringInvoices() {
         {hasNoMatches ? t["invoices.recurring.noMatchTitle"] : ""}
       </div>
 
-      <DataTableCard
-        status={isLoading ? "loading" : visibleItems.length === 0 ? "empty" : "ready"}
+      <ListQueryTable
+        query={recurringQuery}
+        rowCount={visibleItems.length}
         toolbar={
           allItems.length > 0 || hasSearch ? (
             <div className="flex w-full max-w-md items-center gap-2 rounded-md border border-input bg-background px-3 focus-within:ring-2 focus-within:ring-ring">
@@ -907,7 +904,6 @@ export default function RecurringInvoices() {
             </div>
           ) : undefined
         }
-        loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
         columnLabels={[t.customerName, t.status]}
         testId="recurring-invoices-table"
         empty={
@@ -1013,7 +1009,7 @@ export default function RecurringInvoices() {
             ))}
           </TableBody>
         </Table>
-      </DataTableCard>
+      </ListQueryTable>
 
       <AlertDialog
         open={!!itemToDelete}

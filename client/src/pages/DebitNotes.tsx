@@ -164,11 +164,6 @@ function DebitNoteList() {
       <DocumentListTable
         query={notesQuery}
         matchCount={visibleNotes.length}
-        loadError={
-          notesQuery.isLoadingError
-            ? { error: notesQuery.error, onRetry: () => void notesQuery.refetch() }
-            : null
-        }
         columnLabels={[
           t["purchases.debitNote.number"],
           t["purchases.supplier.label"],

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
 
 /** Warning above data kept from the last successful read after a refresh failed. */
-export function StaleDataNotice({ onRetry, testId }: { onRetry: () => void; testId?: string }) {
+export function StaleDataNotice({ onRetry, testId }: { onRetry?: () => void; testId?: string }) {
   const { t } = useTranslation();
   return (
     <div
@@ -13,10 +13,12 @@ export function StaleDataNotice({ onRetry, testId }: { onRetry: () => void; test
     >
       <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
       <span className="min-w-0 flex-1">{t["components.staleDataNotice"]}</span>
-      <Button variant="outline" size="sm" onClick={onRetry}>
-        <RotateCw aria-hidden />
-        {t["components.errorRetry"]}
-      </Button>
+      {onRetry && (
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          <RotateCw aria-hidden />
+          {t["components.errorRetry"]}
+        </Button>
+      )}
     </div>
   );
 }

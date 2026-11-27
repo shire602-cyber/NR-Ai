@@ -27,7 +27,6 @@ import {
   Search,
   Download,
   BookCheck,
-  WifiOff,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -89,7 +88,7 @@ import { depreciationPeriodEnded, lastEndedMonth } from "@/lib/depreciation-peri
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
-import { DataTableCard } from "@/components/ui/data-table";
+import { ListQueryTable } from "@/components/ui/list-query-table";
 import { matchesAssetSearch } from "@/lib/fixed-asset-search";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
@@ -244,18 +243,11 @@ export default function FixedAssets() {
   const assetsKey = [`/api/companies/${companyId}/fixed-assets`];
   const summaryKey = [`/api/companies/${companyId}/fixed-assets/summary`];
 
-  const {
-    data: assetsData,
-    isLoading: isLoadingAssets,
-    isLoadingError: showAssetsError,
-    isPaused: assetsPaused,
-    error: assetsError,
-    refetch: refetchAssets,
-  } = useQuery<FixedAsset[]>({
+  const assetsQuery = useQuery<FixedAsset[]>({
     queryKey: assetsKey,
     enabled: !!companyId,
   });
-  const assets = assetsData ?? [];
+  const assets = assetsQuery.data ?? [];
 
   // isLoadingError: only a first load with nothing cached; a failed refresh keeps the cache.
   const {
@@ -623,8 +615,6 @@ export default function FixedAssets() {
     matchesAssetSearch(asset, searchQuery, t[`forms.asset.cat.${asset.category}`])
   );
   const hasSearch = searchQuery.trim().length > 0;
-  // Offline before the first fetch: the register is unknown, not empty.
-  const showAssetsOffline = assetsPaused && assetsData === undefined;
 
   // ─── Loading State ─────────────────────────────────────
 
@@ -733,7 +723,7 @@ export default function FixedAssets() {
 
       {/* Assets */}
       <section className="space-y-3">
-        {!showAssetsError && !showAssetsOffline && (assets.length > 0 || searchQuery) && (
+        {assetsQuery.data !== undefined && (assets.length > 0 || searchQuery) && (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="relative w-full sm:w-80">
               <Search
@@ -753,55 +743,35 @@ export default function FixedAssets() {
             </p>
           </div>
         )}
-        <DataTableCard
-          status={
-            isLoadingAssets
-              ? "loading"
-              : showAssetsOffline || filteredAssets.length === 0
-                ? "empty"
-                : "ready"
-          }
-          loadError={
-            showAssetsError
-              ? {
-                  error: assetsError,
-                  onRetry: () => void refetchAssets(),
-                  testId: "error-state-fixed-assets",
-                }
-              : null
-          }
+        <ListQueryTable
+          query={assetsQuery}
+          rowCount={filteredAssets.length}
+          loadErrorTestId="error-state-fixed-assets"
           columnLabels={[t["pageLabels.assetName"], t["screens.cost"], t["screens.nbv"], t.status]}
           empty={
-            showAssetsOffline
+            hasSearch
               ? {
-                  icon: WifiOff,
-                  title: t["screens.assetsOfflineTitle"],
-                  description: t["screens.assetsOfflineBody"],
-                  testId: "offline-state-fixed-assets",
+                  icon: Building2,
+                  title: t["screens.noMatchingAssets"],
+                  description: t["screens.noMatchingAssetsBody"],
+                  action: {
+                    label: t["screens.clearSearch"],
+                    onClick: () => setSearchQuery(""),
+                    variant: "outline",
+                  },
+                  testId: "empty-state-fixed-assets-search",
                 }
-              : hasSearch
-                ? {
-                    icon: Building2,
-                    title: t["screens.noMatchingAssets"],
-                    description: t["screens.noMatchingAssetsBody"],
-                    action: {
-                      label: t["screens.clearSearch"],
-                      onClick: () => setSearchQuery(""),
-                      variant: "outline",
-                    },
-                    testId: "empty-state-fixed-assets-search",
-                  }
-                : {
-                    icon: Building2,
-                    title: t["screens.noFixedAssets"],
-                    description: t["screens.noFixedAssetsBody"],
-                    action: {
-                      label: t["pageLabels.addAsset"],
-                      icon: Plus,
-                      onClick: handleOpenCreateDialog,
-                    },
-                    testId: "empty-state-fixed-assets",
-                  }
+              : {
+                  icon: Building2,
+                  title: t["screens.noFixedAssets"],
+                  description: t["screens.noFixedAssetsBody"],
+                  action: {
+                    label: t["pageLabels.addAsset"],
+                    icon: Plus,
+                    onClick: handleOpenCreateDialog,
+                  },
+                  testId: "empty-state-fixed-assets",
+                }
           }
         >
           <Table className="row-cards">
@@ -948,7 +918,7 @@ export default function FixedAssets() {
               })}
             </TableBody>
           </Table>
-        </DataTableCard>
+        </ListQueryTable>
       </section>
 
       {/* Category breakdown */}
