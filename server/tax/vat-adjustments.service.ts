@@ -44,6 +44,7 @@ import {
 } from "../ledger/vat-group-scope";
 import {
   findFiledVatPeriod,
+  type FiledVatPeriod,
   lockVatGroupMembership,
   lockVatReturnCompanies,
   lockVatReturns,
@@ -448,7 +449,129 @@ export interface BadDebtClaimReturnPeriod {
   source: "company" | "group";
 }
 
+/**
+ * Draft-stage ranking only (filed/submitted/amended returns are decided by `findFiledVatPeriod`):
+ * `draft`, `pending_review`, `ready` and any other status share the last rank on purpose and are
+ * then ordered by period end and creation time, newest first.
+ */
 const RETURN_STATUS_RANK: Record<string, number> = { filed: 0, submitted: 1, amended: 2 };
+
+/**
+ * The VAT return period each date falls in, for the claims screen. Closed returns (submitted,
+ * filed, amended) are decided by `findFiledVatPeriod`, the very function the ledger lock uses, so
+ * the screen and the lock cannot disagree: it covers the company's own returns and a group
+ * return only when that return's frozen `reconciliation_snapshot.filingVatGroup` lists the company
+ * with `memberAuthority = 'settings.company'` (so a member who joined after the filing, or left
+ * after it, is attributed exactly as the engine does). Only when nothing is closed does the screen
+ * look at the company's own open returns and, for draft group returns, the group's CURRENT
+ * membership (`loadVatGroupForRepresentative`), because `computeVat201` builds drafts from
+ * current membership. A date whose closure cannot be verified is shown as the open-return
+ * fallback or as no return, never guessed from today's membership.
+ */
+async function resolveClaimReturnPeriods(
+  companyId: string,
+  dates: string[]
+): Promise<Map<string, BadDebtClaimReturnPeriod>> {
+  const out = new Map<string, BadDebtClaimReturnPeriod>();
+  const unique = [...new Set(dates)];
+  const closures = new Map<string, FiledVatPeriod>();
+  for (const date of unique) {
+    const closure = await findFiledVatPeriod(db, companyId, date);
+    if (closure && closure !== UNVERIFIED_VAT_GROUP) closures.set(date, closure);
+  }
+  const owners = new Map<string, string>();
+  const closedIds = [...new Set([...closures.values()].map((c) => c.vatReturnId))];
+  if (closedIds.length) {
+    const { rows } = await pool.query(
+      `SELECT id, company_id FROM vat_returns WHERE id = ANY($1::uuid[])`,
+      [closedIds]
+    );
+    for (const r of rows) owners.set(r.id, r.company_id);
+  }
+
+  const open = unique.filter((d) => !closures.has(d));
+  type Candidate = { ownerId: string; status: string; ps: string; pe: string; createdAt: Date };
+  let candidates: Candidate[] = [];
+  if (open.length) {
+    const ownQ = await pool.query(
+      `SELECT company_id, status, period_start::date::text AS ps, period_end::date::text AS pe,
+              created_at
+         FROM vat_returns WHERE company_id = $1 AND amends_return_id IS NULL`,
+      [companyId]
+    );
+    candidates = ownQ.rows.map((r) => ({
+      ownerId: r.company_id,
+      status: r.status,
+      ps: r.ps,
+      pe: r.pe,
+      createdAt: r.created_at,
+    }));
+    // Draft group returns: current membership, with the authority the engine requires.
+    const repsQ = await pool.query(
+      `SELECT g.id, g.representative_company_id
+         FROM vat_group_members m JOIN vat_groups g ON g.id = m.group_id
+        WHERE m.company_id = $1 AND g.representative_company_id <> $1`,
+      [companyId]
+    );
+    for (const rep of repsQ.rows) {
+      const group = await loadVatGroupForRepresentative(rep.representative_company_id);
+      if (
+        !group ||
+        group.groupId !== rep.id ||
+        group.memberAuthority !== "settings.company" ||
+        !group.memberIds.includes(companyId.toLowerCase())
+      ) {
+        continue;
+      }
+      const draftsQ = await pool.query(
+        `SELECT company_id, status, period_start::date::text AS ps, period_end::date::text AS pe,
+                created_at
+           FROM vat_returns
+          WHERE company_id = $1 AND vat_group_id = $2 AND amends_return_id IS NULL
+            AND status IN ('draft', 'pending_review', 'ready')`,
+        [rep.representative_company_id, rep.id]
+      );
+      candidates.push(
+        ...draftsQ.rows.map((r) => ({
+          ownerId: r.company_id as string,
+          status: r.status as string,
+          ps: r.ps as string,
+          pe: r.pe as string,
+          createdAt: r.created_at as Date,
+        }))
+      );
+    }
+  }
+
+  for (const date of unique) {
+    const closure = closures.get(date);
+    if (closure) {
+      out.set(date, {
+        from: closure.periodStart,
+        to: closure.periodEnd,
+        status: closure.status,
+        source: owners.get(closure.vatReturnId) === companyId ? "company" : "group",
+      });
+      continue;
+    }
+    const hits = candidates.filter((r) => r.ps <= date && date <= r.pe);
+    if (!hits.length) continue;
+    hits.sort(
+      (a, b) =>
+        (RETURN_STATUS_RANK[a.status] ?? 9) - (RETURN_STATUS_RANK[b.status] ?? 9) ||
+        (a.pe < b.pe ? 1 : a.pe > b.pe ? -1 : 0) ||
+        b.createdAt.getTime() - a.createdAt.getTime()
+    );
+    const r = hits[0];
+    out.set(date, {
+      from: r.ps,
+      to: r.pe,
+      status: r.status,
+      source: r.ownerId === companyId ? "company" : "group",
+    });
+  }
+  return out;
+}
 
 /**
  * Claims for the screen: the claim row plus invoice number, customer name, the relief still to be
@@ -490,43 +613,10 @@ export async function listBadDebtReliefClaimsDetailed(companyId: string) {
     restoredQ.rows.map((r) => [r.claim_id as string, Number(r.restored)])
   );
 
-  const returnsQ = await pool.query(
-    `SELECT r.company_id, r.status, r.period_start::date::text AS ps, r.period_end::date::text AS pe,
-            r.created_at
-       FROM vat_returns r
-      WHERE r.amends_return_id IS NULL
-        AND (r.company_id = $1
-          OR EXISTS (
-            SELECT 1 FROM vat_group_members m JOIN vat_groups g ON g.id = m.group_id
-             WHERE m.company_id = $1 AND g.representative_company_id = r.company_id
-               AND r.vat_group_id = g.id))`,
-    [companyId]
+  const periodOf = await resolveClaimReturnPeriods(
+    companyId,
+    claimsQ.rows.flatMap((c) => [c.claim_date, c.reversed_at]).filter(Boolean) as string[]
   );
-  const returns = returnsQ.rows as Array<{
-    company_id: string;
-    status: string;
-    ps: string;
-    pe: string;
-    created_at: Date;
-  }>;
-  const periodFor = (date: string | null): BadDebtClaimReturnPeriod | null => {
-    if (!date) return null;
-    const hits = returns.filter((r) => r.ps <= date && date <= r.pe);
-    if (!hits.length) return null;
-    hits.sort(
-      (a, b) =>
-        (RETURN_STATUS_RANK[a.status] ?? 9) - (RETURN_STATUS_RANK[b.status] ?? 9) ||
-        Number(b.company_id !== companyId) - Number(a.company_id !== companyId) ||
-        b.created_at.getTime() - a.created_at.getTime()
-    );
-    const r = hits[0];
-    return {
-      from: r.ps,
-      to: r.pe,
-      status: r.status,
-      source: r.company_id === companyId ? "company" : "group",
-    };
-  };
 
   return claimsQ.rows.map((c) => {
     const remainingFils =
@@ -557,8 +647,8 @@ export async function listBadDebtReliefClaimsDetailed(companyId: string) {
       invoiceNumber: c.invoice_number ?? null,
       customerName: c.customer_name ?? null,
       remainingRelief: remainingFils === null ? null : remainingFils / 100,
-      claimReturnPeriod: periodFor(c.claim_date),
-      reversalReturnPeriod: periodFor(c.reversed_at),
+      claimReturnPeriod: c.claim_date ? (periodOf.get(c.claim_date) ?? null) : null,
+      reversalReturnPeriod: c.reversed_at ? (periodOf.get(c.reversed_at) ?? null) : null,
     };
   });
 }

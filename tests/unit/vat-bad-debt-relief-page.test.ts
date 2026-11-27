@@ -13,6 +13,7 @@ import arShell from "../../client/src/locales/ar/shell.json";
 import enShell from "../../client/src/locales/en/shell.json";
 import enCompliance from "../../client/src/locales/en/vatBadDebtRelief.json";
 import arCompliance from "../../client/src/locales/ar/vatBadDebtRelief.json";
+import enForms from "../../client/src/locales/en/forms.json";
 import {
   apiCalls,
   byTestId,
@@ -257,6 +258,43 @@ describe("VAT bad-debt relief screen", () => {
     expect(byTestId("reverse-effect")!.textContent).toContain(
       "The return for the period containing"
     );
+  });
+
+  it("does not name a filed return as the add-back return; it says the period is closed", async () => {
+    // The reversal date defaults to today, which this filed return covers.
+    const open = { ...FILED_Q1, to: "2099-12-31" };
+    setFixtures({ [CLAIMS_URL]: [claim({ claimReturnPeriod: open })], [ELIGIBLE_URL]: ELIGIBLE });
+    await renderPage(VatBadDebtRelief);
+    await click(byTestId("button-reverse-11111111-1111-4111-8111-111111111111"));
+    await type(byTestId("input-reverse-reason"), "Customer paid in full");
+    expect(byTestId("reverse-effect")!.textContent).toBe(
+      enForms["forms.serverErrors.VAT_PERIOD_FILED"]
+    );
+    expect((byTestId("button-confirm-reverse") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("labels a claim closed by customer payments without naming one return", async () => {
+    setFixtures({
+      [CLAIMS_URL]: [
+        claim({
+          status: "reversed",
+          reversedAt: "2026-05-02",
+          reversalReason: "Payment received after bad-debt relief was claimed",
+          reversalReturnPeriod: FILED_Q1,
+        }),
+      ],
+      [ELIGIBLE_URL]: ELIGIBLE,
+    });
+    await renderPage(VatBadDebtRelief);
+    expect(text()).toContain(enCompliance["vatBadDebtRelief.reversalPeriodRecovered"]);
+  });
+
+  it("notes when the eligible-invoice picker hit its cap", async () => {
+    const many = Array.from({ length: 500 }, (_, i) => ({ ...ELIGIBLE[0], id: `id-${i}` }));
+    setFixtures({ [CLAIMS_URL]: [claim({})], [ELIGIBLE_URL]: many });
+    await renderPage(VatBadDebtRelief);
+    await click(byTestId("button-claim-relief"));
+    expect(byTestId("relief-picker-capped")).not.toBeNull();
   });
 
   it("shows the payment-closure reason in Arabic instead of the server's English sentence", async () => {

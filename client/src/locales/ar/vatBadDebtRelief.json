@@ -50,5 +50,7 @@
   "vatBadDebtRelief.reverseBodyNothing": "استردّت دفعات العميل كامل الإعفاء على الفاتورة {invoice}. عكس المطالبة يُغلقها فقط؛ لا تُضاف ضريبة أخرى ولا يُسجَّل قيد في الدفتر.",
   "vatBadDebtRelief.periodForecast": "الإقرار عن الفترة التي يقع فيها {date}",
   "vatBadDebtRelief.reversalPeriod": "إقرار الضريبة: {period}",
-  "vatBadDebtRelief.reasonPayment": "تم استلام دفعة بعد المطالبة بإعفاء الديون المعدومة"
+  "vatBadDebtRelief.reasonPayment": "تم استلام دفعة بعد المطالبة بإعفاء الديون المعدومة",
+  "vatBadDebtRelief.reversalPeriodRecovered": "استُردّ عبر دفعات العميل، في إقرارات تواريخ الدفعات",
+  "vatBadDebtRelief.createCapNote": "تُعرض أحدث 500 فاتورة مؤهلة فقط، ولا تظهر الفواتير الأقدم هنا."
 }

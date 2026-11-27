@@ -50,5 +50,7 @@
   "vatBadDebtRelief.reverseBodyNothing": "Customer payments have already recovered all of the relief on invoice {invoice}. Reversing the claim closes it; no further VAT is added back and no ledger entry is posted.",
   "vatBadDebtRelief.periodForecast": "The return for the period containing {date}",
   "vatBadDebtRelief.reversalPeriod": "VAT return: {period}",
-  "vatBadDebtRelief.reasonPayment": "Payment received after bad-debt relief was claimed"
+  "vatBadDebtRelief.reasonPayment": "Payment received after bad-debt relief was claimed",
+  "vatBadDebtRelief.reversalPeriodRecovered": "Recovered over customer payments, in the returns for each payment date",
+  "vatBadDebtRelief.createCapNote": "Showing the 500 most recent eligible invoices. Older ones are not listed here."
 }

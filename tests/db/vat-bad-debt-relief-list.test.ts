@@ -60,13 +60,63 @@ async function insertReturn(
   from: string,
   to: string,
   groupId?: string,
-  status = "filed"
+  status = "filed",
+  filingMemberIds?: string[]
 ) {
+  // A closed group return carries its frozen filing scope, as the filing flow records it.
+  const snapshot =
+    groupId && filingMemberIds
+      ? {
+          filingVatGroup: {
+            groupId,
+            name: "Group",
+            groupTrn: GROUP_TRN,
+            memberIds: filingMemberIds,
+            provenance: "recorded",
+            memberAuthority: "settings.company",
+          },
+        }
+      : null;
   await h.sql(
-    `INSERT INTO vat_returns (company_id, period_start, period_end, due_date, status, vat_group_id, created_by)
-     VALUES ($1, $2::date, $3::date, ($3::date + 28), $6, $4, $5)`,
-    [companyId, from, to, groupId ?? null, t.user.id, status]
+    `INSERT INTO vat_returns (company_id, period_start, period_end, due_date, status, vat_group_id, created_by, reconciliation_snapshot)
+     VALUES ($1, $2::date, $3::date, ($3::date + 28), $6, $4, $5, $7::jsonb)`,
+    [
+      companyId,
+      from,
+      to,
+      groupId ?? null,
+      t.user.id,
+      status,
+      snapshot ? JSON.stringify(snapshot) : null,
+    ]
   );
+}
+
+const GROUP_TRN = "100000000000003";
+
+async function createGroup(rep: Tenant, members: Tenant[]) {
+  const g = await h.sql<{ id: string }>(
+    `INSERT INTO vat_groups (representative_company_id, name, group_trn)
+     VALUES ($1, 'Group', $2) RETURNING id`,
+    [rep.company.id, GROUP_TRN]
+  );
+  for (const m of members) {
+    await h.sql(`INSERT INTO vat_group_members (group_id, company_id) VALUES ($1, $2)`, [
+      g[0].id,
+      m.company.id,
+    ]);
+  }
+  return g[0].id;
+}
+
+/** What the ledger lock says closes this date: the screen must name the same return. */
+async function lockPeriod(companyId: string, date: string) {
+  const { db } = await import("../../server/db");
+  const { findFiledVatPeriod } = await import("../../server/ledger/vat-lock");
+  const closure = await findFiledVatPeriod(db, companyId, date);
+  return closure && typeof closure === "object"
+    ? { from: closure.periodStart, to: closure.periodEnd, status: closure.status }
+    : null;
 }
 
 describe("bad-debt relief claims list and eligible invoices", () => {
@@ -146,20 +196,16 @@ describe("bad-debt relief claims list and eligible invoices", () => {
     expect(Math.round(row.remainingRelief * 100)).toBe(5000 - Number(restored[0].f));
   });
 
-  it("shows the representative's group return for a VAT group member", async () => {
+  it("shows the representative's filed group return when its frozen scope lists the member", async () => {
     const rep = await h.createTenant({ name: "BDR-rep", planId: "professional" });
     const { t, invoiceId } = await setup("BDR-member");
-    const g = await h.sql<{ id: string }>(
-      `INSERT INTO vat_groups (representative_company_id, name, group_trn)
-       VALUES ($1, 'Group', '100000000000003') RETURNING id`,
-      [rep.company.id]
-    );
-    await h.sql(`INSERT INTO vat_group_members (group_id, company_id) VALUES ($1, $2)`, [
-      g[0].id,
+    // Claimed before the returns are filed: a closed period refuses new claims.
+    await claim(t, invoiceId);
+    const gid = await createGroup(rep, [t]);
+    await insertReturn(rep, rep.company.id, "2026-08-01", "2026-08-31", gid, "filed", [
+      rep.company.id,
       t.company.id,
     ]);
-    await insertReturn(rep, rep.company.id, "2026-08-01", "2026-08-31", g[0].id);
-    await claim(t, invoiceId);
     const r = await list(t);
     expect(r.body[0].claimReturnPeriod).toEqual({
       from: "2026-08-01",
@@ -167,6 +213,66 @@ describe("bad-debt relief claims list and eligible invoices", () => {
       status: "filed",
       source: "group",
     });
+    expect(await lockPeriod(t.company.id, CLAIMED)).toEqual({
+      from: "2026-08-01",
+      to: "2026-08-31",
+      status: "filed",
+    });
+  });
+
+  it("shows the member's own return when it joined after the group return was filed without it", async () => {
+    const rep = await h.createTenant({ name: "BDR-rep-late", planId: "professional" });
+    const { t, invoiceId } = await setup("BDR-member-late");
+    // Claimed before the returns are filed: a closed period refuses new claims.
+    await claim(t, invoiceId);
+    const gid = await createGroup(rep, []);
+    // Filed August group return: the member was not part of it.
+    await insertReturn(rep, rep.company.id, "2026-08-01", "2026-08-31", gid, "filed", [
+      rep.company.id,
+    ]);
+    await insertReturn(t, t.company.id, "2026-07-01", "2026-09-30", undefined, "filed");
+    // The member joins afterwards.
+    await h.sql(`INSERT INTO vat_group_members (group_id, company_id) VALUES ($1, $2)`, [
+      gid,
+      t.company.id,
+    ]);
+    const r = await list(t);
+    expect(r.body[0].claimReturnPeriod).toEqual({
+      from: "2026-07-01",
+      to: "2026-09-30",
+      status: "filed",
+      source: "company",
+    });
+    expect(await lockPeriod(t.company.id, CLAIMED)).toEqual({
+      from: "2026-07-01",
+      to: "2026-09-30",
+      status: "filed",
+    });
+  });
+
+  it("keeps the group return for a member that left the group after the filing", async () => {
+    const rep = await h.createTenant({ name: "BDR-rep-left", planId: "professional" });
+    const { t, invoiceId } = await setup("BDR-member-left");
+    // Claimed before the returns are filed: a closed period refuses new claims.
+    await claim(t, invoiceId);
+    const gid = await createGroup(rep, [t]);
+    await insertReturn(rep, rep.company.id, "2026-07-01", "2026-09-30", gid, "filed", [
+      rep.company.id,
+      t.company.id,
+    ]);
+    await h.sql(`DELETE FROM vat_group_members WHERE group_id = $1 AND company_id = $2`, [
+      gid,
+      t.company.id,
+    ]);
+    const r = await list(t);
+    expect(r.body[0].claimReturnPeriod).toEqual({
+      from: "2026-07-01",
+      to: "2026-09-30",
+      status: "filed",
+      source: "group",
+    });
+    const locked = await lockPeriod(t.company.id, CLAIMED);
+    expect(locked).toEqual({ from: "2026-07-01", to: "2026-09-30", status: "filed" });
   });
 
   it("never exposes another tenant's claims or invoices", async () => {

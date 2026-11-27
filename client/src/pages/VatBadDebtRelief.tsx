@@ -80,6 +80,9 @@ interface EligibleInvoice {
 
 const today = () => uaeToday();
 
+/** Mirrors the LIMIT in `listReliefEligibleInvoices`. */
+const ELIGIBLE_PICKER_CAP = 500;
+
 /** The server's fixed English closure reason, mapped to catalog copy for display. */
 const PAYMENT_CLOSURE_REASON = "Payment received after bad-debt relief was claimed";
 
@@ -282,9 +285,16 @@ export default function VatBadDebtRelief() {
                                 })}
                               </p>
                               <p className="text-muted-foreground">
-                                {formatMessage(t["vatBadDebtRelief.reversalPeriod"], {
-                                  period: periodLabel(claim.reversalReturnPeriod, claim.reversedAt),
-                                })}
+                                {claim.reversalReason === PAYMENT_CLOSURE_REASON
+                                  ? // Closed by customer payments: the add-backs were posted on each
+                                    // payment date, so no single return carries them.
+                                    t["vatBadDebtRelief.reversalPeriodRecovered"]
+                                  : formatMessage(t["vatBadDebtRelief.reversalPeriod"], {
+                                      period: periodLabel(
+                                        claim.reversalReturnPeriod,
+                                        claim.reversedAt
+                                      ),
+                                    })}
                               </p>
                               {claim.reversalReason ? (
                                 <p className="text-muted-foreground">
@@ -409,8 +419,15 @@ function ReverseClaimDialog({
   const invoice = claim.invoiceNumber || t["vatBadDebtRelief.unknownInvoice"];
   // Mirrors reverseBadDebtReliefClaim: only relief not yet recovered through customer payments
   // is added back; with nothing left the claim just closes.
-  const effect =
-    remaining > 0
+  // A filed or submitted return is closed: the ledger refuses the add-back there (VAT_PERIOD_FILED),
+  // so say so instead of naming it as the return that carries the add-back.
+  const locked =
+    remaining > 0 &&
+    inClaimPeriod &&
+    ["filed", "submitted", "amended"].includes(claimPeriod?.status ?? "");
+  const effect = locked
+    ? t["forms.serverErrors.VAT_PERIOD_FILED"]
+    : remaining > 0
       ? formatMessage(t["vatBadDebtRelief.reverseBody"], {
           invoice,
           amount: formatCurrency(remaining, "AED", locale),
@@ -454,7 +471,7 @@ function ReverseClaimDialog({
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || !date || trimmed.length < 3}
+            disabled={mutation.isPending || !date || trimmed.length < 3 || locked}
             data-testid="button-confirm-reverse"
           >
             {t["vatBadDebtRelief.reverseConfirm"]}
@@ -490,6 +507,8 @@ function CreateClaimDialog({
     queryFn: getQueryFn<EligibleInvoice[]>({ on401: "throw" }),
   });
   const choices = Array.isArray(eligibleQuery.data) ? eligibleQuery.data : [];
+  // The server lists at most this many (newest first); say so when the list may be cut short.
+  const capped = choices.length >= ELIGIBLE_PICKER_CAP;
   const mutation = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/vat/bad-debt-relief`, {
@@ -531,6 +550,11 @@ function CreateClaimDialog({
                 )}
               </SelectContent>
             </Select>
+            {capped ? (
+              <p className="text-small text-muted-foreground" data-testid="relief-picker-capped">
+                {t["vatBadDebtRelief.createCapNote"]}
+              </p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor="relief-claim-date">{t["vatBadDebtRelief.createClaimDate"]}</Label>
