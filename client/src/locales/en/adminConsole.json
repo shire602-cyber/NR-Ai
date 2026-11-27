@@ -29,7 +29,7 @@
   "backupRestore.safeguardYourFinancialRecordsWith": "Safeguard your financial records with automated backups",
   "backupRestore.addNotesAboutThisBackup": "Add notes about this backup...",
   "developerSettings.createAndManageApiKeys": "Create and manage API keys for programmatic access to Muhasib.ai.",
-  "developerSettings.companyAccessForbiddenBody": "Ask your company owner or administrator to grant you API access.",
+  "developerSettings.companyAccessForbiddenBody": "Ask your company owner or administrator to review your access to Developer Settings.",
   "developerSettings.storeThisKeySecurelyIt": "Store this key securely. It provides programmatic access to your Muhasib.ai account.",
   "developerSettings.thisActionCannotBeUndone": "This action cannot be undone. Any applications using this key will immediately lose access.",
   "developerSettings.receiveRealTimeNotificationsWhen": "Receive real-time notifications when events happen in your account.",

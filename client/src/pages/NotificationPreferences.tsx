@@ -193,6 +193,7 @@ export default function NotificationPreferences() {
             <LoadErrorState
               error={loadError}
               onRetry={() => refetch()}
+              forbiddenDescription={t["pages.accountTypeAccessForbiddenBody"]}
               testId="notification-prefs-load-error"
             />
           )}

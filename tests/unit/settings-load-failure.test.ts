@@ -23,7 +23,7 @@ const fetchMock = vi.fn(async (url: string) => {
       headers: { "content-type": "application/json" },
     });
   }
-  return new Response(JSON.stringify({ message: "forbidden" }), {
+  return new Response(JSON.stringify({ message: "forbidden", code: forbiddenCode }), {
     status: 403,
     headers: { "content-type": "application/json" },
   });
@@ -31,6 +31,7 @@ const fetchMock = vi.fn(async (url: string) => {
 
 let root: Root;
 let container: HTMLDivElement;
+let forbiddenCode: string;
 
 async function flush(action?: () => void) {
   await act(async () => {
@@ -54,6 +55,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   fetchMock.mockClear();
+  forbiddenCode = "COMPANY_ACCESS_DENIED";
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("fetch", fetchMock);
   queryClient.clear();
@@ -86,47 +88,77 @@ describe("Settings screens when the load fails", () => {
     }
   );
 
-  it("notification preferences shows a load error, not editable defaults", async () => {
-    useI18n.getState().setLocale("ar");
-    await renderPage(NotificationPreferences);
-    expect(container.querySelector('[data-testid="notification-prefs-load-error"]')).not.toBeNull();
-    // Saving defaults over real preferences must not be possible.
-    expect(container.querySelector("form")).toBeNull();
-    expect(container.textContent).not.toContain("Settings");
-    expect(container.textContent).toContain("الإعدادات");
-  });
-
-  it.each([
+  describe.each([
     {
       locale: "en",
+      settingsEyebrow: "Settings",
       webhooksTab: "Webhooks",
-      guidance: "Ask your company owner or administrator to grant you API access.",
+      companyGuidance:
+        "Ask your company owner or administrator to review your access to Developer Settings.",
+      accountGuidance:
+        "This feature is unavailable for your account type. Contact support if you think you should have access.",
     },
     {
       locale: "ar",
+      settingsEyebrow: "الإعدادات",
       webhooksTab: "الويب هوك (Webhooks)",
-      guidance: "اطلب من مالك شركتك أو مسؤولها منحك صلاحية الوصول إلى واجهة برمجة التطبيقات.",
+      companyGuidance: "اطلب من مالك شركتك أو مسؤولها مراجعة صلاحية وصولك إلى إعدادات المطوّرين.",
+      accountGuidance:
+        "هذه الميزة غير متاحة لنوع حسابك. تواصل مع فريق الدعم إذا كنت تعتقد أنه ينبغي أن تتمكن من استخدامها.",
     },
   ] as const)(
-    "both Developer Settings tabs show company access guidance on a 403 ($locale)",
-    async ({ locale, webhooksTab, guidance }) => {
-      useI18n.getState().setLocale(locale);
-      await renderPage(DeveloperSettings);
-      expect(container.querySelector('[data-testid="api-keys-load-error"]')?.textContent).toContain(
-        guidance
-      );
+    "403 guidance in $locale",
+    ({ locale, settingsEyebrow, webhooksTab, companyGuidance, accountGuidance }) => {
+      it("shows account-type guidance and withholds the Notification Preferences form", async () => {
+        forbiddenCode = "ACCESS_RESTRICTED";
+        useI18n.getState().setLocale(locale);
+        await renderPage(NotificationPreferences);
+        expect(fetchMock).toHaveBeenCalledWith("/api/notification-preferences", expect.anything());
+        expect(
+          container.querySelector('[data-testid="notification-prefs-load-error"] p')?.textContent
+        ).toBe(accountGuidance);
+        // Saving defaults over real preferences must not be possible.
+        expect(container.querySelector("form")).toBeNull();
+        expect(container.textContent).toContain(settingsEyebrow);
+        if (locale === "ar") expect(container.textContent).not.toContain("Settings");
+      });
 
-      const tab = [...container.querySelectorAll('[role="tab"]')].find(
-        (candidate) => candidate.textContent === webhooksTab
-      );
-      expect(tab).toBeDefined();
-      await flush(() =>
-        tab!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
-      );
+      it.each([
+        ["COMPANY_ACCESS_DENIED", companyGuidance],
+        ["PERMISSION_DENIED", companyGuidance],
+        ["ACCESS_RESTRICTED", accountGuidance],
+      ])(
+        "shows the right guidance in both Developer Settings tabs for %s",
+        async (code, guidance) => {
+          forbiddenCode = code;
+          useI18n.getState().setLocale(locale);
+          await renderPage(DeveloperSettings);
+          expect(fetchMock).toHaveBeenCalledWith(
+            "/api/companies/company-1/api-keys",
+            expect.anything()
+          );
+          expect(
+            container.querySelector('[data-testid="api-keys-load-error"] p')?.textContent
+          ).toBe(guidance);
 
-      const webhooksError = () => container.querySelector('[data-testid="webhooks-load-error"]');
-      for (let i = 0; i < 6 && !webhooksError(); i++) await flush();
-      expect(webhooksError()?.textContent).toContain(guidance);
+          const tab = [...container.querySelectorAll('[role="tab"]')].find(
+            (candidate) => candidate.textContent === webhooksTab
+          );
+          expect(tab).toBeDefined();
+          await flush(() =>
+            tab!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+          );
+
+          const webhooksError = () =>
+            container.querySelector('[data-testid="webhooks-load-error"] p');
+          for (let i = 0; i < 6 && !webhooksError(); i++) await flush();
+          expect(fetchMock).toHaveBeenCalledWith(
+            "/api/companies/company-1/webhooks",
+            expect.anything()
+          );
+          expect(webhooksError()?.textContent).toBe(guidance);
+        }
+      );
     }
   );
 });

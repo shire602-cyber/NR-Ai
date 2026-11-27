@@ -43,7 +43,7 @@ import { LoadErrorState } from "@/components/ui/load-error-state";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDateTime } from "@/lib/format-date";
 import { Key, Webhook, Plus, Trash2, Copy, Check, Send, Eye, RefreshCw } from "lucide-react";
 
@@ -125,6 +125,12 @@ const WEBHOOK_EVENTS = [
   "payroll.approved",
   "payroll.paid",
 ] as const;
+
+function developerForbiddenDescription(error: Error, t: ReturnType<typeof useTranslation>["t"]) {
+  return error instanceof ApiError && error.body?.code === "ACCESS_RESTRICTED"
+    ? t["pages.accountTypeAccessForbiddenBody"]
+    : t["developerSettings.companyAccessForbiddenBody"];
+}
 
 // ===========================
 // Main Component
@@ -312,7 +318,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               compact
               error={loadError}
               onRetry={() => refetch()}
-              forbiddenDescription={t["developerSettings.companyAccessForbiddenBody"]}
+              forbiddenDescription={developerForbiddenDescription(loadError, t)}
               testId="api-keys-load-error"
             />
           ) : !apiKeys?.length ? (
@@ -743,7 +749,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               compact
               error={loadError}
               onRetry={() => refetch()}
-              forbiddenDescription={t["developerSettings.companyAccessForbiddenBody"]}
+              forbiddenDescription={developerForbiddenDescription(loadError, t)}
               testId="webhooks-load-error"
             />
           ) : !webhooks?.length ? (
