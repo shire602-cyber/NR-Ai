@@ -14,6 +14,7 @@ export function LoadErrorState({
   compact,
   className,
   testId,
+  forbiddenDescription,
 }: {
   error: unknown;
   onRetry?: () => void;
@@ -23,6 +24,7 @@ export function LoadErrorState({
   compact?: boolean;
   className?: string;
   testId?: string;
+  forbiddenDescription?: string;
 }) {
   const { t } = useTranslation();
   const kind = classifyLoadError(error);
@@ -33,10 +35,12 @@ export function LoadErrorState({
     forbidden: { title: t["firm.loadForbiddenTitle"], body: t["firm.loadForbiddenBody"] },
     notFound: { title: t["firm.loadNotFoundTitle"], body: t["firm.loadNotFoundBody"] },
   }[kind];
+  const descriptionOverride =
+    kind === "forbidden" ? forbiddenDescription : retriable ? description : undefined;
   return (
     <ErrorState
       title={retriable && title ? title : copy.title}
-      description={retriable && description ? description : copy.body}
+      description={descriptionOverride || copy.body}
       onRetry={retriable ? onRetry : undefined}
       retryLabel={t["firm.retry"]}
       compact={compact}

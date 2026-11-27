@@ -860,6 +860,7 @@
   "pages.notificationPrefsSave": "حفظ التفضيلات",
   "pages.notificationPrefsSaving": "جارٍ الحفظ...",
   "pages.notificationPrefsTitle": "تفضيلات الإشعارات",
+  "pages.notificationPrefsWaiting": "بانتظار الاتصال بالإنترنت لتحميل تفضيلات الإشعارات.",
   "pages.notificationPrefsDescription": "تحكّم في كيفية وتوقيت استلام الإشعارات",
   "pages.notificationsAllRead": "تم تحديد جميع الإشعارات كمقروءة",
   "pages.notificationDismissed": "تم تجاهل الإشعار",

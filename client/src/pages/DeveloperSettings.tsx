@@ -312,6 +312,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               compact
               error={loadError}
               onRetry={() => refetch()}
+              forbiddenDescription={t["developerSettings.apiKeysForbiddenBody"]}
               testId="api-keys-load-error"
             />
           ) : !apiKeys?.length ? (

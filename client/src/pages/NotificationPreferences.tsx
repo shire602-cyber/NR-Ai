@@ -71,7 +71,7 @@ export default function NotificationPreferences() {
 
   const {
     data: preferences,
-    isLoading,
+    fetchStatus,
     error: loadError,
     refetch,
   } = useQuery<NotificationPrefs>({
@@ -163,7 +163,7 @@ export default function NotificationPreferences() {
     }
   };
 
-  if (isLoading) {
+  if (!preferences && fetchStatus !== "paused" && !loadError) {
     return (
       <div className="space-y-6">
         <PageHeader
@@ -176,7 +176,7 @@ export default function NotificationPreferences() {
     );
   }
 
-  if (loadError && !preferences) {
+  if (!preferences) {
     return (
       <SettingsLayout>
         <div className="space-y-6">
@@ -185,11 +185,17 @@ export default function NotificationPreferences() {
             title={t["pages.notificationPrefsTitle"]}
             description={t["pages.notificationPrefsDescription"]}
           />
-          <LoadErrorState
-            error={loadError}
-            onRetry={() => refetch()}
-            testId="notification-prefs-load-error"
-          />
+          {fetchStatus === "paused" ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              <T k="pages.notificationPrefsWaiting" />
+            </p>
+          ) : (
+            <LoadErrorState
+              error={loadError}
+              onRetry={() => refetch()}
+              testId="notification-prefs-load-error"
+            />
+          )}
         </div>
       </SettingsLayout>
     );

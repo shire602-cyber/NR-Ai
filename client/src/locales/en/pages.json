@@ -860,6 +860,7 @@
   "pages.notificationPrefsSave": "Save preferences",
   "pages.notificationPrefsSaving": "Saving...",
   "pages.notificationPrefsTitle": "Notification preferences",
+  "pages.notificationPrefsWaiting": "Waiting for a connection to load your notification preferences.",
   "pages.notificationPrefsDescription": "Manage how and when you receive notifications",
   "pages.notificationsAllRead": "All notifications marked as read",
   "pages.notificationDismissed": "Notification dismissed",
