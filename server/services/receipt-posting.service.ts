@@ -27,6 +27,7 @@ import {
 import { recoverableShare } from "../tax/vat-boxes";
 import { SUPPLY_TYPES } from "../../shared/validators/primitives";
 import { documentCurrency, loadBaseCurrency, withLedgerTx } from "../ledger";
+import type { LedgerTx } from "../ledger/types";
 import { has, resolve } from "../platform/service-registry";
 import type { FxGetRate } from "./fx";
 import { companyIsVatRegistered } from "../tax/vat-registration";
@@ -534,7 +535,12 @@ export async function reviseReceipt(
   userId: string,
   merged: Receipt,
   patch: Partial<Receipt>,
-  reason: string | null
+  reason: string | null,
+  /** Runs in the revision transaction (S02/S03): a throw rolls back the whole revision. */
+  inTx?: (
+    result: Awaited<ReturnType<typeof storage.reviseReceiptAtomic>>,
+    tx: LedgerTx
+  ) => Promise<void>
 ) {
   const paymentAccountId = merged.paymentAccountId ?? receipt.paymentAccountId;
   if (!paymentAccountId) {
@@ -579,6 +585,7 @@ export async function reviseReceipt(
       },
       tx
     );
+    if (inTx) await inTx(result, tx);
     return result;
   });
 }

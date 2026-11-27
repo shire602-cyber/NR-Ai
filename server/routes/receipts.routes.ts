@@ -61,6 +61,7 @@ import { createAndEmitNotification } from "../services/socket.service";
 import { notificationCopy } from "../../shared/server-copy";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
+import { withLedgerTx } from "../ledger";
 import {
   recordClassificationFeedback,
   autoPostManualReceipt,
@@ -824,20 +825,26 @@ export function registerReceiptRoutes(app: Express) {
       if (before.date) await assertPeriodNotLocked(before.companyId, before.date);
       if (patch.date) await assertPeriodNotLocked(before.companyId, patch.date as Date);
 
-      const updatedReceipt = await storage.updateReceiptIfUnposted(id, before.companyId, patch);
-      await recordAudit({
-        userId,
-        companyId: updatedReceipt.companyId,
-        action: "receipt.update",
-        entityType: "receipt",
-        entityId: id,
-        before: { merchant: before.merchant, amount: before.amount, accountId: before.accountId },
-        after: {
-          merchant: updatedReceipt.merchant,
-          amount: updatedReceipt.amount,
-          accountId: updatedReceipt.accountId,
-        },
-        req,
+      // S02/S03: the change and its audit row commit together or not at all.
+      const updatedReceipt = await withLedgerTx(async (tx) => {
+        const updated = await storage.updateReceiptIfUnposted(id, before.companyId, patch, tx);
+        await recordAudit({
+          userId,
+          companyId: updated.companyId,
+          action: "receipt.update",
+          entityType: "receipt",
+          entityId: id,
+          before: { merchant: before.merchant, amount: before.amount, accountId: before.accountId },
+          after: {
+            merchant: updated.merchant,
+            amount: updated.amount,
+            accountId: updated.accountId,
+          },
+          req,
+          tx,
+          required: true,
+        });
+        return updated;
       });
       log.info({ id }, "Receipt updated successfully");
       res.json(updatedReceipt);
@@ -869,28 +876,39 @@ export function registerReceiptRoutes(app: Express) {
         );
       }
       const { patch, merged } = await resolveReceiptPatch(before, fields);
-      const result = await reviseReceipt(before, userId, merged, patch, reason ?? null);
-
-      await recordAudit({
+      // S02/S03: the revision (reversal, re-post, receipt row) and its audit row are one
+      // transaction: if the audit write fails the whole revision rolls back.
+      const result = await reviseReceipt(
+        before,
         userId,
-        companyId: before.companyId,
-        action: "receipt.revise",
-        entityType: "receipt",
-        entityId: id,
-        before: {
-          amount: before.amount,
-          vatAmount: before.vatAmount,
-          journalEntryId: before.journalEntryId,
-        },
-        after: {
-          amount: result.receipt.amount,
-          vatAmount: result.receipt.vatAmount,
-          journalEntryId: result.entry.id,
-          reversalEntryId: result.reversal.id,
-        },
-        req,
-        extra: { reason: reason ?? null },
-      });
+        merged,
+        patch,
+        reason ?? null,
+        async (revised, tx) => {
+          await recordAudit({
+            userId,
+            companyId: before.companyId,
+            action: "receipt.revise",
+            entityType: "receipt",
+            entityId: id,
+            before: {
+              amount: before.amount,
+              vatAmount: before.vatAmount,
+              journalEntryId: before.journalEntryId,
+            },
+            after: {
+              amount: revised.receipt.amount,
+              vatAmount: revised.receipt.vatAmount,
+              journalEntryId: revised.entry.id,
+              reversalEntryId: revised.reversal.id,
+            },
+            req,
+            extra: { reason: reason ?? null },
+            tx,
+            required: true,
+          });
+        }
+      );
       res.json({
         ...result.receipt,
         revision: { reversalEntryId: result.reversal.id, journalEntryId: result.entry.id },
@@ -946,21 +964,25 @@ export function registerReceiptRoutes(app: Express) {
           };
         })
       );
-      const created = await storage.splitReceiptAtomic({
-        receiptId: id,
-        companyId: source.companyId,
-        parts,
-      });
-      await recordAudit({
-        userId,
-        companyId: source.companyId,
-        action: "receipt.split",
-        entityType: "receipt",
-        entityId: id,
-        before: { amount: source.amount, merchant: source.merchant },
-        after: null,
-        req,
-        extra: { newReceiptIds: created.map((r) => r.id) },
+      const created = await withLedgerTx(async (tx) => {
+        const rows = await storage.splitReceiptAtomic(
+          { receiptId: id, companyId: source.companyId, parts },
+          tx
+        );
+        await recordAudit({
+          userId,
+          companyId: source.companyId,
+          action: "receipt.split",
+          entityType: "receipt",
+          entityId: id,
+          before: { amount: source.amount, merchant: source.merchant },
+          after: null,
+          req,
+          extra: { newReceiptIds: rows.map((r) => r.id) },
+          tx,
+          required: true,
+        });
+        return rows;
       });
       res.status(201).json({ receipts: created });
     })
@@ -997,7 +1019,21 @@ export function registerReceiptRoutes(app: Express) {
         "Receipt"
       );
 
-      await storage.deleteReceipt(id, existing.companyId);
+      await withLedgerTx(async (tx) => {
+        await storage.deleteReceipt(id, existing.companyId, tx);
+        await recordAudit({
+          userId,
+          companyId: existing.companyId,
+          action: "receipt.delete",
+          entityType: "receipt",
+          entityId: id,
+          before: { merchant: existing.merchant, amount: existing.amount },
+          after: null,
+          req,
+          tx,
+          required: true,
+        });
+      });
 
       // Row first, then the file: split parts share one stored image, so it is removed only when
       // no receipt of the company still points at it. Best-effort: the row is already gone.
@@ -1013,17 +1049,6 @@ export function registerReceiptRoutes(app: Express) {
           );
         }
       }
-
-      await recordAudit({
-        userId,
-        companyId: existing.companyId,
-        action: "receipt.delete",
-        entityType: "receipt",
-        entityId: id,
-        before: { merchant: existing.merchant, amount: existing.amount },
-        after: null,
-        req,
-      });
 
       res.json({ message: "Receipt deleted successfully" });
     })
