@@ -31,7 +31,7 @@ const fetchMock = vi.fn(async (url: string) => {
 
 let root: Root;
 let container: HTMLDivElement;
-let forbiddenCode: string;
+let forbiddenCode: string | undefined;
 
 async function flush(action?: () => void) {
   await act(async () => {
@@ -47,6 +47,18 @@ async function renderPage(page: () => unknown) {
     )
   );
   for (let i = 0; i < 6; i++) await flush();
+}
+
+function expectGuidance(testId: string, guidance: string, setupMfa = false) {
+  const description = container.querySelector(`[data-testid="${testId}"] p`);
+  expect(description?.textContent).toBe(guidance);
+  const link = description?.querySelector("a");
+  if (setupMfa) {
+    expect(link?.textContent).toBe(guidance);
+    expect(link?.getAttribute("href")).toBe("/settings/security");
+  } else {
+    expect(link).toBeNull();
+  }
 }
 
 beforeAll(async () => {
@@ -73,60 +85,91 @@ afterEach(async () => {
 });
 
 describe("Settings screens when the load fails", () => {
-  it.each([
-    { locale: "en", guidance: "Ask your company owner or administrator to grant you access." },
-    { locale: "ar", guidance: "اطلب من مالك شركتك أو مسؤولها منحك صلاحية الوصول." },
-  ] as const)(
-    "Company Settings shows company access guidance on a 403 ($locale)",
-    async ({ locale, guidance }) => {
-      useI18n.getState().setLocale(locale);
-      await renderPage(CompanySettings);
-      expect(fetchMock).toHaveBeenCalledWith("/api/companies/company-1", expect.anything());
-      expect(
-        container.querySelector('[data-testid="company-settings-load-error"] p')?.textContent
-      ).toBe(guidance);
-    }
-  );
-
   describe.each([
     {
       locale: "en",
       settingsEyebrow: "Settings",
       webhooksTab: "Webhooks",
-      companyGuidance:
+      companyGuidance: "Ask your company owner or administrator to grant you access.",
+      developerGuidance:
         "Ask your company owner or administrator to review your access to Developer Settings.",
       accountGuidance:
         "This feature is unavailable for your account type. Contact support if you think you should have access.",
+      mfaGuidance: "Enable two-factor authentication in Security settings to continue.",
+      fallbackGuidance:
+        "Access to these settings was denied. Contact support if you think you should have access.",
     },
     {
       locale: "ar",
       settingsEyebrow: "الإعدادات",
       webhooksTab: "الويب هوك (Webhooks)",
-      companyGuidance: "اطلب من مالك شركتك أو مسؤولها مراجعة صلاحية وصولك إلى إعدادات المطوّرين.",
+      companyGuidance: "اطلب من مالك شركتك أو مسؤولها منحك صلاحية الوصول.",
+      developerGuidance: "اطلب من مالك شركتك أو مسؤولها مراجعة صلاحية وصولك إلى إعدادات المطوّرين.",
       accountGuidance:
         "هذه الميزة غير متاحة لنوع حسابك. تواصل مع فريق الدعم إذا كنت تعتقد أنه ينبغي أن تتمكن من استخدامها.",
+      mfaGuidance: "فعّل المصادقة الثنائية في إعدادات الأمان للمتابعة.",
+      fallbackGuidance:
+        "تم رفض الوصول إلى هذه الإعدادات. تواصل مع فريق الدعم إذا كنت تعتقد أنه ينبغي أن تتمكن من الوصول إليها.",
     },
   ] as const)(
     "403 guidance in $locale",
-    ({ locale, settingsEyebrow, webhooksTab, companyGuidance, accountGuidance }) => {
-      it("shows account-type guidance and withholds the Notification Preferences form", async () => {
-        forbiddenCode = "ACCESS_RESTRICTED";
+    ({
+      locale,
+      settingsEyebrow,
+      webhooksTab,
+      companyGuidance,
+      developerGuidance,
+      accountGuidance,
+      mfaGuidance,
+      fallbackGuidance,
+    }) => {
+      it.each([
+        ["COMPANY_ACCESS_DENIED", companyGuidance],
+        ["PORTAL_USER_APP_DENIED", accountGuidance],
+        ["PORTAL_SCOPE", accountGuidance],
+        ["MFA_ENROLLMENT_REQUIRED", mfaGuidance],
+        ["ORIGIN_NOT_ALLOWED", fallbackGuidance],
+        [undefined, fallbackGuidance],
+      ])("shows the right Company Settings guidance for %s", async (code, guidance) => {
+        forbiddenCode = code;
         useI18n.getState().setLocale(locale);
-        await renderPage(NotificationPreferences);
-        expect(fetchMock).toHaveBeenCalledWith("/api/notification-preferences", expect.anything());
-        expect(
-          container.querySelector('[data-testid="notification-prefs-load-error"] p')?.textContent
-        ).toBe(accountGuidance);
-        // Saving defaults over real preferences must not be possible.
-        expect(container.querySelector("form")).toBeNull();
-        expect(container.textContent).toContain(settingsEyebrow);
-        if (locale === "ar") expect(container.textContent).not.toContain("Settings");
+        await renderPage(CompanySettings);
+        expect(fetchMock).toHaveBeenCalledWith("/api/companies/company-1", expect.anything());
+        expectGuidance("company-settings-load-error", guidance, code === "MFA_ENROLLMENT_REQUIRED");
       });
 
       it.each([
-        ["COMPANY_ACCESS_DENIED", companyGuidance],
-        ["PERMISSION_DENIED", companyGuidance],
         ["ACCESS_RESTRICTED", accountGuidance],
+        ["PORTAL_SCOPE", accountGuidance],
+        ["ORIGIN_NOT_ALLOWED", fallbackGuidance],
+        [undefined, fallbackGuidance],
+      ])(
+        "shows the right Notification Preferences guidance for %s and withholds the form",
+        async (code, guidance) => {
+          forbiddenCode = code;
+          useI18n.getState().setLocale(locale);
+          await renderPage(NotificationPreferences);
+          expect(fetchMock).toHaveBeenCalledWith(
+            "/api/notification-preferences",
+            expect.anything()
+          );
+          expectGuidance("notification-prefs-load-error", guidance);
+          // Saving defaults over real preferences must not be possible.
+          expect(container.querySelector("form")).toBeNull();
+          expect(container.textContent).toContain(settingsEyebrow);
+          if (locale === "ar") expect(container.textContent).not.toContain("Settings");
+        }
+      );
+
+      it.each([
+        ["COMPANY_ACCESS_DENIED", developerGuidance],
+        ["PERMISSION_DENIED", developerGuidance],
+        ["ACCESS_RESTRICTED", accountGuidance],
+        ["PORTAL_SCOPE", accountGuidance],
+        ["PORTAL_USER_APP_DENIED", accountGuidance],
+        ["MFA_ENROLLMENT_REQUIRED", mfaGuidance],
+        ["ORIGIN_NOT_ALLOWED", fallbackGuidance],
+        ["UNKNOWN_FORBIDDEN", fallbackGuidance],
       ])(
         "shows the right guidance in both Developer Settings tabs for %s",
         async (code, guidance) => {
@@ -137,9 +180,8 @@ describe("Settings screens when the load fails", () => {
             "/api/companies/company-1/api-keys",
             expect.anything()
           );
-          expect(
-            container.querySelector('[data-testid="api-keys-load-error"] p')?.textContent
-          ).toBe(guidance);
+          const setupMfa = code === "MFA_ENROLLMENT_REQUIRED";
+          expectGuidance("api-keys-load-error", guidance, setupMfa);
 
           const tab = [...container.querySelectorAll('[role="tab"]')].find(
             (candidate) => candidate.textContent === webhooksTab
@@ -156,7 +198,7 @@ describe("Settings screens when the load fails", () => {
             "/api/companies/company-1/webhooks",
             expect.anything()
           );
-          expect(webhooksError()?.textContent).toBe(guidance);
+          expectGuidance("webhooks-load-error", guidance, setupMfa);
         }
       );
     }

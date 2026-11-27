@@ -862,6 +862,8 @@
   "pages.notificationPrefsTitle": "Notification preferences",
   "pages.notificationPrefsWaiting": "Waiting for a connection to load your notification preferences.",
   "pages.accountTypeAccessForbiddenBody": "This feature is unavailable for your account type. Contact support if you think you should have access.",
+  "pages.settingsAccessForbiddenBody": "Access to these settings was denied. Contact support if you think you should have access.",
+  "pages.settingsEnableMfa": "Enable two-factor authentication in Security settings to continue.",
   "pages.notificationPrefsDescription": "Manage how and when you receive notifications",
   "pages.notificationsAllRead": "All notifications marked as read",
   "pages.notificationDismissed": "Notification dismissed",

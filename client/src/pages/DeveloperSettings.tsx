@@ -39,11 +39,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { LoadErrorState } from "@/components/ui/load-error-state";
+import { SettingsLoadError } from "@/components/layout/SettingsLoadError";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
-import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDateTime } from "@/lib/format-date";
 import { Key, Webhook, Plus, Trash2, Copy, Check, Send, Eye, RefreshCw } from "lucide-react";
 
@@ -125,12 +125,6 @@ const WEBHOOK_EVENTS = [
   "payroll.approved",
   "payroll.paid",
 ] as const;
-
-function developerForbiddenDescription(error: Error, t: ReturnType<typeof useTranslation>["t"]) {
-  return error instanceof ApiError && error.body?.code === "ACCESS_RESTRICTED"
-    ? t["pages.accountTypeAccessForbiddenBody"]
-    : t["developerSettings.companyAccessForbiddenBody"];
-}
 
 // ===========================
 // Main Component
@@ -314,11 +308,11 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               <T k="pages.loading" />
             </p>
           ) : loadError && !apiKeys ? (
-            <LoadErrorState
+            <SettingsLoadError
               compact
               error={loadError}
               onRetry={() => refetch()}
-              forbiddenDescription={developerForbiddenDescription(loadError, t)}
+              companyAccessDescription={t["developerSettings.companyAccessForbiddenBody"]}
               testId="api-keys-load-error"
             />
           ) : !apiKeys?.length ? (
@@ -745,11 +739,11 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               <T k="pages.loading" />
             </p>
           ) : loadError && !webhooks ? (
-            <LoadErrorState
+            <SettingsLoadError
               compact
               error={loadError}
               onRetry={() => refetch()}
-              forbiddenDescription={developerForbiddenDescription(loadError, t)}
+              companyAccessDescription={t["developerSettings.companyAccessForbiddenBody"]}
               testId="webhooks-load-error"
             />
           ) : !webhooks?.length ? (

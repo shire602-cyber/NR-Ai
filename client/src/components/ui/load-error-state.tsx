@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ErrorState } from "@/components/ui/error-state";
 import { classifyLoadError } from "@/lib/loadError";
 import { useTranslation } from "@/lib/i18n";
@@ -24,7 +25,7 @@ export function LoadErrorState({
   compact?: boolean;
   className?: string;
   testId?: string;
-  forbiddenDescription?: string;
+  forbiddenDescription?: ReactNode;
 }) {
   const { t } = useTranslation();
   const kind = classifyLoadError(error);

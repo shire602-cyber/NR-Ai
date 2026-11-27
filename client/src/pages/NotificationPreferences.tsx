@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { LoadErrorState } from "@/components/ui/load-error-state";
+import { SettingsLoadError } from "@/components/layout/SettingsLoadError";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { subscribeToPush, unsubscribeFromPush, isPushSubscribed } from "@/lib/push";
 import { Bell, Mail, FileText, Calendar, CreditCard, BarChart3 } from "lucide-react";
@@ -190,10 +190,9 @@ export default function NotificationPreferences() {
               <T k="pages.notificationPrefsWaiting" />
             </p>
           ) : (
-            <LoadErrorState
+            <SettingsLoadError
               error={loadError}
               onRetry={() => refetch()}
-              forbiddenDescription={t["pages.accountTypeAccessForbiddenBody"]}
               testId="notification-prefs-load-error"
             />
           )}

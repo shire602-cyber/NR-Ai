@@ -862,6 +862,8 @@
   "pages.notificationPrefsTitle": "تفضيلات الإشعارات",
   "pages.notificationPrefsWaiting": "بانتظار الاتصال بالإنترنت لتحميل تفضيلات الإشعارات.",
   "pages.accountTypeAccessForbiddenBody": "هذه الميزة غير متاحة لنوع حسابك. تواصل مع فريق الدعم إذا كنت تعتقد أنه ينبغي أن تتمكن من استخدامها.",
+  "pages.settingsAccessForbiddenBody": "تم رفض الوصول إلى هذه الإعدادات. تواصل مع فريق الدعم إذا كنت تعتقد أنه ينبغي أن تتمكن من الوصول إليها.",
+  "pages.settingsEnableMfa": "فعّل المصادقة الثنائية في إعدادات الأمان للمتابعة.",
   "pages.notificationPrefsDescription": "تحكّم في كيفية وتوقيت استلام الإشعارات",
   "pages.notificationsAllRead": "تم تحديد جميع الإشعارات كمقروءة",
   "pages.notificationDismissed": "تم تجاهل الإشعار",

@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { LoadErrorState } from "@/components/ui/load-error-state";
+import { SettingsLoadError } from "@/components/layout/SettingsLoadError";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -315,11 +315,11 @@ export default function CompanySettings() {
   if (loadError && !company) {
     return (
       <div className="space-y-8 max-w-4xl">
-        <LoadErrorState
+        <SettingsLoadError
           error={loadError}
           onRetry={() => refetch()}
           testId="company-settings-load-error"
-          forbiddenDescription={tr["pageLabels.companySettings.companyAccessForbiddenBody"]}
+          companyAccessDescription={tr["pageLabels.companySettings.companyAccessForbiddenBody"]}
         />
       </div>
     );
