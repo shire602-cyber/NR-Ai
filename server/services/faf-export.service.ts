@@ -17,6 +17,7 @@ import { computeVat201, type VatContribution } from "../tax/vat-engine";
 import { generalLedger, loadAccounts } from "../reporting";
 import { pool } from "../db";
 import { DomainError } from "../errors";
+import { csvCell } from "@shared/csv";
 import { FAF_MAX_DAYS, fafSpanDays } from "@shared/faf-range";
 
 export const FAF_VERSION = "FAFv1.0.0";
@@ -339,10 +340,7 @@ export async function buildFaf(input: {
 
 // ─── Text layout ─────────────────────────────────────────────────────────────
 
-function cell(v: string | number): string {
-  const s = typeof v === "number" ? String(v) : v;
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
+const cell = (v: string | number): string => csvCell(v);
 
 const money = (fils: number) => (fils / 100).toFixed(2);
 

@@ -342,4 +342,18 @@ describe("FAF text layout", () => {
     expect(text).toContain("200.00,10.00,SR");
     expect(text).toContain("-200.00");
   });
+
+  it("S05: guards formula-leading names/descriptions but keeps negative amounts numeric", () => {
+    const evil = '=HYPERLINK("http://x","y")';
+    const text = renderFafText({
+      ...faf,
+      purchases: [{ ...faf.purchases[0], supplierName: evil }],
+      generalLedger: [{ ...faf.generalLedger[0], transactionDescription: "@SUM(A1)" }],
+    });
+    expect(text).toContain(`"'=HYPERLINK(""http://x"",""y"")"`);
+    expect(text).toContain("'@SUM(A1)");
+    expect(text).not.toMatch(/(^|,)=HYPERLINK/m);
+    expect(text).toContain("-200.00");
+    expect(text).not.toContain("'-200.00");
+  });
 });
