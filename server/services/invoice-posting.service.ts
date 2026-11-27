@@ -1004,6 +1004,18 @@ export function creditBucketBaseAmounts(
   return rounded;
 }
 
+/**
+ * Revenue role of a posted revenue account code: the reserved split accounts map to their
+ * role, every other income account (4010/4020 or a line's linked account) is standard sales.
+ * Shared by the credit-note reversal and the VAT engine's posted-net read.
+ */
+export function revenueRoleForCode(code: string): RevenueAccountRole {
+  if (code === REVENUE_ACCOUNT_CODES.zero_rated_sales) return "zero_rated_sales";
+  if (code === REVENUE_ACCOUNT_CODES.exempt_sales) return "exempt_sales";
+  if (code === REVENUE_ACCOUNT_CODES.out_of_scope_revenue) return "out_of_scope_revenue";
+  return "standard_sales";
+}
+
 async function originalLegs(
   tx: LedgerTx,
   original: Invoice,
@@ -1050,11 +1062,6 @@ async function originalLegs(
   const key = (a: string | null, c: string | null) => `${a}|${c ?? ""}`;
   const priorMap = new Map(priorRows.map((r) => [key(r.account_id, r.cost_center_id), r]));
   const f = (v: string | null | undefined) => toFils(v ?? "0", { rounding: "halfUp" });
-  const codeRole: Record<string, RevenueAccountRole> = {
-    [REVENUE_ACCOUNT_CODES.zero_rated_sales]: "zero_rated_sales",
-    [REVENUE_ACCOUNT_CODES.exempt_sales]: "exempt_sales",
-    [REVENUE_ACCOUNT_CODES.out_of_scope_revenue]: "out_of_scope_revenue",
-  };
   return rows.map((r) => {
     const p = priorMap.get(key(r.account_id, r.cost_center_id));
     const isAr = r.account_id === acc.ar;
@@ -1070,7 +1077,7 @@ async function originalLegs(
       accountId: String(r.account_id),
       costCenterId: r.cost_center_id ?? null,
       kind: isAr ? "ar" : isVat ? "vat" : "revenue",
-      role: isAr || isVat ? null : (codeRole[String(r.code)] ?? "standard_sales"),
+      role: isAr || isVat ? null : revenueRoleForCode(String(r.code)),
       remainingBase,
       remainingForeign,
     };

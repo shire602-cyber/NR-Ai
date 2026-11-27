@@ -23,8 +23,16 @@ import { db } from "../db";
 import { DomainError } from "../errors";
 import { invoiceLines, invoices, type InvoiceLine } from "../../shared/schema";
 import { toFils } from "../../shared/money";
-import { classifySupply, type Vat201Family } from "../../shared/vat-classification";
-import { SALES_CODES, totalsForStoredDocument } from "../services/invoice-posting.service";
+import {
+  classifySupply,
+  type RevenueAccountRole,
+  type Vat201Family,
+} from "../../shared/vat-classification";
+import {
+  revenueRoleForCode,
+  SALES_CODES,
+  totalsForStoredDocument,
+} from "../services/invoice-posting.service";
 import { ledgerLines } from "../reporting";
 import { localDateSql } from "../reporting/settlement";
 import { isForeignCurrency, loadBaseCurrency, type LedgerTx } from "../ledger";
@@ -62,6 +70,13 @@ import {
   type ReconCategory,
   type VatReconciliation,
 } from "./vat-reconciliation";
+
+const POSTED_ROLE_FAMILY: Record<RevenueAccountRole, Vat201Family> = {
+  standard_sales: "standard",
+  zero_rated_sales: "zero_rated",
+  exempt_sales: "exempt",
+  out_of_scope_revenue: "out_of_scope",
+};
 
 export const VAT_ENGINE_VERSION = "w4e-1";
 
@@ -656,23 +671,38 @@ async function collectInvoices(
     )
     .map(({ invoice }) => invoice.id);
   const postedRemainderVat = new Map<string, number>();
+  const postedRemainderNet = new Map<string, Map<Vat201Family, number>>();
   if (foreignCreditIds.length) {
-    // A final credit reverses the remaining posted base VAT, which can differ from
-    // converting the printed VAT at the invoice rate because of earlier rounding.
+    // A final credit reverses the remaining posted base VAT and revenue, which can differ from
+    // converting the printed amounts at the invoice rate because of earlier rounding. One grouped
+    // read: posted VAT, and posted net per revenue account (classified with the posting's own
+    // code-to-role mapping, `revenueRoleForCode`).
     const { rows } = await ledgerQueryable(tx).query(
-      `SELECT je.source_id, COALESCE(SUM(jl.debit - jl.credit)
-                FILTER (WHERE a.id IS NOT NULL), 0) AS vat
+      `SELECT je.source_id, a.code, a.type, a.is_vat_account,
+              COALESCE(SUM(jl.debit - jl.credit), 0) AS net
          FROM journal_entries je
          JOIN journal_lines jl ON jl.entry_id = je.id
-         LEFT JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
-                             AND a.code = $3 AND a.is_vat_account
+         JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
         WHERE je.company_id = $1 AND je.source = 'invoice' AND je.source_id = ANY($2::uuid[])
           AND je.memo_key = 'creditNoteReversal'
           AND je.status = 'posted' AND je.entry_kind <> 'reversal' AND je.reversed_by_entry_id IS NULL
-        GROUP BY je.source_id`,
-      [companyId, foreignCreditIds, SALES_CODES.VAT_OUTPUT]
+        GROUP BY je.source_id, a.code, a.type, a.is_vat_account`,
+      [companyId, foreignCreditIds]
     );
-    for (const row of rows) postedRemainderVat.set(row.source_id, fils(row.vat));
+    for (const row of rows) {
+      if (!postedRemainderVat.has(row.source_id)) postedRemainderVat.set(row.source_id, 0);
+      if (row.is_vat_account && row.code === SALES_CODES.VAT_OUTPUT) {
+        postedRemainderVat.set(
+          row.source_id,
+          (postedRemainderVat.get(row.source_id) ?? 0) + fils(row.net)
+        );
+      } else if (row.type === "income") {
+        const family = POSTED_ROLE_FAMILY[revenueRoleForCode(String(row.code))];
+        const byFamily = postedRemainderNet.get(row.source_id) ?? new Map<Vat201Family, number>();
+        byFamily.set(family, (byFamily.get(family) ?? 0) + fils(row.net));
+        postedRemainderNet.set(row.source_id, byFamily);
+      }
+    }
   }
 
   for (const { invoice: inv, taxPoint } of docs) {
@@ -728,6 +758,12 @@ async function collectInvoices(
     const vatBase = postedVat ?? toBaseFils(totals.vatFils, rate);
     // The last credit can clear base-currency VAT rounding with only zero-rated lines left.
     if (postedVat && !netByFamily.has("standard")) netByFamily.set("standard", 0);
+    const postedNet = postedRemainderNet.get(inv.id);
+    if (postedNet) {
+      for (const [family, net] of postedNet) {
+        if (net !== 0 && !netByFamily.has(family)) netByFamily.set(family, 0);
+      }
+    }
     const emirate = normaliseEmirate(inv.placeOfSupplyEmirate);
     const needsEmirate = [...netByFamily].some(
       ([family, net]) =>
@@ -744,7 +780,7 @@ async function collectInvoices(
       continue;
     }
     for (const [family, netDoc] of netByFamily) {
-      const netBase = toBaseFils(netDoc, rate);
+      const netBase = postedNet?.get(family) ?? toBaseFils(netDoc, rate);
       if (family === "out_of_scope") {
         excluded.outOfScopeFils += sign * netBase;
         excluded.outOfScope.push({

@@ -21,9 +21,14 @@ const zero = (price: number) => ({
   vatSupplyType: "zero_rated",
 });
 
-async function issueUsd(t: Tenant, lines: Record<string, unknown>[]): Promise<string> {
+async function issueUsd(
+  t: Tenant,
+  lines: Record<string, unknown>[],
+  contactId?: string
+): Promise<string> {
   const draft = await t.as.post(`${base(t)}/invoices`, {
     customerName: "Acme",
+    contactId,
     date,
     placeOfSupplyEmirate: "dubai",
     currency: "USD",
@@ -224,4 +229,83 @@ it("B: foreign receipts realise FX; overpayment credit refunds at its booked AED
     [pd.paymentId]
   );
   expect(closed).toEqual({ status: "void", remaining: 0 });
+});
+
+it("C: F07 reporting readers (trial balance, customer statement, aged A/R, VAT 201) agree with the GL after partial and final USD credits", async () => {
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000003",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const contact = await t.as.post(`${base(t)}/customer-contacts`, { name: "Acme" });
+  expect(contact.status, contact.text).toBeLessThan(300);
+  const id = await issueUsd(t, [std(700), zero(300)], contact.body.id);
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  const codes = ["1040", "4020", "4060", "2020"];
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+
+  async function checkReaders(expected: Record<string, number>, usdClosing: number) {
+    // GL (SQL) equals the hand-calculated values.
+    for (const code of codes) expect(await glNet(t, code), `GL ${code}`).toBe(expected[code]);
+
+    // Trial balance route: debitBalance - creditBalance per account equals the GL net.
+    const tb = await t.as.get(
+      `${base(t)}/reports/trial-balance?from=2026-01-01&to=2026-01-31&format=json`
+    );
+    expect(tb.status, tb.text).toBe(200);
+    const rows = tb.body.rows as {
+      accountCode: string;
+      debitBalance: number;
+      creditBalance: number;
+    }[];
+    for (const code of codes) {
+      const row = rows.find((r) => r.accountCode === code);
+      const net = row ? r2(Number(row.debitBalance) - Number(row.creditBalance)) : 0;
+      expect(net, `TB ${code}`).toBe(expected[code]);
+    }
+    expect(tb.body.isBalanced).toBe(true);
+    expect(r2(tb.body.totals.sumDebits)).toBe(r2(tb.body.totals.sumCredits));
+
+    // Customer statement (document currency USD): closing x original rate = GL 1040.
+    const st = await t.as.get(`${base(t)}/customer-statements/${contact.body.id}?asOf=2026-01-31`);
+    expect(st.status, st.text).toBe(200);
+    expect(st.body.sections).toHaveLength(1);
+    expect(st.body.sections[0].currency).toBe("USD");
+    expect(st.body.sections[0].closingBalance).toBe(usdClosing);
+    expect(r2(usdClosing * 3.6725)).toBe(expected["1040"]);
+
+    // Aged receivables (AED): aging total ties to GL 1040.
+    const ar = await t.as.get(`${base(t)}/reports/aged-receivables?asOf=2026-01-31`);
+    expect(ar.status, ar.text).toBe(200);
+    expect(Number(ar.body.reconciliation.glBalance)).toBe(expected["1040"]);
+    expect(Number(ar.body.reconciliation.agingTotal)).toBe(expected["1040"]);
+    expect(Number(ar.body.reconciliation.difference)).toBe(0);
+    await expectSettlementTiesToGl(t);
+
+    // VAT 201 (computeVat201 via generate): Box 1b Dubai vs GL 2020 / 4020, Box 4 vs GL 4060.
+    const vat = await t.as.post(`${base(t)}/vat-returns/generate`, {
+      periodStart: "2026-01-01",
+      periodEnd: "2026-03-31",
+    });
+    expect(vat.status, vat.text).toBe(201);
+    expect(Number(vat.body.box1bDubaiVat), "Box 1 VAT").toBe(-expected["2020"] || 0);
+    expect(Number(vat.body.box1bDubaiAmount), "Box 1 amount").toBe(-expected["4020"] || 0);
+    expect(Number(vat.body.box4ZeroRatedAmount), "Box 4 amount").toBe(-expected["4060"] || 0);
+  }
+
+  // Checkpoint 1: after the partial credit.
+  const partial = await t.as.post(url, { date, lines: [std(350)] });
+  expect(partial.status, partial.text).toBe(201);
+  await checkReaders(
+    { "1040": 2451.39, "4020": -1285.37, "4060": -1101.75, "2020": -64.27 },
+    667.5
+  );
+
+  // Checkpoint 2: after the final credit everything is nil.
+  const final = await t.as.post(url, { date });
+  expect(final.status, final.text).toBe(201);
+  await checkReaders({ "1040": 0, "4020": 0, "4060": 0, "2020": 0 }, 0);
 });
