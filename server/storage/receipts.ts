@@ -133,9 +133,10 @@ export class ReceiptStorage extends SalesStorage {
   async updateReceiptIfUnposted(
     id: string,
     companyId: string,
-    data: Partial<InsertReceipt>
+    data: Partial<InsertReceipt>,
+    tx?: typeof db
   ): Promise<Receipt> {
-    const [receipt] = await db
+    const [receipt] = await (tx ?? db)
       .update(receipts)
       .set(data)
       .where(
@@ -293,8 +294,8 @@ export class ReceiptStorage extends SalesStorage {
   }
 
   /** Split an unposted multi-receipt upload into separate receipts (the source row is replaced). */
-  async splitReceiptAtomic(args: SplitReceiptAtomicArgs): Promise<Receipt[]> {
-    return await db.transaction(async (tx: typeof db) => {
+  async splitReceiptAtomic(args: SplitReceiptAtomicArgs, outer?: typeof db): Promise<Receipt[]> {
+    return await withLedgerTx(async (tx: typeof db) => {
       const [source] = await tx
         .select()
         .from(receipts)
@@ -326,7 +327,7 @@ export class ReceiptStorage extends SalesStorage {
       }
       await tx.delete(receipts).where(eq(receipts.id, args.receiptId));
       return created;
-    });
+    }, outer);
   }
 
   /** Whether any of the company's receipts still points at this stored file (split parts share it). */
@@ -339,7 +340,9 @@ export class ReceiptStorage extends SalesStorage {
     return row !== undefined;
   }
 
-  async deleteReceipt(id: string, companyId: string): Promise<void> {
-    await db.delete(receipts).where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)));
+  async deleteReceipt(id: string, companyId: string, tx?: typeof db): Promise<void> {
+    await (tx ?? db)
+      .delete(receipts)
+      .where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)));
   }
 }
