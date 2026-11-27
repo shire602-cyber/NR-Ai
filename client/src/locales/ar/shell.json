@@ -118,6 +118,8 @@
   "shell.themeLight": "فاتح",
   "shell.themeSystem": "حسب النظام",
   "shell.themeToggle": "تغيير المظهر",
+  "shell.motionPause": "إيقاف الحركة مؤقتًا",
+  "shell.motionSystemReduced": "الحركة متوقفة (جهازك يطلب تقليل الحركة)",
   "shell.toggleSidebar": "تبديل الشريط الجانبي",
   "shell.trn": "الرقم الضريبي {trn}",
   "shell.cmdGroupNavigate": "انتقال إلى",

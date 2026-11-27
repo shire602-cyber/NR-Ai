@@ -35,13 +35,13 @@ export function SettingsLayout({ children, hide, items, className }: SettingsLay
 
   return (
     <div
-      className={cn("lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-10", className)}
+      className={cn("lg:grid lg:grid-cols-[232px_minmax(0,1fr)] lg:gap-14", className)}
       data-testid="settings-layout"
     >
-      <nav aria-label={t["components.ui.settingsNav.label"]} className="mb-6 lg:mb-0">
+      <nav aria-label={t["components.ui.settingsNav.label"]} className="mb-8 lg:mb-0">
         <div
           ref={strip}
-          className="scroll-fade-x -mx-4 flex gap-1 overflow-x-auto px-4 lg:sticky lg:top-6 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0"
+          className="scroll-fade-x -mx-4 flex gap-1.5 overflow-x-auto px-4 lg:sticky lg:top-8 lg:mx-0 lg:flex-col lg:overflow-visible lg:rounded-2xl lg:border lg:border-card-border lg:bg-card/70 lg:p-2.5 lg:shadow-card-soft"
           style={fade}
         >
           {nav.map((item) => {
@@ -53,9 +53,9 @@ export function SettingsLayout({ children, hide, items, className }: SettingsLay
                 aria-current={active ? "page" : undefined}
                 data-testid={item.testId ?? `settings-nav-${item.key}`}
                 className={cn(
-                  "relative flex min-h-11 lg:min-h-9 shrink-0 items-center whitespace-nowrap rounded-md px-3 text-small font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "relative flex min-h-11 lg:min-h-10 shrink-0 items-center whitespace-nowrap rounded-lg px-3.5 text-small font-medium transition-colors duration-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   active
-                    ? "bg-primary/10 text-foreground lg:before:absolute lg:before:inset-y-2 lg:before:start-0 lg:before:w-0.5 lg:before:rounded-full lg:before:bg-primary"
+                    ? "bg-primary/10 text-foreground lg:before:absolute lg:before:inset-y-2.5 lg:before:start-0 lg:before:w-0.5 lg:before:rounded-full lg:before:bg-primary"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                 )}
               >

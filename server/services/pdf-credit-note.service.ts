@@ -22,6 +22,8 @@ export async function generateCreditNotePDF(
     company: {
       name: company.name,
       legalName: company.legalName,
+      legalNameAr: company.legalNameAr,
+      addressAr: company.addressAr,
       trn: company.trnVatNumber,
       address: company.businessAddress,
       phone: company.contactPhone,

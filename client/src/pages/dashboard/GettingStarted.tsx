@@ -186,10 +186,10 @@ export function GettingStarted({
 
   return (
     <Card className="overflow-hidden" data-testid="card-first-invoice-guide">
-      <div className="flex items-start justify-between gap-4 px-5 pb-3 pt-5">
+      <div className="flex items-start justify-between gap-4 px-card pb-4 pt-card">
         <div className="min-w-0">
           <h2 className="text-h3 text-foreground">{tt["dashboard.gettingStartedTitle"]}</h2>
-          <p className="mt-0.5 text-small text-muted-foreground">
+          <p className="mt-1 text-small text-muted-foreground">
             {formatMessage(tt["dashboard.gettingStartedProgress"], {
               done: doneCount,
               total: steps.length,
@@ -211,18 +211,18 @@ export function GettingStarted({
         )}
       </div>
       {/* One 2px progress line, no step dots. */}
-      <div className="mx-5 h-0.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+      <div className="mx-card h-1 overflow-hidden rounded-full bg-muted" aria-hidden>
         <div
           className="h-full rounded-full bg-primary transition-[width] duration-base ease-out"
           style={{ width: `${(doneCount / steps.length) * 100}%` }}
         />
       </div>
-      <ol className="mt-2 divide-hairline">
+      <ol className="mt-3 divide-hairline">
         {steps.map((step) => (
           <li key={step.id}>
             <Link
               href={step.href}
-              className="group flex min-h-11 items-center gap-3 px-5 py-2.5 transition-colors duration-fast hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="group flex min-h-14 items-center gap-4 px-card py-3.5 transition-colors duration-fast hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               data-testid={step.testId ?? `getting-started-${step.id}`}
             >
               <span

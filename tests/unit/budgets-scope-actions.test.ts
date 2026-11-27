@@ -34,7 +34,8 @@ const mocks = vi.hoisted(() => ({
 const defaultRead = async ({ queryKey }: { queryKey: readonly unknown[] }) =>
   String(queryKey[0]).endsWith("/budget-plans") ? [demoPlan] : [];
 
-vi.mock("@/lib/queryClient", async () => {
+vi.mock("@/lib/queryClient", async (importOriginal) => {
+  const { ApiError } = await importOriginal<typeof import("@/lib/queryClient")>();
   const { QueryClient } = await import("@tanstack/react-query");
   const client = new QueryClient({
     defaultOptions: {
@@ -46,6 +47,7 @@ vi.mock("@/lib/queryClient", async () => {
     },
   });
   return {
+    ApiError,
     apiRequest: mocks.apiRequest,
     queryClient: client,
     // Same behaviour as the real one: cancel in-flight reads, then invalidate (not awaited).

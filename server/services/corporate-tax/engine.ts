@@ -21,6 +21,7 @@ import {
 } from "../../../shared/ct-workpaper";
 import { ctAdjustmentsSchema } from "../../../shared/validators/corporate-tax";
 import type { CorporateTaxReturn } from "../../../shared/schema";
+import { loadAccounts } from "../../reporting/ledger-query";
 import type { DeferredTaxNote } from "../ct-workpaper-export.service";
 import { ctFilingDeadline } from "./deadlines";
 import {
@@ -79,6 +80,36 @@ export interface CtWorkpaperState {
 export function workpaperOf(ctReturn: Pick<CorporateTaxReturn, "workpaper">): CtWorkpaperState {
   const wp = ctReturn.workpaper;
   return wp && typeof wp === "object" && !Array.isArray(wp) ? (wp as CtWorkpaperState) : {};
+}
+
+/** Supply Arabic names for book rows saved before names were captured in the snapshot. */
+export async function withLegacyWorkpaperNames(
+  companyId: string,
+  returns: CorporateTaxReturn[]
+): Promise<CorporateTaxReturn[]> {
+  const needsName = (row: CtWorkpaperRow) =>
+    row.nameAr === undefined && row.id.startsWith("books-");
+  const legacy = returns.filter((ctReturn) => {
+    const wp = workpaperOf(ctReturn);
+    return wp.source === "journal_calculation" && wp.rows?.some(needsName);
+  });
+  if (legacy.length === 0) return returns;
+
+  const accounts = await loadAccounts(companyId);
+  const names = new Map(accounts.map((account) => [`books-${account.id}`, account.nameAr?.trim()]));
+  const workpapers = new Map(
+    legacy.map((ctReturn) => {
+      const wp = workpaperOf(ctReturn);
+      const rows = wp.rows?.map((row) =>
+        needsName(row) ? { ...row, nameAr: names.get(row.id) || null } : row
+      );
+      return [ctReturn.id, { ...wp, rows }] as const;
+    })
+  );
+  return returns.map((ctReturn) => {
+    const workpaper = workpapers.get(ctReturn.id);
+    return workpaper ? { ...ctReturn, workpaper } : ctReturn;
+  });
 }
 
 /** Validate stored or supplied adjustments with the shared schema (R08-06). */
@@ -387,6 +418,7 @@ export async function booksOverrides(
     id: r.id,
     type: r.type,
     label: r.label,
+    nameAr: r.nameAr,
     amount: r.amount,
     notes: r.notes,
   }));

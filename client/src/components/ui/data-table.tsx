@@ -15,6 +15,8 @@ export interface DataTableCardProps {
   columnLabels?: string[];
   loadingRows?: number;
   empty?: EmptyStateProps;
+  /** Pass null to keep the status region mounted with no announcement. */
+  statusMessage?: ReactNode;
   error?: ErrorStateProps;
   /** Footer row: pagination, totals note. */
   footer?: ReactNode;
@@ -36,6 +38,7 @@ export function DataTableCard({
   columnLabels,
   loadingRows = 6,
   empty,
+  statusMessage,
   error,
   footer,
   className,
@@ -57,6 +60,7 @@ export function DataTableCard({
         />
       )}
       {status === "empty" && empty && <EmptyState compact {...empty} />}
+      {statusMessage !== undefined && <div role="status">{statusMessage}</div>}
       {status === "error" && <ErrorState compact {...error} />}
       {status === "ready" && children}
       {footer && (

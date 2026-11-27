@@ -216,6 +216,10 @@
   "screens.clearSearch": "Clear search",
   "screens.noFixedAssets": "No fixed assets yet",
   "screens.noFixedAssetsBody": "Track equipment, vehicles and other depreciable assets to keep your books accurate.",
+  "screens.assetsOfflineTitle": "You are offline",
+  "screens.assetsOfflineBody": "The asset register has not loaded yet. It will load when you reconnect.",
+  "screens.assetSummaryErrorTitle": "Could not load the asset summary",
+  "screens.assetSummaryErrorBody": "Totals and the category breakdown are unavailable right now. Try again.",
   "screens.dispose": "Dispose",
   "screens.recordDepreciation": "Record depreciation",
   "screens.noCompanySelected": "No company selected",
@@ -240,5 +244,11 @@
   "screens.searchClaims": "Search by claim number, title or status",
   "screens.noMatchingClaims": "No matching claims",
   "screens.noMatchingClaimsBody": "Try a different keyword or clear the search.",
-  "screens.claimPaymentRefPlaceholder": "e.g., bank transfer reference or cheque number"
+  "screens.claimPaymentRefPlaceholder": "e.g., bank transfer reference or cheque number",
+  "screens.salesEyebrow": "Sales",
+  "screens.searchQuotes": "Search by quote number or customer",
+  "screens.searchCreditNotes": "Search by number, customer or invoice",
+  "screens.searchDebitNotes": "Search by number, supplier or bill",
+  "screens.noMatchingDocuments": "No matching documents",
+  "screens.noMatchingDocumentsBody": "Try a different keyword or clear the search."
 }

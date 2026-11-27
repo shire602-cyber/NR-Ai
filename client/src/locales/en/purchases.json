@@ -201,6 +201,8 @@
   "purchases.debitNote.applied": "Credit applied to the bill",
   "purchases.debitNote.emptyTitle": "No supplier credits yet",
   "purchases.debitNote.emptyBody": "Record a debit note when a supplier credits you or you return goods.",
+  "purchases.debitNote.billsLoading": "Loading bill numbers…",
+  "purchases.debitNote.billsLoadFailed": "Could not load bill numbers",
   "purchases.claimReceipt.label": "Receipt",
   "purchases.claimReceipt.drop": "Attach the receipt",
   "purchases.claimReceipt.attached": "Receipt attached",

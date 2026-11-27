@@ -83,12 +83,12 @@ export function NeedsYouStrip({
       ref={stripRef}
       style={fade}
       aria-label={tt["dashboard.needsYouLabel"]}
-      className="-mx-4 flex snap-x items-center gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&>*]:snap-start"
+      className="-mx-gutter flex snap-x items-center gap-3 overflow-x-auto px-gutter pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&>*]:snap-start"
       data-testid="dashboard-needs-you"
     >
       {chips.length === 0 ? (
         <span
-          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-small text-muted-foreground"
+          className="inline-flex h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-small text-muted-foreground shadow-card-soft"
           data-testid="needs-you-clear"
         >
           <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
@@ -101,14 +101,14 @@ export function NeedsYouStrip({
             <Link
               key={chip.id}
               href={chip.href}
-              className="group inline-flex h-8 shrink-0 items-center gap-2 rounded-full border border-border bg-card ps-2.5 pe-3 text-small font-medium text-foreground shadow-xs transition-colors duration-fast hover:border-border-strong hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="card-interactive group inline-flex h-10 shrink-0 items-center gap-2.5 rounded-full border border-border bg-card ps-3.5 pe-4 text-small font-medium text-foreground shadow-card-soft transition-[border-color,box-shadow,transform] duration-base ease-out hover:border-border-strong hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               data-testid={`needs-you-${chip.id}`}
             >
-              <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", TONE_DOT[chip.tone])} />
+              <span aria-hidden className={cn("h-2 w-2 rounded-full", TONE_DOT[chip.tone])} />
               <Icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
               <span className="whitespace-nowrap">{chip.label}</span>
               <ArrowRight
-                className="h-3.5 w-3.5 text-muted-foreground opacity-60 transition-opacity group-hover:opacity-100 rtl:-scale-x-100"
+                className="nudge-on-hover h-3.5 w-3.5 text-muted-foreground opacity-60 group-hover:opacity-100 rtl:[scale:-1_1]"
                 aria-hidden
               />
             </Link>

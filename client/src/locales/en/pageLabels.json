@@ -1005,6 +1005,7 @@
   "pageLabels.companySettings.dateFormat.YYYY-MM-DD": "YYYY-MM-DD (e.g. 2026-04-27)",
   "pageLabels.companySettings.title": "Company settings",
   "pageLabels.companySettings.description": "Identity, currency, fiscal year, VAT, address and language for this company.",
+  "pageLabels.companySettings.companyAccessForbiddenBody": "Ask your company owner or administrator to grant you access.",
   "pageLabels.companySettings.companyName": "Company name",
   "pageLabels.companySettings.trn": "TRN (tax registration number)",
   "pageLabels.companySettings.trnHelp": "UAE TRNs have 15 digits.",

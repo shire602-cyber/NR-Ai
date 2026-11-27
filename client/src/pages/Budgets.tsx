@@ -1,6 +1,7 @@
 import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PiggyBank } from "lucide-react";
+import { PiggyBank, Search } from "lucide-react";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { T } from "@/components/layout/T";
 import { monthName } from "@/pages/payroll/shared";
 import {
@@ -12,7 +13,7 @@ import {
   formSpanFull,
   lineLabelClass,
 } from "@/components/ui/form-layout";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -30,8 +31,6 @@ import {
   ArrowLeft,
   Copy,
   Download,
-  TrendingUp,
-  TrendingDown,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -87,8 +86,13 @@ import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { budgetCategoryLabel } from "@/lib/budget-categories";
 import { budgetScopeChange, type BudgetScopeChange } from "@/lib/budget-scope";
 import { BudgetScopeChangeDialog } from "@/components/budgets/BudgetScopeChangeDialog";
+import type { VarianceData } from "@/components/budgets/BudgetVarianceResults";
+import { OnDemandDialogStatus } from "@/components/team/onDemandDialog";
+import { useOnDemandDialog } from "@/components/team/useOnDemandDialog";
+import { freshChunkUrl } from "@/lib/dialogChunk";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useIsOnline } from "@/hooks/useIsOnline";
 import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
@@ -97,7 +101,6 @@ import {
   budgetAccountOptions,
   planMonths,
   signedLineTotals,
-  summariseBudget,
   type PlanMonth,
 } from "@/lib/budget-summary";
 import { isControlAccount } from "@shared/control-accounts";
@@ -152,42 +155,6 @@ interface LedgerAccount {
   type: string;
   isActive?: boolean | null;
   isVatAccount?: boolean | null;
-}
-
-interface VarianceMonth {
-  budget: number;
-  actual: number;
-  variance: number;
-  variancePercent: number;
-}
-
-interface VarianceLine {
-  id: string;
-  category: string;
-  description: string | null;
-  accountId: string | null;
-  accountType: string | null;
-  months: Record<string, VarianceMonth>;
-  totals: {
-    budget: number;
-    actual: number;
-    variance: number;
-    variancePercent: number;
-  };
-}
-
-interface VarianceData {
-  budget: {
-    id: string;
-    name: string;
-    fiscalYear: number;
-    startDate: string;
-    endDate: string;
-    status: string;
-  };
-  /** Year-months the plan covers; `months` of each line holds only these columns. */
-  periods?: string[];
-  varianceLines: VarianceLine[];
 }
 
 // ─── Schemas ─────────────────────────────────────────────
@@ -285,6 +252,17 @@ function isoDay(v: string | null | undefined): string {
 const NO_PLANS: BudgetPlan[] = [];
 const NO_LINES: BudgetLine[] = [];
 
+const loadVarianceResults = (
+  retry: string | null
+): Promise<typeof import("@/components/budgets/BudgetVarianceResults")> => {
+  if (retry === null) return import("@/components/budgets/BudgetVarianceResults");
+
+  const path = import.meta.env.DEV
+    ? "../components/budgets/BudgetVarianceResults.tsx"
+    : "__MUHASIB_DIALOG_CHUNK__BudgetVarianceResults__";
+  return import(/* @vite-ignore */ freshChunkUrl(new URL(path, import.meta.url), retry));
+};
+
 type ReadView = "loading" | "paused" | "error" | "ready";
 
 /** A paused read replaces the empty state, while cached rows can stay visible. */
@@ -302,6 +280,7 @@ function readView(
 function ReadStatus({
   view,
   errorText,
+  error,
   onRetry,
   testId,
   refresh,
@@ -309,17 +288,23 @@ function ReadStatus({
   view: ReadView;
   refresh?: { fetchStatus: string; isRefetchError: boolean };
   errorText: string;
+  error?: Error | null;
   onRetry: () => void;
   testId: string;
 }) {
   const { t } = useTranslation();
+  const online = useIsOnline();
+  const waitingText = t[online ? "budgets.loadWaiting" : "budgets.readPaused"];
   if (view === "ready") {
     const paused = refresh?.fetchStatus === "paused";
     return paused || refresh?.isRefetchError ? (
-      <RefreshNotice paused={paused} onRetry={onRetry} />
+      <RefreshNotice paused={paused} waitingText={waitingText} onRetry={onRetry} />
     ) : null;
   }
   if (view === "error") {
+    if (error) {
+      return <LoadErrorState error={error} title={errorText} onRetry={onRetry} testId={testId} />;
+    }
     return (
       <div
         className="flex flex-col items-center gap-3 py-8 text-center"
@@ -339,13 +324,21 @@ function ReadStatus({
       role="status"
       data-testid={`${testId}-${view}`}
     >
-      {view === "paused" ? t["budgets.readPaused"] : t.loading}
+      {view === "paused" ? waitingText : t.loading}
     </div>
   );
 }
 
 /** Shown above cached rows while a refresh is paused or has failed. */
-function RefreshNotice({ paused, onRetry }: { paused: boolean; onRetry: () => void }) {
+function RefreshNotice({
+  paused,
+  waitingText,
+  onRetry,
+}: {
+  paused: boolean;
+  waitingText: string;
+  onRetry: () => void;
+}) {
   const { t } = useTranslation();
   return (
     <div
@@ -353,7 +346,7 @@ function RefreshNotice({ paused, onRetry }: { paused: boolean; onRetry: () => vo
       role="status"
       data-testid={paused ? "budgets-refresh-paused" : "budgets-refresh-failed"}
     >
-      <span>{paused ? t["budgets.readPaused"] : t["budgets.refreshFailed"]}</span>
+      <span>{paused ? waitingText : t["budgets.refreshFailed"]}</span>
       {!paused && (
         <Button variant="outline" size="sm" onClick={onRetry}>
           {t.tryAgain}
@@ -371,6 +364,7 @@ export default function Budgets() {
     ?.fiscalYearStartMonth;
 
   const [activeTab, setActiveTab] = useState("budgets");
+  const [budgetSearch, setBudgetSearch] = useState("");
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<BudgetPlan | null>(null);
   const [selectedBudget, setSelectedBudget] = useState<BudgetPlan | null>(null);
@@ -386,8 +380,9 @@ export default function Budgets() {
 
   // The default query function forwards react-query's AbortSignal to fetch. `data` is kept
   // undefined until a response arrives so "not loaded" is never read as "no rows".
+  const budgetPlansKey = [`/api/companies/${companyId}/budget-plans`];
   const budgetsQuery = useQuery<BudgetPlan[]>({
-    queryKey: [`/api/companies/${companyId}/budget-plans`],
+    queryKey: budgetPlansKey,
     enabled: !!companyId,
   });
   const budgetPlans = budgetsQuery.data ?? NO_PLANS;
@@ -406,7 +401,16 @@ export default function Budgets() {
     enabled: !!selectedBudget?.id && activeTab === "variance",
   });
   const varianceData = varianceQuery.data;
-  const varianceView = readView(varianceQuery, (varianceData?.varianceLines.length ?? 0) > 0);
+  const hasVarianceRows = (varianceData?.varianceLines.length ?? 0) > 0;
+  const varianceView = readView(varianceQuery, hasVarianceRows);
+  const {
+    Component: VarianceResults,
+    status: varianceResultsStatus,
+    request: requestVarianceResults,
+  } = useOnDemandDialog(loadVarianceResults, "BudgetVarianceResults");
+  useEffect(() => {
+    if (activeTab === "variance" && hasVarianceRows) requestVarianceResults();
+  }, [activeTab, hasVarianceRows, requestVarianceResults]);
 
   // E2 (J3-r2): every line budgets one P&L account (not a control account), so actuals come
   // from the ledger and income is never added to expenses.
@@ -470,11 +474,18 @@ export default function Budgets() {
 
   // ─── Mutations ──────────────────────────────────────────
 
+  const refreshBudgets = () => refreshAfterWrite(budgetPlansKey);
+  const refreshAfterLineWrite = (planId: string) => {
+    refreshAfterWrite([`/api/budget-plans/${planId}/lines`]);
+    refreshAfterWrite([`/api/budget-plans/${planId}/variance`]);
+    refreshBudgets();
+  };
+
   const createBudgetMutation = useMutation({
     mutationFn: (data: BudgetFormData) =>
       apiRequest("POST", `/api/companies/${companyId}/budget-plans`, data),
     onSuccess: () => {
-      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
+      refreshBudgets();
       toast({
         title: translateNow("toasts.budgetCreated"),
         description: translateNow("toasts.theBudgetPlanHasBeenCreatedSuccessfully"),
@@ -494,8 +505,9 @@ export default function Budgets() {
   const updateBudgetMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<BudgetFormData> }) =>
       apiRequest("PATCH", `/api/budget-plans/${id}`, data),
-    onSuccess: () => {
-      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
+    onSuccess: (_, { id }) => {
+      refreshBudgets();
+      refreshAfterWrite([`/api/budget-plans/${id}/variance`]);
       toast({
         title: translateNow("toasts.budgetUpdated"),
         description: translateNow("toasts.theBudgetPlanHasBeenUpdated"),
@@ -516,7 +528,7 @@ export default function Budgets() {
   const deleteBudgetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/budget-plans/${id}`),
     onSuccess: () => {
-      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
+      refreshBudgets();
       toast({
         title: translateNow("toasts.budgetDeleted"),
         description: translateNow("toasts.theBudgetPlanHasBeenDeleted"),
@@ -535,7 +547,7 @@ export default function Budgets() {
   const approveBudgetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/approve`, {}),
     onSuccess: () => {
-      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
+      refreshBudgets();
       toast({
         title: translateNow("toasts.budgetApproved"),
         description: translateNow("toasts.theBudgetHasBeenApproved"),
@@ -549,8 +561,6 @@ export default function Budgets() {
       });
     },
   });
-
-  const refreshBudgets = () => refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
 
   const toastNewVersionCreated = () =>
     toast({
@@ -618,9 +628,8 @@ export default function Budgets() {
   const importLinesMutation = useMutation({
     mutationFn: ({ id, csv }: { id: string; csv: string }) =>
       apiRequest("POST", `/api/budget-plans/${id}/import`, { csv }),
-    onSuccess: (result: { imported: number }) => {
-      refreshAfterWrite([`/api/budget-plans/${selectedBudget?.id}/lines`]);
-      refreshBudgets();
+    onSuccess: (result: { imported: number }, { id }) => {
+      refreshAfterLineWrite(id);
       toast({
         title: tr(locale, "Import complete", "اكتمل الاستيراد"),
         description: `${result.imported} ${tr(locale, "lines imported", "سطر تم استيراده")}`,
@@ -643,7 +652,11 @@ export default function Budgets() {
           headers: getAuthHeaders(),
         }
       );
-      if (!response.ok) throw new Error((await response.json())?.message || "Export failed");
+      if (!response.ok)
+        throw new Error(
+          (await response.json().catch(() => null))?.message ||
+            tr(locale, "Export failed", "تعذر التصدير")
+        );
       const url = URL.createObjectURL(await response.blob());
       const a = document.createElement("a");
       a.href = url;
@@ -667,11 +680,10 @@ export default function Budgets() {
   };
 
   const addLineMutation = useMutation({
-    mutationFn: (data: BudgetLineFormData) =>
-      apiRequest("POST", `/api/budget-plans/${selectedBudget?.id}/lines`, data),
-    onSuccess: () => {
-      refreshAfterWrite([`/api/budget-plans/${selectedBudget?.id}/lines`]);
-      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
+    mutationFn: ({ planId, data }: { planId: string; data: BudgetLineFormData }) =>
+      apiRequest("POST", `/api/budget-plans/${planId}/lines`, data),
+    onSuccess: (_, { planId }) => {
+      refreshAfterLineWrite(planId);
       toast({
         title: translateNow("toasts.lineAdded"),
         description: translateNow("toasts.budgetLineHasBeenAdded"),
@@ -690,11 +702,10 @@ export default function Budgets() {
   });
 
   const updateLineMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<BudgetLineFormData> }) =>
+    mutationFn: ({ id, data }: { id: string; planId: string; data: Partial<BudgetLineFormData> }) =>
       apiRequest("PATCH", `/api/budget-lines/${id}`, data),
-    onSuccess: () => {
-      refreshAfterWrite([`/api/budget-plans/${selectedBudget?.id}/lines`]);
-      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
+    onSuccess: (_, { planId }) => {
+      refreshAfterLineWrite(planId);
       toast({
         title: translateNow("toasts.lineUpdated"),
         description: translateNow("toasts.budgetLineHasBeenUpdated"),
@@ -713,10 +724,10 @@ export default function Budgets() {
   });
 
   const deleteLineMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/budget-lines/${id}`),
-    onSuccess: () => {
-      refreshAfterWrite([`/api/budget-plans/${selectedBudget?.id}/lines`]);
-      refreshAfterWrite([`/api/companies/${companyId}/budget-plans`]);
+    mutationFn: ({ id }: { id: string; planId: string }) =>
+      apiRequest("DELETE", `/api/budget-lines/${id}`),
+    onSuccess: (_, { planId }) => {
+      refreshAfterLineWrite(planId);
       toast({
         title: translateNow("toasts.lineDeleted"),
         description: translateNow("toasts.budgetLineHasBeenRemoved"),
@@ -824,10 +835,12 @@ export default function Budgets() {
   };
 
   const handleLineSubmit = (data: BudgetLineFormData) => {
+    if (!selectedBudget) return;
+    const planId = selectedBudget.id;
     if (editingLine) {
-      updateLineMutation.mutate({ id: editingLine.id, data });
+      updateLineMutation.mutate({ id: editingLine.id, planId, data });
     } else {
-      addLineMutation.mutate(data);
+      addLineMutation.mutate({ planId, data });
     }
   };
 
@@ -879,12 +892,6 @@ export default function Budgets() {
     }
   };
 
-  const getVarianceColor = (variance: number) => {
-    if (variance > 0) return "text-success";
-    if (variance < 0) return "text-destructive";
-    return "";
-  };
-
   // E2 (J3-r2): income and expenses are totalled separately; net = income - expenses.
   const lineTotals = useCallback(
     () => signedLineTotals(budgetLines, lineAccountType),
@@ -893,6 +900,16 @@ export default function Budgets() {
   );
 
   // ─── Loading State ─────────────────────────────────────
+
+  const budgetQuery = budgetSearch.trim().toLowerCase();
+  const visibleBudgets = budgetQuery
+    ? budgetPlans.filter((b) =>
+        [b.name, String(b.fiscal_year ?? ""), statusLabel(b.status)]
+          .join(" ")
+          .toLowerCase()
+          .includes(budgetQuery)
+      )
+    : budgetPlans;
 
   // Only a successful empty company list may ask the user to create a company; a pending,
   // paused or failed read says so instead.
@@ -1021,7 +1038,7 @@ export default function Budgets() {
         </Button>
       )}
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={t["shell.nav.accounting"]}
         title={selectedBudget ? selectedBudget.name : tr(locale, "Budgets", "الموازنات")}
         description={
           selectedBudget
@@ -1081,20 +1098,49 @@ export default function Budgets() {
                 view={budgetsView}
                 refresh={budgetsQuery}
                 errorText={t["budgets.listLoadError"]}
+                error={budgetsQuery.error}
                 onRetry={() => void refetchBudgets()}
                 testId="budgets-load-error"
               />
+              {budgetPlans.length > 0 && (
+                <div className="relative mb-4 max-w-sm">
+                  <Search
+                    className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <Input
+                    type="search"
+                    value={budgetSearch}
+                    onChange={(e) => setBudgetSearch(e.target.value)}
+                    placeholder={t["budgets.searchBudgets"]}
+                    aria-label={t["budgets.searchBudgets"]}
+                    className="ps-9"
+                    data-testid="input-search-budgets"
+                  />
+                </div>
+              )}
+              {budgetsView === "ready" && budgetPlans.length > 0 && (
+                <div role="status">
+                  {visibleBudgets.length === 0 && (
+                    <EmptyState
+                      icon={Search}
+                      title={t["budgets.noSearchMatches"]}
+                      testId="budgets-no-match"
+                    />
+                  )}
+                </div>
+              )}
               {budgetsView !== "ready" ? null : budgetPlans.length === 0 ? (
                 <EmptyState
                   icon={PiggyBank}
                   title={t["pages.noBudgetPlansYetCreateYourFirstBudgetToGetStarte"]}
                   testId="budgets-empty"
                 />
-              ) : (
+              ) : visibleBudgets.length > 0 ? (
                 <>
                   {/* Below 768px: stacked row-cards (line 1 name + total, line 2 year/period + status, actions). */}
                   <ul className="divide-hairline md:hidden" data-testid="mobile-budget-list">
-                    {budgetPlans.map((budget) => (
+                    {visibleBudgets.map((budget) => (
                       <li
                         key={budget.id}
                         className="flex cursor-pointer items-start gap-2 py-3 first:pt-0 last:pb-0"
@@ -1155,11 +1201,11 @@ export default function Budgets() {
                           <TableHead data-numeric>
                             <T k="pages.totalBudget" />
                           </TableHead>
-                          <TableHead data-numeric>{t.actions || "Actions"}</TableHead>
+                          <TableHead data-numeric>{t.actions}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {budgetPlans.map((budget) => (
+                        {visibleBudgets.map((budget) => (
                           <TableRow
                             key={budget.id}
                             className="cursor-pointer hover:bg-muted/50"
@@ -1202,7 +1248,7 @@ export default function Budgets() {
                     </Table>
                   </div>
                 </>
-              )}
+              ) : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1214,7 +1260,9 @@ export default function Budgets() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Budget Lines - {selectedBudget.name}</CardTitle>
+                    <CardTitle>
+                      {formatMessage(t["budgets.detailHeading"], { name: selectedBudget.name })}
+                    </CardTitle>
                     <CardDescription>
                       <T k="pages.monthlyBudgetAllocationByCategoryClickARowToEdit" />
                     </CardDescription>
@@ -1260,8 +1308,9 @@ export default function Budgets() {
                   view={linesView}
                   refresh={linesQuery}
                   errorText={t["budgets.linesLoadError"]}
+                  error={linesQuery.error}
                   onRetry={() => void linesQuery.refetch()}
-                  testId="budget-lines-state"
+                  testId="budget-lines-load-error"
                 />
                 {linesView !== "ready" ? null : budgetLines.length === 0 ? (
                   <EmptyState
@@ -1285,7 +1334,7 @@ export default function Budgets() {
                             <T k="pages.annualTotal" />
                           </TableHead>
                           <TableHead data-numeric className=" min-w-[80px]">
-                            {t.actions || "Actions"}
+                            {t.actions}
                           </TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1331,6 +1380,7 @@ export default function Budgets() {
                                 size="sm"
                                 onClick={() => setLineToDelete(line.id)}
                                 title={t["hr.delete"]}
+                                aria-label={t["hr.delete"]}
                                 {...gate("documents.write")}
                                 className="text-muted-foreground hover:text-destructive"
                               >
@@ -1383,10 +1433,11 @@ export default function Budgets() {
           <TabsContent value="variance">
             <Card>
               <CardHeader>
-                <CardTitle>Budget vs Actual Variance - {selectedBudget.name}</CardTitle>
+                <CardTitle>
+                  {formatMessage(t["budgets.varianceHeading"], { name: selectedBudget.name })}
+                </CardTitle>
                 <CardDescription>
-                  Comparing budgeted amounts against actual journal entries. Green = under budget,
-                  Red = over budget.
+                  <T k="budgets.varianceDescription" />
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1394,163 +1445,27 @@ export default function Budgets() {
                   view={varianceView}
                   refresh={varianceQuery}
                   errorText={t["budgets.varianceLoadError"]}
+                  error={varianceQuery.error}
                   onRetry={() => void varianceQuery.refetch()}
-                  testId="budget-variance-state"
+                  testId="budget-variance-load-error"
                 />
                 {varianceView !== "ready" ? null : !varianceData ||
                   varianceData.varianceLines.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     {t["budgets.noVarianceDataAvailableAdd"]}
                   </div>
+                ) : VarianceResults ? (
+                  <VarianceResults
+                    varianceLines={varianceData.varianceLines}
+                    varianceMonths={varianceMonths}
+                    planMonthLabel={planMonthLabel}
+                  />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="sticky start-0 bg-background z-10 min-w-[160px]">
-                            <T k="pages.category" />
-                          </TableHead>
-                          {varianceMonths.map((pm) => (
-                            <TableHead key={pm.key} className="text-center min-w-[200px]">
-                              <div>{planMonthLabel(pm)}</div>
-                              <div className="flex text-xs text-muted-foreground mt-1">
-                                <span className="flex-1 text-end pe-1">
-                                  <T k="pages.budget" />
-                                </span>
-                                <span className="flex-1 text-end pe-1">
-                                  <T k="pages.actual" />
-                                </span>
-                                <span className="flex-1 text-end">Var</span>
-                              </div>
-                            </TableHead>
-                          ))}
-                          <TableHead className="text-center min-w-[200px]">
-                            <div>
-                              <T k="pages.annual" />
-                            </div>
-                            <div className="flex text-xs text-muted-foreground mt-1">
-                              <span className="flex-1 text-end pe-1">
-                                <T k="pages.budget" />
-                              </span>
-                              <span className="flex-1 text-end pe-1">
-                                <T k="pages.actual" />
-                              </span>
-                              <span className="flex-1 text-end">Var %</span>
-                            </div>
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {varianceData.varianceLines.map((line) => (
-                          <TableRow key={line.id}>
-                            <TableCell className="sticky start-0 bg-background z-10 font-medium">
-                              <div>
-                                {budgetCategoryLabel(t, line.category)}
-                                {line.description && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {line.description}
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                            {varianceMonths.map(({ key, column }) => {
-                              // E2 (J3-r2): the report holds only the plan's months.
-                              const m = line.months[column] ?? {
-                                budget: 0,
-                                actual: 0,
-                                variance: 0,
-                                variancePercent: 0,
-                              };
-                              return (
-                                <TableCell data-numeric key={key}>
-                                  <div className="flex text-xs tabular-nums">
-                                    <span className="flex-1 text-end pe-1">
-                                      {m.budget.toFixed(0)}
-                                    </span>
-                                    <span className="flex-1 text-end pe-1">
-                                      {m.actual.toFixed(0)}
-                                    </span>
-                                    <span
-                                      className={`flex-1 text-end font-semibold ${getVarianceColor(m.variance)}`}
-                                    >
-                                      {m.variance >= 0 ? "+" : ""}
-                                      {m.variance.toFixed(0)}
-                                    </span>
-                                  </div>
-                                </TableCell>
-                              );
-                            })}
-                            <TableCell data-numeric>
-                              <div className="flex text-xs tabular-nums">
-                                <span className="flex-1 text-end pe-1">
-                                  {line.totals.budget.toFixed(0)}
-                                </span>
-                                <span className="flex-1 text-end pe-1">
-                                  {line.totals.actual.toFixed(0)}
-                                </span>
-                                <span
-                                  className={`flex-1 text-end font-bold ${getVarianceColor(line.totals.variance)}`}
-                                >
-                                  {line.totals.variancePercent >= 0 ? "+" : ""}
-                                  {line.totals.variancePercent.toFixed(1)}%
-                                </span>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-
-                {/* Variance Summary (X4/J3): income, expense and net are totalled separately */}
-                {varianceData && varianceData.varianceLines.length > 0 && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                    {(() => {
-                      const summary = summariseBudget(varianceData.varianceLines);
-                      const groups = [
-                        { key: "income", title: t["budgets.summaryIncome"], g: summary.income },
-                        { key: "expense", title: t["budgets.summaryExpense"], g: summary.expense },
-                        { key: "net", title: t["budgets.summaryNet"], g: summary.net },
-                      ];
-                      return groups.map(({ key, title, g }) => (
-                        <Card key={key} data-testid={`budget-summary-${key}`}>
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-sm font-medium">{title}</CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-1 text-sm">
-                            <div className="flex justify-between gap-2">
-                              <span className="text-muted-foreground">
-                                <T k="pages.budget" />
-                              </span>
-                              <Money amount={g.budget} currency={"AED"} />
-                            </div>
-                            <div className="flex justify-between gap-2">
-                              <span className="text-muted-foreground">
-                                <T k="pages.actual" />
-                              </span>
-                              <Money amount={g.actual} currency={"AED"} />
-                            </div>
-                            <div
-                              className={`flex items-center justify-between gap-2 font-semibold ${getVarianceColor(g.variance)}`}
-                            >
-                              <span className="flex items-center gap-1">
-                                {g.variance >= 0 ? (
-                                  <TrendingUp className="w-4 h-4" aria-hidden />
-                                ) : (
-                                  <TrendingDown className="w-4 h-4" aria-hidden />
-                                )}
-                                {g.variance >= 0
-                                  ? t["budgets.favourable"]
-                                  : t["budgets.unfavourable"]}
-                              </span>
-                              <Money amount={Math.abs(g.variance)} currency={"AED"} />
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ));
-                    })()}
-                  </div>
+                  <OnDemandDialogStatus
+                    status={varianceResultsStatus === "idle" ? "loading" : varianceResultsStatus}
+                    onRetry={requestVarianceResults}
+                    testId="budget-variance-results"
+                  />
                 )}
               </CardContent>
             </Card>
@@ -1909,8 +1824,8 @@ export default function Budgets() {
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (lineToDelete) {
-                  deleteLineMutation.mutate(lineToDelete);
+                if (lineToDelete && selectedBudget) {
+                  deleteLineMutation.mutate({ id: lineToDelete, planId: selectedBudget.id });
                   setLineToDelete(null);
                 }
               }}

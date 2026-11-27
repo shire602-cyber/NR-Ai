@@ -26,7 +26,7 @@ function SeriesKey({
   items: Array<{ label: string; dashed?: boolean; color: string }>;
 }) {
   return (
-    <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-muted-foreground">
+    <ul className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-caption text-muted-foreground">
       {items.map((item) => (
         <li key={item.label} className="flex items-center gap-1.5">
           <svg width="16" height="2" aria-hidden className="shrink-0">
@@ -55,9 +55,9 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
 
   return (
     // Fable P20: chart cards in one row share a height (spec 2.2 exception for charts).
-    <section className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3 lg:items-stretch">
+    <section className="grid grid-cols-1 items-start gap-stack lg:grid-cols-3 lg:items-stretch">
       <Card className="lg:col-span-2" data-testid="dashboard-trends">
-        <CardHeader className="flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 space-y-0 pb-2">
+        <CardHeader className="flex-row flex-wrap items-start justify-between gap-x-6 gap-y-2 space-y-0 pb-4">
           <div className="min-w-0">
             <CardTitle>{tt["dashboard.trendsCardTitle"]}</CardTitle>
             <p className="text-caption text-muted-foreground">{t["dashboard.lastSixMonths"]}</p>

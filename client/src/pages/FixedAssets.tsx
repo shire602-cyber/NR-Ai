@@ -36,6 +36,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { TableSkeleton, StatCardSkeleton } from "@/components/ui/loading-skeletons";
 import {
   Table,
@@ -87,13 +88,14 @@ import { depreciationPeriodEnded, lastEndedMonth } from "@/lib/depreciation-peri
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
-import { DataTableCard } from "@/components/ui/data-table";
+import { ListQueryTable } from "@/components/ui/list-query-table";
+import { matchesAssetSearch } from "@/lib/fixed-asset-search";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { accountDisplayName } from "@/lib/account-name";
 import { parseCalendarDate } from "@/lib/format-date";
@@ -216,6 +218,8 @@ type DepreciationRunData = z.infer<typeof depreciationRunSchema>;
 
 export default function FixedAssets() {
   const { t, locale } = useTranslation();
+  const assetDisplayName = (asset: FixedAsset) =>
+    (locale === "ar" && asset.asset_name_ar) || asset.asset_name;
   const fa = FA_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -236,15 +240,25 @@ export default function FixedAssets() {
 
   // ─── Queries ────────────────────────────────────────────
 
-  const { data: assets = [], isLoading: isLoadingAssets } = useQuery<FixedAsset[]>({
-    queryKey: [`/api/companies/${companyId}/fixed-assets`],
-    enabled: !!companyId,
-  });
+  const assetsKey = [`/api/companies/${companyId}/fixed-assets`];
+  const summaryKey = [`/api/companies/${companyId}/fixed-assets/summary`];
 
-  const { data: summary } = useQuery<AssetSummary>({
-    queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
+  const assetsQuery = useQuery<FixedAsset[]>({
+    queryKey: assetsKey,
     enabled: !!companyId,
   });
+  const assets = assetsQuery.data ?? [];
+
+  // isLoadingError: only a first load with nothing cached; a failed refresh keeps the cache.
+  const {
+    data: summary,
+    isLoadingError: summaryLoadFailed,
+    refetch: refetchSummary,
+  } = useQuery<AssetSummary>({
+    queryKey: summaryKey,
+    enabled: !!companyId,
+  });
+  const categories = summary?.byCategory ?? [];
 
   // ─── Forms ──────────────────────────────────────────────
 
@@ -302,6 +316,11 @@ export default function FixedAssets() {
       (a.code === "1010" || a.code === "1020" || /cash|bank/i.test(a.subType ?? ""))
   );
 
+  const refreshAssetReads = () => {
+    refreshAfterWrite(assetsKey);
+    refreshAfterWrite(summaryKey);
+  };
+
   const capitalizeMutation = useMutation({
     mutationFn: ({
       id,
@@ -317,7 +336,7 @@ export default function FixedAssets() {
         ...(inputVat && inputVat > 0 ? { inputVat } : {}),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
+      refreshAssetReads();
       setCapitalizeTarget(null);
       toast({ title: fa.capitalized });
     },
@@ -341,10 +360,7 @@ export default function FixedAssets() {
           : {}),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.assetCreated"),
         description: translateNow("toasts.theFixedAssetHasBeenAddedSuccessfully"),
@@ -367,10 +383,7 @@ export default function FixedAssets() {
       return apiRequest("PATCH", `/api/fixed-assets/${id}`, rest);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.assetUpdated"),
         description: translateNow("toasts.theFixedAssetHasBeenUpdatedSuccessfully"),
@@ -391,10 +404,7 @@ export default function FixedAssets() {
   const deleteAssetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/fixed-assets/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.assetDeleted"),
         description: translateNow("toasts.theFixedAssetHasBeenDeleted"),
@@ -415,10 +425,7 @@ export default function FixedAssets() {
     onSuccess: (data: any) => {
       setDepRunDialogOpen(false);
       setDepAsset(null);
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.depreciationRecorded"),
         description: formatMessage(translateNow("toasts.monthlyDepreciationRecorded"), {
@@ -447,17 +454,15 @@ export default function FixedAssets() {
         notes: data.notes || null,
       }),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
-      const glType = data.gainLossType === "gain" ? "Gain" : "Loss";
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.assetDisposed"),
-        description: formatMessage(translateNow("toasts.glOnDisposal"), {
-          glType,
-          amount: formatCurrency(Math.abs(data.gainLoss), "AED", locale),
-        }),
+        description: formatMessage(
+          translateNow(
+            data.gainLossType === "gain" ? "fixedAssets.disposalGain" : "fixedAssets.disposalLoss"
+          ),
+          { amount: formatCurrency(Math.abs(data.gainLoss), "AED", locale) }
+        ),
       });
       setDisposeDialogOpen(false);
       setDisposingAsset(null);
@@ -476,10 +481,7 @@ export default function FixedAssets() {
     mutationFn: (data: DepreciationRunData) =>
       apiRequest("POST", `/api/companies/${companyId}/fixed-assets/run-depreciation`, data),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.batchDepreciationComplete"),
         description: formatMessage(translateNow("toasts.processedAssetsFor"), {
@@ -609,17 +611,10 @@ export default function FixedAssets() {
     }
   };
 
-  const filteredAssets = assets.filter((asset) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      asset.asset_name.toLowerCase().includes(q) ||
-      asset.category.toLowerCase().includes(q) ||
-      (asset.asset_number && asset.asset_number.toLowerCase().includes(q)) ||
-      (asset.serial_number && asset.serial_number.toLowerCase().includes(q)) ||
-      (asset.asset_name_ar && asset.asset_name_ar.includes(q))
-    );
-  });
+  const filteredAssets = assets.filter((asset) =>
+    matchesAssetSearch(asset, searchQuery, t[`forms.asset.cat.${asset.category}`])
+  );
+  const hasSearch = searchQuery.trim().length > 0;
 
   // ─── Loading State ─────────────────────────────────────
 
@@ -651,7 +646,7 @@ export default function FixedAssets() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={t["shell.nav.accounting"]}
         title={t["pages.fixedAssets"]}
         description={t["pageLabels.manageFixedAssetsDepreciationAndDisposals"]}
         primaryAction={
@@ -683,6 +678,18 @@ export default function FixedAssets() {
           </>
         }
       />
+
+      {summaryLoadFailed && (
+        <Card>
+          <ErrorState
+            compact
+            title={t["screens.assetSummaryErrorTitle"]}
+            description={t["screens.assetSummaryErrorBody"]}
+            onRetry={() => void refetchSummary()}
+            testId="error-state-fixed-assets-summary"
+          />
+        </Card>
+      )}
 
       {/* Spec 2.6: no KPI row of zeros before the first asset exists. */}
       {summary && assets.length > 0 && (
@@ -716,7 +723,7 @@ export default function FixedAssets() {
 
       {/* Assets */}
       <section className="space-y-3">
-        {(assets.length > 0 || searchQuery) && (
+        {assetsQuery.data !== undefined && (assets.length > 0 || searchQuery) && (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="relative w-full sm:w-80">
               <Search
@@ -736,11 +743,13 @@ export default function FixedAssets() {
             </p>
           </div>
         )}
-        <DataTableCard
-          status={isLoadingAssets ? "loading" : filteredAssets.length === 0 ? "empty" : "ready"}
+        <ListQueryTable
+          query={assetsQuery}
+          rowCount={filteredAssets.length}
+          loadErrorTestId="error-state-fixed-assets"
           columnLabels={[t["pageLabels.assetName"], t["screens.cost"], t["screens.nbv"], t.status]}
           empty={
-            searchQuery
+            hasSearch
               ? {
                   icon: Building2,
                   title: t["screens.noMatchingAssets"],
@@ -786,7 +795,7 @@ export default function FixedAssets() {
                   <T k="pages.status" />
                 </TableHead>
                 <TableHead>
-                  <span className="sr-only">{t.actions || "Actions"}</span>
+                  <span className="sr-only">{t.actions}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -801,9 +810,7 @@ export default function FixedAssets() {
                   <TableRow key={asset.id}>
                     <TableCell data-truncate="" data-cell="title">
                       <span dir="auto" className="font-medium">
-                        {locale === "ar" && asset.asset_name_ar
-                          ? asset.asset_name_ar
-                          : asset.asset_name}
+                        {assetDisplayName(asset)}
                       </span>
                       {asset.asset_number && (
                         <span
@@ -911,11 +918,11 @@ export default function FixedAssets() {
               })}
             </TableBody>
           </Table>
-        </DataTableCard>
+        </ListQueryTable>
       </section>
 
       {/* Category breakdown */}
-      {summary && summary.byCategory.length > 0 && (
+      {categories.length > 0 && (
         <SectionCard title={t["pageLabels.assetCategoryBreakdown"]} flush>
           <Table className="mobile-fit">
             <TableHeader>
@@ -938,7 +945,7 @@ export default function FixedAssets() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {summary.byCategory.map((cat) => (
+              {categories.map((cat) => (
                 <TableRow key={cat.category}>
                   <TableCell className="font-medium">
                     {t[`forms.asset.cat.${cat.category}`] || cat.category}
@@ -1301,7 +1308,14 @@ export default function FixedAssets() {
             </DialogTitle>
             <DialogDescription>
               {disposingAsset
-                ? `Record disposal for "${disposingAsset.asset_name}" (NBV: ${formatCurrency(parseFloat(disposingAsset.net_book_value || "0"), "AED", locale)})`
+                ? formatMessage(t["fixedAssets.disposalDetails"], {
+                    asset: assetDisplayName(disposingAsset),
+                    amount: formatCurrency(
+                      parseFloat(disposingAsset.net_book_value || "0"),
+                      "AED",
+                      locale
+                    ),
+                  })
                 : t["fixedAssets.recordAssetDisposal"]}
             </DialogDescription>
           </DialogHeader>
@@ -1443,12 +1457,10 @@ export default function FixedAssets() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setDisposeDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button type="submit" variant="destructive" disabled={disposeMutation.isPending}>
-                  {disposeMutation.isPending
-                    ? t.loading || "Loading..."
-                    : t["pageLabels.disposeAsset"]}
+                  {disposeMutation.isPending ? t.loading : t["pageLabels.disposeAsset"]}
                 </Button>
               </div>
             </form>
@@ -1535,7 +1547,7 @@ export default function FixedAssets() {
             <DialogTitle>
               {depAsset ? (
                 formatMessage(t["fixedAssets.recordDepreciationFor"], {
-                  name: depAsset.asset_name,
+                  name: assetDisplayName(depAsset),
                 })
               ) : (
                 <T k="pageLabels.runMonthlyDepreciation" />
@@ -1581,9 +1593,15 @@ export default function FixedAssets() {
                           <SelectItem value="4">
                             <T k="pages.april" />
                           </SelectItem>
-                          <SelectItem value="5">May</SelectItem>
-                          <SelectItem value="6">June</SelectItem>
-                          <SelectItem value="7">July</SelectItem>
+                          <SelectItem value="5">
+                            <T k="pages.may" />
+                          </SelectItem>
+                          <SelectItem value="6">
+                            <T k="pages.june" />
+                          </SelectItem>
+                          <SelectItem value="7">
+                            <T k="pages.july" />
+                          </SelectItem>
                           <SelectItem value="8">
                             <T k="pages.august" />
                           </SelectItem>
@@ -1625,7 +1643,7 @@ export default function FixedAssets() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setDepRunDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button
                   type="submit"
@@ -1633,7 +1651,7 @@ export default function FixedAssets() {
                   data-testid="button-confirm-depreciation"
                 >
                   {runDepreciationMutation.isPending || depreciateMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t.loading
                     : depAsset
                       ? t["screens.recordDepreciation"]
                       : t["pageLabels.runDepreciation"]}

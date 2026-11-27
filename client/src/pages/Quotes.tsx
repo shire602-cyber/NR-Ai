@@ -46,7 +46,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/badge";
-import { DataTableCard } from "@/components/ui/data-table";
+import { DocumentListTable } from "@/components/documents/DocumentListTable";
+import { DocumentSearchInput } from "@/components/documents/DocumentSearchInput";
+import { matchesDocumentSearch } from "@/lib/document-search";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { Calendar } from "@/components/ui/calendar";
@@ -141,10 +143,15 @@ export default function Quotes() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
 
-  const { data: quotes, isLoading } = useQuery<Quote[]>({
+  const quotesQuery = useQuery<Quote[]>({
     queryKey: ["/api/companies", selectedCompanyId, "quotes"],
     enabled: !!selectedCompanyId,
   });
+  const [search, setSearch] = useState("");
+  const quotes = quotesQuery.data ?? [];
+  const visibleQuotes = quotes.filter((q) =>
+    matchesDocumentSearch(search, q.number, q.customerName)
+  );
 
   // WQ1 (7.5): the quote being emailed.
   const [quoteToSend, setQuoteToSend] = useState<Quote | null>(null);
@@ -788,7 +795,7 @@ export default function Quotes() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Sales"
+        eyebrow={t["screens.salesEyebrow"]}
         title={t.quotes}
         description={(t as any).quotesSubtitle}
         actions={
@@ -799,18 +806,30 @@ export default function Quotes() {
         }
       />
 
-      <DataTableCard
-        status={isLoading ? "loading" : quotes && quotes.length > 0 ? "ready" : "empty"}
+      <DocumentSearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder={t["screens.searchQuotes"]}
+        testId="input-search-quotes"
+      />
+
+      <DocumentListTable
+        query={quotesQuery}
+        matchCount={visibleQuotes.length}
         columnLabels={[t.date, t.total, t.status]}
         testId="quotes-table"
+        noMatch={{
+          icon: FileText,
+          title: t["screens.noMatchingDocuments"],
+          description: t["screens.noMatchingDocumentsBody"],
+          testId: "empty-quotes-no-match",
+        }}
         empty={{
           icon: FileText,
-          title: (t as any).noQuotesYet ?? "No quotes yet",
-          description:
-            (t as any).quotesEmptyDesc ??
-            "Send a professional quote in minutes — accepted quotes convert to invoices with one click.",
+          title: t.noQuotesYet,
+          description: t.quotesEmptyDesc,
           action: {
-            label: (t as any).newQuote ?? "New quote",
+            label: t.newQuote,
             onClick: openNewQuote,
             permission: "documents.write",
           },
@@ -842,7 +861,7 @@ export default function Quotes() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(quotes ?? []).map((quote) => (
+            {visibleQuotes.map((quote) => (
               <TableRow key={quote.id}>
                 <TableCell data-nowrap="" data-cell="meta" className="font-medium">
                   <MiddleTruncate text={String(quote.number ?? "")} />
@@ -923,7 +942,7 @@ export default function Quotes() {
             ))}
           </TableBody>
         </Table>
-      </DataTableCard>
+      </DocumentListTable>
       {quoteToSend && (
         <Suspense fallback={null}>
           <SendQuoteDialog

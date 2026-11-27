@@ -12,7 +12,7 @@ export function DashboardEmpty({ m }: { m: DashboardModel }) {
   const tt = m.t as Record<string, string>;
   const planCta = useReadOnlyPlanCta();
   return (
-    <div className="space-y-8" data-testid="dashboard-empty-company">
+    <div className="space-y-section" data-testid="dashboard-empty-company">
       <EmptyState
         size="lg"
         icon={LayoutDashboard}

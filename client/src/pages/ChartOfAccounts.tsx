@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
-import { DataTableCard } from "@/components/ui/data-table";
+import { ListQueryTable } from "@/components/ui/list-query-table";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
@@ -145,15 +145,11 @@ export default function ChartOfAccounts() {
   const [drawerKey, setDrawerKey] = useState(0);
   const [level, setLevel] = useState<Level>("all");
 
-  const {
-    data: accountsWithBalances,
-    isPending,
-    isLoadingError,
-    refetch,
-  } = useQuery<AccountWithBalance[]>({
+  const accountsQuery = useQuery<AccountWithBalance[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
     enabled: !!selectedCompanyId,
   });
+  const accountsWithBalances = accountsQuery.data;
 
   const groupedAccounts = useMemo(() => {
     if (!accountsWithBalances) return {};
@@ -348,22 +344,10 @@ export default function ChartOfAccounts() {
         </div>
       </div>
 
-      <DataTableCard
-        status={
-          isPending
-            ? "loading"
-            : isLoadingError
-              ? "error"
-              : accountsWithBalances && Object.keys(groupedAccounts).length === 0
-                ? "empty"
-                : "ready"
-        }
-        error={{
-          title: t["common.loadFailedTitle"],
-          description: t["common.loadFailedBody"],
-          onRetry: () => void refetch(),
-          testId: "coa-load-error",
-        }}
+      <ListQueryTable
+        query={accountsQuery}
+        rowCount={Object.keys(groupedAccounts).length}
+        loadErrorTestId="coa-load-error"
         columnLabels={[t["screens.code"], t["screens.account"], t["screens.balance"]]}
         empty={{
           icon: BookOpen,
@@ -524,7 +508,7 @@ export default function ChartOfAccounts() {
             );
           })}
         </Table>
-      </DataTableCard>
+      </ListQueryTable>
 
       <AccountDrawer
         key={drawerKey}

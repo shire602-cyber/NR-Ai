@@ -25,6 +25,12 @@ the week's token budget for the work that needs it.
   Report catalog Arabic is the keyed overlay `client/src/locales/ar-catalog/reportCatalog.json`
   (`useCatalogText()`); `npm run e2e:arabic-runtime` must find 0 English text nodes on the 22
   launch routes in Arabic mode. The i18n ratchet also scans `client/src/lib` and `client/src/hooks`.
+- Design tokens live in `client/src/index.css`. The signed-in shells mount `<AppSurface />`, which
+  sets `<html data-surface="app">`: that scope carries the roomier spacing (`p-card`, `gap-stack`,
+  `space-y-section`, `h-control`), medium type weights and layered shadows; public pages keep the
+  base tokens. Depth is opt-in by attribute (`data-tilt`, `data-parallax` + `.parallax-layer`);
+  the pointer code is `client/src/lib/motion/` (lazy). All motion must stop under
+  `prefers-reduced-motion` and the top-bar pause control (`<html data-motion="off">`).
 - Public site: one design system, the homepage's (`client/src/components/marketing/phase/`:
   `phase.css`, `home/home.css`, `SiteHeader`, `home/SiteFooter`). The `/en` and `/ar` pages render
   in `PhaseSite`; sign-in, legal, help, demo and 404 use `MarketingLayout`/`AuthLayout`, which carry

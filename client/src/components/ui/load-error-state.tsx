@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ErrorState } from "@/components/ui/error-state";
 import { classifyLoadError } from "@/lib/loadError";
 import { useTranslation } from "@/lib/i18n";
@@ -17,6 +18,7 @@ export function LoadErrorState({
   compact,
   className,
   testId,
+  forbiddenDescription,
 }: {
   error: unknown;
   onRetry?: () => void;
@@ -29,6 +31,7 @@ export function LoadErrorState({
   compact?: boolean;
   className?: string;
   testId?: string;
+  forbiddenDescription?: ReactNode;
 }) {
   const { t } = useTranslation();
   const kind = classifyLoadError(error);
@@ -39,10 +42,12 @@ export function LoadErrorState({
     forbidden: { title: t[`${scope}.loadForbiddenTitle`], body: t[`${scope}.loadForbiddenBody`] },
     notFound: { title: t[`${scope}.loadNotFoundTitle`], body: t[`${scope}.loadNotFoundBody`] },
   }[kind];
+  const descriptionOverride =
+    kind === "forbidden" ? forbiddenDescription : retriable ? description : undefined;
   return (
     <ErrorState
       title={retriable && title ? title : copy.title}
-      description={retriable && description ? description : copy.body}
+      description={descriptionOverride || copy.body}
       onRetry={retriable ? onRetry : undefined}
       retryLabel={t[`${scope}.retry`]}
       retrying={retrying}

@@ -864,6 +864,10 @@
   "pages.notificationPrefsSave": "Save preferences",
   "pages.notificationPrefsSaving": "Saving...",
   "pages.notificationPrefsTitle": "Notification preferences",
+  "pages.notificationPrefsWaiting": "Waiting for a connection to load your notification preferences.",
+  "pages.accountTypeAccessForbiddenBody": "This feature is unavailable for your account type. Contact support if you think you should have access.",
+  "pages.settingsAccessForbiddenBody": "Access to these settings was denied. Contact support if you think you should have access.",
+  "pages.settingsEnableMfa": "Enable two-factor authentication in Security settings to continue.",
   "pages.notificationPrefsDescription": "Manage how and when you receive notifications",
   "pages.notificationsAllRead": "All notifications marked as read",
   "pages.notificationDismissed": "Notification dismissed",
@@ -1084,5 +1088,14 @@
   "pages.listStaleError": "Couldn't refresh. Showing the last saved copy.",
   "pages.listStaleEmptyTitle": "Nothing in the last saved copy",
   "pages.listStaleNoMatchTitle": "No matches in the last saved copy",
-  "pages.listStaleEmptyBody": "It may be out of date."
+  "pages.listStaleEmptyBody": "It may be out of date.",
+  "pages.may": "May",
+  "pages.june": "June",
+  "pages.july": "July",
+  "pages.varShort": "Var",
+  "pages.workpaperLine": "Line",
+  "pages.supportingWorkpaper": "Supporting workpaper:",
+  "pages.apiKeyColName": "Name",
+  "pages.apiKeyColKey": "Key",
+  "pages.apiKeyNamePlaceholder": "e.g., Production Server"
 }
