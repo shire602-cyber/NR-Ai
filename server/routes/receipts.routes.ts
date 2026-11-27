@@ -13,6 +13,8 @@ import { DomainError } from "../errors";
 import { filsToNumber, mulRate, sumFils, toFils } from "../../shared/money";
 import {
   createReceiptBody,
+  receiptReviewDecisionBody,
+  type ReceiptReviewDecisionBody,
   postReceiptBody,
   receiptDateToDate,
   reviseReceiptBody,
@@ -31,7 +33,8 @@ import {
   resolveReceiptRate,
 } from "../services/receipt-posting.service";
 import { zSupplyType } from "../../shared/validators/primitives";
-import { type Receipt } from "../../shared/schema";
+import { type Receipt, receipts as receiptsTable } from "../../shared/schema";
+import { and, eq } from "drizzle-orm";
 import {
   saveReceiptFile,
   deleteReceiptImage,
@@ -643,24 +646,14 @@ export function registerReceiptRoutes(app: Express) {
     "/api/companies/:companyId/receipts/:id/review-decision",
     authMiddleware,
     requireCustomer,
+    strictBody(receiptReviewDecisionBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, id } = req.params;
       const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
-      const parsed = z
-        .object({
-          decision: z.enum(["accepted", "corrected", "rejected"]),
-          band: z.enum(["high", "review", "low"]),
-          note: z.string().max(500).optional(),
-        })
-        .safeParse(req.body);
-      if (!parsed.success) {
-        return res
-          .status(400)
-          .json({ message: "Invalid review decision", code: "VALIDATION_ERROR" });
-      }
+      const parsed = { data: parsedBody<ReceiptReviewDecisionBody>(req) };
       const receipt = await storage.getReceipt(id, companyId);
       if (!receipt)
         return res.status(404).json({ message: "Receipt not found", code: "RECEIPT_NOT_FOUND" });
@@ -679,6 +672,7 @@ export function registerReceiptRoutes(app: Express) {
           note: parsed.data.note ?? null,
         },
         req,
+        required: true,
       });
       res.json({ ok: true, reviewerId: userId, ...parsed.data });
     })
@@ -1020,7 +1014,24 @@ export function registerReceiptRoutes(app: Express) {
       );
 
       await withLedgerTx(async (tx) => {
-        await storage.deleteReceipt(id, existing.companyId, tx);
+        const deleted = await storage.deleteReceipt(id, existing.companyId, tx);
+        if (!deleted) {
+          // Gone, or posted by a concurrent /post after the read above: nothing was deleted, so
+          // nothing is audited.
+          const [now] = await tx
+            .select({ posted: receiptsTable.posted, journalEntryId: receiptsTable.journalEntryId })
+            .from(receiptsTable)
+            .where(and(eq(receiptsTable.id, id), eq(receiptsTable.companyId, existing.companyId)));
+          if (!now) {
+            throw new DomainError("RECEIPT_NOT_FOUND", 404, undefined, "Receipt not found");
+          }
+          throw new DomainError(
+            "RECEIPT_POSTED",
+            409,
+            { receiptId: id, journalEntryId: now.journalEntryId },
+            "A posted receipt cannot be deleted. Revise it or reverse its journal entry."
+          );
+        }
         await recordAudit({
           userId,
           companyId: existing.companyId,
