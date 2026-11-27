@@ -439,6 +439,7 @@
   "forms.serverErrors.USE_PAYMENT_ENDPOINT": "Record a payment with the Record payment action instead of changing the status.",
   "forms.serverErrors.USE_CREDIT_NOTE_ENDPOINT": "Issue a credit note instead of changing the status.",
   "forms.serverErrors.NO_WRITE_OFF": "This invoice has no write-off.",
+  "forms.serverErrors.REINSTATE_BLOCKED_VAT_RELIEF_CLAIMED": "This invoice has an active VAT bad-debt relief claim, so the write-off cannot be reinstated. Reverse the VAT bad-debt relief claim first, then reinstate the write-off.",
   "forms.serverErrors.INVOICE_NOT_FOUND": "Invoice not found.",
   "forms.serverErrors.INVOICE_NOT_ISSUED": "This invoice is still a draft. Issue it first.",
   "forms.serverErrors.INVOICE_NOT_OPEN": "This invoice has no open balance.",

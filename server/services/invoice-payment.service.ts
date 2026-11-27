@@ -21,6 +21,7 @@ import { db } from "../db";
 import {
   accounts,
   auditLogs,
+  badDebtReliefClaims,
   bankTransactionMatches,
   bankTransactions,
   customerCreditAllocations,
@@ -1367,10 +1368,38 @@ export async function reinstateWriteOffs(input: {
   reason: string;
   userId: string;
   neededFils?: number | null;
+  /**
+   * Manual reinstatement only: refuse while an active VAT bad-debt relief claim (FDL 8/2017
+   * Art. 64) exists for the invoice. Checked under the invoice lock, which claim creation and
+   * reversal also take, so a concurrent claim cannot slip through. The receipt-triggered caller
+   * leaves this unset (the payment hook reverses the relief itself).
+   */
+  blockIfVatReliefClaimed?: boolean;
   tx?: LedgerTx;
 }): Promise<{ reinstatedFils: number; invoice: Invoice | null }> {
   return withLedgerTx(async (tx) => {
     const invoice = await lockInvoice(tx, input.invoiceId, input.companyId);
+    if (input.blockIfVatReliefClaimed) {
+      const [claim] = await tx
+        .select({ id: badDebtReliefClaims.id })
+        .from(badDebtReliefClaims)
+        .where(
+          and(
+            eq(badDebtReliefClaims.invoiceId, invoice.id),
+            eq(badDebtReliefClaims.companyId, input.companyId),
+            eq(badDebtReliefClaims.status, "claimed")
+          )
+        )
+        .limit(1);
+      if (claim) {
+        throw new DomainError(
+          "REINSTATE_BLOCKED_VAT_RELIEF_CLAIMED",
+          409,
+          { claimId: claim.id },
+          "This invoice has an active VAT bad-debt relief claim. Reverse the VAT bad-debt relief claim first, then reinstate the write-off."
+        );
+      }
+    }
     const rows = await tx
       .select()
       .from(invoicePayments)
