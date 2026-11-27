@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,17 @@ import { Link } from "wouter";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatDate } from "@/lib/format";
+import { ErrorState } from "@/components/ui/error-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { hasReadData, queryReadState, type QueryReadState } from "@/lib/queryReadState";
+import { classifyLoadError } from "@/lib/loadError";
+
+/** Offline and server failures can be fixed by a retry; forbidden and not-found cannot. */
+function isRetryableLoadError(error: unknown): boolean {
+  const kind = classifyLoadError(error);
+  return kind === "offline" || kind === "server";
+}
 import {
   FileText,
   Upload,
@@ -22,38 +33,45 @@ import {
 } from "lucide-react";
 
 export default function ClientDashboard() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { data: user } = useCurrentUser();
-  const userName = user?.name || user?.email || "Client";
-  const { companyId } = useDefaultCompany();
+  const userName = user?.name || user?.email || t["dashboard.clientFallbackName"];
+  const { companyId, companyListState, retryCompanyList } = useDefaultCompany();
 
   // Fetch documents count
-  const { data: documents = [], isLoading: docsLoading } = useQuery<any[]>({
+  const documentsQuery = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "documents"],
     enabled: !!companyId,
   });
 
-  // Fetch compliance tasks
-  const { data: complianceTasks = [], isLoading: complianceLoading } = useQuery<any[]>({
-    queryKey: ["/api/companies", companyId, "compliance-tasks"],
-    enabled: !!companyId,
-  });
-
-  // Fetch tasks
-  const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
+  // Compliance tasks feed both the deadline card and the pending-task count.
+  const tasksQuery = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "compliance-tasks"],
     enabled: !!companyId,
   });
 
   // Fetch activity logs
-  const { data: activityLogs = [], isLoading: activityLoading } = useQuery<any[]>({
+  const activityQuery = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "journal"],
     enabled: !!companyId,
   });
 
+  const reads = [documentsQuery, tasksQuery, activityQuery].map((query) => ({
+    query,
+    state: queryReadState(query),
+  }));
+  const [documentsState, tasksState, activityState] = reads.map((r) => r.state);
+  const failedReads = reads.filter((r) => r.state === "error");
+  const staleReads = reads.filter((r) => r.state === "stale");
+
+  // Counts and lists exist only for data that actually loaded.
+  const documents = hasReadData(documentsState) ? (documentsQuery.data ?? []) : [];
+  const complianceTasks = hasReadData(tasksState) ? (tasksQuery.data ?? []) : [];
+  const activityLogs = hasReadData(activityState) ? (activityQuery.data ?? []) : [];
+
   // Compute derived data
-  const pendingTasks = tasks.filter(
-    (t: any) => t.status !== "completed" && t.status !== "cancelled"
+  const pendingTasks = complianceTasks.filter(
+    (task: any) => task.status !== "completed" && task.status !== "cancelled"
   );
 
   const now = new Date();
@@ -85,9 +103,15 @@ export default function ClientDashboard() {
         label: t["pages.allClear"],
       };
     if (daysUntilDeadline !== null && daysUntilDeadline <= 7)
-      return { color: "bg-danger-subtle text-destructive border-destructive/30", label: "Urgent" };
+      return {
+        color: "bg-danger-subtle text-destructive border-destructive/30",
+        label: t["dashboard.clientUrgent"],
+      };
     if (daysUntilDeadline !== null && daysUntilDeadline <= 30)
-      return { color: "bg-warning-subtle text-warning border-warning/30", label: "Upcoming" };
+      return {
+        color: "bg-warning-subtle text-warning border-warning/30",
+        label: t["dashboard.clientUpcoming"],
+      };
     return {
       color: "bg-success-subtle text-success border-success/30",
       label: t["pageLabels.onTrack"],
@@ -99,12 +123,59 @@ export default function ClientDashboard() {
   // Recent updates feed data
   const recentUpdates = activityLogs.slice(0, 5).map((item: any) => ({
     id: item.id,
-    description: item.description || item.memo || "Activity logged",
+    description: item.description || item.memo || t["dashboard.clientActivityLogged"],
     date: item.createdAt || item.date,
   }));
 
+  /** A card figure: a skeleton while loading, a dash after a failed load, else the number. */
+  const figure = (state: QueryReadState, value: number, testId: string) =>
+    state === "pending" ? (
+      <Skeleton className="h-8 w-16" />
+    ) : (
+      <div className="text-2xl font-bold" data-testid={testId}>
+        {hasReadData(state) ? value : "—"}
+      </div>
+    );
+
+  if (!companyId) {
+    if (companyListState === "error") {
+      return <ErrorState onRetry={retryCompanyList} testId="client-dashboard-company-error" />;
+    }
+    if (companyListState === "loading" || companyListState === "waiting") {
+      return (
+        <div className="max-w-5xl mx-auto space-y-4" data-testid="client-dashboard-loading">
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      );
+    }
+    return (
+      <div className="p-6 text-muted-foreground" data-testid="client-dashboard-no-company">
+        <T k="pages.noCompanySelected" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
+      {failedReads.length > 0 && (
+        <LoadErrorState
+          compact
+          error={
+            (failedReads.find((r) => isRetryableLoadError(r.query.error)) ?? failedReads[0]).query
+              .error
+          }
+          onRetry={() => failedReads.forEach((r) => void r.query.refetch())}
+          testId="client-dashboard-load-error"
+        />
+      )}
+      {staleReads.length > 0 && (
+        <StaleDataNotice
+          onRetry={() => staleReads.forEach((r) => void r.query.refetch())}
+          testId="client-dashboard-stale"
+        />
+      )}
+
       {/* Header */}
       <div className="relative overflow-hidden rounded-2xl p-8 border border-primary/10">
         <div className="relative z-10">
@@ -131,12 +202,8 @@ export default function ClientDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            {docsLoading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <div className="text-2xl font-bold">{documents.length}</div>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">documents in vault</p>
+            {figure(documentsState, documents.length, "client-documents-count")}
+            <p className="text-xs text-muted-foreground mt-1">{t["dashboard.clientDocsInVault"]}</p>
             <Link href="/document-vault">
               <Button variant="ghost" size="sm" className="px-0 mt-2 text-primary gap-1">
                 <T k="pageLabels.viewAll" />
@@ -157,15 +224,17 @@ export default function ClientDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            {complianceLoading ? (
+            {tasksState === "pending" ? (
               <Skeleton className="h-8 w-full" />
+            ) : tasksState === "error" ? (
+              <div className="text-sm font-semibold">—</div>
             ) : nextDeadline ? (
               <>
                 <div className="text-sm font-semibold">
-                  {nextDeadline.title || "Upcoming deadline"}
+                  {nextDeadline.title || t["dashboard.clientUpcomingDeadline"]}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  due in {daysUntilDeadline} day{daysUntilDeadline !== 1 ? "s" : ""}
+                  {formatMessage(t["dashboard.clientDueInDays"], { count: daysUntilDeadline ?? 0 })}
                 </p>
               </>
             ) : (
@@ -173,9 +242,11 @@ export default function ClientDashboard() {
                 <T k="pageLabels.noUpcomingDeadlines" />
               </div>
             )}
-            <Badge variant="outline" className={`mt-2 text-xs ${complianceBadge.color}`}>
-              {complianceBadge.label}
-            </Badge>
+            {hasReadData(tasksState) && (
+              <Badge variant="outline" className={`mt-2 text-xs ${complianceBadge.color}`}>
+                {complianceBadge.label}
+              </Badge>
+            )}
           </CardContent>
         </Card>
 
@@ -190,12 +261,10 @@ export default function ClientDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            {tasksLoading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <div className="text-2xl font-bold">{pendingTasks.length}</div>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">tasks incomplete</p>
+            {figure(tasksState, pendingTasks.length, "client-tasks-count")}
+            <p className="text-xs text-muted-foreground mt-1">
+              {t["dashboard.clientTasksIncomplete"]}
+            </p>
             <Link href="/compliance-calendar">
               <Button variant="ghost" size="sm" className="px-0 mt-2 text-primary gap-1">
                 <T k="pageLabels.viewTasks" />
@@ -216,12 +285,10 @@ export default function ClientDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            {activityLoading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <div className="text-2xl font-bold">{recentActivityItems.length}</div>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">items this week</p>
+            {figure(activityState, recentActivityItems.length, "client-activity-count")}
+            <p className="text-xs text-muted-foreground mt-1">
+              {t["dashboard.clientItemsThisWeek"]}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -288,12 +355,14 @@ export default function ClientDashboard() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {activityLoading ? (
+          {activityState === "pending" ? (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
+          ) : activityState === "error" ? (
+            <p className="text-center py-8 text-muted-foreground">—</p>
           ) : recentUpdates.length > 0 ? (
             <div className="space-y-3">
               {recentUpdates.map((update: any) => (
@@ -308,7 +377,7 @@ export default function ClientDashboard() {
                     <p className="text-sm font-medium truncate">{update.description}</p>
                     {update.date && (
                       <p className="text-xs text-muted-foreground">
-                        {formatDate(update.date, "en")}
+                        {formatDate(update.date, locale)}
                       </p>
                     )}
                   </div>

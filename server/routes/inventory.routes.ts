@@ -15,6 +15,7 @@ import { assertChosenAccountsNotControl } from "../ledger/control-accounts";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { actorFromRequest, assertCompanyPermission } from "../services/approval-rules.service";
 import { fromFils, toFils } from "../../shared/money";
+import { todayDubai } from "@shared/accounting-date";
 import {
   bundleComponentsBody,
   createInventoryProductBody,
@@ -58,7 +59,7 @@ import {
 import { assertAccount, assertWarehouse, defaultWarehouse, q } from "../services/inventory/store";
 
 const log = createLogger("inventory");
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayDubai();
 
 /** S2: reviewed opening-stock valuation rows (unitCost in fils overrides the cost price). */
 const openingBackfillBody = z

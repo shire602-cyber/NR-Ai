@@ -14,7 +14,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EditorShell } from "@/components/ui/editor-shell";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { useEditorRoute } from "@/hooks/useEditorRoute";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -22,6 +22,7 @@ import { z } from "zod";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { filterPurchaseOrders } from "@/lib/purchase-order-filters";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Form,
@@ -40,6 +41,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/badge";
+import { STATUS_NAMESPACES } from "@/components/ui/status-meta";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -60,6 +62,7 @@ import { formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Plus,
+  Search,
   CalendarIcon,
   Trash2,
   Download,
@@ -74,6 +77,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DataTableCard } from "@/components/ui/data-table";
+import { classifyLoadError, loadErrorMessage } from "@/lib/loadError";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { parseCalendarDate } from "@/lib/format-date";
@@ -164,7 +168,7 @@ interface PurchaseOrder {
 }
 
 export default function PurchaseOrders() {
-  const { t, locale } = useTranslation();
+  const { t, locale } = useTranslation(STATUS_NAMESPACES);
   // E2 (J3-r2 / J4-r2): approve needs documents.approve and someone other than the preparer.
   const { gate, gateApproval, can } = useCompanyPermission();
   const pc = PO_COPY[locale === "ar" ? "ar" : "en"];
@@ -174,16 +178,26 @@ export default function PurchaseOrders() {
   const { routed, editor, toNew, toEdit, toList } = useEditorRoute("/purchase-orders");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const {
     data: purchaseOrders,
     isLoading,
-    error: listError,
-    refetch: refetchList,
+    isError,
+    error,
+    isPaused,
+    isSuccess,
+    refetch,
   } = useQuery<PurchaseOrder[]>({
     queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
     enabled: !!selectedCompanyId,
   });
+  // Cached rows stay on screen through a failed or paused background refresh. A failure with no
+  // rows to keep (nothing loaded, or a cached empty list) shows the error and Retry instead.
+  const loadPaused = purchaseOrders === undefined && isPaused;
+  const loadFailed = (purchaseOrders?.length ?? 0) === 0 && isError;
+  const listErrorKind = classifyLoadError(error);
   const { data: products = [] } = useQuery<
     Array<{
       id: string;
@@ -198,6 +212,13 @@ export default function PurchaseOrders() {
     queryKey: [`/api/companies/${selectedCompanyId}/products`],
     enabled: !!selectedCompanyId && (editorOpen || !!editor),
   });
+  const visibleOrders = filterPurchaseOrders(purchaseOrders, searchQuery, t);
+  const hasSearchNoMatches =
+    !isLoading &&
+    searchQuery.trim() !== "" &&
+    (purchaseOrders?.length ?? 0) > 0 &&
+    visibleOrders.length === 0;
+  const showEmpty = hasSearchNoMatches || (isSuccess && purchaseOrders?.length === 0);
   const stockProducts = products.filter((p) => p.isActive !== false);
 
   const form = useForm<PurchaseOrderFormData>({
@@ -465,7 +486,7 @@ export default function PurchaseOrders() {
       testId="dialog-po-form"
       backHref="/purchase-orders"
       backLabel={t["invoices.editor.backPurchaseOrders"]}
-      eyebrow="Purchases"
+      eyebrow={t["purchases.eyebrow"]}
       title={editingPO ? t["screens.editPo"] : t["pageLabels.newPurchaseOrder"]}
       description={editingPO ? t["forms.po.editDesc"] : t["forms.po.newDesc"]}
       footerSummary={
@@ -870,7 +891,7 @@ export default function PurchaseOrders() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Purchases"
+        eyebrow={t["purchases.eyebrow"]}
         title={t.purchaseOrders}
         description={(t as any).purchaseOrdersSubtitle}
         actions={
@@ -881,25 +902,85 @@ export default function PurchaseOrders() {
         }
       />
 
+      {(purchaseOrders?.length ?? 0) > 0 && (
+        <div className="relative flex w-full items-center sm:w-72">
+          <Search
+            className="pointer-events-none absolute start-3 h-4 w-4 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            ref={searchInputRef}
+            type="search"
+            placeholder={t["purchases.poSearch"]}
+            aria-label={t["purchases.poSearch"]}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-9 ps-9"
+            data-testid="input-search-po"
+          />
+        </div>
+      )}
+
+      <div role="status" className="sr-only">
+        {hasSearchNoMatches ? t["purchases.poNoMatch"] : ""}
+      </div>
+
       <DataTableCard
         status={
-          isLoading ? "loading" : purchaseOrders && purchaseOrders.length > 0 ? "ready" : "empty"
+          loadPaused || loadFailed
+            ? "error"
+            : purchaseOrders === undefined
+              ? "loading"
+              : showEmpty
+                ? "empty"
+                : "ready"
         }
-        loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
         columnLabels={[t["pages.vendor"], t.date, t.total, t.status]}
         testId="purchase-orders-table"
-        empty={{
-          icon: ShoppingCart,
-          title: (t as any).noPurchaseOrdersYet ?? "No purchase orders yet",
-          description:
-            (t as any).purchaseOrdersEmptyDesc ??
-            "Track what you've ordered from suppliers and match deliveries to bills when they arrive.",
-          action: {
-            label: (t as any).newPurchaseOrder ?? "New Purchase Order",
-            onClick: openNewPO,
-          },
-          testId: "empty-purchase-orders",
+        error={{
+          title: loadPaused
+            ? t["components.offlineLabel"]
+            : listErrorKind === "forbidden"
+              ? t["firm.loadForbiddenTitle"]
+              : listErrorKind === "notFound"
+                ? t["firm.loadNotFoundTitle"]
+                : undefined,
+          description: loadFailed && !loadPaused ? loadErrorMessage(error, t) : undefined,
+          onRetry:
+            loadPaused || listErrorKind === "offline" || listErrorKind === "server"
+              ? () => void refetch()
+              : undefined,
+          testId: loadPaused ? "offline-purchase-orders" : "error-purchase-orders",
         }}
+        empty={
+          hasSearchNoMatches
+            ? {
+                icon: Search,
+                title: t["purchases.poNoMatch"],
+                description: t["purchases.poNoMatchBody"],
+                action: {
+                  label: t["screens.clearSearch"],
+                  onClick: () => {
+                    setSearchQuery("");
+                    searchInputRef.current?.focus();
+                  },
+                  variant: "outline",
+                },
+                testId: "empty-purchase-orders-search",
+              }
+            : {
+                icon: ShoppingCart,
+                title: (t as any).noPurchaseOrdersYet ?? "No purchase orders yet",
+                description:
+                  (t as any).purchaseOrdersEmptyDesc ??
+                  "Track what you've ordered from suppliers and match deliveries to bills when they arrive.",
+                action: {
+                  label: (t as any).newPurchaseOrder ?? "New Purchase Order",
+                  onClick: openNewPO,
+                },
+                testId: "empty-purchase-orders",
+              }
+        }
       >
         <Table className="row-cards">
           <TableHeader>
@@ -926,7 +1007,7 @@ export default function PurchaseOrders() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(purchaseOrders ?? []).map((po) => (
+            {visibleOrders.map((po) => (
               <TableRow key={po.id}>
                 <TableCell data-nowrap="" data-cell="meta" className="font-medium">
                   <MiddleTruncate text={String(po.number ?? "")} />

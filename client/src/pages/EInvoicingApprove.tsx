@@ -12,7 +12,7 @@ import { useState } from "react";
 import "@/styles/rtl.css";
 import "@/styles/mobile.css";
 import { useParams } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock, FileCheck2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -39,21 +39,43 @@ interface ApproverPageData {
 type LoadResult =
   | { kind: "ok"; data: ApproverPageData }
   | { kind: "gone"; state: "expired" | "revoked" }
-  | { kind: "busy" }
   | { kind: "invalid" };
 
-async function load(token: string): Promise<LoadResult> {
+/**
+ * A 429 is a failed read, not a result: it is thrown so the query keeps its cached data (the
+ * approval page or a terminal 410) instead of replacing it.
+ */
+class BusyError extends Error {
+  constructor() {
+    super("429");
+    this.name = "BusyError";
+  }
+}
+
+type DoneOutcome =
+  | { kind: "completed"; data: ApproverPageData }
+  | Extract<LoadResult, { kind: "gone" }>;
+
+/** A 410 body is the terminal state. Anything other than revoked is treated as expired. */
+function goneState(body: unknown): "expired" | "revoked" {
+  return body && typeof body === "object" && "state" in body && body.state === "revoked"
+    ? "revoked"
+    : "expired";
+}
+
+async function load(token: string, signal: AbortSignal): Promise<LoadResult> {
   const res = await fetch(apiUrl(`/api/portal/einvoicing-approve/${encodeURIComponent(token)}`), {
     credentials: "omit",
+    signal,
   });
   if (res.status === 410) {
     const body = await res.json().catch(() => ({}));
-    return { kind: "gone", state: body.state === "revoked" ? "revoked" : "expired" };
+    return { kind: "gone", state: goneState(body) };
   }
   // Read the body even when it is not used: an unread response keeps the request open.
   if (res.status === 429) {
     await res.text().catch(() => "");
-    return { kind: "busy" };
+    throw new BusyError();
   }
   if (res.status === 404 || res.status === 400) {
     await res.text().catch(() => "");
@@ -63,17 +85,29 @@ async function load(token: string): Promise<LoadResult> {
   return { kind: "ok", data: (await res.json()) as ApproverPageData };
 }
 
+/**
+ * The page keeps local state (Done response, closed link, mutation). Keying it by token gives
+ * in-app navigation from link A to link B fresh state, so B shows its own GET outcome.
+ */
 export default function EInvoicingApprove() {
   const { token = "" } = useParams<{ token: string }>();
+  return <EInvoicingApproveLink key={token} token={token} />;
+}
+
+function EInvoicingApproveLink({ token }: { token: string }) {
   const { t, locale } = useTranslation(APPROVE_NAMESPACES);
+  const queryClient = useQueryClient();
   const [doneData, setDoneData] = useState<ApproverPageData | null>(null);
+  // The Done response is the terminal state. A later read can fail or stay pending; it must
+  // not put the active page, or a retry alert, back on screen.
+  const [closedLink, setClosedLink] = useState<Extract<LoadResult, { kind: "gone" }> | null>(null);
   const query = useQuery<LoadResult>({
     queryKey: ["einvoicing-approve", token],
-    queryFn: () => load(token),
+    queryFn: ({ signal }) => load(token, signal),
     retry: false,
   });
   const done = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<DoneOutcome> => {
       const res = await fetch(
         apiUrl(`/api/portal/einvoicing-approve/${encodeURIComponent(token)}/done`),
         {
@@ -83,29 +117,57 @@ export default function EInvoicingApprove() {
           body: "{}",
         }
       );
-      if (!res.ok) throw new Error(String(res.status));
-      return (await res.json()) as ApproverPageData;
+      if (res.status === 410) {
+        const body = await res.json().catch(() => ({}));
+        return { kind: "gone", state: goneState(body) };
+      }
+      // Read the body even when it is not used: an unread response keeps the request open.
+      if (!res.ok) {
+        await res.text().catch(() => "");
+        throw new Error(String(res.status));
+      }
+      return { kind: "completed", data: (await res.json()) as ApproverPageData };
     },
-    onSuccess: setDoneData,
+    onSuccess: async (outcome) => {
+      if (outcome.kind === "gone") {
+        setClosedLink(outcome);
+        // A reconnect GET already in flight may carry the active state and resolve after this
+        // 410. Cancel it (and wait) so it cannot overwrite the terminal result in the cache.
+        const queryKey = ["einvoicing-approve", token];
+        await queryClient.cancelQueries({ queryKey, exact: true });
+        queryClient.setQueryData<LoadResult>(queryKey, outcome);
+        return;
+      }
+      setDoneData(outcome.data);
+    },
   });
 
-  const result = query.data;
-  const data = doneData ?? (result?.kind === "ok" ? result.data : null);
+  const result = closedLink ?? query.data;
+  const data = closedLink ? null : (doneData ?? (result?.kind === "ok" ? result.data : null));
   useLinkLocale(!query.isLoading, null, data?.locale);
+  // Offline first load: the query is paused with nothing to show. Cached content on a paused
+  // refresh keeps rendering as is.
+  const waiting = query.fetchStatus === "paused" && !result && !data;
+  // A terminal (gone) result, local or cached, is never retried, even if a later read errors.
+  const busy = query.error instanceof BusyError;
+  // A rate-limited refresh (429) with cached or completed content renders that content as is;
+  // the busy panel is only for a load that has nothing to show.
+  const keepsContent = busy && (!!result || !!data);
+  const showRetry = !waiting && result?.kind !== "gone" && query.isError && !keepsContent;
   const company = data ? bidiIsolate(data.companyName) : "";
   useDocumentTitle(
     data
       ? formatMessage(t["customerLink.approveTitle"], { company: data.companyName })
-      : result?.kind === "gone"
-        ? t[
-            result.state === "revoked"
-              ? "einvoicing.appoint.revokedTitle"
-              : "einvoicing.appoint.expiredTitle"
-          ]
-        : result?.kind === "busy"
-          ? t["customerLink.busyTitle"]
-          : query.isError
-            ? t["customerLink.loadFailedTitle"]
+      : waiting
+        ? t["customerLink.waitingTitle"]
+        : result?.kind === "gone"
+          ? t[
+              result.state === "revoked"
+                ? "einvoicing.appoint.revokedTitle"
+                : "einvoicing.appoint.expiredTitle"
+            ]
+          : query.isError && !keepsContent
+            ? t[busy ? "customerLink.busyTitle" : "customerLink.loadFailedTitle"]
             : result?.kind === "invalid"
               ? t["einvoicing.appoint.invalidTitle"]
               : t["einvoicing.appoint.pageEyebrow"]
@@ -135,6 +197,17 @@ export default function EInvoicingApprove() {
               aria-label={t["customerLink.loading"]}
             />
           )}
+          {waiting && (
+            <div
+              className="space-y-2"
+              role="status"
+              aria-live="polite"
+              data-testid="approve-waiting"
+            >
+              <h1 className="text-h2 font-semibold">{t["customerLink.waitingTitle"]}</h1>
+              <p className="text-small text-muted-foreground">{t["customerLink.waitingBody"]}</p>
+            </div>
+          )}
           {result?.kind === "invalid" && (
             <div className="space-y-2" data-testid="approve-invalid">
               <h1 className="text-h2 font-semibold">{t["einvoicing.appoint.invalidTitle"]}</h1>
@@ -143,25 +216,13 @@ export default function EInvoicingApprove() {
               </p>
             </div>
           )}
-          {(result?.kind === "busy" || query.isError) && (
+          {showRetry && (
             <div className="space-y-3" data-testid="approve-retry">
               <h1 className="text-h2 font-semibold">
-                {
-                  t[
-                    result?.kind === "busy"
-                      ? "customerLink.busyTitle"
-                      : "customerLink.loadFailedTitle"
-                  ]
-                }
+                {t[busy ? "customerLink.busyTitle" : "customerLink.loadFailedTitle"]}
               </h1>
               <p className="text-small text-muted-foreground">
-                {
-                  t[
-                    result?.kind === "busy"
-                      ? "customerLink.busyBody"
-                      : "customerLink.loadFailedBody"
-                  ]
-                }
+                {t[busy ? "customerLink.busyBody" : "customerLink.loadFailedBody"]}
               </p>
               <Button variant="outline" onClick={() => void query.refetch()}>
                 {t["customerLink.retry"]}

@@ -10,6 +10,45 @@ import { accountByCode, useHarness, type Tenant } from "./harness";
 const h = useHarness();
 const base = (t: Tenant) => `/api/companies/${t.company.id}`;
 
+it.each(["filed", "amended"])(
+  "PR #178 keeps a %s predecessor effective while its amendment is open",
+  async (storedStatus) => {
+    const t = await h.createTenant();
+    const [original] = await h.sql<{ id: string }>(
+      `INSERT INTO vat_returns
+        (company_id, period_start, period_end, due_date, status, fta_reference_number, created_by)
+       VALUES ($1, '2026-07-01', '2026-09-30', '2026-10-28', $3, 'ET-ORIGINAL', $2)
+       RETURNING id`,
+      [t.company.id, t.user.id, storedStatus]
+    );
+    const [draft] = await h.sql<{ id: string }>(
+      `INSERT INTO vat_returns
+        (company_id, period_start, period_end, due_date, status, amends_return_id, created_by)
+       VALUES ($1, '2026-07-01', '2026-09-30 23:59:59.999', '2026-10-28', 'draft', $3, $2)
+       RETURNING id`,
+      [t.company.id, t.user.id, original.id]
+    );
+
+    const list = await t.as.get(`${base(t)}/vat-returns`);
+    expect(list.status, list.text).toBe(200);
+    expect(list.body).toHaveLength(2);
+    expect(list.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: original.id, status: storedStatus }),
+        expect.objectContaining({ id: draft.id, status: "draft" }),
+      ])
+    );
+    const { getClientStats } = await import("../../server/routes/firm/shared");
+    expect((await getClientStats(t.company.id)).vatStatus).toMatchObject({
+      status: "filed",
+      filingRecorded: true,
+    });
+    const { loadReturnLifecycle } = await import("../../server/services/vat-autopilot.service");
+    const period = (await loadReturnLifecycle([t.company.id])).get(t.company.id)?.get("2026-09-30");
+    expect(period).toMatchObject({ returnId: original.id, filed: true });
+  }
+);
+
 async function q3Activity(t: Tenant) {
   const inv = await t.as.post(`${base(t)}/invoices`, {
     customerName: "Acme LLC",

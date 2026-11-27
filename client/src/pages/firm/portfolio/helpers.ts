@@ -146,7 +146,7 @@ export function fallbackIntervention(
   );
   const level: BookkeeperInterventionLevel = score >= 65 ? "high" : score >= 35 ? "medium" : "low";
   const reasons = [
-    client.assignedStaff.length === 0 ? "No owner assigned" : "",
+    client.assignedStaff.length === 0 ? "No owner assigned" : "", // i18n-ignore: UI copy awaiting AR sweep
     ...client.vat.blockers,
     ...client.corporateTax.blockers,
     ...client.bookkeeping.blockers,

@@ -15,6 +15,7 @@ import {
   buttonByText,
   click,
   flush,
+  flushUntil,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
   inputByLabel,
@@ -449,6 +450,8 @@ describe("[D5b] vendor form payload unchanged", () => {
     await renderPage(Vendors);
     await click(buttonByText(/^\s*new supplier\s*$/i));
     const byId = (id: string) => document.getElementById(id);
+    // NewVendorDialog is lazy: wait for its form before typing.
+    await flushUntil(() => byId("vendor-name") !== null);
     await type(byId("vendor-name"), "Atlas Office Supplies");
     await type(byId("vendor-name_ar"), "أطلس للوازم المكتبية");
     await type(byId("vendor-trn"), "100456789000003");
@@ -674,6 +677,7 @@ describe("[D5b] cost centre form payload unchanged", () => {
     const { default: CostCenters } = await import("../../client/src/pages/CostCenters");
     await renderPage(CostCenters);
     await click(buttonByText(/add cost cent/i));
+    await flushUntil(() => !!dialog()); // the form dialog is a lazy chunk
     await type(named("code"), "CC-110");
     await type(named("name"), "Retail branch");
     await type(named("nameAr"), "فرع التجزئة");

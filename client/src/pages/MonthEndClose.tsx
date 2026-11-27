@@ -1,7 +1,7 @@
+import { closeChecklistStatus } from "@/pages/month-end/closeStatus";
+import { YearEndFailure } from "@/pages/month-end/YearEndFailure";
 import { errorHeading } from "@/lib/error-heading";
 import { T } from "@/components/layout/T";
-import { DatePicker } from "@/components/ui/date-picker";
-import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   formatDate as formatDisplayDate,
@@ -10,7 +10,8 @@ import {
   parseCalendarDate,
 } from "@/lib/format-date";
 import { localizeServerText, type CopyDescriptor } from "@shared/server-copy";
-import { useState, useMemo } from "react";
+import { accountDisplayName } from "@/lib/account-name";
+import { lazy, Suspense, useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,8 +49,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { lastEndedFiscalYear } from "@/lib/fiscal-year";
-import { apiFieldErrors, type FieldMessages } from "@/lib/api-field-errors";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   CheckCircle2,
@@ -64,6 +63,11 @@ import {
   ArrowRight,
   BookOpen,
 } from "lucide-react";
+
+// A rejected chunk import resolves to the failure slot, so the rest of the page stays usable.
+const YearEndCloseCard = lazy(() =>
+  import("@/pages/month-end/YearEndCloseCard").catch(() => ({ default: YearEndFailure }))
+);
 
 // ---- Types ----
 
@@ -132,6 +136,7 @@ interface ClosingEntry {
     accountId: string;
     accountCode: string;
     accountName: string;
+    accountNameAr?: string | null;
     debit: number;
     credit: number;
   }>;
@@ -163,6 +168,14 @@ interface CloseSettingsResponse {
   permissions: { canLock: boolean; canUnlock: boolean; canReopenHardClose: boolean };
 }
 
+interface LockPeriodSubmission {
+  companyId: string;
+  periodEnd: string;
+  lockType: "soft" | "hard";
+  overrideChecklist: boolean;
+  reason: string;
+}
+
 // ---- Fix routes for incomplete items ----
 const fixRoutes: Record<number, string> = {
   1: "/bank-reconciliation",
@@ -175,6 +188,71 @@ const fixRoutes: Record<number, string> = {
 };
 
 // ---- Component ----
+
+/** Keeps Try again mounted while a retry runs or waits offline, so focus is not dropped. */
+function CloseRetryNotice({
+  testId,
+  scope,
+  stale,
+  query,
+}: {
+  testId: string;
+  scope: "checklist" | "history";
+  /** Cached rows are still shown above or below the notice. */
+  stale?: boolean;
+  query: { isFetching: boolean; isPaused: boolean; refetch: () => unknown };
+}) {
+  const { t } = useTranslation();
+  const checklist = scope === "checklist";
+  const busy = query.isFetching || query.isPaused;
+  const message = stale
+    ? checklist
+      ? t["monthEnd.checklistRefreshFailed"]
+      : t["monthEnd.historyRefreshFailed"]
+    : checklist
+      ? t["monthEnd.checklistLoadFailed"]
+      : t["monthEnd.historyLoadFailed"];
+  const waiting = checklist
+    ? t["monthEnd.checklistWaitingForConnection"]
+    : t["monthEnd.historyWaitingForConnection"];
+  const retrying = checklist ? t["monthEnd.retryingChecklist"] : t["monthEnd.retryingHistory"];
+  return (
+    <div
+      className={`space-y-3 text-center ${stale ? "py-3" : checklist ? "py-4" : "py-6"}`}
+      data-testid={testId}
+    >
+      <p className="text-sm text-destructive" role="alert">
+        {message}
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        aria-disabled={busy}
+        onClick={() => {
+          if (!busy) query.refetch();
+        }}
+      >
+        {t["monthEnd.retry"]}
+      </Button>
+      <p className={query.isPaused ? "text-sm text-muted-foreground" : "sr-only"} role="status">
+        {query.isPaused ? waiting : query.isFetching ? retrying : ""}
+      </p>
+    </div>
+  );
+}
+
+/** A fetch paused offline: nothing has failed, but nothing on screen is verified either. */
+function WaitingNotice({ testId, message }: { testId: string; message: string }) {
+  return (
+    <p
+      className="text-muted-foreground text-sm text-center py-6"
+      role="status"
+      data-testid={testId}
+    >
+      {message}
+    </p>
+  );
+}
 
 export default function MonthEndClose() {
   const { t, locale } = useTranslation();
@@ -208,16 +286,74 @@ export default function MonthEndClose() {
   const {
     data: checklistData,
     isLoading: isLoadingChecklist,
+    isError: isChecklistError,
+    isFetching: isFetchingChecklist,
+    isPaused: isChecklistPaused,
+    isPending: isChecklistPending,
+    isFetched: isChecklistFetched,
     refetch: refetchChecklist,
   } = useQuery<ChecklistResponse>({
     queryKey: [`/api/companies/${companyId}/month-end/checklist?period=${period}`],
     enabled: !!companyId,
   });
+  const checklistQuery = {
+    isFetching: isFetchingChecklist,
+    isPaused: isChecklistPaused,
+    refetch: refetchChecklist,
+  };
+  const checklistRetryBusy = isFetchingChecklist || isChecklistPaused;
+  // An uncached retry clears the error and sets isLoading, which would swap Try again for skeletons.
+  const showChecklistRetry =
+    checklistData === undefined &&
+    (isChecklistError || (isChecklistPending && isChecklistFetched && checklistRetryBusy));
 
-  const { data: historyData, isLoading: isLoadingHistory } = useQuery<CloseRecord[]>({
+  const checklistStatus = closeChecklistStatus({
+    isLoading: isLoadingChecklist && !showChecklistRetry,
+    isError: isChecklistError,
+    isPaused: isChecklistPaused,
+    items: checklistData?.checklist.map((i) => ({ done: stepDone(i) })),
+  });
+  // Cached items stay on screen after a failed refresh, but no longer count as verified.
+  const checklistStale = isChecklistError && checklistData !== undefined;
+  // Stale or paused items can't justify an override: the lock dialog treats them as unknown.
+  const checklistKnownIncomplete =
+    checklistStatus.state === "incomplete" && !checklistStale && !isChecklistPaused;
+  const checklistUnknown = isChecklistPaused || ["error", "empty"].includes(checklistStatus.state);
+  const checklistAllClear =
+    checklistStatus.state === "complete" && !checklistStale && !isChecklistPaused;
+  // A failed refresh reports its own paused retry, so only one notice shows.
+  const checklistWaiting = isChecklistPaused && !isChecklistError && (
+    <WaitingNotice testId="checklist-waiting" message={t["monthEnd.checklistWaitingToLoad"]} />
+  );
+
+  const {
+    data: historyData,
+    isLoading: isLoadingHistory,
+    isError: isHistoryError,
+    isFetched: isHistoryFetched,
+    isFetching: isFetchingHistory,
+    isPaused: isHistoryPaused,
+    isPending: isHistoryPending,
+    refetch: refetchHistory,
+  } = useQuery<CloseRecord[]>({
     queryKey: [`/api/companies/${companyId}/month-end/history`],
     enabled: !!companyId,
   });
+  const historyQuery = {
+    isFetching: isFetchingHistory,
+    isPaused: isHistoryPaused,
+    refetch: refetchHistory,
+  };
+  const historyRetryBusy = isFetchingHistory || isHistoryPaused;
+  const historyHasRows = (historyData?.length ?? 0) > 0;
+  // No cached rows: keep the retry panel through a paused or in-flight retry.
+  const historyUncachedProblem =
+    !historyHasRows &&
+    (isHistoryError || (isHistoryPending && isHistoryFetched && historyRetryBusy));
+  // A paused fetch has not failed and isLoading stays false, with or without cached rows.
+  const historyWaiting = isHistoryPaused && !isHistoryError && (
+    <WaitingNotice testId="history-waiting" message={t["monthEnd.historyWaitingToLoad"]} />
+  );
 
   const { data: closeSettings } = useQuery<CloseSettingsResponse>({
     queryKey: [`/api/companies/${companyId}/month-end/settings`],
@@ -286,21 +422,21 @@ export default function MonthEndClose() {
 
   // Lock form state (R08-05 / R02-19): lock type, checklist override + reason.
   const [lockType, setLockType] = useState<"soft" | "hard">("soft");
-  const [overrideChecklist, setOverrideChecklist] = useState(false);
+  const lockScope = `${companyId}:${period}`;
+  const [lockOverrideScope, setLockOverrideScope] = useState<string | null>(null);
+  if (lockOverrideScope !== null && lockOverrideScope !== lockScope) {
+    setLockOverrideScope(null);
+  }
+  const lockChecklistOverride = checklistKnownIncomplete && lockOverrideScope === lockScope;
   const [lockReason, setLockReason] = useState("");
   const [unlockTarget, setUnlockTarget] = useState<string | null>(null);
   const [unlockReason, setUnlockReason] = useState("");
-  // E2 (J3-r2): the default is the company's last ended fiscal year (31 Oct for Nov-Oct), not
-  // 31 Dec of last year; a date the user picks wins.
-  const [fiscalYearEndPicked, setFiscalYearEnd] = useState<string | null>(null);
-  const fiscalYearEnd = fiscalYearEndPicked ?? lastEndedFiscalYear(fyStartMonth, now).end;
-  const [hardClose, setHardClose] = useState(false);
-  const [yearEndReason, setYearEndReason] = useState("");
-  const [yearEndFieldErrors, setYearEndFieldErrors] = useState<FieldMessages>({});
 
-  const invalidateClose = () => {
+  const invalidateClose = (targetCompanyId = companyId) => {
     for (const key of ["history", "settings"]) {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/month-end/${key}`] });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${targetCompanyId}/month-end/${key}`],
+      });
     }
   };
 
@@ -353,25 +489,24 @@ export default function MonthEndClose() {
     },
   });
 
-  const lockPeriodMutation = useMutation<CloseRecord>({
-    mutationFn: async () => {
+  const lockPeriodMutation = useMutation<CloseRecord, Error, LockPeriodSubmission>({
+    mutationFn: async ({ companyId, periodEnd, lockType, overrideChecklist, reason }) => {
       return apiRequest("POST", `/api/companies/${companyId}/month-end/lock-period`, {
-        periodEnd: periodDates.periodEnd,
+        periodEnd,
         lockType,
         ...(overrideChecklist ? { overrideChecklist: true } : {}),
-        ...(lockReason.trim() ? { reason: lockReason.trim() } : {}),
+        ...(reason ? { reason } : {}),
       });
     },
-    onSuccess: () => {
+    onSuccess: (_, { companyId, periodEnd }) => {
       toast({
         title: t["monthEnd.periodLocked"],
         description: formatMessage(t["monthEnd.periodLockedToast"], {
-          date: periodDates.periodEnd,
+          date: periodEnd,
         }),
       });
-      setOverrideChecklist(false);
       setLockReason("");
-      invalidateClose();
+      invalidateClose(companyId);
     },
     onError: (error: Error) => {
       toast({
@@ -396,43 +531,7 @@ export default function MonthEndClose() {
     },
   });
 
-  const yearEndReasonTooShort = yearEndReason.trim().length > 0 && yearEndReason.trim().length < 3;
-  const yearEndReasonError =
-    yearEndFieldErrors.reason ?? (yearEndReasonTooShort ? t["monthEnd.reasonMin3"] : undefined);
-
-  const yearEndMutation = useMutation({
-    mutationFn: async () =>
-      apiRequest("POST", `/api/companies/${companyId}/month-end/year-end-close`, {
-        fiscalYearEnd,
-        hardClose,
-        ...(overrideChecklist ? { overrideChecklist: true } : {}),
-        ...(yearEndReason.trim() ? { reason: yearEndReason.trim() } : {}),
-      }),
-    onSuccess: () => {
-      toast({ title: t["monthEnd.yearClosed"] });
-      setYearEndReason("");
-      setYearEndFieldErrors({});
-      invalidateClose();
-    },
-    onError: (error: Error) => {
-      // X4 (J3): show the rejected field (e.g. reason too short) next to the input.
-      setYearEndFieldErrors(apiFieldErrors(error));
-      toast({ title: errorHeading(error), description: error?.message, variant: "destructive" });
-    },
-  });
-
-  const settingsMutation = useMutation({
-    mutationFn: async (postYearEndClosingEntry: boolean) =>
-      apiRequest("PUT", `/api/companies/${companyId}/month-end/settings`, {
-        postYearEndClosingEntry,
-      }),
-    onSuccess: invalidateClose,
-    onError: (error: Error) => {
-      toast({ title: errorHeading(error), description: error?.message, variant: "destructive" });
-    },
-  });
-
-  const lockReasonValid = !overrideChecklist || lockReason.trim().length >= 3;
+  const lockReasonValid = !lockChecklistOverride || lockReason.trim().length >= 3;
 
   // ---- Helpers ----
 
@@ -498,8 +597,8 @@ export default function MonthEndClose() {
     ) ||
     false;
 
-  const completedCount = checklistData?.checklist.filter((i) => stepDone(i)).length || 0;
-  const totalCount = checklistData?.checklist.length || 7;
+  const completedCount = checklistStatus.done;
+  const totalCount = checklistStatus.total;
 
   // ---- Loading state ----
 
@@ -585,7 +684,7 @@ export default function MonthEndClose() {
               variant="outline"
               size="sm"
               onClick={() => refetchChecklist()}
-              disabled={isLoadingChecklist}
+              disabled={isLoadingChecklist || checklistStatus.state === "waiting"}
             >
               <RefreshCw className={`h-4 w-4 me-2 ${isLoadingChecklist ? "animate-spin" : ""}`} />
               <T k="pages.refresh" />
@@ -603,31 +702,60 @@ export default function MonthEndClose() {
                 <T k="pageLabels.closeChecklist" />
               </CardTitle>
               <CardDescription>
-                {formatMessage(t["monthEnd.itemsCompleteFor"], {
-                  done: completedCount,
-                  total: totalCount,
-                  period: formatPeriodLabel(period),
-                })}
+                {checklistStatus.state === "loading" || checklistUnknown
+                  ? formatPeriodLabel(period)
+                  : formatMessage(t["monthEnd.itemsCompleteFor"], {
+                      done: completedCount,
+                      total: totalCount,
+                      period: formatPeriodLabel(period),
+                    })}
               </CardDescription>
             </div>
-            <Badge variant={completedCount === totalCount ? "default" : "secondary"}>
-              {completedCount === totalCount
-                ? t["pages.allClear"]
-                : formatMessage(t["monthEnd.remainingCount"], {
-                    count: totalCount - completedCount,
-                  })}
-            </Badge>
+            {checklistStatus.state !== "loading" && (
+              <Badge variant={checklistAllClear ? "default" : "secondary"}>
+                {checklistAllClear
+                  ? t["pages.allClear"]
+                  : checklistUnknown || checklistStatus.state === "complete"
+                    ? t["monthEnd.checklistUnavailable"]
+                    : formatMessage(t["monthEnd.remainingCount"], {
+                        count: checklistStatus.remaining,
+                      })}
+              </Badge>
+            )}
           </div>
         </CardHeader>
         <CardContent>
-          {isLoadingChecklist ? (
+          {showChecklistRetry ? (
+            <CloseRetryNotice testId="checklist-error" scope="checklist" query={checklistQuery} />
+          ) : isLoadingChecklist ? (
             <div className="space-y-3">
               {Array.from({ length: 7 }).map((_, i) => (
                 <Skeleton key={i} className="h-14" />
               ))}
             </div>
+          ) : checklistStatus.state === "waiting" ? (
+            checklistWaiting
+          ) : checklistStatus.state === "error" ? (
+            <CloseRetryNotice testId="checklist-error" scope="checklist" query={checklistQuery} />
           ) : checklistData ? (
             <div className="space-y-2">
+              {checklistWaiting}
+              {checklistStale && (
+                <CloseRetryNotice
+                  testId="checklist-refresh-error"
+                  scope="checklist"
+                  stale={checklistData.checklist.length > 0}
+                  query={checklistQuery}
+                />
+              )}
+              {checklistStatus.state === "empty" && !checklistStale && !isChecklistPaused && (
+                <p
+                  className="text-muted-foreground text-sm text-center py-6"
+                  data-testid="checklist-empty"
+                >
+                  {t["monthEnd.checklistEmpty"]}
+                </p>
+              )}
               {checklistData.checklist.map((item) => (
                 <div
                   key={item.id}
@@ -808,7 +936,7 @@ export default function MonthEndClose() {
         </AlertDialog>
 
         {/* Lock Period */}
-        <AlertDialog>
+        <AlertDialog onOpenChange={(open) => !open && setLockOverrideScope(null)}>
           <AlertDialogTrigger asChild>
             <Button
               variant="destructive"
@@ -850,21 +978,25 @@ export default function MonthEndClose() {
                   </SelectContent>
                 </Select>
               </div>
-              {completedCount < totalCount && (
+              {(checklistKnownIncomplete || checklistUnknown || checklistStale) && (
                 <p className="text-sm text-warning flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  <T k="monthEnd.checklistIncomplete" />
+                  <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {checklistKnownIncomplete
+                    ? t["monthEnd.checklistIncomplete"]
+                    : t["monthEnd.lockChecklistUnavailable"]}
                 </p>
               )}
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={overrideChecklist}
-                  onChange={(e) => setOverrideChecklist(e.target.checked)}
-                  data-testid="checkbox-override-checklist"
-                />
-                <T k="monthEnd.overrideChecklist" />
-              </label>
+              {checklistKnownIncomplete && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={lockChecklistOverride}
+                    onChange={(e) => setLockOverrideScope(e.target.checked ? lockScope : null)}
+                    data-testid="checkbox-override-checklist"
+                  />
+                  <T k="monthEnd.overrideChecklist" />
+                </label>
+              )}
               <div className="space-y-1">
                 <Label htmlFor="lock-reason">
                   <T k="monthEnd.reason" />
@@ -887,7 +1019,15 @@ export default function MonthEndClose() {
                 <T k="pages.cancel" />
               </AlertDialogCancel>
               <AlertDialogAction
-                onClick={() => lockPeriodMutation.mutate()}
+                onClick={() =>
+                  lockPeriodMutation.mutate({
+                    companyId,
+                    periodEnd: periodDates.periodEnd,
+                    lockType,
+                    overrideChecklist: lockChecklistOverride,
+                    reason: lockReason.trim(),
+                  })
+                }
                 disabled={!lockReasonValid}
                 className="bg-destructive hover:bg-destructive"
               >
@@ -936,7 +1076,10 @@ export default function MonthEndClose() {
                   <TableRow key={idx}>
                     <TableCell>
                       <span className="tabular-nums text-xs me-2">{line.accountCode}</span>
-                      {line.accountName}
+                      {accountDisplayName(
+                        { nameEn: line.accountName, nameAr: line.accountNameAr },
+                        locale
+                      )}
                     </TableCell>
                     <TableCell data-numeric>
                       {line.debit > 0
@@ -987,93 +1130,113 @@ export default function MonthEndClose() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoadingHistory ? (
+          {/* A retry without cached history stays pending while it fetches or waits offline. */}
+          {historyUncachedProblem ? (
+            <CloseRetryNotice testId="history-error" scope="history" query={historyQuery} />
+          ) : isLoadingHistory ||
+            (historyData === undefined && !isHistoryFetched && !isHistoryPaused) ? (
             <div className="space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-12" />
               ))}
             </div>
           ) : historyData && historyData.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>
-                    <T k="pages.period" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pages.status" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pageLabels.closedBy" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pageLabels.closedAt" />
-                  </TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {historyData.map((record) => (
-                  <TableRow key={record.id}>
-                    <TableCell className="font-medium">
-                      {(() => {
-                        try {
-                          const d = parseCalendarDate(record.periodEnd);
-                          return formatMonthYear(d, locale);
-                        } catch {
-                          return record.periodEnd;
-                        }
-                      })()}
-                    </TableCell>
-                    <TableCell>
-                      {record.status === "locked" ? (
-                        <Badge variant="destructive" className="flex items-center gap-1 w-fit">
-                          <Lock className="h-3 w-3" />
-                          <T k="pageLabels.locked" />
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="flex items-center gap-1 w-fit">
-                          <Unlock className="h-3 w-3" />
-                          <T k="monthEnd.statusOpen" />
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {record.closedByEmail || record.closedBy || "-"}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatDate(record.closedAt)}
-                    </TableCell>
-                    <TableCell>
-                      {record.status === "locked" && closeSettings?.permissions.canLock && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="me-2"
-                          onClick={() => setReopenTarget(String(record.periodEnd).slice(0, 10))}
-                          data-testid={`button-reopen-${String(record.periodEnd).slice(0, 10)}`}
-                        >
-                          <T k="compliance.closeRequestReopen" />
-                        </Button>
-                      )}
-                      {record.status === "locked" && closeSettings?.permissions.canUnlock && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setUnlockTarget(String(record.periodEnd).slice(0, 10))}
-                          data-testid={`button-unlock-${String(record.periodEnd).slice(0, 10)}`}
-                        >
-                          <Unlock className="h-3 w-3 me-1" />
-                          <T k="monthEnd.unlock" />
-                        </Button>
-                      )}
-                    </TableCell>
+            <div className="space-y-3">
+              {historyWaiting}
+              {isHistoryError && (
+                <CloseRetryNotice
+                  testId="history-refresh-error"
+                  scope="history"
+                  stale
+                  query={historyQuery}
+                />
+              )}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>
+                      <T k="pages.period" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pageLabels.closedBy" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pageLabels.closedAt" />
+                    </TableHead>
+                    <TableHead />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {historyData.map((record) => (
+                    <TableRow key={record.id}>
+                      <TableCell className="font-medium">
+                        {(() => {
+                          try {
+                            const d = parseCalendarDate(record.periodEnd);
+                            return formatMonthYear(d, locale);
+                          } catch {
+                            return record.periodEnd;
+                          }
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        {record.status === "locked" ? (
+                          <Badge variant="destructive" className="flex items-center gap-1 w-fit">
+                            <Lock className="h-3 w-3" />
+                            <T k="pageLabels.locked" />
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="flex items-center gap-1 w-fit">
+                            <Unlock className="h-3 w-3" />
+                            <T k="monthEnd.statusOpen" />
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {record.closedByEmail || record.closedBy || "-"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {formatDate(record.closedAt)}
+                      </TableCell>
+                      <TableCell>
+                        {record.status === "locked" && closeSettings?.permissions.canLock && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="me-2"
+                            onClick={() => setReopenTarget(String(record.periodEnd).slice(0, 10))}
+                            data-testid={`button-reopen-${String(record.periodEnd).slice(0, 10)}`}
+                          >
+                            <T k="compliance.closeRequestReopen" />
+                          </Button>
+                        )}
+                        {record.status === "locked" && closeSettings?.permissions.canUnlock && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setUnlockTarget(String(record.periodEnd).slice(0, 10))}
+                            data-testid={`button-unlock-${String(record.periodEnd).slice(0, 10)}`}
+                          >
+                            <Unlock className="h-3 w-3 me-1" />
+                            <T k="monthEnd.unlock" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : historyWaiting ? (
+            historyWaiting
           ) : (
-            <p className="text-muted-foreground text-sm text-center py-8">
+            <p
+              className="text-muted-foreground text-sm text-center py-8"
+              data-testid="history-empty"
+            >
               <T k="pageLabels.noPeriodClosingsRecordedYet" />
             </p>
           )}
@@ -1162,98 +1325,13 @@ export default function MonthEndClose() {
 
       {/* Year-end close (R11-14) */}
       {closeSettings?.permissions.canLock && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              <T k="monthEnd.yearEndTitle" />
-            </CardTitle>
-            <CardDescription>
-              <T k="monthEnd.yearEndBody" />
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-              <div className="space-y-1">
-                <Label htmlFor="fiscal-year-end">
-                  <T k="monthEnd.fiscalYearEnd" />
-                </Label>
-                <DatePicker
-                  id="fiscal-year-end"
-                  value={fiscalYearEnd}
-                  onChange={(value) => setFiscalYearEnd(value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="year-end-reason">
-                  <T k="monthEnd.reason" />
-                </Label>
-                <Input
-                  id="year-end-reason"
-                  value={yearEndReason}
-                  onChange={(e) => {
-                    setYearEndReason(e.target.value);
-                    setYearEndFieldErrors({});
-                  }}
-                  placeholder={t["monthEnd.reasonPlaceholder"]}
-                  aria-invalid={yearEndReasonError ? true : undefined}
-                  aria-describedby={yearEndReasonError ? "year-end-reason-error" : undefined}
-                />
-                {yearEndReasonError && (
-                  <p id="year-end-reason-error" className="text-xs text-danger" role="alert">
-                    {yearEndReasonError}
-                  </p>
-                )}
-              </div>
-              <Button
-                onClick={() => yearEndMutation.mutate()}
-                disabled={
-                  yearEndMutation.isPending ||
-                  (overrideChecklist && yearEndReason.trim().length < 3) ||
-                  (yearEndReason.trim().length > 0 && yearEndReason.trim().length < 3)
-                }
-              >
-                <Lock className="h-4 w-4 me-2" />
-                <T k="monthEnd.closeYear" />
-              </Button>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <AskNajmaButton
-                companyId={companyId}
-                topic="year_end_close"
-                period={`FY ending ${fiscalYearEnd}`}
-                testId="button-ask-najma-year-end"
-              />
-              <span className="text-caption text-muted-foreground">
-                <T k="launchProof.askYearEndHint" />
-              </span>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={hardClose}
-                onChange={(e) => setHardClose(e.target.checked)}
-              />
-              <T k="monthEnd.hardClose" />
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={overrideChecklist}
-                onChange={(e) => setOverrideChecklist(e.target.checked)}
-              />
-              <T k="monthEnd.overrideChecklist" />
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={closeSettings.postYearEndClosingEntry}
-                onChange={(e) => settingsMutation.mutate(e.target.checked)}
-                data-testid="checkbox-post-year-end-entry"
-              />
-              <T k="monthEnd.postClosingEntry" />
-            </label>
-          </CardContent>
-        </Card>
+        <Suspense fallback={<Skeleton className="h-64 w-full" aria-busy="true" />}>
+          <YearEndCloseCard
+            companyId={companyId}
+            fyStartMonth={fyStartMonth}
+            postYearEndClosingEntry={closeSettings.postYearEndClosingEntry}
+          />
+        </Suspense>
       )}
 
       {/* Unlock with reason (R02-11) */}

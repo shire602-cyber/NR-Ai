@@ -1,3 +1,4 @@
+import { todayDubai } from "@shared/accounting-date";
 import ExcelJS from "exceljs";
 
 // One row in the OCR / receipt Excel export. Field names match the column
@@ -293,7 +294,7 @@ export function receiptToExportRow(receipt: {
 // Generate a safe, dated filename. Used by both the OCR and bulk endpoints so
 // downloads land with consistent naming.
 export function buildExportFilename(prefix = "muhasib-ocr-receipts"): string {
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = todayDubai();
   return `${prefix}-${stamp}.xlsx`;
 }
 

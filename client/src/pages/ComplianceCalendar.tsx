@@ -4,6 +4,7 @@ import { displayObligationTitle, formatDate, parseCalendarDate } from "@/lib/for
 import { lazy, Suspense, useState, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -26,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTranslation, formatMessage } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import type { CalendarObligation, ComplianceTask } from "@/pages/TaskCenter";
 import {
   ChevronLeft,
   ChevronRight,
@@ -38,27 +40,9 @@ import {
   CreditCard,
 } from "lucide-react";
 
-interface ComplianceTask {
-  id: string;
-  title: string;
-  titleAr: string | null;
-  category: string;
-  priority: string;
-  status: string;
-  dueDate: string;
-}
-
 /** Generated + manual obligations from /compliance-calendar (W4-A, R08-21). */
-interface ComplianceObligation {
-  id: string;
-  source: "manual" | "generated";
-  obligationType: string | null;
+interface ComplianceObligation extends CalendarObligation {
   eventType: string;
-  title: string;
-  titleAr: string | null;
-  dueDate: string;
-  status: "upcoming" | "completed" | "overdue" | "dismissed";
-  legalSource: string | null;
   daysUntilDue: number;
 }
 
@@ -114,23 +98,37 @@ export default function ComplianceCalendar() {
   const search = useSearch();
   const [, navigate] = useLocation();
   const view = new URLSearchParams(search).get("view") === "list" ? "list" : "calendar";
-  const { t } = useTranslation();
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
-  const { data: tasks, isLoading: isLoadingTasks } = useQuery<ComplianceTask[]>({
+  // The only observers of both sources: the List view gets the data as props.
+  const tasksQuery = useQuery<ComplianceTask[]>({
     queryKey: ["/api/companies", companyId, "compliance-tasks"],
     enabled: !!companyId,
   });
 
   // Generated obligations: VAT by stagger, CT 9 months after year end, UBO,
   // licence, excise, e-invoicing and WPS. Status follows the return state.
-  const { data: obligations } = useQuery<ComplianceObligation[]>({
+  const obligationsQuery = useQuery<ComplianceObligation[]>({
     queryKey: ["/api/companies", companyId, "compliance-calendar"],
     enabled: !!companyId,
   });
+  const tasks = tasksQuery.data;
+  const obligations = obligationsQuery.data;
+
+  // Nothing may be reported as empty (or totalled) until both sources have succeeded.
+  const sourcesPaused =
+    tasksQuery.fetchStatus === "paused" || obligationsQuery.fetchStatus === "paused";
+  const sourcesReady = !sourcesPaused && tasksQuery.isSuccess && obligationsQuery.isSuccess;
+  const sourcesLoading = tasksQuery.isLoading || obligationsQuery.isLoading;
+  const progressText = sourcesPaused
+    ? t["complianceCalendar.refreshPaused"]
+    : sourcesLoading
+      ? t["complianceCalendar.stillLoading"]
+      : null;
+  const notReadyText = progressText ?? t["complianceCalendar.deadlinesIncomplete"];
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -145,7 +143,7 @@ export default function ComplianceCalendar() {
       date: Date;
       title: string;
       category: string;
-      status: string;
+      status: string | null;
       type: "task" | "obligation";
     }> = [];
 
@@ -199,7 +197,13 @@ export default function ComplianceCalendar() {
       .sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [allEvents]);
 
-  if (isLoadingCompany || isLoadingTasks) {
+  const statusLabel = (status: string) => {
+    const key = `complianceCalendar.status.${status}`;
+    return t[key] && t[key] !== key ? t[key] : status.replace(/_/g, " ");
+  };
+
+  // No skeleton for the sources: one slow request must not hide the other's rows.
+  if (isLoadingCompany) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
@@ -214,7 +218,7 @@ export default function ComplianceCalendar() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Compliance"
+        eyebrow={t["complianceCalendar.eyebrow"]}
         title={locale === "ar" ? "تقويم الامتثال" : t["pages.complianceCalendar2"]}
         description={
           locale === "ar"
@@ -241,9 +245,48 @@ export default function ComplianceCalendar() {
         </TabsList>
       </Tabs>
 
+      {tasksQuery.isError && (
+        <LoadErrorState
+          compact
+          error={tasksQuery.error}
+          onRetry={() => void tasksQuery.refetch()}
+          title={
+            tasksQuery.isLoadingError
+              ? t["complianceCalendar.loadErrorTitle"]
+              : t["complianceCalendar.tasksRefreshErrorTitle"]
+          }
+          testId="compliance-calendar-error"
+        />
+      )}
+      {obligationsQuery.isError && (
+        <LoadErrorState
+          compact
+          error={obligationsQuery.error}
+          onRetry={() => void obligationsQuery.refetch()}
+          title={
+            obligationsQuery.isLoadingError
+              ? t["complianceCalendar.obligationsErrorTitle"]
+              : t["complianceCalendar.obligationsRefreshErrorTitle"]
+          }
+          testId="compliance-calendar-obligations-error"
+        />
+      )}
+      <p
+        role="status"
+        data-testid="compliance-sources-status"
+        className={progressText ? "text-sm text-muted-foreground" : "sr-only"}
+      >
+        {progressText}
+      </p>
+
       {view === "list" ? (
         <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-          <TaskListPanel />
+          <TaskListPanel
+            manualTasks={tasks}
+            obligations={obligations}
+            companyId={companyId}
+            ready={sourcesReady}
+          />
         </Suspense>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -341,7 +384,7 @@ export default function ComplianceCalendar() {
                             <span
                               key={event.id}
                               title={event.title}
-                              className={`block truncate rounded px-1 py-0.5 text-xs ${CATEGORY_COLORS[event.category]}`}
+                              className={`block truncate rounded px-1 py-0.5 text-xs ${CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS.other}`}
                             >
                               <Icon className="me-1 inline-block h-3 w-3" aria-hidden />
                               <bdi>{event.title}</bdi>
@@ -369,7 +412,24 @@ export default function ComplianceCalendar() {
             </CardContent>
           </Card>
 
-          <div className="space-y-6">
+          {/* Flex gap (not space-y): the hidden, absolutely positioned status adds no gap. */}
+          <div className="flex min-w-0 flex-col gap-6">
+            {/* Always mounted, so screen readers announce each selection's empty-day text. */}
+            <div
+              role="status"
+              data-testid="compliance-day-status"
+              className={
+                selectedDate && selectedDateEvents.length === 0
+                  ? "rounded-md border bg-card p-4 text-sm text-muted-foreground"
+                  : "sr-only"
+              }
+            >
+              {selectedDate && selectedDateEvents.length === 0
+                ? `${formatDate(selectedDate, locale)}: ${
+                    sourcesReady ? t["complianceCalendar.noEventsOnDay"] : notReadyText
+                  }`
+                : ""}
+            </div>
             {selectedDate && selectedDateEvents.length > 0 && (
               <Card>
                 <CardHeader>
@@ -387,15 +447,21 @@ export default function ComplianceCalendar() {
                         return (
                           <div
                             key={event.id}
-                            className={`p-2 rounded-md ${CATEGORY_COLORS[event.category]}`}
+                            className={`p-2 rounded-md ${CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS.other}`}
                           >
                             <div className="flex items-center gap-2">
                               <Icon className="w-4 h-4" />
                               <span className="font-medium text-sm">{event.title}</span>
                             </div>
-                            <Badge variant="outline" className="mt-1 text-xs">
-                              {event.status}
-                            </Badge>
+                            {event.status && (
+                              <Badge
+                                variant="outline"
+                                className="mt-1 text-xs"
+                                data-testid="compliance-event-status"
+                              >
+                                {statusLabel(event.status)}
+                              </Badge>
+                            )}
                           </div>
                         );
                       })}
@@ -411,19 +477,28 @@ export default function ComplianceCalendar() {
                   <Clock className="w-4 h-4" />
                   {locale === "ar" ? "المواعيد القادمة" : t["complianceCalendar.upcomingDeadlines"]}
                 </CardTitle>
-                <CardDescription>
-                  {locale === "ar" ? "خلال 30 يوم" : "Next 30 days"}
-                </CardDescription>
+                <CardDescription>{t["complianceCalendar.next30Days"]}</CardDescription>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-64">
                   {upcomingEvents.length === 0 ? (
-                    <div className="text-center py-4 text-muted-foreground">
-                      <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <div
+                      className="text-center py-4 text-muted-foreground"
+                      data-testid="compliance-upcoming-empty"
+                    >
+                      {sourcesReady ? (
+                        <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-50" aria-hidden />
+                      ) : (
+                        <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" aria-hidden />
+                      )}
                       <p className="text-sm">
-                        {locale === "ar"
-                          ? "لا توجد مواعيد قادمة"
-                          : t["pageLabels.noUpcomingDeadlines"]}
+                        {!sourcesReady
+                          ? notReadyText
+                          : allEvents.length === 0
+                            ? t["complianceCalendar.noDeadlinesYet"]
+                            : locale === "ar"
+                              ? "لا توجد مواعيد قادمة"
+                              : t["pageLabels.noUpcomingDeadlines"]}
                       </p>
                     </div>
                   ) : (
@@ -436,7 +511,9 @@ export default function ComplianceCalendar() {
                             key={event.id}
                             className="flex items-start gap-3 p-2 rounded-md border"
                           >
-                            <div className={`p-2 rounded-md ${CATEGORY_COLORS[event.category]}`}>
+                            <div
+                              className={`p-2 rounded-md ${CATEGORY_COLORS[event.category] ?? CATEGORY_COLORS.other}`}
+                            >
                               <Icon className="w-4 h-4" />
                             </div>
                             <div className="flex-1 min-w-0">
@@ -469,7 +546,7 @@ export default function ComplianceCalendar() {
                 <CardHeader>
                   <CardTitle className="text-sm flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-danger" aria-hidden />
-                    {locale === "ar" ? "متأخرة" : "Overdue"}
+                    {t["complianceCalendar.overdue"]}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>

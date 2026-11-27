@@ -9,6 +9,7 @@
  * With no live/sandbox provider nothing is offered: paymentsAvailability() reports
  * requires_external and the UI shows no Pay button.
  */
+import { todayDubai } from "@shared/accounting-date";
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import crypto from "crypto";
 import { and, desc, eq, gt, inArray } from "drizzle-orm";
@@ -25,7 +26,7 @@ import {
 import { DomainError } from "../../errors";
 import { createLogger } from "../../config/logger";
 import { has, resolve } from "../../platform/service-registry";
-import { postJournal } from "../../ledger";
+import { postJournal, type LedgerTx } from "../../ledger";
 import { fromFils } from "../../../shared/money";
 import { marketingBrand as PRODUCT_NAME } from "../../../shared/marketing-brand";
 import { invoiceOpenFils, isIssuedStatus } from "../invoice-posting.service";
@@ -42,6 +43,7 @@ import {
   type VerifiedPaymentEvent,
 } from "./types";
 import type { RecordInvoicePaymentService } from "../invoice-payment.service";
+import { toAccountingDate } from "@shared/accounting-date";
 
 export * from "./types";
 export { setStripeFetch, signStripePayload, verifyStripeSignature } from "./stripe";
@@ -131,8 +133,12 @@ export function publicBaseUrl(): string {
 
 const hashToken = (raw: string) => crypto.createHash("sha256").update(raw).digest("hex");
 
-async function accountIdByCode(companyId: string, code: string): Promise<string | null> {
-  const [row] = await db
+async function accountIdByCode(
+  companyId: string,
+  code: string,
+  executor: LedgerTx = db
+): Promise<string | null> {
+  const [row] = await executor
     .select({ id: accounts.id, type: accounts.type, subType: accounts.subType })
     .from(accounts)
     .where(and(eq(accounts.companyId, companyId), eq(accounts.code, code)));
@@ -140,8 +146,11 @@ async function accountIdByCode(companyId: string, code: string): Promise<string 
 }
 
 /** Gateway clearing account (asset/bank, code 1025), created on first use. */
-export async function ensureClearingAccount(companyId: string): Promise<string> {
-  const [row] = await db
+export async function ensureClearingAccount(
+  companyId: string,
+  executor: LedgerTx = db
+): Promise<string> {
+  const [row] = await executor
     .select({ id: accounts.id, type: accounts.type, subType: accounts.subType })
     .from(accounts)
     .where(and(eq(accounts.companyId, companyId), eq(accounts.code, CLEARING_ACCOUNT_CODE)));
@@ -151,11 +160,11 @@ export async function ensureClearingAccount(companyId: string): Promise<string> 
   if (row) {
     // Code taken by another kind of account: fall back to the main bank account.
     const { defaultPaymentAccountId } = await import("../payment-accounts.service");
-    const bank = await defaultPaymentAccountId(companyId);
+    const bank = await defaultPaymentAccountId(companyId, {}, executor);
     if (bank) return bank;
     throw new DomainError("CLEARING_ACCOUNT_UNAVAILABLE", 422);
   }
-  await db
+  await executor
     .insert(accounts)
     .values({
       companyId,
@@ -168,7 +177,7 @@ export async function ensureClearingAccount(companyId: string): Promise<string> 
       isSystemAccount: true,
     })
     .onConflictDoNothing();
-  const id = await accountIdByCode(companyId, CLEARING_ACCOUNT_CODE);
+  const id = await accountIdByCode(companyId, CLEARING_ACCOUNT_CODE, executor);
   if (!id) throw new DomainError("CLEARING_ACCOUNT_UNAVAILABLE", 422);
   return id;
 }
@@ -194,8 +203,12 @@ async function ensureBankChargesAccount(companyId: string): Promise<string> {
   return id;
 }
 
-async function payableInvoice(companyId: string, invoiceId: string): Promise<Invoice> {
-  const [invoice] = await db
+async function payableInvoice(
+  companyId: string,
+  invoiceId: string,
+  executor: LedgerTx = db
+): Promise<Invoice> {
+  const [invoice] = await executor
     .select()
     .from(invoices)
     .where(and(eq(invoices.id, invoiceId), eq(invoices.companyId, companyId)));
@@ -265,39 +278,48 @@ export async function createPaymentLink(args: {
       "Online payments are not set up for this deployment"
     );
   }
-  const invoice = await payableInvoice(args.companyId, args.invoiceId);
-  const openFils = await invoiceOpenFils(db, invoice);
-  if (openFils <= 0) {
-    throw new DomainError("INVOICE_ALREADY_PAID", 409, undefined, "Nothing left to pay");
-  }
-  let depositAccountId = args.depositAccountId ?? null;
-  if (depositAccountId) {
-    const { assertCashOrBankAccount } = await import("../invoice-payment.service");
-    await assertCashOrBankAccount(args.companyId, depositAccountId);
-  } else {
-    depositAccountId = await ensureClearingAccount(args.companyId);
-  }
-  await db
-    .update(paymentLinks)
-    .set({ status: "cancelled", updatedAt: new Date() })
-    .where(and(eq(paymentLinks.invoiceId, invoice.id), eq(paymentLinks.status, "active")));
-  const token = crypto.randomBytes(24).toString("hex");
-  const [link] = await db
-    .insert(paymentLinks)
-    .values({
-      companyId: args.companyId,
-      invoiceId: invoice.id,
-      provider: adapter.id,
-      tokenHash: hashToken(token),
-      amountFils: openFils,
-      currency: (invoice.currency || "AED").toUpperCase(),
-      status: "active",
-      expiresAt: new Date(Date.now() + (args.expiresInDays ?? DEFAULT_LINK_DAYS) * 86_400_000),
-      depositAccountId,
-      createdBy: args.createdBy ?? null,
-    })
-    .returning();
-  return { link: link as PaymentLink, token, view: view(link as PaymentLink, token) };
+  return db.transaction(async (tx: LedgerTx) => {
+    // Replace takes FOR UPDATE on the company before it checks for links.
+    // Take the conflicting lock before reading eligibility, through the insert.
+    await tx
+      .select({ id: companies.id })
+      .from(companies)
+      .where(eq(companies.id, args.companyId))
+      .for("key share");
+    const invoice = await payableInvoice(args.companyId, args.invoiceId, tx);
+    const openFils = await invoiceOpenFils(tx, invoice);
+    if (openFils <= 0) {
+      throw new DomainError("INVOICE_ALREADY_PAID", 409, undefined, "Nothing left to pay");
+    }
+    let depositAccountId = args.depositAccountId ?? null;
+    if (depositAccountId) {
+      const { assertCashOrBankAccount } = await import("../invoice-payment.service");
+      await assertCashOrBankAccount(args.companyId, depositAccountId, tx);
+    } else {
+      depositAccountId = await ensureClearingAccount(args.companyId, tx);
+    }
+    await tx
+      .update(paymentLinks)
+      .set({ status: "cancelled", updatedAt: new Date() })
+      .where(and(eq(paymentLinks.invoiceId, invoice.id), eq(paymentLinks.status, "active")));
+    const token = crypto.randomBytes(24).toString("hex");
+    const [link] = await tx
+      .insert(paymentLinks)
+      .values({
+        companyId: args.companyId,
+        invoiceId: invoice.id,
+        provider: adapter.id,
+        tokenHash: hashToken(token),
+        amountFils: openFils,
+        currency: (invoice.currency || "AED").toUpperCase(),
+        status: "active",
+        expiresAt: new Date(Date.now() + (args.expiresInDays ?? DEFAULT_LINK_DAYS) * 86_400_000),
+        depositAccountId,
+        createdBy: args.createdBy ?? null,
+      })
+      .returning();
+    return { link, token, view: view(link, token) };
+  });
 }
 
 export async function listPaymentLinks(companyId: string, invoiceId: string) {
@@ -387,10 +409,39 @@ export async function startCheckout(
     cancelUrl: urls.cancelUrl,
     expiresAt: new Date(link.expiresAt),
   });
-  await db
-    .update(paymentLinks)
-    .set({ providerSessionId: session.sessionId, providerUrl: session.url, updatedAt: new Date() })
-    .where(eq(paymentLinks.id, link.id));
+  await db.transaction(async (tx: LedgerTx) => {
+    // Replace locks payment links before checking them. Publish the URL only
+    // if the link is still usable after the gateway request and any restore.
+    const [current] = await tx
+      .select({ status: paymentLinks.status, expiresAt: paymentLinks.expiresAt })
+      .from(paymentLinks)
+      .where(eq(paymentLinks.id, link.id))
+      .for("no key update");
+    if (current?.status !== "active") {
+      throw new DomainError(
+        "PAYMENT_LINK_INACTIVE",
+        410,
+        { status: current?.status },
+        "This payment link is no longer active"
+      );
+    }
+    if (current.expiresAt.getTime() < Date.now()) {
+      throw new DomainError(
+        "PAYMENT_LINK_EXPIRED",
+        410,
+        undefined,
+        "This payment link has expired"
+      );
+    }
+    await tx
+      .update(paymentLinks)
+      .set({
+        providerSessionId: session.sessionId,
+        providerUrl: session.url,
+        updatedAt: new Date(),
+      })
+      .where(eq(paymentLinks.id, link.id));
+  });
   return { url: session.url };
 }
 
@@ -557,7 +608,9 @@ async function applyPaidEvent(
       invoiceId: link.invoiceId,
       companyId: link.companyId,
       amount: Number(fromFils(amountFils)),
-      date: new Date(),
+      // F06: the Dubai business date (UTC midnight), not the raw instant, which the posting
+      // path reads as a UTC date and so booked 00:00-04:00 Dubai receipts to the day before.
+      date: toAccountingDate(new Date())!.date,
       method: "online",
       reference: `${event.provider}:${event.paymentReference ?? event.sessionId ?? event.eventId}`,
       notes: `Online payment via ${adapter.label.en} (link ${link.id})`,
@@ -584,7 +637,7 @@ async function applyPaidEvent(
       const { entry } = await postJournal(
         {
           companyId: link.companyId,
-          date: new Date().toISOString().slice(0, 10),
+          date: todayDubai(),
           ...journalMemo("gatewayFee", { provider: event.provider, link: link.id }),
           status: "posted",
           source: "payment_gateway_fee",

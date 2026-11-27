@@ -27,7 +27,8 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { DataTableCard } from "@/components/ui/data-table";
+import { QueryStaleNotice, QueryTableCard } from "@/components/contacts/query-state";
+import { queryView } from "@/lib/query-view";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
   DropdownMenu,
@@ -71,7 +72,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, refreshAfterWrite } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
@@ -83,6 +84,9 @@ import { PortalAccessSheet, type PortalSheetContact } from "@/components/portal/
 import { portalSummaryKey } from "@/lib/portal-invite";
 import { PortalStatusChip, type PortalSummaryEntry } from "@/components/portal/PortalStatusChip";
 import { BulkPortalInviteDialog } from "@/components/portal/BulkPortalInviteDialog";
+
+// Numbers each opening of the delete-all dialog (module level, so a remount cannot reuse one).
+let clearPreviewOpenings = 0;
 
 interface ImportResult {
   message: string;
@@ -148,7 +152,21 @@ interface PortalLinkRow {
 export default function CustomerContacts() {
   const { toast } = useToast();
   const { t, locale } = useTranslation();
-  const { company, companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
+  const {
+    company,
+    companyId,
+    isLoading: companyLoading,
+    isPaused: companyPaused,
+    error: companyError,
+  } = useDefaultCompany();
+  const contactsKey = ["/api/companies", companyId, "customer-contacts"] as const;
+  // Keyed apart from the list: invalidating contactsKey does not reach the delete-all preview.
+  const clearPreviewKey = ["/api/companies", companyId, "customer-contacts/clear-preview"] as const;
+  // After a write that changes the list or the preview counts: cancel older reads, then refetch.
+  const refreshContacts = () => {
+    refreshAfterWrite(contactsKey);
+    refreshAfterWrite(clearPreviewKey);
+  };
 
   // R3 (CTO 17): command-palette customer results link to /contacts?q=<name>.
   const [searchTerm, setSearchTerm] = useState(() =>
@@ -233,15 +251,33 @@ export default function CustomerContacts() {
   const [contactToDelete, setContactToDelete] = useState<CustomerContact | null>(null);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
   const [clearAllConfirmation, setClearAllConfirmation] = useState("");
+  const [clearOpening, setClearOpening] = useState(0);
+  const openClearAll = () => {
+    setClearOpening(++clearPreviewOpenings);
+    setClearAllConfirmation("");
+    setShowClearAllDialog(true);
+  };
+  const closeClearAll = () => {
+    // Abort this opening's read; the next opening asks again under its own key.
+    void queryClient.cancelQueries({ queryKey: clearPreviewKey });
+    setShowClearAllDialog(false);
+    setClearAllConfirmation("");
+  };
 
-  const {
-    data: contacts = [],
-    isLoading,
-    error: listError,
-    refetch: refetchList,
-  } = useQuery<CustomerContact[]>({
-    queryKey: ["/api/companies", companyId, "customer-contacts"],
+  const contactsQuery = useQuery<CustomerContact[]>({
+    queryKey: contactsKey,
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/customer-contacts`, undefined, undefined, {
+        signal,
+      }),
     enabled: !!companyId,
+  });
+  const contacts = contactsQuery.data ?? [];
+  const listView = queryView(contactsQuery, {
+    companyId,
+    isLoading: companyLoading,
+    isPaused: companyPaused,
+    error: companyError,
   });
   useOpenInvoiceParam(
     (id) => {
@@ -249,7 +285,8 @@ export default function CustomerContacts() {
       if (contact && canDo("documents.write")) setEditContact(contact);
     },
     "/contacts",
-    !!companyId && !isLoading && permissionsKnown
+    // Wait for the list itself: a paused or failed load must not consume the ?open= link.
+    !!companyId && contactsQuery.data !== undefined && permissionsKnown
   );
 
   const importMutation = useMutation({
@@ -260,9 +297,7 @@ export default function CustomerContacts() {
     },
     onSuccess: (result: ImportResult) => {
       setImportResults(result);
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "customer-contacts"],
-      });
+      refreshContacts();
       toast({
         title: translateNow("toasts.importCompleted"),
         description: result.message,
@@ -282,9 +317,7 @@ export default function CustomerContacts() {
       return apiRequest("POST", `/api/companies/${companyId}/customer-contacts`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "customer-contacts"],
-      });
+      refreshContacts();
       setShowAddDialog(false);
       toast({ title: t["customerContacts.contactCreatedSuccessfully"] });
     },
@@ -302,9 +335,7 @@ export default function CustomerContacts() {
       return apiRequest("PUT", `/api/companies/${companyId}/customer-contacts/${id}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "customer-contacts"],
-      });
+      refreshContacts();
       setEditContact(null);
       toast({ title: t["customerContacts.contactUpdatedSuccessfully"] });
     },
@@ -322,9 +353,7 @@ export default function CustomerContacts() {
       return apiRequest("DELETE", `/api/companies/${companyId}/customer-contacts/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "customer-contacts"],
-      });
+      refreshContacts();
       toast({ title: t["customerContacts.contactDeletedSuccessfully"] });
     },
     onError: (error: any) => {
@@ -336,10 +365,32 @@ export default function CustomerContacts() {
     },
   });
 
-  const { data: clearPreview } = useQuery<{ contactCount: number; linkedInvoiceCount: number }>({
-    queryKey: ["/api/companies", companyId, "customer-contacts/clear-preview"],
+  // One query per opening: counts cached from an earlier opening, or a late answer to it, never show.
+  const clearPreviewQuery = useQuery<{ contactCount: number; linkedInvoiceCount: number }>({
+    queryKey: [...clearPreviewKey, clearOpening],
+    queryFn: ({ signal }) =>
+      apiRequest(
+        "GET",
+        `/api/companies/${companyId}/customer-contacts/clear-preview`,
+        undefined,
+        undefined,
+        { signal }
+      ),
     enabled: !!companyId && showClearAllDialog,
+    gcTime: 0,
   });
+  const clearPreviewView = queryView(clearPreviewQuery, {
+    companyId,
+    isLoading: companyLoading,
+    isPaused: companyPaused,
+    error: companyError,
+  });
+  // Counts are shown only for a current, successful answer: a paused or failed refresh (which can
+  // still report status "success" with cached data) or stale data must not qualify.
+  const clearPreview =
+    clearPreviewView.kind === "data" && !clearPreviewView.stale && !clearPreviewQuery.isStale
+      ? clearPreviewQuery.data
+      : undefined;
 
   const clearAllMutation = useMutation({
     mutationFn: async () => {
@@ -348,14 +399,8 @@ export default function CustomerContacts() {
       });
     },
     onSuccess: (result: { deletedCount: number; message: string }) => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "customer-contacts"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "customer-contacts/clear-preview"],
-      });
-      setShowClearAllDialog(false);
-      setClearAllConfirmation("");
+      refreshContacts();
+      closeClearAll();
       toast({
         title: translateNow("toasts.allContactsCleared"),
         description: result.message,
@@ -578,10 +623,7 @@ export default function CustomerContacts() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
-                  onSelect={() => {
-                    setClearAllConfirmation("");
-                    setShowClearAllDialog(true);
-                  }}
+                  onSelect={openClearAll}
                   disabled={contacts.length === 0 || !canDo("settings.company")}
                   data-testid="button-clear-all-contacts"
                 >
@@ -620,7 +662,10 @@ export default function CustomerContacts() {
         <TabsList>
           <TabsTrigger value="list" data-testid="tab-contacts-list">
             <Building2 className="w-4 h-4" />
-            {formatMessage(t["pages.contactsTabCount"], { count: contacts.length })}
+            {/* The count is a fact only about a current, successful answer. */}
+            {listView.kind === "data" && !listView.stale
+              ? formatMessage(t["pages.contactsTabCount"], { count: contacts.length })
+              : t["pages.contactsTab"]}
           </TabsTrigger>
           <TabsTrigger
             value="import"
@@ -681,36 +726,54 @@ export default function CustomerContacts() {
             </div>
           )}
 
-          <DataTableCard
-            status={isLoading ? "loading" : filteredContacts.length === 0 ? "empty" : "ready"}
-            loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
+          <QueryStaleNotice view={listView} onRetry={() => void contactsQuery.refetch()} />
+
+          <QueryTableCard
+            view={listView}
+            rowCount={filteredContacts.length}
+            onRetry={() => void contactsQuery.refetch()}
             columnLabels={[
               t["pages.contactsColName"],
               t["pages.contactsColEmail"],
               t["pages.contactsColPhone"],
             ]}
-            empty={{
-              icon: Building2,
-              title: searchTerm ? t["pages.contactsNoMatchTitle"] : t["pages.contactsEmptyTitle"],
-              description: searchTerm
-                ? t["pages.contactsNoMatchBody"]
-                : t["pages.contactsEmptyBody"],
-              action: searchTerm
-                ? undefined
+            empty={
+              listView.kind === "data" && listView.stale
+                ? {
+                    icon: Building2,
+                    title: searchTerm
+                      ? t["pages.listStaleNoMatchTitle"]
+                      : t["pages.listStaleEmptyTitle"],
+                    description: t["pages.listStaleEmptyBody"],
+                    secondaryAction: searchTerm
+                      ? { label: t["pages.contactsClearSearch"], onClick: () => setSearchTerm("") }
+                      : undefined,
+                  }
                 : {
-                    label: t["pages.contactsAddContact"],
-                    onClick: () => setShowAddDialog(true),
-                    testId: "button-add-first-contact",
-                    permission: "documents.write",
-                  },
-              secondaryAction: searchTerm
-                ? { label: t["pages.contactsClearSearch"], onClick: () => setSearchTerm("") }
-                : {
-                    label: t["pageLabels.importFromExcel"],
-                    onClick: () => setActiveTab("import"),
-                    permission: "documents.write",
-                  },
-            }}
+                    icon: Building2,
+                    title: searchTerm
+                      ? t["pages.contactsNoMatchTitle"]
+                      : t["pages.contactsEmptyTitle"],
+                    description: searchTerm
+                      ? t["pages.contactsNoMatchBody"]
+                      : t["pages.contactsEmptyBody"],
+                    action: searchTerm
+                      ? undefined
+                      : {
+                          label: t["pages.contactsAddContact"],
+                          onClick: () => setShowAddDialog(true),
+                          testId: "button-add-first-contact",
+                          permission: "documents.write",
+                        },
+                    secondaryAction: searchTerm
+                      ? { label: t["pages.contactsClearSearch"], onClick: () => setSearchTerm("") }
+                      : {
+                          label: t["pageLabels.importFromExcel"],
+                          onClick: () => setActiveTab("import"),
+                          permission: "documents.write",
+                        },
+                  }
+            }
           >
             {/* Phones: one two-line row per contact (name + TRN, email · city), actions in ⋯. */}
             <div className="divide-hairline md:hidden" data-testid="mobile-contact-list">
@@ -978,7 +1041,7 @@ export default function CustomerContacts() {
                 ]}
               />
             </div>
-          </DataTableCard>
+          </QueryTableCard>
         </TabsContent>
 
         <TabsContent value="import" className="space-y-4">
@@ -1425,10 +1488,7 @@ export default function CustomerContacts() {
       <AlertDialog
         open={showClearAllDialog}
         onOpenChange={(open) => {
-          if (!open) {
-            setShowClearAllDialog(false);
-            setClearAllConfirmation("");
-          }
+          if (!open) closeClearAll();
         }}
       >
         <AlertDialogContent>
@@ -1440,19 +1500,18 @@ export default function CustomerContacts() {
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
                 <p>
-                  This will permanently delete{" "}
-                  <strong>
-                    {clearPreview?.contactCount ?? contacts.length} contact
-                    {(clearPreview?.contactCount ?? contacts.length) === 1 ? "" : "s"}
-                  </strong>{" "}
-                  for this company. This action cannot be undone.
+                  {clearPreview
+                    ? formatMessage(t["pages.contactsDeleteAllBody"], {
+                        count: clearPreview.contactCount,
+                      })
+                    : t["customerContacts.clearAllBodyUnverified"]}
                 </p>
                 {clearPreview && clearPreview.linkedInvoiceCount > 0 && (
                   <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3">
                     <p className="font-medium text-destructive">
-                      {clearPreview.linkedInvoiceCount} invoice
-                      {clearPreview.linkedInvoiceCount === 1 ? " is" : "s are"} linked to these
-                      contacts.
+                      {formatMessage(t["pages.contactsDeleteAllLinked"], {
+                        count: clearPreview.linkedInvoiceCount,
+                      })}
                     </p>
                     <p className="text-muted-foreground mt-1">
                       {t["customerContacts.invoicesWillBeKeptBut"]}
@@ -1497,7 +1556,7 @@ export default function CustomerContacts() {
                   <T k="pageLabels.deleting" />
                 </>
               ) : (
-                "Delete all contacts"
+                t["pages.contactsDeleteAllButton"]
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -1516,8 +1575,9 @@ export default function CustomerContacts() {
               <T k="pageLabels.deleteContact" />
             </AlertDialogTitle>
             <AlertDialogDescription>
-              <T k="pageLabels.areYouSureYouWantToDelete" />
-              <strong>{contactToDelete?.name}</strong>? This action cannot be undone.
+              {formatMessage(t["pages.contactsDeleteOneBody"], {
+                name: contactToDelete?.name ?? "",
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

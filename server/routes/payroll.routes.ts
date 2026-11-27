@@ -7,6 +7,7 @@
  * wps) and server/services/wps-sif.service.ts. Journal entries are posted only
  * through server/ledger.
  */
+import { todayDubai } from "@shared/accounting-date";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -310,7 +311,7 @@ export function registerPayrollRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const emp = await employeeRow(req);
-      const asOf = zDate.safeParse(req.query.asOf ?? new Date().toISOString().slice(0, 10));
+      const asOf = zDate.safeParse(req.query.asOf ?? todayDubai());
       if (!asOf.success)
         throw new DomainError("INVALID_DATE", 400, undefined, "asOf must be YYYY-MM-DD");
       res.json(await leaveBalances(emp.company_id, emp.id, asOf.data));

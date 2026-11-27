@@ -65,7 +65,11 @@ import {
 } from "../einvoice-status";
 import { loadEInvoiceContext } from "./context";
 import { invoiceReportingDeadline, invoiceReportingRequired } from "./reporting";
-import { frozenEInvoiceDispatchIssue } from "../einvoice.service";
+import {
+  frozenEInvoiceAmountsMatch,
+  frozenEInvoiceDispatchIssue,
+  frozenEInvoiceLineCurrencyIssue,
+} from "../einvoice.service";
 import { PEPPOL_SCHEME_UAE_TIN } from "./pint-ae-codes";
 import {
   archiveEInvoiceXml,
@@ -104,6 +108,7 @@ import {
 } from "./tracks";
 import { assertLegalEntityCanSend, getLegalEntity, requireCompanyTin } from "./legal-entities";
 import { first, parseXml, partyPeppolEndpoint, partyVatTrn } from "./dom";
+import { submissionAppointmentGate, type AppointmentState } from "../einvoice-appointment.service";
 
 const log = createLogger("einvoice-workflow");
 
@@ -267,7 +272,7 @@ type QueueResult =
       update: { einvoiceStatus: "queued" };
       providerMessageId: null;
     }
-  | SubmitErr;
+  | (SubmitErr & { state?: AppointmentState });
 
 function queued(documentRow: EInvoiceDocument): QueueResult {
   return {
@@ -287,6 +292,26 @@ async function updateInvoiceInTransaction(
     .update(invoices)
     .set(patch)
     .where(and(eq(invoices.companyId, invoice.companyId), eq(invoices.id, invoice.id)));
+}
+
+/**
+ * A retry of a definitively refused number that was stopped before its first claim. No provider
+ * has seen this revision, so replacing it still needs the same verified-email authorization and
+ * the same provider pins as the retry it replaces. (A correction restores its rejected state in
+ * stopQueuedSubmission instead.)
+ */
+function isStoppedUnsentRefusalRetry(doc: EInvoiceDocument | undefined) {
+  const pin = documentSubmissionMetadata(doc);
+  return (
+    doc?.provider === "acube" &&
+    doc.status === "failed" &&
+    doc.attempts === 0 &&
+    !doc.providerMessageId &&
+    !doc.nextRetryAt &&
+    !doc.submitClaimedAt &&
+    pin?.verifiedEmailRequired === true &&
+    !pin.correctionOf
+  );
 }
 
 /** Validate and freeze the XML, audit history and provider together before reporting it queued. */
@@ -318,7 +343,9 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         message: "A cleared revision of this e-invoice is already archived.",
       };
     }
-    const definitiveAcubeRefusal = canRetryOriginalRejectedNumber(fresh, existing);
+    const stoppedUnsentRetry = isStoppedUnsentRefusalRetry(existing);
+    const definitiveAcubeRefusal =
+      canRetryOriginalRejectedNumber(fresh, existing) || stoppedUnsentRetry;
     const verifiedEmailRequired = !!correctionOf || definitiveAcubeRefusal;
     if (NEW_DOCUMENT_REQUIRED_CODES.has(existing?.lastErrorCode ?? "")) {
       return {
@@ -344,10 +371,12 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         message: "Check or link the existing service provider document before sending it again.",
       };
     }
+    // A refusal retry that was stopped unsent reads "failed", but replacing it is still an
+    // explicit resubmission, exactly as for the rejected row it came from.
     if (
       existing?.provider === "acube" &&
-      existing.status === "rejected" &&
-      (!args.regenerate || !definitiveAcubeRefusal)
+      ((existing.status === "rejected" && (!args.regenerate || !definitiveAcubeRefusal)) ||
+        (!args.regenerate && stoppedUnsentRetry))
     ) {
       return {
         ok: false,
@@ -361,7 +390,12 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
       existing &&
       (isQueuedEInvoiceDocument(existing) || (existing.status === "failed" && existing.nextRetryAt))
     ) {
-      return queued(existing);
+      const appointment = await submissionAppointmentGate(
+        company.id,
+        existing.provider ?? provider.name,
+        tx
+      );
+      return appointment ? { ok: false, status: 409, ...appointment } : queued(existing);
     }
     if (existing?.submitClaimedAt) {
       return {
@@ -408,6 +442,8 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
         message: EINVOICE_NOT_REQUIRED_MESSAGE,
       };
     }
+    const appointment = await submissionAppointmentGate(company.id, provider.name, tx);
+    if (appointment) return { ok: false, status: 409, ...appointment };
     const entity = await assertCanTransmit(company, provider, tx);
     if (
       verifiedEmailRequired &&
@@ -577,6 +613,7 @@ export async function enqueueEInvoiceSubmission(args: QueueArgs): Promise<QueueR
               sourceName: entitySourceField(entity, "sourceName"),
               sourceVersion: entitySourceField(entity, "sourceVersion"),
               scope,
+              documentCurrencyLines: built.documentCurrencyLines,
               actorId: args.actorId ?? null,
               providerAttempted: triedProvider,
               ...(required === null ? {} : { reportingRequired: required }),
@@ -679,7 +716,7 @@ async function claimQueuedSubmission(
       return null;
     }
     const ambiguous = !!doc.submitClaimedAt || AMBIGUOUS_CODES.has(doc.lastErrorCode ?? "");
-    const built = frozenEInvoice(invoice, doc);
+    let built = frozenEInvoice(invoice, doc);
     if (!built) {
       await stopQueuedSubmission(tx, invoice, "EINVOICE_SCHEMA_INVALID", now, ambiguous);
       return null;
@@ -687,6 +724,55 @@ async function claimQueuedSubmission(
     if (unissuedInvoice(invoice) && !ambiguous) {
       await stopQueuedSubmission(tx, invoice, unissuedInvoiceCode(invoice), now);
       return null;
+    }
+    // Only a snapshot no provider has seen may be replaced.
+    // An authorized correction or definitive-refusal retry is enqueued with providerAttempted
+    // copied from its predecessor, but the new revision itself has not been sent: enqueue sets
+    // verifiedEmailRequired only for those, and attempts stays 0 until this first claim.
+    const initialVerifiedRevision = metadata.verifiedEmailRequired === true && doc.attempts === 0;
+    let rebuilt = false;
+    if (!ambiguous && (!submissionTriedProvider(doc) || initialVerifiedRevision)) {
+      const lines = await tx
+        .select()
+        .from(invoiceLines)
+        .where(eq(invoiceLines.invoiceId, invoice.id));
+      if (frozenEInvoiceAmountsMatch(built.xml, invoice, lines)) {
+        const outdated = frozenEInvoiceLineCurrencyIssue(built.xml);
+        if (outdated) {
+          await stopQueuedSubmission(tx, invoice, outdated, now);
+          return null;
+        }
+      } else {
+        const [company] = await tx
+          .select()
+          .from(companies)
+          .where(eq(companies.id, invoice.companyId));
+        if (!company || company.deletedAt) {
+          await stopQueuedSubmission(tx, invoice, "EINVOICE_PROVIDER_NOT_CONFIGURED", now);
+          return null;
+        }
+        const draft = { ...invoice, einvoiceStatus: "generated" as const, einvoiceXml: null };
+        const ctx = await loadEInvoiceContext(draft, company, lines, tx);
+        const replacement = await prepareEInvoiceSubmission({
+          invoice: draft,
+          lines,
+          company,
+          ctx,
+          now,
+        });
+        if (!replacement.ok) {
+          await stopQueuedSubmission(tx, invoice, replacement.code, now);
+          return null;
+        }
+        built = replacement;
+        rebuilt = true;
+        await updateInvoiceInTransaction(tx, invoice, {
+          einvoiceStatus: "queued",
+          einvoiceXml: built.xml,
+          einvoiceHash: built.hash,
+          einvoiceUuid: built.uuid,
+        });
+      }
     }
 
     const attempt = doc.attempts + 1;
@@ -702,19 +788,32 @@ async function claimQueuedSubmission(
         document: {
           attempts: attempt,
           submitClaimedAt: now,
+          ...(rebuilt
+            ? {
+                uuid: built.uuid,
+                xmlHash: built.hash,
+                documentType: built.documentType,
+                validatedAt: now,
+              }
+            : {}),
           // A correction queued before this field was introduced still freezes the candidate
           // in the claim transaction, which commits before any provider request.
-          ...(metadata.correctionOf && !metadata.correctionCandidate
+          ...(rebuilt || (metadata.correctionOf && !metadata.correctionCandidate)
             ? {
                 validation: {
-                  ...documentValidation(doc),
+                  ...built.validation,
                   submission: {
                     ...documentSubmissionSnapshot(doc),
-                    correctionCandidate: correctionRevision(
-                      built,
-                      recordedReportingRequired(doc),
-                      doc.reportBy
-                    ),
+                    ...(rebuilt ? { documentCurrencyLines: built.documentCurrencyLines } : {}),
+                    ...(metadata.correctionOf
+                      ? {
+                          correctionCandidate: correctionRevision(
+                            built,
+                            recordedReportingRequired(doc),
+                            doc.reportBy
+                          ),
+                        }
+                      : {}),
                   },
                 },
               }
@@ -865,6 +964,8 @@ async function dispatchQueuedSubmission(
         return blockedSubmission(claim, err.code);
       }
     }
+    const appointment = await submissionAppointmentGate(companyId, provider.name, tx);
+    if (appointment) return blockedSubmission(claim, appointment.code);
     if (
       provider.getSubmissionScope &&
       (!metadata.scope ||
@@ -898,7 +999,13 @@ async function dispatchQueuedSubmission(
     }
     return {
       providerAttempted: true,
-      result: await sendQueuedSubmission(claim, provider, context, now),
+      result: await sendQueuedSubmission(
+        claim,
+        provider,
+        context,
+        now,
+        metadata.documentCurrencyLines
+      ),
     } satisfies SubmissionDispatch;
   });
 }
@@ -1023,7 +1130,8 @@ async function sendQueuedSubmission(
   claim: SubmissionClaim,
   provider: EInvoiceProvider,
   context: EInvoiceProviderContext | undefined,
-  now: Date
+  now: Date,
+  documentCurrencyLines: EInvoiceSubmission["documentCurrencyLines"]
 ): Promise<EInvoiceProviderResult> {
   const { invoice, built } = claim;
   const submission: EInvoiceSubmission = {
@@ -1033,6 +1141,7 @@ async function sendQueuedSubmission(
     uuid: built.uuid,
     xml: built.xml,
     documentType: built.documentType ?? undefined,
+    documentCurrencyLines,
     scopeFingerprint: claim.scope ?? undefined,
     context,
   };

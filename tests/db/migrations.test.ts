@@ -37,7 +37,24 @@ describe("migrations", () => {
       expect(e.idx).toBe(i);
       if (i > 0) expect(e.when).toBeGreaterThan(journal.entries[i - 1].when);
     });
+    const auditTag = "0157_preserve_period_locks_and_repair_cash_sale_numbering";
+    const auditEntry = journal.entries.find((x) => x.tag === auditTag);
+    expect(auditEntry).toMatchObject({
+      version: "7",
+      when: 1795533357303,
+      breakpoints: true,
+    });
+    expect(sqlFile(auditTag)).toContain("--> statement-breakpoint");
+    const allocationTag = "0159_preserve_invoice_line_document_discounts";
+    expect(journal.entries.find((x) => x.tag === allocationTag)).toMatchObject({
+      version: "7",
+      breakpoints: true,
+    });
     for (const e of journal.entries.filter((x) => x.idx >= 88)) {
+      if (e.tag === auditTag || e.tag === allocationTag) {
+        // Fixed generated timestamp and breakpoints, asserted above instead of the legacy cadence.
+        continue;
+      }
       expect(e).toMatchObject({ version: "7", breakpoints: false });
       // Keep release timestamps fixed and reserve a gap before the bank entries.
       const gaps = {
@@ -59,7 +76,15 @@ describe("migrations", () => {
         // Filled by its owning workstream: the header line names the file and the
         // workstream, declares the SQL idempotent, and every DDL statement is re-runnable.
         // Wave workstreams (W1-A ... W5-E) and the final sweep workers (S1 ... S9).
-        expect(body, e.tag).toMatch(/^-- \d{4}_\w+\b.*\b(W\d-[A-E]|S\d)\b/m);
+        if (e.tag === auditTag) {
+          expect(body, e.tag).toMatch(
+            new RegExp(`^-- ${auditTag}\\b.*\\(accounting audit\\)`, "m")
+          );
+        } else if (e.tag === allocationTag) {
+          expect(body, e.tag).toMatch(new RegExp(`^-- ${allocationTag}\\b`, "m"));
+        } else {
+          expect(body, e.tag).toMatch(/^-- \d{4}_\w+\b.*\b(W\d-[A-E]|S\d)\b/m);
+        }
         expect(body, e.tag).toMatch(/^-- .*\bIdempotent\b/im);
         expect(sqlBody, e.tag).not.toBe("SELECT 1;");
         expect(sqlBody, e.tag).not.toMatch(

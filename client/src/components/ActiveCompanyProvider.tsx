@@ -19,6 +19,12 @@ import {
 
 type WorkspaceCompany = Company & { hasPostedDocuments?: boolean };
 
+/**
+ * What is known about the company list. "empty" means a successful response listed no company;
+ * "waiting" is a paused request and "error" a failed one, neither of which says there is none.
+ */
+export type CompanyListState = "ready" | "empty" | "loading" | "waiting" | "error";
+
 interface ActiveCompanyContextValue {
   /** The currently active company (firm-managed client if switched, else first owned company). */
   company: WorkspaceCompany | undefined;
@@ -30,8 +36,16 @@ interface ActiveCompanyContextValue {
   isLoading: boolean;
   /** Error from the underlying company query, if any. */
   error: unknown;
-  /** True when the user has no accessible companies and the load is complete. */
+  /** True when the first company load is paused (offline or tab hidden) with no data yet. */
+  isPaused: boolean;
+  /** Re-run the company list query (Retry after a failed first load). */
+  refetch: () => void;
+  /** True only when a successful response listed no accessible company. */
   hasNoCompanies: boolean;
+  /** State of the company-list query, for screens that must tell "none" from "not known". */
+  companyListState: CompanyListState;
+  /** Fetch the company list again (that query only). */
+  retryCompanyList: () => void;
   /** True when the user has explicitly switched into a firm-managed client. */
   isFirmContext: boolean;
   /** True from the moment a client switch is committed until the company list has caught up. */
@@ -72,9 +86,28 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     data: companies,
     isLoading,
     error,
+    fetchStatus,
+    isSuccess,
+    isError,
+    isLoadingError,
+    refetch: refetchCompanies,
   } = useQuery<WorkspaceCompany[]>({
     queryKey: ["/api/companies"],
   });
+  const companyListState: CompanyListState = companies?.length
+    ? "ready"
+    : isSuccess
+      ? "empty"
+      : isLoadingError
+        ? "error"
+        : fetchStatus === "paused"
+          ? "waiting"
+          : isError
+            ? "error"
+            : "loading";
+  const retryCompanyList = useCallback(() => void refetchCompanies(), [refetchCompanies]);
+  // Paused (offline or tab not focused) with nothing loaded yet: the list is unknown, not empty.
+  const isPaused = fetchStatus === "paused" && companies === undefined;
 
   const [switchingClient, setSwitchingClient] = useState(false);
   const setActiveClientCompany = useCallback(async (id: string) => {
@@ -116,7 +149,11 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
       companies: list,
       isLoading,
       error,
-      hasNoCompanies: !isLoading && !error && list.length === 0,
+      isPaused,
+      refetch: retryCompanyList,
+      hasNoCompanies: companyListState === "empty",
+      companyListState,
+      retryCompanyList,
       isFirmContext: !!activeMatch && activeMatch.companyType === "client",
       isSwitchingClient: switchingClient,
       setActiveClientCompany,
@@ -127,6 +164,9 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     activeId,
     isLoading,
     error,
+    isPaused,
+    companyListState,
+    retryCompanyList,
     switchingClient,
     setActiveClientCompany,
     clearActiveClientCompany,

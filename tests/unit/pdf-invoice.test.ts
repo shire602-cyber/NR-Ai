@@ -236,3 +236,65 @@ describe("pdf invoice content", { timeout: 30_000 }, () => {
     }
   });
 });
+
+describe("Arabic seller identity on sales PDFs", { timeout: 60_000 }, () => {
+  const arabicLetters = (value: string) => (value.match(/[ء-ي]/g) ?? []).length;
+  const withArabic = () =>
+    company({
+      locale: "ar",
+      legalName: "Najma Trading LLC",
+      legalNameAr: "شركة النجمة للتجارة ذ.م.م",
+      businessAddress: "Office 12, Business Bay, Dubai",
+      addressAr: "مكتب 12، الخليج التجاري، دبي",
+    } as never);
+  const withoutArabic = () =>
+    company({
+      locale: "ar",
+      legalName: "Najma Trading LLC",
+      businessAddress: "Office 12, Business Bay, Dubai",
+    } as never);
+
+  it("sellerIdentity puts the Arabic name and address first on an Arabic document", async () => {
+    const { sellerIdentity } = await import("../../server/services/pdf-ledger");
+    const c = withArabic() as never as Parameters<typeof sellerIdentity>[0];
+    expect(sellerIdentity(c, "ar")).toEqual({
+      name: "شركة النجمة للتجارة ذ.م.م",
+      otherNames: ["Najma Trading LLC"],
+      addresses: ["مكتب 12، الخليج التجاري، دبي", "Office 12, Business Bay, Dubai"],
+    });
+    expect(sellerIdentity(c, "en").name).toBe("Najma Trading LLC");
+  });
+
+  it("delivery note prints the Arabic company name and address on an Arabic document", async () => {
+    const { generateDeliveryNotePDF } = await import("../../server/services/pdf-invoice.service");
+    const withAr = await sellerPdfText(
+      await generateDeliveryNotePDF(invoice(), lines(), withArabic())
+    );
+    const without = await sellerPdfText(
+      await generateDeliveryNotePDF(invoice(), lines(), withoutArabic())
+    );
+    // "شركة النجمة للتجارة ذ.م.م" + "مكتب 12، الخليج التجاري، دبي" add ~35 Arabic letters.
+    expect(arabicLetters(withAr) - arabicLetters(without)).toBeGreaterThanOrEqual(30);
+  });
+
+  it("credit note and quote print the Arabic company name and address", async () => {
+    const { generateCreditNotePDF } = await import("../../server/services/pdf-credit-note.service");
+    const { generateQuotePDF } = await import("../../server/services/pdf-quote.service");
+    const base = {
+      number: "X-1",
+      date: new Date("2026-03-10T00:00:00Z"),
+      customerName: "عميل",
+      currency: "AED",
+      subtotal: 100,
+      vatAmount: 5,
+      total: 105,
+      status: "issued",
+    };
+    const line = [{ description: "خدمة", quantity: 1, unitPrice: 100, vatRate: 0.05 }] as never;
+    for (const generate of [generateCreditNotePDF, generateQuotePDF] as const) {
+      const withAr = await sellerPdfText(await generate(base as never, line, withArabic()));
+      const without = await sellerPdfText(await generate(base as never, line, withoutArabic()));
+      expect(arabicLetters(withAr) - arabicLetters(without)).toBeGreaterThanOrEqual(30);
+    }
+  });
+});

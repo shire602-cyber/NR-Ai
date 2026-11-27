@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { accountDisplayName } from "@/lib/account-name";
@@ -149,7 +149,7 @@ export function AccountDrawer({
     },
     onSuccess: () => {
       for (const key of ["accounts-with-balances", "accounts"]) {
-        queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, key] });
+        refreshAfterWrite(["/api/companies", companyId, key]);
       }
       toast({
         title: editing ? t["journal.accountDrawer.saved"] : t["journal.accountDrawer.created"],

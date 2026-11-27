@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "../lib/queryClient";
+import { ApiError, apiRequest } from "../lib/queryClient";
 import { useDefaultCompany } from "./useDefaultCompany";
 import type { TrialState } from "@shared/trial";
 import {
@@ -77,18 +77,17 @@ interface UsageData {
 export function useCompanySubscription(watchTrial = false, enabled = true) {
   const { companyId } = useDefaultCompany();
 
-  return useQuery<SubscriptionData | null>({
+  return useQuery<SubscriptionData>({
     queryKey: ["/api/companies", companyId, "billing", "subscription"],
-    // 404 = billing module not deployed in this environment; resolve null
-    // instead of erroring so the UI fails open without retry noise.
-    queryFn: () =>
-      apiRequest("GET", `/api/companies/${companyId}/billing/subscription`).catch((err: any) => {
-        if (err?.status === 404) return null;
-        throw err;
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/billing/subscription`, undefined, undefined, {
+        signal,
       }),
     enabled: enabled && !!companyId,
     staleTime: 30000,
-    retry: 1,
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 1,
+    // The gate can mount more observers after a 404. They share its failed result.
+    retryOnMount: false,
     refetchInterval: watchTrial
       ? ({ state: { data } }) => {
           if (!data?.enforcement) return false;
@@ -105,14 +104,29 @@ export function useCompanySubscription(watchTrial = false, enabled = true) {
 
 export function useSubscription() {
   const { companyId } = useDefaultCompany();
-  const { data: subData, isLoading: subLoading, isError: subError } = useCompanySubscription();
+  const {
+    data: subData,
+    isLoading: subLoading,
+    error: subQueryError,
+    isLoadingError: subLoadingError,
+    isRefetchError: subRefetchError,
+    fetchStatus: subFetchStatus,
+    refetch: refetchSubscription,
+  } = useCompanySubscription();
 
-  const { data: usageData, isLoading: usageLoading } = useQuery<UsageData>({
+  const {
+    data: usageData,
+    isLoading: usageLoading,
+    error: usageError,
+    isLoadingError: usageLoadingError,
+    isRefetchError: usageRefetchError,
+    fetchStatus: usageFetchStatus,
+    refetch: refetchUsage,
+  } = useQuery<UsageData>({
     queryKey: ["/api/companies", companyId, "billing", "usage"],
-    queryFn: () =>
-      apiRequest("GET", `/api/companies/${companyId}/billing/usage`).catch((err: any) => {
-        if (err?.status === 404) return null;
-        throw err;
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/billing/usage`, undefined, undefined, {
+        signal,
       }),
     enabled: !!companyId,
     staleTime: 30000,
@@ -120,7 +134,7 @@ export function useSubscription() {
 
   // No billing module (endpoint missing/erroring) or enforcement off means the client locks
   // nothing: the UI must never block what the API serves.
-  const billingUnavailable = (subError || subData === null) && !subData;
+  const billingUnavailable = subLoadingError;
   const enforcementOff = subData ? subData.enforcement !== true : false;
   const gatesOpen = billingUnavailable || enforcementOff;
   const entitlement = subData?.entitlement ?? null;
@@ -140,6 +154,10 @@ export function useSubscription() {
   function getRequiredTier(feature: string): string {
     return FEATURE_MIN_PLAN[feature as PlanFeature] ?? "starter";
   }
+
+  /** First fetch is paused (offline, or a retry waiting for focus): nothing is known yet. */
+  const isPaused = subData === undefined && subFetchStatus === "paused";
+  const usagePaused = usageData === undefined && usageFetchStatus === "paused";
 
   return {
     subscription: subData?.subscription,
@@ -164,6 +182,25 @@ export function useSubscription() {
     canWrite,
     getRequiredTier,
     isLoading: subLoading || usageLoading,
+    /** The plan's own first fetch is in flight (usage has its own state below). */
+    planLoading: subLoading,
+    /** The first load failed. Paused wins. */
+    loadError: subLoadingError && !isPaused ? subQueryError : null,
+    isPaused,
+    /** A refresh failed and the cached plan is still in use. */
+    refreshError: subRefetchError ? subQueryError : null,
+    retryLoad: () => {
+      void refetchSubscription();
+    },
+    /** Usage has its own request: without `usage` the meters must not read as zero. */
+    usageState: {
+      loaded: usageData !== undefined,
+      loadError: usageLoadingError && !usagePaused ? usageError : null,
+      refreshError: usageRefetchError ? usageError : null,
+      retry: () => {
+        void refetchUsage();
+      },
+    },
   };
 }
 

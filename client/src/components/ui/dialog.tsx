@@ -54,7 +54,7 @@ const LEGACY_PANEL =
  * deleted." cut in half). The negative offset equals that padding (pb-5 / sm:pb-6).
  */
 const STICKY_FOOTER =
-  "[&_[data-dialog-footer]]:sticky [&_[data-dialog-footer]]:-bottom-5 sm:[&_[data-dialog-footer]]:-bottom-6[&_[data-dialog-footer]]:z-10 [&_[data-dialog-footer]]:-mx-4 [&_[data-dialog-footer]]:-mb-5 [&_[data-dialog-footer]]:mt-auto [&_[data-dialog-footer]]:border-t [&_[data-dialog-footer]]:border-border [&_[data-dialog-footer]]:bg-card [&_[data-dialog-footer]]:px-4 [&_[data-dialog-footer]]:py-3 sm:[&_[data-dialog-footer]]:-mx-6 sm:[&_[data-dialog-footer]]:-mb-6 sm:[&_[data-dialog-footer]]:px-6";
+  "[&_[data-dialog-footer]]:sticky [&_[data-dialog-footer]]:-bottom-5 sm:[&_[data-dialog-footer]]:-bottom-6 [&_[data-dialog-footer]]:z-10 [&_[data-dialog-footer]]:-mx-4 [&_[data-dialog-footer]]:-mb-5 [&_[data-dialog-footer]]:mt-auto [&_[data-dialog-footer]]:border-t [&_[data-dialog-footer]]:border-border [&_[data-dialog-footer]]:bg-card [&_[data-dialog-footer]]:px-4 [&_[data-dialog-footer]]:py-3 sm:[&_[data-dialog-footer]]:-mx-6 sm:[&_[data-dialog-footer]]:-mb-6 sm:[&_[data-dialog-footer]]:px-6";
 /** Shared from 640px: a centred panel. Below it, the form fills the sheet and its actions sit at the bottom. */
 const SIZED_PANEL =
   "flex w-full flex-col gap-4 px-4 pb-5 pt-5 max-sm:[&>form]:flex max-sm:[&>form]:flex-1 max-sm:[&>form]:flex-col data-[state=open]:slide-in-from-bottom-6 data-[state=closed]:slide-out-to-bottom-6 sm:inset-auto sm:left-[50%] sm:top-[50%] sm:h-auto sm:max-h-[calc(100dvh-4rem)] sm:w-[calc(100%-2rem)] sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-xl sm:border sm:px-6 sm:pb-6 sm:pt-6 sm:data-[state=open]:slide-in-from-bottom-2 sm:data-[state=closed]:slide-out-to-bottom-2";

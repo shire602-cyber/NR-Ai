@@ -190,7 +190,10 @@ function round2(n: number): number {
 }
 
 /** Map one generated PINT AE document (Invoice or CreditNote) to a GETS request part. */
-export function ublToGets(xml: string): GetsDocument {
+export function ublToGets(
+  xml: string,
+  documentCurrencyLines?: { taxAmount: number; lineTotal: number }[]
+): GetsDocument {
   const doc = parseXml(xml);
   const root = doc.documentElement as unknown as XNode;
   const isCredit = root.localName === "CreditNote";
@@ -242,12 +245,19 @@ export function ublToGets(xml: string): GetsDocument {
         )
       : undefined;
 
-  const lineItems = lines.map((l) => {
+  const documentLineAmount = (node: XNode | null, exactAmount?: number) => {
+    const value = num(text(node));
+    if (currency === "AED" || attr(node, "currencyID") !== "AED") return value;
+    return exactAmount ?? (value !== null && rate && rate > 0 ? round2(value / rate) : null);
+  };
+  const lineItems = lines.map((l, index) => {
     const taxable = amount(l, "cbc:LineExtensionAmount") ?? 0;
     const taxRate = num(textAt(l, "cac:Item/cac:ClassifiedTaxCategory/cbc:Percent")) ?? 0;
     const taxAmount =
-      amount(l, "cac:ItemPriceExtension/cac:TaxTotal/cbc:TaxAmount") ??
-      round2((taxable * taxRate) / 100);
+      documentLineAmount(
+        first(l, "cac:ItemPriceExtension/cac:TaxTotal/cbc:TaxAmount"),
+        documentCurrencyLines?.[index]?.taxAmount
+      ) ?? round2((taxable * taxRate) / 100);
     const priceAmount = amount(l, "cac:Price/cbc:PriceAmount");
     const exemptionCode = textAt(
       l,
@@ -274,7 +284,11 @@ export function ublToGets(xml: string): GetsDocument {
       taxCategory: textAt(l, "cac:Item/cac:ClassifiedTaxCategory/cbc:ID"),
       taxRate,
       taxAmount,
-      lineTotal: amount(l, "cac:ItemPriceExtension/cbc:Amount") ?? round2(taxable + taxAmount),
+      lineTotal:
+        documentLineAmount(
+          first(l, "cac:ItemPriceExtension/cbc:Amount"),
+          documentCurrencyLines?.[index]?.lineTotal
+        ) ?? round2(taxable + taxAmount),
       taxExemptionReasonCode: exemptionCode ? EXEMPTION_REASONS[exemptionCode] : undefined,
       taxExemptionReason: textAt(l, "cac:Item/cac:ClassifiedTaxCategory/cbc:TaxExemptionReason"),
       standardItemCode: standard

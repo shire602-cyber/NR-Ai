@@ -107,6 +107,8 @@ export function RegisterForm({
         trn: data.trn?.trim() ? data.trn.trim() : undefined,
         // Localised default so the onboarding heading is not an English "X's Company".
         companyName: await defaultCompanyName(data.name.trim()),
+        // The signup language becomes the new company's default language.
+        locale: useI18n.getState().locale === "ar" ? "ar" : "en",
         ...(captchaToken ? { captchaToken } : {}),
         ...(plan ? { plan: plan.planId, billingCycle: plan.cycle, planSource: plan.source } : {}),
       };

@@ -45,14 +45,16 @@ const LOCALIZED_HOMEPAGES = {
   "/en": {
     lang: "en",
     dir: "ltr",
-    title: "Accounting and VAT for UAE businesses",
-    providerChoice: "Choose one accredited provider per company",
+    title: "Your books. Your VAT. Your e-invoices. Done.",
+    includedEinvoicing: "Included on every plan. No separate e-invoicing subscription from us.",
+    accreditedProvider: "E-invoices are exchanged through an accredited service provider",
   },
   "/ar": {
     lang: "ar",
     dir: "rtl",
-    title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات",
-    providerChoice: "اختر مزوّد خدمة معتمدًا واحدًا لكل شركة",
+    title: "دفاترك. ضريبتك. فواتيرك الإلكترونية. كلها منجزة.",
+    includedEinvoicing: "مشمولة في كل باقة، ولا نفرض اشتراكًا منفصلًا للفوترة الإلكترونية.",
+    accreditedProvider: "تُتبادل الفواتير الإلكترونية عبر مزوّد خدمة معتمد",
   },
 };
 
@@ -91,6 +93,10 @@ const PUBLIC_ROUTES = [
   "/en/product/bank-reconciliation",
   "/ar/product/bank-reconciliation",
 ];
+
+// Bare marketing URLs that 301 to their language-prefixed page (client/src/components/marketing/
+// phase/routes.ts, pinned by tests/unit/marketing-bare-routes.test.ts). Any other final URL fails.
+const PUBLIC_REDIRECTS = { "/pricing": "/en/pricing" };
 
 const CUSTOMER_ROUTES = [
   "/dashboard",
@@ -364,7 +370,10 @@ async function main() {
     const expectedDirection = expectedLocale === "ar" ? "rtl" : "ltr";
     const wrongLocale =
       locale && (locale.lang !== expectedLocale || locale.dir !== expectedDirection);
-    const redirected = options.expectPrefix ? !finalUrl.startsWith(route) : finalUrl !== route;
+    const expectedUrl = options.finalUrl ?? route;
+    const redirected = options.expectPrefix
+      ? !finalUrl.startsWith(expectedUrl)
+      : finalUrl !== expectedUrl;
     if (
       !response?.ok() ||
       routeErrors.length ||
@@ -410,7 +419,7 @@ async function main() {
 
   // Public launch surface: these are the routes ads and prospects will hit first.
   for (const route of PUBLIC_ROUTES) {
-    const bodyText = await crawlRoute(route);
+    const bodyText = await crawlRoute(route, { finalUrl: PUBLIC_REDIRECTS[route] });
     const homepage = LOCALIZED_HOMEPAGES[route];
     if (homepage) {
       const actual = await page.locator("html").evaluate((html) => ({
@@ -426,7 +435,11 @@ async function main() {
         await fail(`localized homepage ${route}`, { expected: homepage, actual });
       }
       try {
-        await page.getByText(homepage.providerChoice, { exact: true }).waitFor();
+        await page.getByText(homepage.includedEinvoicing, { exact: true }).waitFor();
+        await page
+          .locator("#e-invoicing-deadlines")
+          .getByText(homepage.accreditedProvider)
+          .waitFor();
       } catch (error) {
         await fail(`localized e-invoicing copy ${route}`, { detail: String(error) });
       }
@@ -497,7 +510,7 @@ async function main() {
   await crawlRoute("/en/product/vat");
   try {
     await page.getByRole("heading", { level: 1, name: "VAT 201", exact: true }).waitFor();
-    await page.locator('a[hreflang="ar"]').click();
+    await page.locator('header a[hreflang="ar"]').click();
     await page.waitForURL((url) => url.pathname === "/ar/product/vat");
     await page.getByRole("heading", { level: 1, name: "إقرار VAT 201", exact: true }).waitFor();
     await page.waitForFunction(() => document.documentElement.dir === "rtl");

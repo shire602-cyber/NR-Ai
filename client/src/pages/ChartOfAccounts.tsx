@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
 import { DataTableCard } from "@/components/ui/data-table";
+import { classifyLoadError, loadErrorMessage } from "@/lib/loadError";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
@@ -23,7 +24,7 @@ import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiUrl } from "@/lib/api";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   orderByHierarchy,
@@ -147,13 +148,15 @@ export default function ChartOfAccounts() {
 
   const {
     data: accountsWithBalances,
-    isLoading,
-    error: listError,
-    refetch: refetchList,
+    isPending,
+    isLoadingError,
+    error,
+    refetch,
   } = useQuery<AccountWithBalance[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
     enabled: !!selectedCompanyId,
   });
+  const listErrorKind = classifyLoadError(error);
 
   const groupedAccounts = useMemo(() => {
     if (!accountsWithBalances) return {};
@@ -229,12 +232,8 @@ export default function ChartOfAccounts() {
         parentId: parentChoice === NO_PARENT ? null : parentChoice,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "accounts"],
-      });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "accounts-with-balances"]);
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "accounts"]);
       toast({ title: t["journal.coaParentSaved"] });
       setParentFor(null);
     },
@@ -266,7 +265,7 @@ export default function ChartOfAccounts() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={t["shell.nav.accounting"]}
         title={t.chartOfAccounts}
         description={t.chartOfAccountsDescription}
         actions={
@@ -354,9 +353,28 @@ export default function ChartOfAccounts() {
 
       <DataTableCard
         status={
-          isLoading ? "loading" : Object.keys(groupedAccounts).length === 0 ? "empty" : "ready"
+          isPending
+            ? "loading"
+            : isLoadingError
+              ? "error"
+              : accountsWithBalances && Object.keys(groupedAccounts).length === 0
+                ? "empty"
+                : "ready"
         }
-        loadError={listError ? { error: listError, onRetry: () => void refetchList() } : null}
+        error={{
+          title:
+            listErrorKind === "forbidden"
+              ? t["firm.loadForbiddenTitle"]
+              : listErrorKind === "notFound"
+                ? t["firm.loadNotFoundTitle"]
+                : t["common.loadFailedTitle"],
+          description: loadErrorMessage(error, t),
+          onRetry:
+            listErrorKind === "offline" || listErrorKind === "server"
+              ? () => void refetch()
+              : undefined,
+          testId: "coa-load-error",
+        }}
         columnLabels={[t["screens.code"], t["screens.account"], t["screens.balance"]]}
         empty={{
           icon: BookOpen,
@@ -535,7 +553,7 @@ export default function ChartOfAccounts() {
               <T k="journal.coaSetParent" />
             </DialogTitle>
             <DialogDescription>
-              {parentFor ? `${parentFor.code} · ${parentFor.nameEn}` : null}
+              {parentFor ? `${parentFor.code} · ${accountDisplayName(parentFor, locale)}` : null}
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">

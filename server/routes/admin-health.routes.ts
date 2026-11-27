@@ -14,7 +14,7 @@ import { authMiddleware, adminMiddleware, optionalAuthUser } from "../middleware
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { getPoolStats, pingDb, pool } from "../db";
-import { monitoringConfigured } from "../services/monitoring";
+import { monitoringConfigured, monitoringDsnIgnored } from "../services/monitoring";
 import { ssoStatus } from "./auth.routes";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import * as schema from "../../shared/schema";
@@ -394,6 +394,9 @@ export function createHealthHandler(environment: string) {
         databaseError: ping.error,
         pool: getPoolStats(),
         errorTracking: monitoringConfigured() ? "configured" : "logs-only",
+        errorTrackingNote: monitoringDsnIgnored()
+          ? "DSN is set but no error forwarder is wired; errors are logged only"
+          : undefined,
       },
     });
   };

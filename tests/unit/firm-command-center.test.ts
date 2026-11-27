@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "fs";
 import type { Request, Response, NextFunction } from "express";
 import {
   calculateHealthScore,
@@ -651,5 +652,32 @@ describe("firm-wide aggregation accuracy", () => {
     );
     // overdue_balance + document_missing
     expect(alerts.length).toBe(2);
+  });
+});
+
+// ─── F02: bookkeeper-dashboard VAT alignment ─────────────────────────────────
+// Source-inspection: behaviour test requires Postgres (the handler is DB-backed);
+// this guard catches a future refactor that removes the superseded-row filter.
+
+describe("F02: bookkeeper-dashboard applies activeVatReturnFilter", () => {
+  const src = readFileSync(
+    new URL("../../server/routes/firm/bookkeeper-dashboard.ts", import.meta.url),
+    "utf8"
+  );
+
+  it("imports activeVatReturnFilter from the vat-filing-filter module", () => {
+    expect(src).toMatch(/activeVatReturnFilter.*from.*vat-filing-filter/);
+  });
+
+  it("applies activeVatReturnFilter inside the latestVatSub subquery where clause", () => {
+    // The subquery must exclude amended returns so max(periodEnd) only considers
+    // non-superseded rows; otherwise an amended row's period can win.
+    // The filter appears in .where() before .as("latest_vat_for_bookkeeper").
+    expect(src).toMatch(/activeVatReturnFilter[\s\S]{0,300}latest_vat_for_bookkeeper/);
+  });
+
+  it("applies activeVatReturnFilter in the main join condition", () => {
+    // The join must also filter so an amended row for the latest period is not returned.
+    expect(src).toMatch(/innerJoin[\s\S]{0,500}activeVatReturnFilter/);
   });
 });

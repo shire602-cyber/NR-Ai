@@ -379,12 +379,21 @@ async function budgetAmounts(
   to: IsoDate,
   q: Queryable
 ): Promise<Map<string, Fils>> {
-  const plan = await q.query(`SELECT id FROM budget_plans WHERE id = $1 AND company_id = $2`, [
-    budgetId,
-    companyId,
-  ]);
+  const plan = await q.query(
+    `SELECT start_date::text AS start_date, end_date::text AS end_date
+       FROM budget_plans WHERE id = $1 AND company_id = $2`,
+    [budgetId, companyId]
+  );
   if (!plan.rows[0]) throw new DomainError("BUDGET_NOT_FOUND", 404);
-  const months = buckets(from, to, "month", 240).map((b) => Number(b.from.slice(5, 7)));
+  // The plan's jan..dec amounts fund each month of its own fiscal year once; the same month
+  // name in any other year has no allocation from this plan. The range is clipped to the plan's
+  // exact start and end dates first; a month the clipped range touches counts in full.
+  const planStart = String(plan.rows[0].start_date).slice(0, 10);
+  const planEnd = String(plan.rows[0].end_date).slice(0, 10);
+  const start = from > planStart ? from : planStart;
+  const end = to < planEnd ? to : planEnd;
+  const months =
+    start <= end ? buckets(start, end, "month", 240).map((b) => Number(b.from.slice(5, 7))) : [];
   const cols = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
   const { rows } = await q.query(
     `SELECT account_id, ${cols.map((c) => `ROUND(COALESCE(SUM(${c}),0) * 100)::bigint AS ${c}`).join(", ")}
@@ -1167,16 +1176,41 @@ const GL_LINE_LIMIT = 50_000;
  * fiscal-year-to-date balance before `from` (they reset each fiscal year).
  */
 export async function generalLedger(
-  args: {
-    companyId: string;
-    from?: IsoDate | null;
-    to: IsoDate;
-    accountIds?: string[] | null;
-    includeClosing?: boolean;
-    includeEmpty?: boolean;
-  },
+  args: GeneralLedgerArgs,
   q: Queryable = pool
 ): Promise<GeneralLedger> {
+  if (q !== pool) return generalLedgerOn(args, q);
+  // The company, accounts, period totals, opening balances and capped detail lines are read in one
+  // repeatable-read, read-only transaction, so a journal posted meanwhile cannot appear in one
+  // part and not the others.
+  const client = await pool.connect();
+  let broken = false;
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const result = await generalLedgerOn(args, client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    // A connection that cannot roll back is discarded, never returned to the pool mid-transaction.
+    await client.query("ROLLBACK").catch(() => {
+      broken = true;
+    });
+    throw err;
+  } finally {
+    client.release(broken);
+  }
+}
+
+interface GeneralLedgerArgs {
+  companyId: string;
+  from?: IsoDate | null;
+  to: IsoDate;
+  accountIds?: string[] | null;
+  includeClosing?: boolean;
+  includeEmpty?: boolean;
+}
+
+async function generalLedgerOn(args: GeneralLedgerArgs, q: Queryable): Promise<GeneralLedger> {
   const { companyId, to } = args;
   const from = args.from ?? null;
   const company = await loadCompany(companyId, q);
@@ -1188,23 +1222,33 @@ export async function generalLedger(
   }
   const ids = accounts.map((a) => a.id);
   const fyStart = from ? fiscalYearStart(from, company.fiscalYearStartMonth) : null;
-  const [bsOpen, plOpen, lines] = await Promise.all([
-    from
-      ? accountTotals(companyId, { to: addDays(from, -1), includeClosing: args.includeClosing }, q)
-      : Promise.resolve(new Map()),
+  // Read one after another: they share a single connection, which runs one query at a time.
+  // Totals and closing balances are summed in SQL, so the detail-line limit never changes them.
+  const periodTotals = await accountTotals(
+    companyId,
+    { from, to, includeClosing: args.includeClosing },
+    q
+  );
+  const bsOpen: Map<string, AccountTotals> = from
+    ? await accountTotals(
+        companyId,
+        { to: addDays(from, -1), includeClosing: args.includeClosing },
+        q
+      )
+    : new Map();
+  const plOpen: Map<string, AccountTotals> =
     from && fyStart && fyStart < from
-      ? accountTotals(
+      ? await accountTotals(
           companyId,
           { from: fyStart, to: addDays(from, -1), includeClosing: args.includeClosing },
           q
         )
-      : Promise.resolve(new Map()),
-    ledgerLines(
-      companyId,
-      { from, to, accountIds: ids, includeClosing: args.includeClosing, limit: GL_LINE_LIMIT + 1 },
-      q
-    ),
-  ]);
+      : new Map();
+  const lines = await ledgerLines(
+    companyId,
+    { from, to, accountIds: ids, includeClosing: args.includeClosing, limit: GL_LINE_LIMIT + 1 },
+    q
+  );
   const truncated = lines.length > GL_LINE_LIMIT;
   const linesByAccount = new Map<string, typeof lines>();
   for (const l of lines.slice(0, GL_LINE_LIMIT)) {
@@ -1217,18 +1261,17 @@ export async function generalLedger(
   const out: GeneralLedgerAccount[] = [];
   for (const a of accounts) {
     const isBs = a.type === "asset" || a.type === "liability" || a.type === "equity";
-    const openT = (isBs ? bsOpen : plOpen).get(a.id) as AccountTotals | undefined;
+    const openT = (isBs ? bsOpen : plOpen).get(a.id);
     const open = naturalBalance(a.type, openT);
     const own = linesByAccount.get(a.id) ?? [];
-    if (!own.length && open === 0 && !args.includeEmpty) continue;
+    const period = periodTotals.get(a.id);
+    if (!period && open === 0 && !args.includeEmpty) continue;
     const debitNormal = a.type === "asset" || a.type === "expense";
     let bal = open;
-    let d = 0;
-    let c = 0;
+    const d = period?.debit ?? 0;
+    const c = period?.credit ?? 0;
     const rows = own.map((l) => {
       bal += debitNormal ? l.debit - l.credit : l.credit - l.debit;
-      d += l.debit;
-      c += l.credit;
       return {
         date: l.date,
         entryId: l.entryId,
@@ -1257,7 +1300,7 @@ export async function generalLedger(
       openingBalance: aed(open),
       debitTotal: aed(d),
       creditTotal: aed(c),
-      closingBalance: aed(bal),
+      closingBalance: aed(open + naturalBalance(a.type, period)),
       lines: rows,
     });
   }
