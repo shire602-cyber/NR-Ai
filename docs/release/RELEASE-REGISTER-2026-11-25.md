@@ -56,7 +56,7 @@ S4 = ops/evidence.
 
 | ID | Sev | Expected | Observed | Fix | Disposition |
 |---|---|---|---|---|---|
-| ENV-01 | S4 | Unit suite is green on supported dev platforms | `report-discovery.test.ts > offers persona report packs` failed on this Windows checkout (`core.autocrlf=true`): it asserted LF-joined snippets against a CRLF working copy. It passed once `Reports.tsx` had LF endings, which confirms the root cause | `read()` helper in that test normalises `\r\n` → `\n` | **verified fixed** (PR #183 head `da1e33d1`, CI run 46032267742, Linux runner — all 6 checks green including Unit; fix merged to test branch at f94ea9b4) |
+| ENV-01 | S4 | Unit suite is green on supported dev platforms | `report-discovery.test.ts > offers persona report packs` failed on this Windows checkout (`core.autocrlf=true`): it asserted LF-joined snippets against a CRLF working copy. It passed once `Reports.tsx` had LF endings, which confirms the root cause | `read()` helper in that test normalises `\r\n` → `\n` | **verified fixed** (commit `7a94a121`, merged into the test branch by PR #169 at `3398a561`; verified by Linux CI run 46032267742 on PR #189 head `da1e33d1` — all 6 checks green including Unit) |
 
 ### Records, privacy, controls
 
