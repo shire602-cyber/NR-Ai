@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { SettingsLoadError } from "@/components/layout/SettingsLoadError";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -159,7 +160,12 @@ export default function CompanySettings() {
   const { gate } = useCompanyPermission();
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
-  const { data: company, isLoading } = useQuery<Company>({
+  const {
+    data: company,
+    isLoading,
+    error: loadError,
+    refetch,
+  } = useQuery<Company>({
     queryKey: ["/api/companies", companyId],
     enabled: !!companyId,
   });
@@ -306,6 +312,19 @@ export default function CompanySettings() {
     );
   }
 
+  if (loadError && !company) {
+    return (
+      <div className="space-y-8 max-w-4xl">
+        <SettingsLoadError
+          error={loadError}
+          onRetry={() => refetch()}
+          testId="company-settings-load-error"
+          companyAccessDescription={tr["pageLabels.companySettings.companyAccessForbiddenBody"]}
+        />
+      </div>
+    );
+  }
+
   if (!company) {
     return (
       <div className="space-y-8 max-w-4xl">
@@ -330,7 +349,7 @@ export default function CompanySettings() {
     <SettingsLayout>
       <div className="space-y-8 max-w-4xl">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t["pages.companyProfileEyebrow"]}
           title={t["pageLabels.companySettings.title"]}
           description={t["pageLabels.companySettings.description"]}
         />

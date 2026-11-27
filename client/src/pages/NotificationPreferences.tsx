@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { SettingsLoadError } from "@/components/layout/SettingsLoadError";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { subscribeToPush, unsubscribeFromPush, isPushSubscribed } from "@/lib/push";
 import { Bell, Mail, FileText, Calendar, CreditCard, BarChart3 } from "lucide-react";
@@ -68,7 +69,12 @@ export default function NotificationPreferences() {
     isPushSubscribed().then(setPushActive);
   }, []);
 
-  const { data: preferences, isLoading } = useQuery<NotificationPrefs>({
+  const {
+    data: preferences,
+    fetchStatus,
+    error: loadError,
+    refetch,
+  } = useQuery<NotificationPrefs>({
     queryKey: ["/api/notification-preferences"],
     queryFn: () => apiRequest("GET", "/api/notification-preferences"),
   });
@@ -157,11 +163,11 @@ export default function NotificationPreferences() {
     }
   };
 
-  if (isLoading) {
+  if (!preferences && fetchStatus !== "paused" && !loadError) {
     return (
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t["pages.companyProfileEyebrow"]}
           title={t["pages.notificationPrefsTitle"]}
           description={t["pages.notificationPrefsDescription"]}
         />
@@ -170,11 +176,36 @@ export default function NotificationPreferences() {
     );
   }
 
+  if (!preferences) {
+    return (
+      <SettingsLayout>
+        <div className="space-y-6">
+          <PageHeader
+            eyebrow={t["pages.companyProfileEyebrow"]}
+            title={t["pages.notificationPrefsTitle"]}
+            description={t["pages.notificationPrefsDescription"]}
+          />
+          {fetchStatus === "paused" ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              <T k="pages.notificationPrefsWaiting" />
+            </p>
+          ) : (
+            <SettingsLoadError
+              error={loadError}
+              onRetry={() => refetch()}
+              testId="notification-prefs-load-error"
+            />
+          )}
+        </div>
+      </SettingsLayout>
+    );
+  }
+
   return (
     <SettingsLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t["pages.companyProfileEyebrow"]}
           title={t["pages.notificationPrefsTitle"]}
           description={t["pages.notificationPrefsDescription"]}
         />

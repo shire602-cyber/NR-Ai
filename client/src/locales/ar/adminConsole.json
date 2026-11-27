@@ -43,6 +43,7 @@
   "backupRestore.safeguardYourFinancialRecordsWith": "احمِ سجلاتك المالية بنسخ احتياطية تلقائية",
   "backupRestore.addNotesAboutThisBackup": "أضف ملاحظات حول هذه النسخة الاحتياطية...",
   "developerSettings.createAndManageApiKeys": "أنشئ مفاتيح API وأدرها للوصول البرمجي إلى Muhasib.ai.",
+  "developerSettings.companyAccessForbiddenBody": "اطلب من مالك شركتك أو مسؤولها مراجعة صلاحية وصولك إلى إعدادات المطوّرين.",
   "developerSettings.storeThisKeySecurelyIt": "احفظ هذا المفتاح في مكان آمن. فهو يتيح الوصول البرمجي إلى حسابك في Muhasib.ai.",
   "developerSettings.thisActionCannotBeUndone": "لا يمكن التراجع عن هذا الإجراء. ستفقد جميع التطبيقات التي تستخدم هذا المفتاح إمكانية الوصول فورًا.",
   "developerSettings.receiveRealTimeNotificationsWhen": "استقبل إشعارات فورية عند حدوث أحداث في حسابك.",

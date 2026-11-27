@@ -39,6 +39,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { SettingsLoadError } from "@/components/layout/SettingsLoadError";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
@@ -138,7 +139,7 @@ export default function DeveloperSettings() {
     return (
       <div className="max-w-narrow">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t["pages.companyProfileEyebrow"]}
           title={t["developerSettings.developerSettings"]}
           className="mb-6"
         />
@@ -156,7 +157,7 @@ export default function DeveloperSettings() {
     <SettingsLayout>
       <div className="max-w-narrow">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t["pages.companyProfileEyebrow"]}
           title={t["developerSettings.developerSettings"]}
           description={t["developerSettings.manageApiKeysAndWebhook"]}
           className="mb-6"
@@ -203,7 +204,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyScopes, setNewKeyScopes] = useState<string[]>(["read:invoices"]);
 
-  const { data: apiKeys, isLoading } = useQuery<ApiKeyItem[]>({
+  const {
+    data: apiKeys,
+    isLoading,
+    error: loadError,
+    refetch,
+  } = useQuery<ApiKeyItem[]>({
     queryKey: ["/api/companies", companyId, "api-keys"],
     enabled: !!companyId,
   });
@@ -301,6 +307,14 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
             <p className="text-muted-foreground py-8 text-center">
               <T k="pages.loading" />
             </p>
+          ) : loadError && !apiKeys ? (
+            <SettingsLoadError
+              compact
+              error={loadError}
+              onRetry={() => refetch()}
+              companyAccessDescription={t["developerSettings.companyAccessForbiddenBody"]}
+              testId="api-keys-load-error"
+            />
           ) : !apiKeys?.length ? (
             <p className="text-muted-foreground py-8 text-center">
               <T k="pageLabels.noAPIKeysCreatedYetCreateOneToGetStarted" />
@@ -573,7 +587,12 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     dead: t["pages.failed"],
   };
 
-  const { data: webhooks, isLoading } = useQuery<WebhookEndpointItem[]>({
+  const {
+    data: webhooks,
+    isLoading,
+    error: loadError,
+    refetch,
+  } = useQuery<WebhookEndpointItem[]>({
     queryKey: ["/api/companies", companyId, "webhooks"],
     enabled: !!companyId,
   });
@@ -719,6 +738,14 @@ function WebhooksTab({ companyId }: { companyId: string }) {
             <p className="text-muted-foreground py-8 text-center">
               <T k="pages.loading" />
             </p>
+          ) : loadError && !webhooks ? (
+            <SettingsLoadError
+              compact
+              error={loadError}
+              onRetry={() => refetch()}
+              companyAccessDescription={t["developerSettings.companyAccessForbiddenBody"]}
+              testId="webhooks-load-error"
+            />
           ) : !webhooks?.length ? (
             <p className="text-muted-foreground py-8 text-center">
               {t["developerSettings.noWebhookEndpointsConfiguredAdd"]}
