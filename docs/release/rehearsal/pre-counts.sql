@@ -28,8 +28,9 @@ SELECT count(*) FILTER (WHERE to_jsonb(r)->>'account_id' IS NULL AND is_active) 
   FROM reconciliation_rules r;
 \echo '== 0103 plaintext portal tokens'
 SELECT count(*) AS plaintext_portal_tokens FROM customer_contacts WHERE portal_access_token IS NOT NULL;
-\echo '== 0113 companies without a subscription'
-SELECT count(*) AS companies_without_subscription FROM companies c WHERE NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.company_id = c.id);
+\echo '== 0113 Free subscriptions and companies without a subscription'
+\ir subscription-counts.sql
+SELECT :free_rows AS free_rows, :companies_without_subscription AS companies_without_subscription;
 \echo '== 0109 audit rows'
 SELECT count(*) AS audit_rows FROM audit_logs;
 \echo '== S-H3 0054 owner account state'

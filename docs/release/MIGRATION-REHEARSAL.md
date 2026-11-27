@@ -262,13 +262,10 @@ on the migrated schema. Treat it as unverified. The data-preserving rollback is 
 
 ## Re-run on the real snapshot
 
-Build the candidate with `npm run build`. From the repo root on the release branch, use a restored
-production dump in a scratch database and the isolated boot environment in
+Build the candidate with `npm run build` and follow the disposable-cluster setup in
 [the deploy runbook](DEPLOY-RUNBOOK.md#2e-scripted-rehearsal-and-the-2026-11-18-record).
-
-```bash
-PGURL=postgres://user:pass@host:5432 SNAPSHOT_DB=rehearsal OUT=./rehearsal-out bash docs/release/rehearsal/rehearse.sh
-```
+Supply the custom-format archive via `SNAPSHOT_FILE`. The driver verifies the loopback
+cluster against `REHEARSAL_CLUSTER_ID` and creates the target databases for that run.
 
 It writes `steps.log`, the migration, restore and boot logs, the QA findings and the schema
 diff to `OUT`. A failed gate returns a nonzero exit. Do not commit the outputs or the dump.
