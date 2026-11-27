@@ -147,11 +147,11 @@ function PageErrorFallback({ error, onRetry }: { error: Error | null; onRetry: (
               onClick={() => (window.location.href = "/dashboard")}
               className="flex-1"
             >
-              <Home className="w-4 h-4 mr-2" />
+              <Home className="w-4 h-4 me-2" />
               {t["components.errorDashboard"]}
             </Button>
             <Button onClick={onRetry} className="flex-1">
-              <RefreshCw className="w-4 h-4 mr-2" />
+              <RefreshCw className="w-4 h-4 me-2" />
               {t["components.errorTryAgain"]}
             </Button>
           </div>
@@ -195,11 +195,11 @@ function SectionErrorFallback({
           )}
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={onRetry}>
-              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+              <RefreshCw className="w-3.5 h-3.5 me-1.5" />
               {t["components.errorRetry"]}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => (window.location.href = "/dashboard")}>
-              <Home className="w-3.5 h-3.5 mr-1.5" />
+              <Home className="w-3.5 h-3.5 me-1.5" />
               {t["components.errorDashboard"]}
             </Button>
           </div>

@@ -285,7 +285,7 @@ export function ReportWorkspacePartE({ m }: { m: DashboardModel }) {
               <Button
                 variant={link.isPreferred ? "default" : "outline"}
                 size="sm"
-                className="h-auto w-full justify-between gap-2 px-3 py-2 text-left"
+                className="h-auto w-full justify-between gap-2 px-3 py-2 text-start"
                 onClick={() => {
                   setPreferredReportWorkflowGapFilter(preferredReportWorkspace.persona, link.gap);
                   setReportWorkflowPreferenceRevision((revision) => revision + 1);

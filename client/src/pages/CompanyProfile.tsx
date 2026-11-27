@@ -596,7 +596,7 @@ export default function CompanyProfile() {
                 "Saving..."
               ) : (
                 <>
-                  <Save className="w-4 h-4 mr-2" /> {/* i18n-ignore: UI copy awaiting AR sweep */}
+                  <Save className="w-4 h-4 me-2" /> {/* i18n-ignore: UI copy awaiting AR sweep */}
                   Save Changes
                 </>
               )}

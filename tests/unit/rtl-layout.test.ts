@@ -1,7 +1,7 @@
 // Source inspection is intentional: jsdom does not apply Tailwind/CSS, so physical-direction
 // class usage and rtl.css rules can only be linted from source text; the runtime RTL behaviour is
 // covered by client-behaviour.test.ts and the Playwright RTL crawl.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -98,5 +98,39 @@ describe("RTL shell layout", () => {
     expect(crawl).toContain("workspace=${workspace}");
     const routes = read("tests/e2e/launch-routes.mjs");
     expect((routes.match(/^\s+"\//gm) ?? []).length).toBeGreaterThanOrEqual(20);
+  });
+});
+
+// Source inspection is intentional: jsdom does not apply Tailwind, so a physical margin/padding/
+// alignment class can only be caught by reading source. rtl.css mirrors only whole-step .ml-N/.mr-N,
+// so fractional variants (mr-1.5, ml-0.5, pr-2.5) never flipped in Arabic and the icon sat on the
+// wrong side. Whole client tree, not just the shell.
+describe("RTL physical spacing guard", () => {
+  const PHYSICAL_SPACING =
+    /(?<![\w./-])(?:[a-z0-9]+:)*-?(?:m[lr]|p[lr])-\d+(?:\.\d+)?(?![\w-])|(?<![\w-])text-(?:left|right)(?![\w-])/g;
+  // components/ui is shadcn/Radix (data-side driven); RTLProvider documents the physical names.
+  const SKIP = /[\\/](?:components[\\/]ui|dev)[\\/]|RTLProvider\.tsx$|\.test\./;
+
+  function walk(dir: string, out: string[] = []): string[] {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full, out);
+      else if (entry.name.endsWith(".tsx") && !SKIP.test(full)) out.push(full);
+    }
+    return out;
+  }
+
+  it("no client page or component uses physical ml/mr/pl/pr-N (incl. fractional) or text-left/right", () => {
+    const offenders: string[] = [];
+    for (const file of walk(join(repoRoot, "client/src"))) {
+      readFileSync(file, "utf8")
+        .split("\n")
+        .forEach((line, i) => {
+          if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+          const hits = line.match(PHYSICAL_SPACING);
+          if (hits) offenders.push(`${file.slice(repoRoot.length + 1)}:${i + 1} ${hits.join(" ")}`);
+        });
+    }
+    expect(offenders).toEqual([]);
   });
 });
