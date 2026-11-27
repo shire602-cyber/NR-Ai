@@ -115,6 +115,8 @@
   "dashboard.needsVatDueIn": "VAT return due in {count} days",
   "dashboard.needsPayroll": "{count} payroll runs to approve",
   "dashboard.needsPayrollOne": "1 payroll run to approve",
+  "dashboard.needsPartial": "Some checks could not load.",
+  "dashboard.loadForbiddenBody": "You do not have access to this. Ask a company owner to grant it.",
   "dashboard.needsNothing": "Nothing needs you right now",
   "dashboard.modelHandoffAck": "Handoff gaps acknowledged",
   "dashboard.modelHandoffAckBody": "{title} has {gap}. Click queue again to send with those gaps acknowledged.",

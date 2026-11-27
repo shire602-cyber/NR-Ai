@@ -5,6 +5,8 @@ import { canPerform, companyAccessQueryKey, type CompanyAccess } from "@/lib/aut
 import { useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { Link } from "wouter";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { classifyLoadError } from "@/lib/loadError";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
@@ -66,6 +68,15 @@ export function NeedsYouStrip({
     staleTime: 60_000,
   });
   if (!companyId || invoices === undefined) return null;
+  // A list the role cannot read (403) contributes no chip; any other failure means the strip
+  // cannot say "nothing needs you", so it must not show the all-clear.
+  const failedRead = [bank, payroll].find(
+    (q) => q.isError && classifyLoadError(q.error) !== "forbidden"
+  );
+  const retryFailed = () => {
+    if (bank.isError) void bank.refetch();
+    if (payroll.isError) void payroll.refetch();
+  };
   const chips = buildNeedsYouChips(
     {
       invoices,
@@ -86,7 +97,16 @@ export function NeedsYouStrip({
       className="-mx-gutter flex snap-x items-center gap-3 overflow-x-auto px-gutter pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&>*]:snap-start"
       data-testid="dashboard-needs-you"
     >
-      {chips.length === 0 ? (
+      {chips.length === 0 && failedRead ? (
+        <LoadErrorState
+          compact
+          error={failedRead.error}
+          onRetry={retryFailed}
+          retrying={bank.isFetching || payroll.isFetching}
+          forbiddenDescription={tt["dashboard.loadForbiddenBody"]}
+          testId="needs-you-load-error"
+        />
+      ) : chips.length === 0 ? (
         <span
           className="inline-flex h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-small text-muted-foreground shadow-card-soft"
           data-testid="needs-you-clear"
@@ -114,6 +134,17 @@ export function NeedsYouStrip({
             </Link>
           );
         })
+      )}
+      {chips.length > 0 && failedRead && (
+        <button
+          type="button"
+          onClick={retryFailed}
+          className="inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-warning/30 bg-warning-subtle px-4 text-small text-warning-subtle-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          data-testid="needs-you-partial"
+        >
+          {tt["dashboard.needsPartial"]}
+          <span className="font-medium">{tt["components.errorRetry"]}</span>
+        </button>
       )}
     </nav>
   );
