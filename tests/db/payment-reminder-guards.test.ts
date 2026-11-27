@@ -78,14 +78,74 @@ describe("payment reminder guards", () => {
     expect(r.status, r.text).toBeLessThan(300);
   });
 
-  it("the single chase endpoint refuses a do-not-chase customer", async () => {
+  it.each(["contact flag", "chase config"])(
+    "the single chase endpoint reports the customer opt-out from the %s",
+    async (source) => {
+      const t = await h.createTenant();
+      const { invoiceId, contactId } = await setup(t, "sent");
+      if (source === "contact flag") {
+        await h.sql(`UPDATE customer_contacts SET do_not_chase = true WHERE id = $1`, [contactId]);
+      } else {
+        const config = await t.as.patch(`/api/chasing/config/${t.company.id}`, {
+          doNotChaseContactIds: [contactId],
+        });
+        expect(config.status, config.text).toBe(200);
+      }
+      await h.sql(`UPDATE invoices SET due_date = now() - interval '10 days' WHERE id = $1`, [
+        invoiceId,
+      ]);
+      const r = await t.as.post(`/api/chasing/send/${invoiceId}`, { method: "manual" });
+      expect(r.status, r.text).toBe(409);
+      expect(r.body.code).toBe("CUSTOMER_DO_NOT_CHASE");
+    }
+  );
+
+  it("excludes opted-out customers from the queue and the 200-invoice bulk cap", async () => {
     const t = await h.createTenant();
-    const { invoiceId, contactId } = await setup(t, "sent");
-    await h.sql(`UPDATE customer_contacts SET do_not_chase = true WHERE id = $1`, [contactId]);
-    await h.sql(`UPDATE invoices SET due_date = now() - interval '10 days' WHERE id = $1`, [
-      invoiceId,
-    ]);
-    const r = await t.as.post(`/api/chasing/send/${invoiceId}`, { method: "manual" });
-    expect(r.status).toBe(409);
+    const eligible = await setup(t, "sent");
+    const optedOut = await t.as.post(`${base(t)}/customer-contacts`, {
+      name: "Opted-out customer",
+      emirate: "dubai",
+    });
+    expect(optedOut.status, optedOut.text).toBeLessThan(300);
+    await h.sql(
+      `UPDATE customer_contacts SET do_not_chase = true, is_active = false WHERE id = $1`,
+      [optedOut.body.id]
+    );
+    await h.sql(
+      `UPDATE invoices SET date = now() - interval '30 days', due_date = now() - interval '5 days'
+       WHERE id = $1`,
+      [eligible.invoiceId]
+    );
+    // Invoices are loaded newest first. All 201 opted-out invoices precede the eligible one.
+    await h.sql(
+      `INSERT INTO invoices
+         (company_id, contact_id, number, customer_name, date, due_date, issued_at, status, total)
+       SELECT $1, $2, 'DNC-' || n, 'Opted-out customer', now() - interval '15 days',
+              now() - interval '10 days', now() - interval '15 days', 'sent', 100
+       FROM generate_series(1, 201) AS n`,
+      [t.company.id, optedOut.body.id]
+    );
+
+    const queue = await t.as.get(`/api/chasing/queue/${t.company.id}`);
+    expect(queue.status, queue.text).toBe(200);
+    expect(queue.body.queue).toMatchObject([{ invoice: { id: eligible.invoiceId }, nextLevel: 1 }]);
+
+    const bulk = await t.as.post(`/api/chasing/bulk-send/${t.company.id}`, {
+      method: "manual",
+      language: "en",
+    });
+    expect(bulk.status, bulk.text).toBe(200);
+    expect(bulk.body).toMatchObject({
+      eligibleTotal: 1,
+      truncated: false,
+      sent: 1,
+      skipped: 0,
+      failed: 0,
+      results: [{ invoiceId: eligible.invoiceId, level: 1, status: "sent" }],
+    });
+    const history = await t.as.get(`/api/chasing/history/${t.company.id}`);
+    expect(history.status, history.text).toBe(200);
+    expect(history.body).toMatchObject([{ invoiceId: eligible.invoiceId }]);
   });
 });

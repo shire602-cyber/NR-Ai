@@ -465,6 +465,7 @@ export interface IStorage {
   // Customer Contacts
   getCustomerContact(id: string): Promise<CustomerContact | undefined>;
   getCustomerContactsByCompanyId(companyId: string): Promise<CustomerContact[]>;
+  getDoNotChaseContactIds(companyId: string): Promise<string[]>;
   getCustomerContactByEmail(companyId: string, email: string): Promise<CustomerContact | undefined>;
   getCustomerContactByTrn(companyId: string, trn: string): Promise<CustomerContact | undefined>;
   createCustomerContact(contact: InsertCustomerContact): Promise<CustomerContact>;

@@ -111,6 +111,18 @@ function parseDoNotChaseList(raw: string | null | undefined): string[] {
   }
 }
 
+async function loadChaseableRows(companyId: string, configuredOptOuts?: string | null) {
+  const [rows, contactOptOuts] = await Promise.all([
+    loadAgingRows(companyId),
+    storage.getDoNotChaseContactIds(companyId),
+  ]);
+  const optedOut = new Set([...contactOptOuts, ...parseDoNotChaseList(configuredOptOuts)]);
+  return rows.filter(
+    (row) =>
+      isOverdueAndChaseable(row) && (!row.invoice.contactId || !optedOut.has(row.invoice.contactId))
+  );
+}
+
 // ─── Schemas ────────────────────────────────────────────────────────────────
 
 const sendChaseSchema = z.object({
@@ -194,12 +206,9 @@ export function registerChasingRoutes(app: Express) {
       const config = await storage.getChaseConfig(companyId);
       const frequency = config?.chaseFrequencyDays ?? 7;
       const maxLevel = config?.maxLevel ?? 4;
-      const dnc = new Set(parseDoNotChaseList(config?.doNotChaseContactIds));
 
-      const rows = await loadAgingRows(companyId);
+      const rows = await loadChaseableRows(companyId, config?.doNotChaseContactIds);
       const queue = rows
-        .filter(isOverdueAndChaseable)
-        .filter((r) => !(r.invoice.contactId && dnc.has(r.invoice.contactId)))
         .filter((r) => isFrequencyEligible(r.invoice.lastChasedAt, frequency))
         .filter((r) => nextLevelFor(r, { maxLevel }) !== null)
         .map((r) => ({ ...r, nextLevel: nextLevelFor(r, { maxLevel }) }));
@@ -279,7 +288,10 @@ export function registerChasingRoutes(app: Express) {
         (invoice.contactId &&
           parseDoNotChaseList(config?.doNotChaseContactIds).includes(invoice.contactId))
       ) {
-        return res.status(409).json({ message: "Customer is marked do-not-chase" });
+        return res.status(409).json({
+          code: "CUSTOMER_DO_NOT_CHASE",
+          message: "Customer is marked do-not-chase",
+        });
       }
 
       const level = body.level ?? nextLevelFor(row, { maxLevel: config?.maxLevel ?? 4 });
@@ -379,14 +391,11 @@ export function registerChasingRoutes(app: Express) {
         "en") as ChaseLanguage;
       const maxLevel = config?.maxLevel ?? 4;
       const frequency = config?.chaseFrequencyDays ?? 7;
-      const dnc = new Set(parseDoNotChaseList(config?.doNotChaseContactIds));
       const restrictTo = body.invoiceIds ? new Set(body.invoiceIds) : null;
 
-      const allRows = await loadAgingRows(companyId);
-      const candidatesAll = allRows
-        .filter(isOverdueAndChaseable)
+      const chaseableRows = await loadChaseableRows(companyId, config?.doNotChaseContactIds);
+      const candidatesAll = chaseableRows
         .filter((r) => (restrictTo ? restrictTo.has(r.invoice.id) : true))
-        .filter((r) => !(r.invoice.contactId && dnc.has(r.invoice.contactId)))
         .filter((r) => isFrequencyEligible(r.invoice.lastChasedAt, frequency));
       const truncated = candidatesAll.length > BULK_SEND_MAX;
       const candidates = truncated ? candidatesAll.slice(0, BULK_SEND_MAX) : candidatesAll;
@@ -432,6 +441,7 @@ export function registerChasingRoutes(app: Express) {
           continue;
         }
         const contact = await getContact(row.invoice.contactId);
+        // The customer may have opted out since the candidate query.
         if (contact?.doNotChase) {
           results.push({ invoiceId: row.invoice.id, level, status: "skipped_do_not_chase" });
           continue;

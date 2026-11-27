@@ -351,6 +351,7 @@
   "invoices.reminders.result.failed": "Failed",
   "invoices.reminders.result.skipped_max_level": "Last step already sent",
   "invoices.reminders.result.skipped_no_template": "No message for this step",
+  "invoices.reminders.result.skipped_do_not_chase": "Customer marked do-not-chase",
   "invoices.reminders.close": "Close",
   "invoices.reminders.cancel": "Cancel",
   "invoices.reminders.save": "Save message",

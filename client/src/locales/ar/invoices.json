@@ -351,6 +351,7 @@
   "invoices.reminders.result.failed": "فشل",
   "invoices.reminders.result.skipped_max_level": "أُرسلت الخطوة الأخيرة بالفعل",
   "invoices.reminders.result.skipped_no_template": "لا توجد رسالة لهذه الخطوة",
+  "invoices.reminders.result.skipped_do_not_chase": "العميل مستثنى من تذكيرات الدفع",
   "invoices.reminders.close": "إغلاق",
   "invoices.reminders.cancel": "إلغاء",
   "invoices.reminders.save": "حفظ الرسالة",
