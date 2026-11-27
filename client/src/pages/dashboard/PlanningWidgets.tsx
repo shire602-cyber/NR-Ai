@@ -7,6 +7,7 @@ import { StatusBadge as ToneBadge } from "@/components/ui/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Money } from "@/components/ui/money";
+import { CashBalance } from "@/components/ui/cash-balance";
 import { formatCurrency, formatMonthKey } from "@/lib/format";
 import { formatDateRange } from "@/lib/format-date";
 import { formatPercentDelta } from "@/lib/format-money";
@@ -305,14 +306,22 @@ function BankVsLedger({ accounts }: { accounts: BankVsGlAccount[] }) {
                 <dl className="grid grid-cols-3 gap-3">
                   {figure(
                     tt["dashboard.bankColStatement"],
-                    noStatement ? "–" : <Money amount={a.statementBalance!} currency={a.currency} />
+                    noStatement ? (
+                      "–"
+                    ) : (
+                      <CashBalance
+                        amount={a.statementBalance!}
+                        currency={a.currency}
+                        layout="stacked"
+                      />
+                    )
                   )}
                   {figure(
                     tt["dashboard.bankColLedger"],
                     a.glBalance === null ? (
                       "–"
                     ) : (
-                      <Money amount={a.glBalance} currency={a.currency} />
+                      <CashBalance amount={a.glBalance} currency={a.currency} layout="stacked" />
                     )
                   )}
                   {figure(

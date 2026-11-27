@@ -33,6 +33,8 @@ import { DataTableCard } from "@/components/ui/data-table";
 import { Alert } from "@/components/ui/alert";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Money, MoneyCell } from "@/components/ui/money";
+import { CashBalance, CashBalanceCell } from "@/components/ui/cash-balance";
+import { isCashOrBankAccount } from "@/lib/cash-balance";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
   DropdownMenu,
@@ -147,6 +149,8 @@ export default function AccountLedger() {
   const { data, isLoading, isError, isLoadingError, isPending, fetchStatus, refetch } = query;
 
   const ledger = data;
+  // P2: a cash or bank account below zero is overdrawn; it keeps its sign and says so in words.
+  const isCashLedger = isCashOrBankAccount(ledger?.account);
 
   // The last page that exists for the server's own count. A page past it (rows removed or the
   // filter narrowed while the user was on a later page) comes back with no rows but a positive
@@ -538,7 +542,14 @@ export default function AccountLedger() {
           <StatCard
             label={locale === "ar" ? "الرصيد الافتتاحي" : t["accountLedger.openingBalance"]}
             loading={isLoading}
-            value={ledger && <Money amount={ledger.openingBalance} />}
+            value={
+              ledger &&
+              (isCashLedger ? (
+                <CashBalance amount={ledger.openingBalance} />
+              ) : (
+                <Money amount={ledger.openingBalance} />
+              ))
+            }
             testId="text-opening-balance"
           />
           <StatCard
@@ -557,12 +568,15 @@ export default function AccountLedger() {
             label={locale === "ar" ? "الرصيد الختامي" : t["accountLedger.closingBalance"]}
             loading={isLoading}
             value={
-              ledger && (
+              ledger &&
+              (isCashLedger ? (
+                <CashBalance amount={ledger.closingBalance} />
+              ) : (
                 <Money
                   amount={Math.abs(ledger.closingBalance)}
                   className={ledger.closingBalance < 0 ? "text-negative" : undefined}
                 />
-              )
+              ))
             }
             testId="text-closing-balance"
           />
@@ -747,12 +761,21 @@ export default function AccountLedger() {
                       <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <MoneyCell
-                    amount={Math.abs(entry.runningBalance)}
-                    showCurrency={false}
-                    className={cn("font-medium", entry.runningBalance < 0 && "text-negative")}
-                    data-cell="amount"
-                  />
+                  {isCashLedger ? (
+                    <CashBalanceCell
+                      amount={entry.runningBalance}
+                      showCurrency={false}
+                      className="font-medium"
+                      data-cell="amount"
+                    />
+                  ) : (
+                    <MoneyCell
+                      amount={Math.abs(entry.runningBalance)}
+                      showCurrency={false}
+                      className={cn("font-medium", entry.runningBalance < 0 && "text-negative")}
+                      data-cell="amount"
+                    />
+                  )}
                   <TableCell data-cell="actions" className="w-px">
                     <RowActions collapseOnMobile>
                       <RowActionButton

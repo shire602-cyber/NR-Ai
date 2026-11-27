@@ -230,6 +230,8 @@
   "components.statusOverdueOneDay": "1 day overdue",
   "components.rowMoreActions": "More actions",
   "components.ui.more": "More",
+  "components.cashBalance.overdrawn": "Overdrawn",
+  "components.cashBalance.negative": "Negative balance",
   "components.ui.other": "Other",
   "components.ui.preview": "Preview",
   "components.ui.fileDropPrompt": "Drop a file here",

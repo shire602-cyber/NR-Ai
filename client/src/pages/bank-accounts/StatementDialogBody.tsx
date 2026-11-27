@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { CashBalance } from "@/components/ui/cash-balance";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { loadNamespaces, t as catalogs, useTranslation, type Locale } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
@@ -33,6 +34,14 @@ interface Statement {
   unrecordedReceipts: StatementItem[];
   unrecordedPayments: StatementItem[];
 }
+
+// P2: the rows that are a balance (bank or book) say "Overdrawn" when below zero.
+const BALANCE_ROWS = new Set([
+  "bankStatement.bankBalance",
+  "bankStatement.adjustedBank",
+  "bankStatement.glBalance",
+  "bankStatement.adjustedBook",
+]);
 
 interface SavedReconciliation {
   id: string;
@@ -236,7 +245,16 @@ export default function StatementDialogBody({
               <div key={key}>
                 <div className="flex justify-between font-medium">
                   <span>{tr(key)}</span>
-                  <span>{value}</span>
+                  {BALANCE_ROWS.has(key) ? (
+                    <CashBalance
+                      amount={value}
+                      currency={statement.currency}
+                      showCurrency={false}
+                      data-statement-row={key}
+                    />
+                  ) : (
+                    <span>{value}</span>
+                  )}
                 </div>
                 {items?.map((it) => (
                   <div
@@ -295,7 +313,9 @@ export default function StatementDialogBody({
               {(history ?? []).map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>{r.periodEnd}</TableCell>
-                  <TableCell>{r.statementClosingBalance}</TableCell>
+                  <TableCell>
+                    <CashBalance amount={r.statementClosingBalance} showCurrency={false} />
+                  </TableCell>
                   <TableCell>{r.difference}</TableCell>
                   <TableCell>
                     <Badge variant={r.status === "signed_off" ? "default" : "outline"}>
