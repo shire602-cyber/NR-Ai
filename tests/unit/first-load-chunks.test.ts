@@ -56,6 +56,16 @@ function gz(dir: string, files: Iterable<string>): number {
   return total;
 }
 
+// CI runs this file after `npm run build` with REQUIRE_BUILD_OUTPUT=1, where a missing build must
+// fail instead of skip (otherwise the gate silently never runs). Local `npm test` still skips.
+const requireBuild = process.env.REQUIRE_BUILD_OUTPUT === "1";
+
+describe.runIf(requireBuild)("build output is required (CI)", () => {
+  it("dist/public has index.html and firm.html", () => {
+    expect(built, "run `npm run build` first: dist/public/{index,firm}.html missing").toBe(true);
+  });
+});
+
 describe.skipIf(!built)("first-load chunks (build output)", () => {
   const firmHtml = built ? readFileSync(join(dist, "firm.html"), "utf8") : "";
   const mainHtml = built ? readFileSync(join(dist, "index.html"), "utf8") : "";

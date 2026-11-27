@@ -220,7 +220,8 @@ sends them to browsers that accept brotli (about 15% smaller than the on-the-fly
 - Unit: `tests/unit/firm-boot.test.ts` (route table, catalog scope, document, brotli middleware),
   `tests/unit/firm-first-screen-keys.test.ts` (no first-screen key outside the first-screen
   catalogs), `tests/unit/first-load-chunks.test.ts` (build output: chunk count and weight of the
-  firm entry, no firm chunk reachable from public/portal roots, no framer-motion in the shell).
+  firm entry, no firm chunk reachable from public/portal roots, no framer-motion in the shell). CI runs it, and the i18n code-split bundle check, right after `npm run build`
+  with `REQUIRE_BUILD_OUTPUT=1`, which turns a missing build into a failure instead of a skip.
 - When a firm landing screen starts reading a catalog key from another namespace, move or copy the
   key into `firm.json` (as was done for the e-invoicing state labels) or add the namespace to
   `FIRM_FIRST_SCREEN_NAMESPACES`; the key test fails otherwise.
