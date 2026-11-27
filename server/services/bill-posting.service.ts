@@ -25,6 +25,7 @@ import { storage } from "../storage";
 import { ACCOUNT_CODES } from "../constants";
 import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
+import { findFiledVatPeriod } from "../ledger/vat-lock";
 import { allocate, fromFils, mulRate, sumFils, toFils } from "../../shared/money";
 import {
   DEFAULT_BASE_CURRENCY,
@@ -450,6 +451,23 @@ export function isoDateOf(value: string | Date): string {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   const s = String(value);
   return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : new Date(s).toISOString().slice(0, 10);
+}
+
+export async function legacyBillEditError(tx: LedgerTx, companyId: string, billDate: string) {
+  if (await findFiledVatPeriod(tx, companyId, billDate)) {
+    return new DomainError(
+      "LEGACY_BILL_IN_FILED_RETURN",
+      409,
+      undefined,
+      "Record the correction as an adjustment in an open VAT period, or ask your accountant. This bill is in a VAT return that’s already been submitted, so it can’t be edited."
+    );
+  }
+  return new DomainError(
+    "LEGACY_BILL_RECLASSIFY_REQUIRED",
+    409,
+    undefined,
+    "Enter a new bill with the correct VAT, then record a debit note for this one. This older bill doesn’t have enough VAT detail to edit safely. Need a hand? Contact support."
+  );
 }
 
 async function resolveLineAccount(

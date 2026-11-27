@@ -773,7 +773,7 @@ export function registerBillPayRoutes(app: Express) {
       await withLedgerTx(async (tx) => {
         const [locked] = await txRows<BillRow>(
           tx,
-          `SELECT id, vat_amount, is_import, import_vat_amount
+          `SELECT id, company_id, bill_date, vat_amount, is_import, import_vat_amount
              FROM vendor_bills WHERE id = $1 AND company_id = $2 FOR UPDATE`,
           [bill.id, bill.company_id]
         );

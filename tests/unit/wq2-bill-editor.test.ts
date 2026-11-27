@@ -30,6 +30,7 @@ import {
 } from "./helpers/form-harness";
 import { apiRequest } from "../../client/src/lib/queryClient";
 import { loadLocale, useI18n } from "../../client/src/lib/i18n";
+import { failedResponseMessage } from "../../client/src/lib/validation-messages";
 import type { BillCaptureResult } from "../../shared/bill-capture";
 
 vi.mock("../../client/src/lib/queryClient", () => formHarnessQueryClientMock());
@@ -227,7 +228,10 @@ describe("[WQ2 8.2] bill editor capture", () => {
     }
   );
 
-  it("shows the legacy-bill error in the editor and keeps the attempted notes", async () => {
+  it.each([
+    ["LEGACY_BILL_RECLASSIFY_REQUIRED", "Legacy bill reclassify required", "Enter a new bill"],
+    ["LEGACY_BILL_IN_FILED_RETURN", "Legacy bill in filed return", "Record the correction"],
+  ])("shows %s in the editor and keeps the attempted notes", async (code, rawMessage, action) => {
     const url = "/api/bills/legacy-vat";
     setFixtures({
       [url]: {
@@ -260,13 +264,16 @@ describe("[WQ2 8.2] bill editor capture", () => {
     await flushUntil(() => !!byTestId("button-submit-bill"));
     const page = editorPage();
     expect(page.textContent).toContain("1,050.00");
-    const message = "This bill predates line-level VAT treatment and cannot be edited as is.";
+    const message = await failedResponseMessage(409, { code, message: rawMessage }, rawMessage);
+    expect(message.startsWith(action)).toBe(true);
     vi.mocked(apiRequest).mockRejectedValueOnce(new Error(message));
     const notes = page.querySelector<HTMLTextAreaElement>('[name="notes"]')!;
     await type(notes, "Updated notes");
     await submit(byTestId("button-submit-bill"));
     await flushUntil(() => editorPage().textContent?.includes(message) === true);
-    expect(notes.value).toBe("Updated notes");
+    expect(editorPage().querySelector<HTMLTextAreaElement>('[name="notes"]')?.value).toBe(
+      "Updated notes"
+    );
   });
 
   it("keeps declared customs VAT when saving notes on an import with an exempt line", async () => {

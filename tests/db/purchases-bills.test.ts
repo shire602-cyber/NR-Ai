@@ -652,6 +652,37 @@ describe("W3-B debit notes, prepayments, vendors, approval rules, services", () 
     await h.sql("UPDATE bill_line_items SET vat_amount = 0 WHERE bill_id = $1", [
       headerOnly.body.id,
     ]);
+    const filedBill = await createBill(t, {
+      vendor_name: "Acme Hosting LLC",
+      bill_number: "OLDER-BILL-FILED",
+      bill_date: "2026-04-01",
+      due_date: "2026-04-30",
+      save_as_draft: true,
+    });
+    expect(filedBill.status, filedBill.text).toBe(200);
+    await h.sql("UPDATE vendor_bills SET vendor_id = NULL WHERE id = $1", [filedBill.body.id]);
+    await h.sql("UPDATE bill_line_items SET vat_amount = 0 WHERE bill_id = $1", [
+      filedBill.body.id,
+    ]);
+    await h.sql(
+      `INSERT INTO vat_returns (company_id, period_start, period_end, due_date, status, created_by)
+       VALUES ($1, '2026-04-01', '2026-06-30', '2026-07-28', 'filed', $2)`,
+      [t.company.id, t.user.id]
+    );
+
+    const correction = { notes: "Correct the bill", bill_date: "2026-07-01" };
+    const outside = await t.as.patch(`/api/bills/${headerOnly.body.id}`, correction);
+    expect(outside.status, outside.text).toBe(409);
+    expect(outside.body.code).toBe("LEGACY_BILL_RECLASSIFY_REQUIRED");
+    const inside = await t.as.patch(`/api/bills/${filedBill.body.id}`, correction);
+    expect(inside.status, inside.text).toBe(409);
+    expect(inside.body.code).toBe("LEGACY_BILL_IN_FILED_RETURN");
+    expect(
+      await h.sql("SELECT bill_date::date::text, notes FROM vendor_bills WHERE id = $1", [
+        filedBill.body.id,
+      ])
+    ).toEqual([{ bill_date: "2026-04-01", notes: null }]);
+
     const bf = await t.as.post(`${url}/backfill`, {});
     expect(bf.status, bf.text).toBe(200);
     expect(bf.body.billsLinked).toBe(1);
@@ -659,11 +690,20 @@ describe("W3-B debit notes, prepayments, vendors, approval rules, services", () 
       count: 1,
       status: 409,
       code: "LEGACY_BILL_RECLASSIFY_REQUIRED",
-      message: expect.any(String),
+      message: expect.stringMatching(/^Enter a new bill/),
+    });
+    expect(bf.body.filedBillsSkipped).toMatchObject({
+      count: 1,
+      status: 409,
+      code: "LEGACY_BILL_IN_FILED_RETURN",
+      message: expect.stringMatching(/^Record the correction/),
     });
     expect(
-      await h.sql("SELECT vendor_id FROM vendor_bills WHERE id = $1", [headerOnly.body.id])
-    ).toEqual([{ vendor_id: null }]);
+      await h.sql("SELECT vendor_id FROM vendor_bills WHERE id IN ($1, $2)", [
+        headerOnly.body.id,
+        filedBill.body.id,
+      ])
+    ).toEqual([{ vendor_id: null }, { vendor_id: null }]);
   });
 
   it("[R04-11][R04-19] maker-checker on bills and amount rules: '> 10,000 needs approver' blocks others", async () => {

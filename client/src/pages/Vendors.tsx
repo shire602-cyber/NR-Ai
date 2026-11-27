@@ -223,13 +223,28 @@ export default function Vendors() {
 
   const backfill = useMutation({
     mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/vendors/backfill`, {}),
-    onSuccess: (r: { billsLinked: number; legacyBillsSkipped: { count: number } | null }) => {
+    onSuccess: (r: {
+      billsLinked: number;
+      legacyBillsSkipped: { count: number } | null;
+      filedBillsSkipped: { count: number } | null;
+    }) => {
       invalidate();
+      const skippedMessages = [];
+      if (r.filedBillsSkipped) {
+        skippedMessages.push(
+          formatMessage(t["pages.vendorsBackfillFiledSkipped"], {
+            count: r.filedBillsSkipped.count,
+          })
+        );
+      }
+      if (r.legacyBillsSkipped) {
+        skippedMessages.push(
+          formatMessage(t["pages.vendorsBackfillSkipped"], { count: r.legacyBillsSkipped.count })
+        );
+      }
       toast({
         title: `${c.linked}: ${r.billsLinked}`,
-        description: r.legacyBillsSkipped
-          ? formatMessage(t["pages.vendorsBackfillSkipped"], { count: r.legacyBillsSkipped.count })
-          : undefined,
+        description: skippedMessages.join(" ") || undefined,
       });
     },
     onError: (e: Error) => toast({ variant: "destructive", title: e.message }),

@@ -59,6 +59,7 @@ import {
   filsOf,
   isForeign,
   isoDateOf,
+  legacyBillEditError,
   rateTextOf,
   requireApAccount,
   sumBillTotals,
@@ -300,7 +301,10 @@ interface PreparedBill {
 
 /** Load and classify persisted lines before an edit performs any writes. */
 export async function editableBillLines(
-  bill: Pick<BillRow, "id" | "vat_amount" | "is_import" | "import_vat_amount">,
+  bill: Pick<
+    BillRow,
+    "id" | "company_id" | "bill_date" | "vat_amount" | "is_import" | "import_vat_amount"
+  >,
   tx: LedgerTx
 ) {
   const lines = await txRows<SavedBillLine>(
@@ -317,7 +321,7 @@ export async function editableBillLines(
       { isImport: bill.is_import, declaredVatFils: filsOf(bill.import_vat_amount) }
     )
   ) {
-    throw new DomainError("LEGACY_BILL_RECLASSIFY_REQUIRED", 409);
+    throw await legacyBillEditError(tx, bill.company_id, isoDateOf(bill.bill_date));
   }
   return lines;
 }

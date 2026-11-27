@@ -15,7 +15,7 @@ import { scopedGet } from "../tenancy";
 import { agedPayablesWithVendors, type AgingReport } from "../reporting";
 import { fromFils, toFils } from "../../shared/money";
 import type { VendorCreateInput, VendorUpdateInput } from "../../shared/validators/vendors";
-import { filsOf, txRows } from "./bill-posting.service";
+import { filsOf, isoDateOf, legacyBillEditError, txRows } from "./bill-posting.service";
 
 export async function listVendors(companyId: string, opts: { includeInactive?: boolean } = {}) {
   const rows = await db
@@ -238,21 +238,24 @@ export async function backfillVendorLinks(
       vendorsCreated += ins.rowCount ?? 0;
     }
   }
-  const { billsLinked, legacyBillsSkipped } = await withLedgerTx(async (tx) => {
+  const billBackfill = await withLedgerTx(async (tx) => {
     const candidates = await txRows<{
       id: string;
+      bill_date: string | Date;
       vat_amount: string | null;
       is_import: boolean;
       import_vat_amount: string;
     }>(
       tx,
-      `SELECT b.id, b.vat_amount, b.is_import, b.import_vat_amount
+      `SELECT b.id, b.bill_date, b.vat_amount, b.is_import, b.import_vat_amount
          FROM vendor_bills b JOIN vendors v
            ON v.company_id = b.company_id AND lower(trim(b.vendor_name)) = lower(v.name)
         WHERE b.company_id = $1 AND b.vendor_id IS NULL ORDER BY b.id FOR UPDATE OF b`,
       [companyId]
     );
-    if (!candidates.length) return { billsLinked: 0, legacyBillsSkipped: null };
+    if (!candidates.length) {
+      return { billsLinked: 0, legacyBillsSkipped: null, filedBillsSkipped: null };
+    }
 
     // Read the lines after locking the headers so a concurrent edit has finished replacing them.
     const billLines = await txRows<{
@@ -267,8 +270,14 @@ export async function backfillVendorLinks(
       [sql.param(candidates.map((bill) => bill.id))]
     );
     const linesByBill = new Map(billLines.map((row) => [row.bill_id, row.lines]));
-    const eligible = candidates.filter(
-      (bill) =>
+    const eligibleIds: string[] = [];
+    const errorsByDate = new Map<string, DomainError>();
+    const skipped = new Map<
+      string,
+      { count: number; status: number; code: string; message: string }
+    >();
+    for (const bill of candidates) {
+      if (
         !isLegacyBill(
           filsOf(bill.vat_amount),
           (linesByBill.get(bill.id) ?? []).map((line) => ({
@@ -277,9 +286,20 @@ export async function backfillVendorLinks(
           })),
           { isImport: bill.is_import, declaredVatFils: filsOf(bill.import_vat_amount) }
         )
-    );
-    const skipped = candidates.length - eligible.length;
-    const error = new DomainError("LEGACY_BILL_RECLASSIFY_REQUIRED", 409);
+      ) {
+        eligibleIds.push(bill.id);
+        continue;
+      }
+      const date = isoDateOf(bill.bill_date);
+      let error = errorsByDate.get(date);
+      if (!error) {
+        error = await legacyBillEditError(tx, companyId, date);
+        errorsByDate.set(date, error);
+      }
+      const summary = skipped.get(error.code);
+      if (summary) summary.count++;
+      else skipped.set(error.code, { count: 1, status: error.statusCode, ...error.toJSON() });
+    }
     const bills = await txRows<{ id: string }>(
       tx,
       `UPDATE vendor_bills b SET vendor_id = v.id
@@ -287,13 +307,12 @@ export async function backfillVendorLinks(
         WHERE b.company_id = $1 AND v.company_id = $1 AND b.vendor_id IS NULL
           AND lower(trim(b.vendor_name)) = lower(v.name) AND b.id = ANY($2::uuid[])
         RETURNING b.id`,
-      [companyId, sql.param(eligible.map((bill) => bill.id))]
+      [companyId, sql.param(eligibleIds)]
     );
     return {
       billsLinked: bills.length,
-      legacyBillsSkipped: skipped
-        ? { count: skipped, status: error.statusCode, ...error.toJSON() }
-        : null,
+      legacyBillsSkipped: skipped.get("LEGACY_BILL_RECLASSIFY_REQUIRED") ?? null,
+      filedBillsSkipped: skipped.get("LEGACY_BILL_IN_FILED_RETURN") ?? null,
     };
   });
   const pos = await pool.query(
@@ -305,8 +324,7 @@ export async function backfillVendorLinks(
   );
   return {
     vendorsCreated,
-    billsLinked,
-    legacyBillsSkipped,
+    ...billBackfill,
     purchaseOrdersLinked: pos.rowCount ?? 0,
   };
 }
