@@ -17,7 +17,7 @@ import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
 import type { Invoice, InvoiceLine } from "../../shared/schema";
-import { generateCreditNotePDF } from "../services/pdf-credit-note.service";
+import { renderCreditNotePdf } from "../services/credit-note-pdf";
 import { salesLinesSchema } from "../../shared/validators/invoices";
 import { zDate, zText, zUuid } from "../../shared/validators/primitives";
 import {
@@ -269,14 +269,15 @@ export function registerCreditNoteRoutes(app: Express) {
     requireCustomer,
     requireFeature("creditNotes"),
     asyncHandler(async (req: Request, res: Response) => {
-      await creditNoteForUser(userOf(req), req.params.id);
-      const creditNote = (await getCanonicalCreditNoteWithLines(req.params.id))!;
-      const company = await storage.getCompany(creditNote.companyId);
-      if (!company)
+      const canonical = await creditNoteForUser(userOf(req), req.params.id);
+      const row = await storage.getInvoice(canonical.id, canonical.companyId);
+      const company = await storage.getCompany(canonical.companyId);
+      if (!row || !company)
         return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
-      const pdfBuffer = await generateCreditNotePDF(
-        creditNote as unknown as Parameters<typeof generateCreditNotePDF>[0],
-        creditNote.lines as unknown as Parameters<typeof generateCreditNotePDF>[1],
+      const creditNote = canonical;
+      const pdfBuffer = await renderCreditNotePdf(
+        row,
+        await storage.getInvoiceLinesByInvoiceId(row.id),
         company
       );
       res.set({
