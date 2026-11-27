@@ -26,9 +26,11 @@ export async function verifyAuditChain(): Promise<AuditChainResult> {
       }
       const numberLocale = locale === "ar" ? "ar-u-nu-arab" : locale;
       const reasonKey = `activityLogs.chainReason.${firstBroken?.reason}`;
+      const reason = t[reasonKey];
       return formatMessage(t["security.auditBroken"], {
         seq: firstBroken?.seq.toLocaleString(numberLocale) ?? "?",
-        reason: t[reasonKey] ?? t["activityLogs.chainReason.unknown"],
+        reason:
+          (reason === reasonKey ? undefined : reason) ?? t["activityLogs.chainReason.unknown"],
       });
     },
   };
