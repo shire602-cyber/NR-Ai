@@ -292,7 +292,7 @@ export function registerBillPayRoutes(app: Express) {
       const result = await updateBillInPlace({
         companyId: bill.company_id,
         billId: bill.id,
-        input: req.body as BillUpdateInput,
+        input: parsedBody<BillUpdateInput>(req),
       });
       log.info({ billId: bill.id }, "Vendor bill updated");
       res.json({
@@ -352,7 +352,9 @@ export function registerBillPayRoutes(app: Express) {
       await assertCompanyPermission(actor, bill.company_id, ["documents.approve"]);
       const lines = (
         await pool.query(
-          `SELECT description, amount, vat_amount, account_id, reverse_charge FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
+          `SELECT description, amount, vat_amount, account_id,
+                  (reverse_charge OR vat_supply_type = 'reverse_charge') AS reverse_charge
+             FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
           [bill.id]
         )
       ).rows;
@@ -492,7 +494,6 @@ export function registerBillPayRoutes(app: Express) {
         );
       }
       const { reason, ...changes } = parsedBody<BillReviseInput>(req);
-      const prepared = await prepareBillRevision(bill.company_id, bill, changes as BillUpdateInput);
       const vendorDefault = bill.vendor_id
         ? ((
             await pool.query(`SELECT default_expense_account_id FROM vendors WHERE id = $1`, [
@@ -525,6 +526,7 @@ export function registerBillPayRoutes(app: Express) {
             "Void the bill's payments first"
           );
         // Lock old movements' products and the new lines' products together, before the reversal.
+        const prepared = await prepareBillRevision(bill.company_id, locked, changes, tx);
         const reversals = await reverseBillJournal(tx, locked, actor.id, {
           reason,
           revisionProductIds:
@@ -541,7 +543,9 @@ export function registerBillPayRoutes(app: Express) {
           reverse_charge: boolean;
         }>(
           tx,
-          `SELECT description, amount, vat_amount, account_id, reverse_charge FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
+          `SELECT description, amount, vat_amount, account_id,
+                  (reverse_charge OR vat_supply_type = 'reverse_charge') AS reverse_charge
+             FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
           [bill.id]
         );
         const plan = await planBillJournal(updated, lines, {
@@ -840,7 +844,9 @@ export function registerBillPayRoutes(app: Express) {
         try {
           const lines = (
             await pool.query(
-              `SELECT description, amount, vat_amount, account_id, reverse_charge FROM bill_line_items WHERE bill_id = $1`,
+              `SELECT description, amount, vat_amount, account_id,
+                      (reverse_charge OR vat_supply_type = 'reverse_charge') AS reverse_charge
+                 FROM bill_line_items WHERE bill_id = $1`,
               [bill.id]
             )
           ).rows;

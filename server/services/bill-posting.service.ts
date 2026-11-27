@@ -209,6 +209,17 @@ export function computeBillTotals(input: BillTotalsInput): BillTotals {
       reverseCharge: lineRc,
     };
   });
+  return { lines, ...sumBillTotals({ ...input, lines }) };
+}
+
+/** Aggregate already-valued lines, including saved lines whose stored quantity was rounded. */
+export function sumBillTotals(
+  input: Omit<BillTotalsInput, "lines"> & {
+    lines: Pick<BillLineCalc, "amountFils" | "vatFils" | "reverseCharge">[];
+  }
+): Omit<BillTotals, "lines"> {
+  const { lines } = input;
+  const billRc = input.reverseCharge === true || input.isImport === true;
   const subtotalFils = sumFils(lines.map((l) => l.amountFils));
   let vatFils = sumFils(lines.map((l) => l.vatFils));
   if (input.isImport && input.importVatFils && input.importVatFils > 0) {
@@ -231,7 +242,6 @@ export function computeBillTotals(input: BillTotalsInput): BillTotals {
     );
   }
   return {
-    lines,
     subtotalFils,
     vatFils,
     totalFils: gross - withholdingFils,

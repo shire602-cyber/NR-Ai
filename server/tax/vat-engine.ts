@@ -931,7 +931,7 @@ async function collectBills(
       const kind = purchaseKindFor({
         supplyType: l.vat_supply_type,
         vatFils: lv,
-        reverseCharge: l.reverse_charge,
+        reverseCharge: l.reverse_charge || l.vat_supply_type === "reverse_charge",
         designatedZone: b.designated_zone,
       });
       if (kind === "reverse_charge") {

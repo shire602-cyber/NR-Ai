@@ -266,6 +266,7 @@ interface VendorBill {
   is_import?: boolean;
   customs_declaration_no?: string | null;
   import_vat_amount?: string;
+  withholding_amount?: string;
   place_of_supply?: string | null;
   display_status?: string;
   /** E1: "einvoice" when the bill was created from a received structured e-invoice. */
@@ -291,7 +292,8 @@ interface BillLineItem {
   amount: string;
   account_id: string | null;
   cost_center_id?: string | null;
-  vat_supply_type?: string;
+  vat_supply_type?: string | null;
+  reverse_charge?: boolean;
   product_id?: string | null;
   created_at: string;
 }
@@ -648,7 +650,7 @@ export default function BillPay() {
       quantity: l.quantity,
       unit_price: l.unit_price,
       vat_supply_type: l.vat_supply_type,
-      vat_rate: ["zero_rated", "exempt", "out_of_scope"].includes(l.vat_supply_type) ? 0 : 5,
+      vat_rate: l.vat_rate,
       account_id: l.account_id || null,
       cost_center_id: l.cost_center_id || null,
       product_id: l.product_id || null,
@@ -891,7 +893,10 @@ export default function BillPay() {
                 unit_price: Number(l.unit_price),
                 vat_rate: Number(l.vat_rate),
                 vat_supply_type:
-                  l.vat_supply_type ?? (Number(l.vat_rate) === 0 ? "zero_rated" : "standard_rated"),
+                  l.reverse_charge && (!l.vat_supply_type || l.vat_supply_type === "standard_rated")
+                    ? "reverse_charge"
+                    : (l.vat_supply_type ??
+                      (Number(l.vat_rate) === 0 ? "zero_rated" : "standard_rated")),
                 account_id: l.account_id || "",
                 cost_center_id: l.cost_center_id || "",
                 product_id: l.product_id || "",
@@ -987,16 +992,21 @@ export default function BillPay() {
     (sum, line) => sum + (Number(line.quantity) || 0) * (Number(line.unit_price) || 0),
     0
   );
-  const vatAmount = watchLines.reduce((sum, line) => {
-    const lineAmount = (Number(line.quantity) || 0) * (Number(line.unit_price) || 0);
-    const rated = !["zero_rated", "exempt", "out_of_scope"].includes(line.vat_supply_type);
-    return sum + (rated ? lineAmount * 0.05 : 0);
-  }, 0);
   const watchReverseCharge = billForm.watch("reverse_charge") || billForm.watch("is_import");
   const watchCurrency = billForm.watch("currency");
   const watchIsImport = billForm.watch("is_import");
-  // Reverse charge: VAT is self-assessed, the vendor is owed the subtotal only.
-  const totalAmount = watchReverseCharge ? subtotal : subtotal + vatAmount;
+  const lineVat = (line: BillFormData["line_items"][number]) =>
+    ((Number(line.quantity) || 0) * (Number(line.unit_price) || 0) * line.vat_rate) / 100;
+  const vatAmount =
+    (watchIsImport && Number(billForm.watch("import_vat_amount"))) ||
+    watchLines.reduce((sum, line) => sum + lineVat(line), 0);
+  const payableVat = watchReverseCharge
+    ? 0
+    : watchLines.reduce(
+        (sum, line) => sum + (line.vat_supply_type === "reverse_charge" ? 0 : lineVat(line)),
+        0
+      );
+  const totalAmount = subtotal + payableVat - Number(editingBill?.withholding_amount ?? 0);
   const cashAccounts = postablePaymentAccounts(accounts);
 
   // Expense account options
@@ -1070,7 +1080,7 @@ export default function BillPay() {
         quantity: l.quantity,
         unit_price: Number(l.unit_price),
         vat_supply_type: l.vat_supply_type,
-        vat_rate: l.vat_supply_type === "zero_rated" ? 0 : 5,
+        vat_rate: ["zero_rated", "exempt", "out_of_scope"].includes(l.vat_supply_type) ? 0 : 5,
         account_id: supplier?.defaultExpenseAccountId ?? "",
       }))
     );
@@ -1638,7 +1648,16 @@ export default function BillPay() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel className={lineLabelClass}>{c.supplyType}</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
+                          <Select
+                            value={field.value}
+                            onValueChange={(treatment) => {
+                              field.onChange(treatment);
+                              billForm.setValue(
+                                `line_items.${index}.vat_rate`,
+                                ["zero_rated", "exempt", "out_of_scope"].includes(treatment) ? 0 : 5
+                              );
+                            }}
+                          >
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder={c.supplyType} />

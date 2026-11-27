@@ -144,6 +144,78 @@ const capture: BillCaptureResult = {
 };
 
 describe("[WQ2 8.2] bill editor capture", () => {
+  it.each([
+    { supplyType: "standard_rated", legacyFlag: true, changeTreatment: false },
+    { supplyType: "reverse_charge", legacyFlag: false, changeTreatment: false },
+    { supplyType: "standard_rated", legacyFlag: true, changeTreatment: true },
+  ])(
+    "loads $supplyType with legacy flag $legacyFlag and supports an explicit treatment change ($changeTreatment)",
+    async ({ supplyType, legacyFlag, changeTreatment }) => {
+      const url = "/api/bills/vat-bill";
+      setFixtures({
+        [url]: {
+          id: "vat-bill",
+          status: "draft",
+          vendor_name: VENDOR.name,
+          vendor_trn: VENDOR.trn,
+          bill_date: "2026-01-15",
+          withholding_amount: "10.00",
+          line_items: [
+            {
+              description: "Domestic",
+              quantity: "1.00",
+              unit_price: "1000.00",
+              vat_rate: "5.00",
+              vat_supply_type: "standard_rated",
+            },
+            {
+              description: "Imported service",
+              quantity: "1.00",
+              unit_price: "1000.00",
+              vat_rate: "5.00",
+              vat_supply_type: supplyType,
+              reverse_charge: legacyFlag,
+            },
+          ],
+          payments: [],
+        },
+      });
+      const { default: BillPay } = await import("../../client/src/pages/BillPay");
+      await renderAt(BillPay, "/bill-pay/vat-bill/edit");
+      await flushUntil(() => !!byTestId("button-submit-bill"));
+      const treatment = [...editorPage().querySelectorAll('[role="combobox"]')].find(
+        (control) => control.textContent === "Reverse charge 5%"
+      );
+      expect(treatment).toBeDefined();
+      if (changeTreatment) {
+        await act(async () => {
+          treatment!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        });
+        await flushUntil(() => !!document.querySelector('[role="listbox"]'));
+        const exempt = [...document.querySelectorAll('[role="option"]')].find(
+          (option) => option.textContent === "Exempt"
+        );
+        expect(exempt).toBeDefined();
+        await act(async () => {
+          exempt!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        });
+        expect(treatment?.textContent).toBe("Exempt");
+      }
+      await submit(byTestId("button-submit-bill"));
+      await flushUntil(() => apiCalls("PATCH").some((call) => call.url === url));
+      const payload = apiCalls("PATCH").find((call) => call.url === url)!.body;
+      expect(payload).toMatchObject({
+        line_items: [
+          { vat_supply_type: "standard_rated", vat_rate: 5 },
+          {
+            vat_supply_type: changeTreatment ? "exempt" : "reverse_charge",
+            vat_rate: changeTreatment ? 0 : 5,
+          },
+        ],
+      });
+    }
+  );
+
   it("a dropped invoice fills the form with per-field confidence; saving posts the bill and then the attachment", async () => {
     setFixtures({
       [`${C}/bills/summary`]: null,

@@ -55,6 +55,7 @@ import {
   isoDateOf,
   rateTextOf,
   requireApAccount,
+  sumBillTotals,
   toBase,
   txRows,
   vendorBillsTable,
@@ -272,7 +273,20 @@ type BillFieldsInput = Partial<BillCreateInput> & Pick<BillUpdateInput, "line_it
 interface PreparedBill {
   header: Record<string, unknown>;
   lines: Array<Record<string, unknown>> | null;
+  clearLineReverseCharge: boolean;
   warnings: Array<{ code: string; message: string }>;
+}
+
+function assertBillLineQuantity(quantity: number | undefined, line: number) {
+  // bill_line_items.quantity is numeric(10,2).
+  if (quantity !== undefined && quantity < 0.005) {
+    throw new DomainError(
+      "INVALID_BILL_QUANTITY",
+      400,
+      { line },
+      "Quantity must round to at least 0.01"
+    );
+  }
 }
 
 /** Validate + compute everything for a bill create/update; no writes. */
@@ -341,21 +355,29 @@ async function prepareBill(
   const reverseCharge = get("reverse_charge", existing?.reverse_charge ?? false) === true;
   const isImport = get("is_import", existing?.is_import ?? false) === true;
   if (
-    input.currency !== undefined ||
-    input.exchange_rate !== undefined ||
-    input.bill_date !== undefined ||
-    !existing
+    !existing ||
+    (input.currency !== undefined && currency !== existing.currency) ||
+    input.exchange_rate !== undefined
   ) {
     const given =
       input.exchange_rate ??
       (input.currency === undefined && existing && isForeign(existing, companyBase)
-        ? String(existing.exchange_rate)
+        ? String(existing.exchange_rate ?? "")
         : null);
     header.currency = currency;
     header.exchange_rate = await resolveDocRate(companyId, currency, billDate, given, tx);
   }
-  header.reverse_charge = reverseCharge || isImport;
-  header.is_import = isImport;
+  if (input.reverse_charge !== undefined || input.is_import !== undefined || !existing) {
+    header.reverse_charge = reverseCharge || isImport;
+  }
+  if (input.is_import !== undefined || !existing) header.is_import = isImport;
+
+  // Turning off a bill-wide treatment converts its reverse-charge lines to domestic VAT.
+  const clearLineReverseCharge =
+    !input.line_items &&
+    !!(existing?.reverse_charge || existing?.is_import) &&
+    !reverseCharge &&
+    !isImport;
 
   let lines: Array<Record<string, unknown>> | null = null;
   const recomputeNeeded =
@@ -376,53 +398,23 @@ async function prepareBill(
       poLineId: string | null;
       costCenterId: string | null;
     }
-    let src: SrcLine[] | undefined = input.line_items?.map((l) => ({
-      description: l.description,
-      quantity: l.quantity ?? 1,
-      unitPriceFils: l.unit_price,
-      vatRate: l.vat_rate ?? null,
-      supplyType: l.vat_supply_type ?? null,
-      accountId: l.account_id ?? null,
-      productId: l.product_id ?? null,
-      poLineId: l.purchase_order_line_id ?? null,
-      costCenterId: l.cost_center_id ?? null,
-    }));
+    const src: SrcLine[] | undefined = input.line_items?.map((l, i) => {
+      assertBillLineQuantity(l.quantity, i);
+      return {
+        description: l.description,
+        quantity: l.quantity ?? 1,
+        unitPriceFils: l.unit_price,
+        vatRate: l.vat_rate ?? null,
+        supplyType: l.vat_supply_type ?? null,
+        accountId: l.account_id ?? null,
+        productId: l.product_id ?? null,
+        poLineId: l.purchase_order_line_id ?? null,
+        costCenterId: l.cost_center_id ?? null,
+      };
+    });
     if (src && input.line_items) {
       // A2 (C3): an edit keeps each line's purchase-order link so the bill still clears GRNI.
       await linkPurchaseOrderLines(companyId, existing, input.line_items, src, tx);
-    }
-    if (!src && existing) {
-      const r = await ledgerQueryable(tx).query(
-        `SELECT * FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
-        [existing.id]
-      );
-      // Turning off a bill-wide treatment keeps the existing conversion to domestic VAT.
-      // Mixed bills keep their individual line treatments on edits that omit the lines.
-      const clearBillReverseCharge =
-        (existing.reverse_charge || existing.is_import) && !reverseCharge && !isImport;
-      src = r.rows.map((l) => {
-        const storedSupplyType = l.vat_supply_type ?? null;
-        // Older lines could record reverse charge only in the boolean column.
-        const supplyType =
-          l.reverse_charge === true &&
-          (storedSupplyType === null || storedSupplyType === "standard_rated")
-            ? "reverse_charge"
-            : storedSupplyType;
-        return {
-          description: String(l.description ?? ""),
-          quantity: Number(l.quantity) || 1,
-          unitPriceFils: filsOf(l.unit_price),
-          vatRate: Number(l.vat_rate) === 0 ? 0 : 5,
-          supplyType:
-            clearBillReverseCharge && supplyType === "reverse_charge"
-              ? "standard_rated"
-              : supplyType,
-          accountId: l.account_id ?? null,
-          productId: l.product_id ?? null,
-          poLineId: l.purchase_order_line_id ?? null,
-          costCenterId: l.cost_center_id ?? null,
-        };
-      });
     }
     if (src) {
       await assertCostCenters(
@@ -457,34 +449,56 @@ async function prepareBill(
         ? filsOf(existing?.import_vat_amount)
         : (input.import_vat_amount ?? 0);
     const importVatFils = isImport ? declaredImportVat : 0;
-    const totals = computeBillTotals({
-      lines: src ?? [],
+    const tax = {
       reverseCharge,
       isImport,
       importVatFils,
       withholdingFils:
-        (get("withholding_amount", existing ? filsOf(existing.withholding_amount) : 0) as number) ??
-        0,
-    });
+        input.withholding_amount === undefined
+          ? filsOf(existing?.withholding_amount)
+          : (input.withholding_amount ?? 0),
+    };
+    const replacement = src ? computeBillTotals({ ...tax, lines: src }) : null;
+    const totals =
+      replacement ??
+      sumBillTotals({
+        ...tax,
+        lines: (
+          await ledgerQueryable(tx).query(
+            `SELECT amount, vat_amount, reverse_charge, vat_supply_type
+              FROM bill_line_items WHERE bill_id = $1`,
+            [existing?.id]
+          )
+        ).rows.map((l) => ({
+          amountFils: filsOf(l.amount),
+          vatFils: filsOf(l.vat_amount),
+          reverseCharge:
+            !clearLineReverseCharge && (l.reverse_charge || l.vat_supply_type === "reverse_charge"),
+        })),
+      });
     header.subtotal = fromFils(totals.subtotalFils);
     header.vat_amount = fromFils(totals.vatFils);
     header.total_amount = fromFils(totals.totalFils);
-    header.withholding_amount = fromFils(totals.withholdingFils);
-    header.import_vat_amount = fromFils(importVatFils);
-    if (src) {
+    if (!existing || input.withholding_amount !== undefined) {
+      header.withholding_amount = fromFils(totals.withholdingFils);
+    }
+    if (!existing || input.import_vat_amount !== undefined) {
+      header.import_vat_amount = fromFils(importVatFils);
+    }
+    if (src && replacement) {
       lines = src.map((l, i) => ({
         description: l.description,
-        quantity: String(totals.lines[i].quantity),
+        quantity: String(replacement.lines[i].quantity),
         unit_price: fromFils(l.unitPriceFils),
-        vat_rate: totals.lines[i].vatRate,
-        amount: fromFils(totals.lines[i].amountFils),
-        vat_amount: fromFils(totals.lines[i].vatFils),
-        vat_supply_type: totals.lines[i].supplyType,
+        vat_rate: replacement.lines[i].vatRate,
+        amount: fromFils(replacement.lines[i].amountFils),
+        vat_amount: fromFils(replacement.lines[i].vatFils),
+        vat_supply_type: replacement.lines[i].supplyType,
         account_id: l.accountId,
         product_id: l.productId,
         purchase_order_line_id: l.poLineId,
         cost_center_id: l.costCenterId,
-        reverse_charge: totals.lines[i].reverseCharge,
+        reverse_charge: replacement.lines[i].reverseCharge,
       }));
     }
   }
@@ -494,7 +508,7 @@ async function prepareBill(
     | undefined;
   // WQ2 (4.7): one of our own sales invoices is never a purchase.
   await assertNotOwnTrn(companyId, trn, tx);
-  if (!trn && !(header.reverse_charge as boolean)) {
+  if (!trn && !reverseCharge && !isImport) {
     warnings.push({
       code: "VENDOR_TRN_MISSING",
       message:
@@ -503,7 +517,7 @@ async function prepareBill(
         "zones), set reverse_charge explicitly.",
     });
   }
-  return { header, lines, warnings };
+  return { header, lines, clearLineReverseCharge, warnings };
 }
 
 /**
@@ -602,6 +616,22 @@ async function writeLines(tx: LedgerTx, billId: string, lines: Array<Record<stri
         l.purchase_order_line_id ?? null,
         l.cost_center_id ?? null,
       ]
+    );
+  }
+}
+
+async function applyBillLines(tx: LedgerTx, billId: string, prepared: PreparedBill) {
+  if (prepared.lines) {
+    await writeLines(tx, billId, prepared.lines);
+  } else if (prepared.clearLineReverseCharge) {
+    await txRows(
+      tx,
+      `UPDATE bill_line_items
+          SET reverse_charge = false,
+              vat_supply_type = CASE WHEN vat_supply_type = 'reverse_charge'
+                                     THEN 'standard_rated' ELSE vat_supply_type END
+        WHERE bill_id = $1 AND (reverse_charge OR vat_supply_type = 'reverse_charge')`,
+      [billId]
     );
   }
 }
@@ -781,28 +811,21 @@ export async function updateBillInPlace(args: {
   billId: string;
   input: BillUpdateInput;
 }): Promise<BillWriteResult> {
-  const existingRes = await pool.query(
-    `SELECT * FROM vendor_bills WHERE id = $1 AND company_id = $2`,
-    [args.billId, args.companyId]
-  );
-  const existing = existingRes.rows[0] as BillRow | undefined;
-  if (!existing) throw new DomainError("BILL_NOT_FOUND", 404, undefined, "Bill not found");
-  if (!["draft", "pending", "rejected"].includes(String(existing.status))) {
-    throw new DomainError(
-      "BILL_LOCKED",
-      409,
-      { status: existing.status },
-      "An approved bill cannot be edited in place; use revise (reversal + repost) or void it"
-    );
-  }
-  await assertPeriodNotLocked(args.companyId, existing.bill_date);
-  if (args.input.bill_date) await assertPeriodNotLocked(args.companyId, args.input.bill_date);
-  const prepared = await prepareBill(args.companyId, args.input as BillFieldsInput, existing);
   return withLedgerTx(async (tx) => {
-    const locked = await lockBill(tx, args.billId, args.companyId);
-    if (locked.status !== existing.status) throw new DomainError("BILL_STATE_CHANGED", 409);
+    const existing = await lockBill(tx, args.billId, args.companyId);
+    if (!["draft", "pending", "rejected"].includes(String(existing.status))) {
+      throw new DomainError(
+        "BILL_LOCKED",
+        409,
+        { status: existing.status },
+        "An approved bill cannot be edited in place; use revise (reversal + repost) or void it"
+      );
+    }
+    await assertPeriodNotLocked(args.companyId, existing.bill_date, tx);
+    if (args.input.bill_date) await assertPeriodNotLocked(args.companyId, args.input.bill_date, tx);
+    const prepared = await prepareBill(args.companyId, args.input, existing, tx);
     await updateHeader(tx, args.billId, prepared.header);
-    if (prepared.lines) await writeLines(tx, args.billId, prepared.lines);
+    await applyBillLines(tx, args.billId, prepared);
     const bill = (
       await txRows<BillRow & Record<string, unknown>>(
         tx,
@@ -819,20 +842,21 @@ export async function updateBillInPlace(args: {
   });
 }
 
-/** Prepare a revision (no writes): totals and lines for the revised approved bill. */
+/** Prepare totals and lines against the locked approved bill. */
 export async function prepareBillRevision(
   companyId: string,
   existing: BillRow,
-  input: BillUpdateInput
+  input: BillUpdateInput,
+  tx: LedgerTx
 ) {
-  if (input.bill_date) await assertPeriodNotLocked(companyId, input.bill_date);
-  return prepareBill(companyId, input as BillFieldsInput, existing);
+  if (input.bill_date) await assertPeriodNotLocked(companyId, input.bill_date, tx);
+  return prepareBill(companyId, input, existing, tx);
 }
 
 /** Apply a prepared revision inside `tx` (header + lines + revision bump). */
 export async function applyBillRevision(tx: LedgerTx, billId: string, prepared: PreparedBill) {
   await updateHeader(tx, billId, prepared.header, "revision = revision + 1");
-  if (prepared.lines) await writeLines(tx, billId, prepared.lines);
+  await applyBillLines(tx, billId, prepared);
   return (
     await txRows<BillRow & Record<string, unknown>>(
       tx,
@@ -1999,6 +2023,7 @@ export async function createRecurringBill(
   actorId: string,
   input: RecurringBillCreateInput
 ) {
+  input.template.line_items.forEach((line, i) => assertBillLineQuantity(line.quantity, i));
   // C1 (RH1): every occurrence becomes a bill; refuse a control account on the template up front.
   await assertChosenAccountsNotControl(
     companyId,
