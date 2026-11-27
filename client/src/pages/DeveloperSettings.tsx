@@ -43,7 +43,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatDate, formatDateTime } from "@/lib/format-date";
+import { formatDateTime, formatTimestampDate } from "@/lib/format-date";
 import { Key, Webhook, Plus, Trash2, Copy, Check, Send, Eye, RefreshCw } from "lucide-react";
 
 // ===========================
@@ -347,7 +347,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {key.lastUsedAt
-                        ? formatDate(key.lastUsedAt, locale)
+                        ? formatTimestampDate(key.lastUsedAt, locale)
                         : t["banking.common.never"]}
                     </TableCell>
                     <TableCell>
@@ -803,7 +803,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {wh.lastTriggeredAt
-                        ? formatDate(wh.lastTriggeredAt, locale)
+                        ? formatTimestampDate(wh.lastTriggeredAt, locale)
                         : t["banking.common.never"]}
                     </TableCell>
                     <TableCell data-numeric>

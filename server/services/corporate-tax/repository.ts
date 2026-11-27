@@ -493,6 +493,7 @@ export interface CtBooksRow {
   id: string;
   type: "revenue" | "expense";
   label: string;
+  nameAr: string | null;
   amount: number;
   notes: string;
   accountId: string;
@@ -585,6 +586,7 @@ export async function readCtBooks(
       id: `books-${account.id}`,
       type: account.type === "income" ? "revenue" : "expense",
       label: account.nameEn,
+      nameAr: account.nameAr?.trim() || null,
       amount,
       notes: `Posted net for ${account.code ?? ""}`.trim(),
       accountId: account.id,

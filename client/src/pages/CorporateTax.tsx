@@ -93,6 +93,7 @@ type CorporateTaxWorkpaperRowType = "revenue" | "expense";
 interface CorporateTaxWorkpaperRow {
   id: string;
   label: string;
+  nameAr?: string | null;
   type: CorporateTaxWorkpaperRowType;
   amount: number;
   notes?: string;
@@ -1597,7 +1598,7 @@ export default function CorporateTax() {
                       <TableBody>
                         {viewReturn.workpaper.rows.map((row) => (
                           <TableRow key={row.id}>
-                            <TableCell>{row.label}</TableCell>
+                            <TableCell>{(locale === "ar" && row.nameAr) || row.label}</TableCell>
                             <TableCell data-numeric>
                               {row.type === "expense"
                                 ? formatCurrency(row.amount, "AED", locale)

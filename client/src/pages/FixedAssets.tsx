@@ -219,6 +219,8 @@ type DepreciationRunData = z.infer<typeof depreciationRunSchema>;
 
 export default function FixedAssets() {
   const { t, locale } = useTranslation();
+  const assetDisplayName = (asset: FixedAsset) =>
+    (locale === "ar" && asset.asset_name_ar) || asset.asset_name;
   const fa = FA_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -836,9 +838,7 @@ export default function FixedAssets() {
                   <TableRow key={asset.id}>
                     <TableCell data-truncate="" data-cell="title">
                       <span dir="auto" className="font-medium">
-                        {locale === "ar" && asset.asset_name_ar
-                          ? asset.asset_name_ar
-                          : asset.asset_name}
+                        {assetDisplayName(asset)}
                       </span>
                       {asset.asset_number && (
                         <span
@@ -1337,9 +1337,7 @@ export default function FixedAssets() {
             <DialogDescription>
               {disposingAsset
                 ? formatMessage(t["fixedAssets.disposalDetails"], {
-                    asset:
-                      (locale === "ar" && disposingAsset.asset_name_ar) ||
-                      disposingAsset.asset_name,
+                    asset: assetDisplayName(disposingAsset),
                     amount: formatCurrency(
                       parseFloat(disposingAsset.net_book_value || "0"),
                       "AED",
@@ -1577,7 +1575,7 @@ export default function FixedAssets() {
             <DialogTitle>
               {depAsset ? (
                 formatMessage(t["fixedAssets.recordDepreciationFor"], {
-                  name: depAsset.asset_name,
+                  name: assetDisplayName(depAsset),
                 })
               ) : (
                 <T k="pageLabels.runMonthlyDepreciation" />

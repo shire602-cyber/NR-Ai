@@ -7,12 +7,13 @@ import { loadLocale, useI18n } from "@/lib/i18n";
 import { apiRequest } from "@/lib/queryClient";
 import CorporateTax from "@/pages/CorporateTax";
 import DeveloperSettings from "@/pages/DeveloperSettings";
+import FixedAssets from "@/pages/FixedAssets";
 
 vi.mock("@/hooks/useDefaultCompany", () => ({
   useDefaultCompany: () => ({ companyId: "company-1", company: {}, isLoading: false }),
 }));
 vi.mock("@/hooks/useCompanyPermission", () => ({
-  useCompanyPermission: () => ({ gate: () => ({}), gateApproval: () => ({}) }),
+  useCompanyPermission: () => ({ can: () => true, gate: () => ({}), gateApproval: () => ({}) }),
 }));
 vi.mock("@/hooks/useSubscription", () => ({
   useSubscription: () => ({ canAccess: () => true }),
@@ -33,11 +34,11 @@ let container: HTMLDivElement;
 let client: QueryClient;
 
 beforeAll(async () => {
-  await loadLocale("ar");
-  useI18n.getState().setLocale("ar");
+  await Promise.all([loadLocale("ar"), loadLocale("en")]);
 });
 
 beforeEach(() => {
+  useI18n.getState().setLocale("ar");
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -81,7 +82,7 @@ function fill(id: string, value: string) {
 }
 
 describe("Arabic app dialogs", () => {
-  it("shows corporate tax return labels and dates in Arabic", async () => {
+  it("shows corporate tax return labels, dates, and book workpaper rows in Arabic", async () => {
     client.setQueryData(
       [...companyKey, "corporate-tax", "returns"],
       [
@@ -99,6 +100,25 @@ describe("Arabic app dialogs", () => {
           exemptionThreshold: 375000,
           taxRate: 0.09,
           taxPayable: 2250,
+          workpaper: {
+            source: "journal_calculation",
+            rows: [
+              {
+                id: "books-revenue",
+                label: "Service Revenue",
+                nameAr: "إيرادات الخدمات",
+                type: "revenue",
+                amount: 500000,
+              },
+              {
+                id: "books-expense",
+                label: "Bank Fees",
+                nameAr: null,
+                type: "expense",
+                amount: 100000,
+              },
+            ],
+          },
         },
       ]
     );
@@ -114,10 +134,81 @@ describe("Arabic app dialogs", () => {
       "يناير",
       "ديسمبر",
       "مارس",
+      "إيرادات الخدمات",
+      "Bank Fees",
     ]) {
       expect(text).toContain(expected);
     }
-    expect(text).not.toMatch(/\b(?:Period|Status|Filed on|Date filed|Notes|Jan|Dec|Mar)\b/);
+    expect(text).not.toMatch(
+      /\b(?:Period|Status|Filed on|Date filed|Notes|Jan|Dec|Mar|Service Revenue)\b/
+    );
+  });
+
+  it("shows the Arabic asset name in the depreciation dialog", async () => {
+    client.setQueryData(
+      ["/api/companies/company-1/fixed-assets"],
+      [
+        {
+          id: "asset-1",
+          asset_name: "Delivery Van",
+          asset_name_ar: "مركبة التوصيل",
+          asset_number: "FA-1",
+          category: "Vehicles",
+          purchase_date: "2025-01-01",
+          purchase_cost: "96000",
+          accumulated_depreciation: "0",
+          net_book_value: "96000",
+          status: "active",
+        },
+      ]
+    );
+    await render(FixedAssets);
+    const action = container.querySelector<HTMLButtonElement>(
+      '[data-testid="button-record-depreciation-asset-1"]'
+    );
+    expect(action).toBeTruthy();
+    act(() => action!.click());
+    expect(openDialog().textContent).toContain("مركبة التوصيل");
+    expect(openDialog().textContent).not.toContain("Delivery Van");
+  });
+
+  it.each([
+    ["en", "11 May 2026"],
+    ["ar", "11 مايو 2026"],
+  ] as const)("shows the viewer's local activity date in %s", async (locale, date) => {
+    const originalTz = process.env.TZ;
+    process.env.TZ = "Asia/Dubai";
+    try {
+      useI18n.getState().setLocale(locale);
+      const timestamp = "2026-05-10T23:59:59.500Z";
+      expect(new Date(timestamp).getTimezoneOffset()).toBe(-240);
+      client.setQueryData(
+        [...companyKey, "api-keys"],
+        [{ id: "key-1", name: "QA", keyPrefix: "muh_test", scopes: [], lastUsedAt: timestamp }]
+      );
+      client.setQueryData(
+        [...companyKey, "webhooks"],
+        [
+          {
+            id: "webhook-1",
+            url: "https://example.com/webhook",
+            events: "invoice.created",
+            lastTriggeredAt: timestamp,
+            failureCount: 0,
+            isActive: true,
+          },
+        ]
+      );
+      await render(DeveloperSettings);
+      expect(container.querySelector("tbody")?.textContent).toContain(date);
+
+      const webhooks = container.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1];
+      act(() => webhooks.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })));
+      expect(container.querySelector("tbody")?.textContent).toContain(date);
+    } finally {
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    }
   });
 
   it.each([
