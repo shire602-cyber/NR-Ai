@@ -2,6 +2,7 @@
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
 import { ReportWorkspaceTab, reportsWorkspaceHref } from "../shared";
 import { translateNow, formatMessage, useI18n } from "@/lib/i18n";
+import { reportExportBaseName } from "@/lib/export-file-name";
 import { formatDateRange } from "@/lib/format-date";
 import {
   exportToExcel,
@@ -353,8 +354,7 @@ export function useReportsExports({
         selectedReportId === "ar-aging"
           ? receivableAgingExportSheets
           : prepareInvoiceStatusForExport(invoiceStatusReport),
-        // i18n-ignore: export file name, not UI copy
-        `${selectedReportId === "ar-aging" ? "A/R Aging" : "Invoice Status"}${dateRangeStr}`,
+        `${reportExportBaseName(selectedReportId === "ar-aging" ? "ar-aging" : "invoice-status")}${dateRangeStr}`,
         selectedCompanyId
       );
     } else if (activeTab === "balances") {
@@ -362,8 +362,7 @@ export function useReportsExports({
         selectedReportId === "ap-aging"
           ? payableAgingExportSheets
           : prepareBalanceSummaryReportsForExport(balanceReport),
-        // i18n-ignore: export file name, not UI copy
-        `${selectedReportId === "ap-aging" ? "A/P Aging" : "Balance Reports"}${dateRangeStr}`,
+        `${reportExportBaseName(selectedReportId === "ap-aging" ? "ap-aging" : "balance-reports")}${dateRangeStr}`,
         selectedCompanyId
       );
     } else if (activeTab === "expenses") {

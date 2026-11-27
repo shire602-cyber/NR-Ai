@@ -517,5 +517,7 @@
   "journal.memo.doc.stockSale": "Stock sale",
   "journal.memo.doc.stockAdjustment": "Stock adjustment",
   "journal.memo.doc.stockReturn": "Stock return",
-  "journal.memo.doc.text": "{ref}"
+  "journal.memo.doc.text": "{ref}",
+  "journal.postedToast": "Entry posted",
+  "journal.postedToastBody": "Journal entry has been posted and is now immutable."
 }

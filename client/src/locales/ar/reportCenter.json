@@ -1001,5 +1001,6 @@
   "reportCenter.partyLoadPausedBody": "سيُستأنف الطلب تلقائيًا.",
   "reportCenter.partyStatementLoading": "جارٍ تحميل كشف الحساب",
   "reportCenter.partyStatementOpening": "الرصيد الافتتاحي",
-  "reportCenter.partyStatementClosing": "الرصيد الختامي"
+  "reportCenter.partyStatementClosing": "الرصيد الختامي",
+  "reportCenter.balanceReportsFileName": "تقارير الأرصدة"
 }

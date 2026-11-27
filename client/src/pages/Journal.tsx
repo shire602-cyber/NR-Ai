@@ -290,8 +290,8 @@ export default function Journal() {
         res?.code === "APPROVAL_REQUIRED"
           ? { title: t["journal.sentForApproval"], description: t["journal.sentForApprovalBody"] }
           : {
-              title: "Entry posted",
-              description: "Journal entry has been posted and is now immutable.",
+              title: t["journal.postedToast"],
+              description: t["journal.postedToastBody"],
             }
       );
     },
