@@ -7,7 +7,7 @@
  */
 import { DatePicker } from "@/components/ui/date-picker";
 import { useState, type ReactNode } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -166,7 +166,7 @@ function WorkspaceRead({
 }: {
   query: Parameters<typeof queryReadState>[0] & {
     isPaused: boolean;
-    refetch: () => Promise<unknown>;
+    refetch: UseQueryResult["refetch"];
   };
   section: string;
   children: ReactNode;
