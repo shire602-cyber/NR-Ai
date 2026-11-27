@@ -23,6 +23,7 @@ import { db } from "../db";
 import { DomainError } from "../errors";
 import { invoiceLines, invoices, type InvoiceLine } from "../../shared/schema";
 import { toFils } from "../../shared/money";
+import { hasHeaderOnlyBillVat } from "../../shared/bill-line-edit";
 import { classifySupply, type Vat201Family } from "../../shared/vat-classification";
 import { SALES_CODES, totalsForStoredDocument } from "../services/invoice-posting.service";
 import { ledgerLines } from "../reporting";
@@ -914,8 +915,13 @@ async function collectBills(
       continue;
     }
     const billLines = byBill.get(b.id) ?? [];
-    const lineVatSum = billLines.reduce((s, l) => s + fils(l.vat_amount), 0);
-    if (billLines.length === 0 || (lineVatSum === 0 && vatDoc > 0)) {
+    if (
+      billLines.length === 0 ||
+      hasHeaderOnlyBillVat(
+        vatDoc,
+        billLines.map((l) => fils(l.vat_amount))
+      )
+    ) {
       // Legacy bill with no line-level VAT: the whole subtotal carries the bill VAT.
       const kind = purchaseKindFor({ vatFils: vatDoc, designatedZone: b.designated_zone });
       push({ ...base, boxes: purchaseDelta(kind, subtotalBase, vatBase, recoverableTotal) });

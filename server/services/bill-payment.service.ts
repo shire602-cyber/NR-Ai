@@ -13,7 +13,7 @@
  */
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { todayDubai } from "@shared/accounting-date";
-import { billLineAmount, billLineSupplyType } from "@shared/bill-line-edit";
+import { billLineAmount, billLineSupplyType, hasHeaderOnlyBillVat } from "@shared/bill-line-edit";
 import type { Request } from "express";
 import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
@@ -290,7 +290,6 @@ interface SavedBillLine {
 interface PreparedBill {
   header: Record<string, unknown>;
   lines: Array<Record<string, unknown>> | null;
-  legacyLineTreatments: Array<{ id: string; supplyType: string }>;
   warnings: Array<{ code: string; message: string }>;
 }
 
@@ -382,7 +381,6 @@ async function prepareBill(
   const billWideChanged = wasBillWide !== (reverseCharge || isImport);
 
   let lines: Array<Record<string, unknown>> | null = null;
-  let legacyLineTreatments: PreparedBill["legacyLineTreatments"] = [];
   const recomputeNeeded =
     !!input.line_items ||
     billWideChanged ||
@@ -400,8 +398,11 @@ async function prepareBill(
           )
         ).rows as SavedBillLine[])
       : [];
-    // Both edit paths resolve a legacy flag against the same original header. Explicit treatment
-    // now lives in the enum alone, so a header toggle leaves explicit reverse-charge lines intact.
+    const savedVatFils = filsOf(existing?.vat_amount);
+    const headerOnlyVat = hasHeaderOnlyBillVat(
+      savedVatFils,
+      savedLines.map((line) => filsOf(line.vat_amount))
+    );
     const savedById = new Map(savedLines.map((line) => [line.id, line]));
     const usedLineIds = new Set<string>();
     const src = input.line_items?.map((l, i) => {
@@ -419,33 +420,32 @@ async function prepareBill(
           "Quantity must be positive"
         );
       }
-      const previousSupply = saved ? billLineSupplyType(saved, wasBillWide) : null;
+      const previousSupply = saved ? billLineSupplyType(saved) : null;
       const supplyType = l.vat_supply_type ?? previousSupply;
       const previousRate = saved ? (Number(saved.vat_rate ?? 5) === 0 ? 0 : 5) : null;
       const vatRate = l.vat_rate ?? (supplyType === previousSupply ? previousRate : null);
       const accountId = l.account_id === undefined ? (saved?.account_id ?? null) : l.account_id;
       const savedUnitPrice = filsOf(saved?.unit_price);
-      const unchanged =
-        !!saved &&
-        quantity === savedQuantity &&
-        l.unit_price === savedUnitPrice &&
+      const amountFils = billLineAmount(
+        quantity,
+        l.unit_price,
+        saved && {
+          quantity: savedQuantity,
+          unitPriceFils: savedUnitPrice,
+          amountFils: filsOf(saved.amount),
+        }
+      );
+      const unchangedVat =
+        saved &&
+        amountFils === filsOf(saved.amount) &&
         supplyType === previousSupply &&
-        vatRate === previousRate &&
-        accountId === saved.account_id;
+        vatRate === previousRate;
       return {
         description: l.description,
         quantity,
         unitPriceFils: l.unit_price,
-        amountFils: billLineAmount(
-          quantity,
-          l.unit_price,
-          saved && {
-            quantity: savedQuantity,
-            unitPriceFils: savedUnitPrice,
-            amountFils: filsOf(saved.amount),
-          }
-        ),
-        vatFils: unchanged ? filsOf(saved.vat_amount) : undefined,
+        amountFils,
+        vatFils: unchangedVat ? filsOf(saved.vat_amount) : undefined,
         vatRate,
         supplyType,
         accountId,
@@ -453,7 +453,7 @@ async function prepareBill(
         poLineId: l.purchase_order_line_id ?? null,
         costCenterId:
           l.cost_center_id === undefined ? (saved?.cost_center_id ?? null) : l.cost_center_id,
-        savedTreatment: unchanged && !billWideChanged ? saved : null,
+        savedTreatment: saved && supplyType === previousSupply ? saved : null,
       };
     });
     if (src && input.line_items) {
@@ -502,22 +502,28 @@ async function prepareBill(
           ? filsOf(existing?.withholding_amount)
           : (input.withholding_amount ?? 0),
     };
-    const replacement = src ? computeBillTotals({ lines: src }).lines : null;
-    if (!replacement && billWideChanged) {
-      legacyLineTreatments = savedLines
-        .filter((line) => line.reverse_charge)
-        .map((line) => ({ id: line.id, supplyType: billLineSupplyType(line, wasBillWide) }));
-    }
+    const preserveHeaderVat =
+      headerOnlyVat &&
+      (!src ||
+        (src.length === savedLines.length && src.every((line) => line.vatFils !== undefined)));
+    // Populate VAT for every line when an edit moves a historical bill to line-level VAT.
+    const revalue = headerOnlyVat && !preserveHeaderVat;
+    const replacement = src
+      ? computeBillTotals({
+          lines: revalue ? src.map((line) => ({ ...line, vatFils: undefined })) : src,
+        }).lines
+      : null;
     const totals = sumBillTotals({
       ...tax,
+      recorded: preserveHeaderVat
+        ? { subtotalFils: filsOf(existing?.subtotal), vatFils: savedVatFils }
+        : undefined,
       lines:
         replacement ??
         savedLines.map((l) => ({
           amountFils: filsOf(l.amount),
           vatFils: filsOf(l.vat_amount),
-          reverseCharge: billWideChanged
-            ? billLineSupplyType(l, wasBillWide) === "reverse_charge"
-            : l.reverse_charge || l.vat_supply_type === "reverse_charge",
+          reverseCharge: billLineSupplyType(l) === "reverse_charge",
         })),
     });
     header.subtotal = fromFils(totals.subtotalFils);
@@ -561,7 +567,7 @@ async function prepareBill(
         "zones), set reverse_charge explicitly.",
     });
   }
-  return { header, lines, legacyLineTreatments, warnings };
+  return { header, lines, warnings };
 }
 
 /**
@@ -655,22 +661,6 @@ async function writeLines(tx: LedgerTx, billId: string, lines: Array<Record<stri
         l.purchase_order_line_id ?? null,
         l.cost_center_id ?? null,
       ]
-    );
-  }
-}
-
-async function applyBillLines(tx: LedgerTx, billId: string, prepared: PreparedBill) {
-  if (prepared.lines) {
-    await writeLines(tx, billId, prepared.lines);
-    return;
-  }
-  for (const line of prepared.legacyLineTreatments) {
-    await txRows(
-      tx,
-      `UPDATE bill_line_items
-          SET reverse_charge = false, vat_supply_type = $3
-        WHERE bill_id = $1 AND id = $2`,
-      [billId, line.id, line.supplyType]
     );
   }
 }
@@ -864,7 +854,7 @@ export async function updateBillInPlace(args: {
     if (args.input.bill_date) await assertPeriodNotLocked(args.companyId, args.input.bill_date, tx);
     const prepared = await prepareBill(args.companyId, args.input, existing, tx);
     await updateHeader(tx, args.billId, prepared.header);
-    await applyBillLines(tx, args.billId, prepared);
+    if (prepared.lines) await writeLines(tx, args.billId, prepared.lines);
     const bill = (
       await txRows<BillRow & Record<string, unknown>>(
         tx,
@@ -895,7 +885,7 @@ export async function prepareBillRevision(
 /** Apply a prepared revision inside `tx` (header + lines + revision bump). */
 export async function applyBillRevision(tx: LedgerTx, billId: string, prepared: PreparedBill) {
   await updateHeader(tx, billId, prepared.header, "revision = revision + 1");
-  await applyBillLines(tx, billId, prepared);
+  if (prepared.lines) await writeLines(tx, billId, prepared.lines);
   return (
     await txRows<BillRow & Record<string, unknown>>(
       tx,

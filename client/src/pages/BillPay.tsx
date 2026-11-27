@@ -85,7 +85,7 @@ import { BillItemPicker } from "@/components/bills/BillItemPicker";
 import { isStockItem, purchasePriceOf } from "@/lib/purchase-pickers";
 import { ScrollTabs } from "@/components/ui/scroll-tabs";
 import type { BillCaptureResult, BillCaptureField } from "@shared/bill-capture";
-import { billLineAmount, billLineSupplyType } from "@shared/bill-line-edit";
+import { billLineAmount, billLineSupplyType, hasHeaderOnlyBillVat } from "@shared/bill-line-edit";
 import { MoneyError } from "@shared/money";
 import { EInvoiceOriginTag } from "@/components/einvoice/EInvoiceListCell";
 import {
@@ -649,7 +649,6 @@ export default function BillPay() {
     [editingBill]
   );
   const savedLine = (id?: string) => (id ? savedBillLines.get(id) : undefined);
-  const wasBillWide = !!(editingBill?.reverse_charge || editingBill?.is_import);
 
   const buildBillPayload = (data: BillFormData) => ({
     vendor_id: data.vendor_id || null,
@@ -675,9 +674,7 @@ export default function BillPay() {
         quantity: l.quantity,
         unit_price: l.unit_price,
         vat_supply_type:
-          saved && l.vat_supply_type === billLineSupplyType(saved, wasBillWide)
-            ? undefined
-            : l.vat_supply_type,
+          saved && l.vat_supply_type === billLineSupplyType(saved) ? undefined : l.vat_supply_type,
         vat_rate: l.vat_rate,
         account_id: l.account_id || null,
         cost_center_id: l.cost_center_id || null,
@@ -890,7 +887,6 @@ export default function BillPay() {
   const handleEditBill = async (bill: VendorBill) => {
     try {
       const detail: BillDetail = await apiRequest("GET", `/api/bills/${bill.id}`);
-      setEditingBill(detail);
       setPendingFile(null);
       setCapture(null);
       setLineMode("lines");
@@ -923,16 +919,14 @@ export default function BillPay() {
                 quantity: Number(l.quantity ?? 1),
                 unit_price: Number(l.unit_price),
                 vat_rate: Number(l.vat_rate ?? 5),
-                vat_supply_type: billLineSupplyType(
-                  l,
-                  !!(detail.reverse_charge || detail.is_import)
-                ),
+                vat_supply_type: billLineSupplyType(l),
                 account_id: l.account_id || "",
                 cost_center_id: l.cost_center_id || "",
                 product_id: l.product_id || "",
               }))
             : [{ ...EMPTY_LINE }],
       });
+      setEditingBill(detail);
       setBillEditorOpen(true);
     } catch (error: any) {
       toast({
@@ -1036,27 +1030,42 @@ export default function BillPay() {
     }
     const unchanged =
       saved &&
-      quantity === savedValuation?.quantity &&
-      unitPriceFils === savedValuation.unitPriceFils &&
-      line.vat_supply_type === billLineSupplyType(saved, wasBillWide) &&
-      Number(line.vat_rate) === Number(saved.vat_rate ?? 5) &&
-      (line.account_id || null) === saved.account_id;
-    const vat =
-      unchanged && saved.vat_amount != null
-        ? Number(saved.vat_amount)
-        : Math.round(amount * line.vat_rate) / 100;
-    return { amount, vat, reverseCharge: line.vat_supply_type === "reverse_charge" };
+      amount === Number(saved.amount) &&
+      line.vat_supply_type === billLineSupplyType(saved) &&
+      Number(line.vat_rate) === Number(saved.vat_rate ?? 5);
+    return {
+      amount,
+      savedVat: unchanged ? Number(saved.vat_amount ?? 0) : undefined,
+      calculatedVat: Math.round(amount * line.vat_rate) / 100,
+      reverseCharge: line.vat_supply_type === "reverse_charge",
+    };
   });
-  const subtotal = valuedLines.reduce((sum, line) => sum + line.amount, 0);
   const watchReverseCharge = billForm.watch("reverse_charge") || billForm.watch("is_import");
   const watchCurrency = billForm.watch("currency");
   const watchIsImport = billForm.watch("is_import");
+  const importVat = (watchIsImport && Number(billForm.watch("import_vat_amount"))) || 0;
+  const headerVat = Number(editingBill?.vat_amount ?? 0);
+  const headerOnlyVat = hasHeaderOnlyBillVat(
+    headerVat,
+    (editingBill?.line_items ?? []).map((line) => Number(line.vat_amount ?? 0))
+  );
+  const preserveHeaderVat =
+    headerOnlyVat &&
+    valuedLines.length === editingBill?.line_items.length &&
+    valuedLines.every((line) => line.savedVat !== undefined);
+  const lineVat = (line: (typeof valuedLines)[number]) =>
+    (headerOnlyVat && !preserveHeaderVat ? undefined : line.savedVat) ?? line.calculatedVat;
+  const subtotal = preserveHeaderVat
+    ? Number(editingBill?.subtotal)
+    : valuedLines.reduce((sum, line) => sum + line.amount, 0);
   const vatAmount =
-    (watchIsImport && Number(billForm.watch("import_vat_amount"))) ||
-    valuedLines.reduce((sum, line) => sum + line.vat, 0);
+    importVat ||
+    (preserveHeaderVat ? headerVat : valuedLines.reduce((sum, line) => sum + lineVat(line), 0));
   const payableVat = watchReverseCharge
     ? 0
-    : valuedLines.reduce((sum, line) => sum + (line.reverseCharge ? 0 : line.vat), 0);
+    : preserveHeaderVat
+      ? headerVat
+      : valuedLines.reduce((sum, line) => sum + (line.reverseCharge ? 0 : lineVat(line)), 0);
   const totalAmount = subtotal + payableVat - Number(editingBill?.withholding_amount ?? 0);
   const cashAccounts = postablePaymentAccounts(accounts);
 

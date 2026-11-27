@@ -1,15 +1,18 @@
 import { mulRate } from "./money";
 
-/** A bill-wide treatment is applied by the header. Older writes also stamped it on the lines. */
-export function billLineSupplyType(
-  line: { vat_supply_type?: string | null; reverse_charge?: boolean | null },
-  wasBillWide: boolean
-): string {
+/** Legacy flags carry reverse charge without saying whether it came from the header. */
+export function billLineSupplyType(line: {
+  vat_supply_type?: string | null;
+  reverse_charge?: boolean | null;
+}): string {
   const supplyType = line.vat_supply_type || "standard_rated";
-  if (wasBillWide && line.reverse_charge && supplyType === "reverse_charge")
-    return "standard_rated";
   if (line.reverse_charge && supplyType === "standard_rated") return "reverse_charge";
   return supplyType;
+}
+
+/** Bills predating line VAT can still carry the full recorded tax on their header. */
+export function hasHeaderOnlyBillVat(headerVatFils: number, lineVatFils: readonly number[]) {
+  return headerVatFils > 0 && lineVatFils.every((vat) => vat === 0);
 }
 
 export function billLineAmount(

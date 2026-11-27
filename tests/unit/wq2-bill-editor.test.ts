@@ -227,7 +227,7 @@ describe("[WQ2 8.2] bill editor capture", () => {
     }
   );
 
-  it("revises a legacy bill with a rounded quantity and sends header-off intent", async () => {
+  it("keeps ambiguous legacy reverse charge and rounded valuation when revising the header", async () => {
     const url = "/api/bills/header-rc";
     setFixtures({
       [url]: {
@@ -239,7 +239,7 @@ describe("[WQ2 8.2] bill editor capture", () => {
         reverse_charge: true,
         line_items: [
           {
-            id: "inherited",
+            id: "legacy-rc",
             description: "Imported service",
             quantity: "1.23",
             unit_price: "1000.00",
@@ -263,17 +263,63 @@ describe("[WQ2 8.2] bill editor capture", () => {
       const checkbox = editorPage().querySelector('[role="checkbox"][aria-checked="true"]');
       expect(checkbox).not.toBeNull();
       await act(async () => (checkbox as HTMLElement).click());
-      expect(editorPage().textContent).toContain("1,295.70");
+      expect(editorPage().textContent).toContain("1,234.00");
+      expect(editorPage().textContent).not.toContain("1,295.70");
       await submit(byTestId("button-submit-bill"));
       await flushUntil(() => apiCalls("POST").some((call) => call.url === `${url}/revise`));
       expect(apiCalls("POST").find((call) => call.url === `${url}/revise`)!.body).toMatchObject({
         reason: "Correct bill-wide VAT",
         reverse_charge: false,
-        line_items: [{ id: "inherited", quantity: 1.23, vat_supply_type: undefined, vat_rate: 5 }],
+        line_items: [{ id: "legacy-rc", quantity: 1.23, vat_supply_type: undefined, vat_rate: 5 }],
       });
     } finally {
       prompt.mockRestore();
     }
+  });
+
+  it("reopens four-place quantities and shows recorded header-only VAT on a notes edit", async () => {
+    const url = "/api/bills/legacy-vat";
+    setFixtures({
+      [url]: {
+        id: "legacy-vat",
+        status: "draft",
+        vendor_name: VENDOR.name,
+        vendor_trn: VENDOR.trn,
+        bill_date: "2026-01-15",
+        subtotal: "1234.50",
+        vat_amount: "61.73",
+        total_amount: "1296.23",
+        line_items: [
+          {
+            id: "legacy-domestic",
+            description: "Supplies",
+            quantity: "1.2345",
+            unit_price: "1000.00",
+            vat_rate: "5.00",
+            vat_supply_type: "standard_rated",
+            amount: "1234.50",
+            vat_amount: "0.00",
+            account_id: null,
+          },
+        ],
+        payments: [],
+      },
+    });
+    const { default: BillPay } = await import("../../client/src/pages/BillPay");
+    await renderAt(BillPay, "/bill-pay/legacy-vat/edit");
+    await flushUntil(() => !!byTestId("button-submit-bill"));
+    const page = editorPage();
+    expect(page.querySelector<HTMLInputElement>('[name="line_items.0.quantity"]')?.value).toBe(
+      "1.2345"
+    );
+    expect(page.textContent).toContain("1,296.23");
+    await type(page.querySelector<HTMLInputElement>('[name="notes"]')!, "Updated notes");
+    await submit(byTestId("button-submit-bill"));
+    await flushUntil(() => apiCalls("PATCH").some((call) => call.url === url));
+    expect(apiCalls("PATCH").find((call) => call.url === url)!.body).toMatchObject({
+      notes: "Updated notes",
+      line_items: [{ id: "legacy-domestic", quantity: 1.2345, vat_supply_type: undefined }],
+    });
   });
 
   it("a dropped invoice fills the form with per-field confidence; saving posts the bill and then the attachment", async () => {

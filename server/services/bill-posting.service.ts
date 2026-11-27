@@ -221,12 +221,13 @@ export function computeBillTotals(input: BillTotalsInput): BillTotals {
 export function sumBillTotals(
   input: Omit<BillTotalsInput, "lines"> & {
     lines: Pick<BillLineCalc, "amountFils" | "vatFils" | "reverseCharge">[];
+    recorded?: { subtotalFils: number; vatFils: number };
   }
 ): Omit<BillTotals, "lines"> {
   const { lines } = input;
   const billRc = input.reverseCharge === true || input.isImport === true;
-  const subtotalFils = sumFils(lines.map((l) => l.amountFils));
-  let vatFils = sumFils(lines.map((l) => l.vatFils));
+  const subtotalFils = input.recorded?.subtotalFils ?? sumFils(lines.map((l) => l.amountFils));
+  let vatFils = input.recorded?.vatFils ?? sumFils(lines.map((l) => l.vatFils));
   if (input.isImport && input.importVatFils && input.importVatFils > 0) {
     // Box 6: import VAT is the amount on the customs declaration.
     vatFils = input.importVatFils;

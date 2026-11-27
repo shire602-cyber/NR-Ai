@@ -144,7 +144,7 @@ describe("Purchase VAT audit", () => {
     expect(edited.body.line_items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          quantity: "0.00",
+          quantity: "0.0000",
           unit_price: "1000.00",
           amount: "4.00",
           vat_amount: "0.20",
@@ -171,8 +171,55 @@ describe("Purchase VAT audit", () => {
     expect(await vatBoxes(t)).toEqual(vat);
   });
 
+  it("preserves pre-0096 header VAT through approval and revision until line valuation changes", async () => {
+    const t = await registeredTenant();
+    const draft = await bill(t, {
+      line_items: [
+        { ...domestic, unit_price: 600 },
+        { ...domestic, description: "Services", unit_price: 400 },
+      ],
+    });
+    await h.sql("UPDATE bill_line_items SET vat_amount = 0 WHERE bill_id = $1", [draft.id]);
+    const url = `/api/bills/${draft.id}`;
+    const inputVat = () =>
+      h.sql<{ vat: string }>(
+        `SELECT SUM(jl.debit - jl.credit)::text AS vat
+           FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+           JOIN accounts a ON a.id = jl.account_id
+          WHERE je.company_id = $1 AND je.status = 'posted' AND a.code = '1050'`,
+        [t.company.id]
+      );
+    const withholding = await t.as.patch(url, { withholding_amount: 10 });
+    expect(withholding.status, withholding.text).toBe(200);
+    expect(withholding.body).toMatchObject({ total_amount: "1040.00", vat_amount: "50.00" });
+    const { vat } = await boxes(t, draft.id);
+    expect(vat).toMatchObject({ box9ExpensesAmount: 1000, box9ExpensesVat: 50 });
+    expect(await inputVat()).toEqual([{ vat: "50.00" }]);
+
+    const line_items = withholding.body.line_items.map(editorLine);
+    const revise = (fields: Record<string, unknown>) =>
+      t.as.post(`${url}/revise`, { reason: "Edit pre-0096 bill", ...fields });
+    const notes = await revise({ notes: "Updated", line_items });
+    expect(notes.status, notes.text).toBe(200);
+    expect(notes.body).toMatchObject({ total_amount: "1040.00", vat_amount: "50.00" });
+    expect(await vatBoxes(t)).toEqual(vat);
+    expect(await inputVat()).toEqual([{ vat: "50.00" }]);
+
+    const saved = await t.as.get(url);
+    const changed = await revise({
+      line_items: saved.body.line_items.map((line: SavedLine) => ({
+        ...editorLine(line),
+        ...(line.description === domestic.description && { unit_price: 700 }),
+      })),
+    });
+    expect(changed.status, changed.text).toBe(200);
+    expect(changed.body).toMatchObject({ total_amount: "1145.00", vat_amount: "55.00" });
+    expect(await vatBoxes(t)).toMatchObject({ box9ExpensesAmount: 1100, box9ExpensesVat: 55 });
+    expect(await inputVat()).toEqual([{ vat: "55.00" }]);
+  });
+
   it.each([false, true])(
-    "applies header-off identically to PATCH and editor payloads (legacy inherited: %s)",
+    "applies header-off identically to PATCH and editor payloads (legacy encoding: %s)",
     async (legacy) => {
       const t = await registeredTenant();
       const cases = [];
@@ -187,7 +234,7 @@ describe("Purchase VAT audit", () => {
           await h.sql(
             `UPDATE bill_line_items SET vat_supply_type = 'reverse_charge', reverse_charge = true
               WHERE bill_id = $1 AND description = $2`,
-            [draft.id, domestic.description]
+            [draft.id, reverseCharge.description]
           );
         }
         const url = `/api/bills/${draft.id}`;
@@ -208,6 +255,41 @@ describe("Purchase VAT audit", () => {
         cases.push(vat);
       }
       expect(cases[0]).toEqual(cases[1]);
+    }
+  );
+
+  it.each([false, true])(
+    "keeps both ambiguous legacy lines reverse charged (editor: %s)",
+    async (full) => {
+      const t = await registeredTenant();
+      const draft = await bill(t, { reverse_charge: true, line_items: [domestic, reverseCharge] });
+      // The pre-stamp writer stored the same pair for inherited and explicit reverse charge.
+      await h.sql(
+        `UPDATE bill_line_items SET vat_supply_type = 'reverse_charge', reverse_charge = true
+        WHERE bill_id = $1`,
+        [draft.id]
+      );
+      const url = `/api/bills/${draft.id}`;
+      const saved = await t.as.get(url);
+      const off = await t.as.patch(url, {
+        reverse_charge: false,
+        ...(full && { line_items: saved.body.line_items.map(editorLine) }),
+      });
+      expect(off.status, off.text).toBe(200);
+      expect(off.body).toMatchObject({ total_amount: "2000.00", vat_amount: "100.00" });
+      const explicit = await t.as.patch(url, {
+        line_items: off.body.line_items.map((line: SavedLine) => ({
+          ...editorLine(line),
+          ...(line.description === domestic.description && { vat_supply_type: "standard_rated" }),
+        })),
+      });
+      expect(explicit.status, explicit.text).toBe(200);
+      expect(explicit.body).toMatchObject({ total_amount: "2050.00", vat_amount: "100.00" });
+      expect((await boxes(t, draft.id)).vat).toMatchObject({
+        box3ReverseChargeVat: 50,
+        box9ExpensesVat: 50,
+        box10ReverseChargeVat: 50,
+      });
     }
   );
 
@@ -282,19 +364,19 @@ describe("Purchase VAT audit", () => {
 });
 
 describe("PR 184 bill valuation matrix", () => {
+  const mixed = [
+    domestic,
+    reverseCharge,
+    { ...domestic, description: "Zero", vat_rate: 0, vat_supply_type: "zero_rated" },
+    { ...domestic, description: "Exempt", vat_rate: 0, vat_supply_type: "exempt" },
+  ];
   const encodings = [
     { name: "legacy flag", lines: [reverseCharge] },
     { name: "enum", lines: [reverseCharge] },
     { name: "bill-wide", lines: [domestic], header: true },
-    {
-      name: "mixed",
-      lines: [
-        domestic,
-        reverseCharge,
-        { ...domestic, description: "Zero", vat_rate: 0, vat_supply_type: "zero_rated" },
-        { ...domestic, description: "Exempt", vat_rate: 0, vat_supply_type: "exempt" },
-      ],
-    },
+    { name: "mixed", lines: mixed },
+    { name: "legacy mixed", lines: mixed },
+    { name: "header-only VAT", lines: [domestic] },
   ];
   const cases = encodings.flatMap((encoding) =>
     [1, 1.23, 1.234, 0.004].flatMap((quantity) =>
@@ -319,7 +401,7 @@ describe("PR 184 bill valuation matrix", () => {
     async ({ name, lines, header, quantity, currency, index }) => {
       const t = await (tenant ??= registeredTenant());
       const date = (step: number) =>
-        new Date(Date.UTC(2026, 0, 1 + index * 6 + step)).toISOString().slice(0, 10);
+        new Date(Date.UTC(2026, 0, 1 + index * 7 + step)).toISOString().slice(0, 10);
       const lineItems = lines.map((line) => ({ ...line, quantity }));
       const fields = {
         currency,
@@ -328,8 +410,8 @@ describe("PR 184 bill valuation matrix", () => {
         line_items: lineItems,
       };
       const recurringUrl = `/api/companies/${t.company.id}/recurring-bills`;
-      // Stored templates carry inputs, so even the legacy-flag case uses the equivalent enum
-      // here. The draft fixtures below exercise the legacy flag on persisted bill lines.
+      // Historical templates store input quantities and tax treatments. The persisted draft
+      // fixtures below exercise historical bill rows produced before line VAT and enum-only writes.
       const recurring = await t.as.post(recurringUrl, {
         name: `Matrix ${index}`,
         frequency: "yearly",
@@ -354,21 +436,31 @@ describe("PR 184 bill valuation matrix", () => {
       expect(approvedRun.status, approvedRun.text).toBe(200);
       const baselineTotals = totals(approvedRun.body);
       const baselineVat = await vatBoxes(t, date(0));
+      expect(
+        (await t.as.get(`/api/bills/${run.body.bill.id}`)).body.line_items.map((line: SavedLine) =>
+          Number(line.quantity)
+        )
+      ).toEqual(lines.map(() => quantity));
       const net = Math.round(quantity * 1000 * 100) / 100;
       const lineVat = Math.round(net * 5) / 100;
+      const mixedBill = lines.length > 1;
       expect(baselineTotals).toMatchObject({
         subtotal: (net * lines.length).toFixed(2),
-        vat_amount: (lineVat * (name === "mixed" ? 2 : 1)).toFixed(2),
-        total_amount: (net * lines.length + (name === "mixed" ? lineVat : 0)).toFixed(2),
+        vat_amount: (lineVat * (mixedBill ? 2 : 1)).toFixed(2),
+        total_amount: (
+          net * lines.length +
+          (mixedBill || name === "header-only VAT" ? lineVat : 0)
+        ).toFixed(2),
       });
 
       let changed: { billTotals: ReturnType<typeof totals>; vat: unknown } | undefined;
       for (const [step, path] of [
         [1, "header"],
-        [2, "line"],
-        [3, "full"],
-        [4, "line-price"],
-        [5, "full-price"],
+        [2, "withholding"],
+        [3, "line"],
+        [4, "full"],
+        [5, "line-price"],
+        [6, "full-price"],
       ] as const) {
         const draft = await bill(t, {
           ...fields,
@@ -380,6 +472,19 @@ describe("PR 184 bill valuation matrix", () => {
           await h.sql(
             `UPDATE bill_line_items SET vat_supply_type = $2, reverse_charge = true WHERE bill_id = $1`,
             [draft.id, name === "legacy flag" ? "standard_rated" : "reverse_charge"]
+          );
+        }
+        if (name === "legacy mixed") {
+          await h.sql(
+            `UPDATE bill_line_items SET quantity = ROUND(quantity, 2),
+                reverse_charge = (vat_supply_type = 'reverse_charge') WHERE bill_id = $1`,
+            [draft.id]
+          );
+        }
+        if (name === "header-only VAT") {
+          await h.sql(
+            `UPDATE bill_line_items SET quantity = ROUND(quantity, 2), vat_amount = 0 WHERE bill_id = $1`,
+            [draft.id]
           );
         }
         const url = `/api/bills/${draft.id}`;
@@ -401,11 +506,13 @@ describe("PR 184 bill valuation matrix", () => {
         };
         const patch =
           path === "header"
-            ? { withholding_amount: 0 }
-            : {
-                ...(path.startsWith("full") && editorHeader),
-                line_items: editorLines(before.body.line_items, changePrice),
-              };
+            ? { notes: "Header PATCH" }
+            : path === "withholding"
+              ? { withholding_amount: 0 }
+              : {
+                  ...(path.startsWith("full") && editorHeader),
+                  line_items: editorLines(before.body.line_items, changePrice),
+                };
         const edited = await t.as.patch(url, patch);
         expect(edited.status, edited.text).toBe(200);
         const result = await boxes(t, draft.id, date(step));
