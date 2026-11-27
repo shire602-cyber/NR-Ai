@@ -517,5 +517,7 @@
   "journal.memo.doc.stockSale": "بيع مخزون",
   "journal.memo.doc.stockAdjustment": "تسوية مخزون",
   "journal.memo.doc.stockReturn": "مرتجع مخزون",
-  "journal.memo.doc.text": "{ref}"
+  "journal.memo.doc.text": "{ref}",
+  "journal.postedToast": "تم ترحيل القيد",
+  "journal.postedToastBody": "تم ترحيل قيد اليومية ولا يمكن تعديله بعد الآن."
 }
