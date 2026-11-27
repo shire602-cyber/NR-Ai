@@ -73,17 +73,18 @@ it("F06: Dubai business date drives period locks, stored dates and reversal defa
   expect(await storedDate(next.body.id)).toBe("2026-02-01");
   if (next.body.date) expect(String(next.body.date).slice(0, 10)).toBe("2026-02-01");
 
-  // A plain date is stored as written.
-  const plain = await t.as.post(`${base}/journal`, entry("2026-02-10", "plain"));
+  // A plain date is stored as written. Clock is frozen at Dubai Feb 1, so Feb 10 would be
+  // in the future; use Feb 1 (same Dubai day, still in the open period after the Jan lock).
+  const plain = await t.as.post(`${base}/journal`, entry("2026-02-01", "plain"));
   expect(plain.status, plain.text).toBeLessThan(300);
-  expect(await storedDate(plain.body.id)).toBe("2026-02-10");
-  if (plain.body.date) expect(String(plain.body.date).slice(0, 10)).toBe("2026-02-10");
+  expect(await storedDate(plain.body.id)).toBe("2026-02-01");
+  if (plain.body.date) expect(String(plain.body.date).slice(0, 10)).toBe("2026-02-01");
 
   // Reversal without a date: original date when its period is open.
   const rev = await t.as.post(`/api/journal/${plain.body.id}/reverse`, {});
   expect(rev.status, rev.text).toBe(200);
   const revStored = await storedDate(rev.body.reversalId);
-  expect(revStored).toBe("2026-02-10");
+  expect(revStored).toBe("2026-02-01");
   if (rev.body.reversalDate) expect(String(rev.body.reversalDate).slice(0, 10)).toBe(revStored);
 
   // Reversal without a date once the original's period is locked: today in Dubai.
