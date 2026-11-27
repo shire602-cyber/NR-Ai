@@ -935,3 +935,204 @@ it("L: separate revenue accounts (std 4010, RC 4020) — GL-query approach gives
     expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
   }
 });
+
+it("M: NULL memo_key invoice (legacy pre-0131) — NULL extension finds GL, full credit nets to 0", async () => {
+  // USD 100.01 standard (5%) + USD 100.01 reverse_charge (0%) at 3.6725. Both lines go to the
+  // same bucket (4020). Combined GL = toBase(20002, 3.6725) = 73457 fils = AED 734.57.
+  // After nulling the memo_key the engine must still find the JEs via OR je.memo_key IS NULL.
+  // The source/source_id/entry_kind/reversed_by guards prevent contamination.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000012",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const vatPeriod = { periodStart: "2026-01-01", periodEnd: "2026-03-31" };
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Legacy LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      { description: "Standard services", quantity: 1, unitPrice: 100.01, vatRate: 5 },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 100.01,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  // Null-out the memo_key to simulate a pre-migration-0131 posting.
+  await h.sql(
+    "UPDATE journal_entries SET memo_key = NULL WHERE source = 'invoice' AND source_id = $1 AND entry_kind <> 'reversal'",
+    [draft.body.id]
+  );
+
+  // VAT after NULL: OR je.memo_key IS NULL extension finds the combined GL = 73457 fils.
+  // Box 1 = AED 734.57 (combined bucket, proportional split applied).
+  {
+    const vatInitM = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatInitM.status, vatInitM.text).toBe(201);
+    expect(Number(vatInitM.body.box1bDubaiAmount), "Box 1 after NULL").toBe(734.57);
+  }
+
+  // Full credit note (remainder).
+  const cnM = await t.as.post(`${base(t)}/invoices/${draft.body.id}/credit-note`, { date });
+  expect(cnM.status, cnM.text).toBe(201);
+
+  // After full credit: 0/0 — CN clears the full 73457 fils found via NULL extension.
+  {
+    const vatFinalM = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatFinalM.status, vatFinalM.text).toBe(201);
+    expect(Number(vatFinalM.body.box1bDubaiAmount), "Box 1 = 0 after full credit").toBe(0);
+    expect(Number(vatFinalM.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
+  }
+});
+
+it("N: standard-rated line on zero_rated account (4060) — GL-classification wins, Box 1 = 0, Box 4 = AED 367.29", async () => {
+  // USD 100.01, vatRate=5, revenueAccountId=4060 at 3.6725.
+  // classifySupply → "standard" family; GL posts to 4060 (zero_rated_sales) → "zero_rated".
+  // GL-classification cleanup removes "standard" from netByFamily (not in postedNet).
+  // Box 1b Amount = 0 (no double-count), Box 4 = AED 367.29 (the GL amount).
+  // Box 8 = Box 4 = 367.29.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000013",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const vatPeriod = { periodStart: "2026-01-01", periodEnd: "2026-03-31" };
+  const acc4060N = (await accountByCode(t, "4060")).id;
+  const draftN = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Override LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      {
+        description: "Standard services on zero-rated account",
+        quantity: 1,
+        unitPrice: 100.01,
+        vatRate: 5,
+        revenueAccountId: acc4060N,
+      },
+    ],
+  });
+  expect(draftN.status, draftN.text).toBe(200);
+  const issuedN = await t.as.patch(`/api/invoices/${draftN.body.id}/status`, { status: "sent" });
+  expect(issuedN.status, issuedN.text).toBe(200);
+
+  // toBase(10001, 3.6725) = 36729 fils = AED 367.29.
+  // GL posts to 4060 → "zero_rated" in postedNet. "standard" is removed by cleanup.
+  {
+    const vatInitN = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatInitN.status, vatInitN.text).toBe(201);
+    expect(Number(vatInitN.body.box1bDubaiAmount), "Box 1b = 0 (not double-counted)").toBe(0);
+    expect(Number(vatInitN.body.box4ZeroRatedAmount), "Box 4 = GL amount").toBe(367.29);
+    expect(Number(vatInitN.body.box8TotalAmount), "Box 8 = Box 4 only").toBe(367.29);
+  }
+
+  // Full credit note: 4060 debited by CN, Box 4 nets to 0.
+  const cnN = await t.as.post(`${base(t)}/invoices/${draftN.body.id}/credit-note`, { date });
+  expect(cnN.status, cnN.text).toBe(201);
+
+  {
+    const vatFinalN = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatFinalN.status, vatFinalN.text).toBe(201);
+    expect(Number(vatFinalN.body.box4ZeroRatedAmount), "Box 4 = 0 after CN").toBe(0);
+  }
+});
+
+it("O: three-account invoice (std 4020, zero_rated 4060, exempt 4070) — Box 8 = Box 1 + Box 4 + Box 5 (no double-count)", async () => {
+  // USD 100 std on 4020 + USD 100 on 4060 (zero_rated) + USD 100 on 4070 (exempt) at 3.6725.
+  // toBase(10000, 3.6725) = 36725 fils = AED 367.25 each.
+  // GL-classification: each line's account maps to a distinct VAT 201 family.
+  // Box 1b = 367.25, Box 4 = 367.25, Box 5 = 367.25; Box 8 = 1101.75 (no double-count).
+  // Full CN nets all boxes to 0.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000014",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const vatPeriod = { periodStart: "2026-01-01", periodEnd: "2026-03-31" };
+  const acc4020O = (await accountByCode(t, "4020")).id;
+  const acc4060O = (await accountByCode(t, "4060")).id;
+  const acc4070O = (await accountByCode(t, "4070")).id;
+  const draftO = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Multi-Account LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      {
+        description: "Standard services",
+        quantity: 1,
+        unitPrice: 100,
+        vatRate: 5,
+        revenueAccountId: acc4020O,
+      },
+      {
+        description: "Zero-rated exports",
+        quantity: 1,
+        unitPrice: 100,
+        vatRate: 0,
+        vatSupplyType: "zero_rated",
+        revenueAccountId: acc4060O,
+      },
+      {
+        description: "Exempt supply",
+        quantity: 1,
+        unitPrice: 100,
+        vatRate: 0,
+        vatSupplyType: "exempt",
+        revenueAccountId: acc4070O,
+      },
+    ],
+  });
+  expect(draftO.status, draftO.text).toBe(200);
+  const issuedO = await t.as.patch(`/api/invoices/${draftO.body.id}/status`, { status: "sent" });
+  expect(issuedO.status, issuedO.text).toBe(200);
+
+  // Each line: toBase(10000, 3.6725) = 36725 fils = AED 367.25.
+  // Box 8 = 36725 + 36725 + 36725 = 110175 fils = AED 1101.75 (sum of supply boxes).
+  {
+    const vatInitO = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatInitO.status, vatInitO.text).toBe(201);
+    expect(Number(vatInitO.body.box1bDubaiAmount), "Box 1b = AED 367.25").toBe(367.25);
+    expect(Number(vatInitO.body.box4ZeroRatedAmount), "Box 4 = AED 367.25").toBe(367.25);
+    expect(Number(vatInitO.body.box5ExemptAmount), "Box 5 = AED 367.25").toBe(367.25);
+    expect(
+      Number(vatInitO.body.box8TotalAmount),
+      "Box 8 = Box 1 + Box 4 + Box 5 (no double-count)"
+    ).toBe(1101.75);
+  }
+
+  // Full credit note: all boxes net to 0.
+  const cnO = await t.as.post(`${base(t)}/invoices/${draftO.body.id}/credit-note`, { date });
+  expect(cnO.status, cnO.text).toBe(201);
+
+  {
+    const vatFinalO = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatFinalO.status, vatFinalO.text).toBe(201);
+    expect(Number(vatFinalO.body.box1bDubaiAmount), "Box 1b = 0 after CN").toBe(0);
+    expect(Number(vatFinalO.body.box4ZeroRatedAmount), "Box 4 = 0 after CN").toBe(0);
+    expect(Number(vatFinalO.body.box5ExemptAmount), "Box 5 = 0 after CN").toBe(0);
+    expect(Number(vatFinalO.body.box8TotalAmount), "Box 8 = 0 after CN").toBe(0);
+  }
+});

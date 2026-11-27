@@ -684,7 +684,7 @@ async function collectInvoices(
          JOIN journal_lines jl ON jl.entry_id = je.id
          JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
         WHERE je.company_id = $1 AND je.source = 'invoice' AND je.source_id = ANY($2::uuid[])
-          AND je.memo_key IN ('creditNoteReversal', 'creditNotePartial')
+          AND (je.memo_key IN ('creditNoteReversal', 'creditNotePartial') OR je.memo_key IS NULL)
           AND je.status = 'posted' AND je.entry_kind <> 'reversal' AND je.reversed_by_entry_id IS NULL
         GROUP BY je.source_id, a.code, a.type, a.is_vat_account`,
       [companyId, foreignCreditIds]
@@ -725,7 +725,7 @@ async function collectInvoices(
          JOIN journal_lines jl ON jl.entry_id = je.id
          JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
         WHERE je.company_id = $1 AND je.source = 'invoice' AND je.source_id = ANY($2::uuid[])
-          AND je.memo_key IN ('salesInvoice', 'debitNote')
+          AND (je.memo_key IN ('salesInvoice', 'debitNote') OR je.memo_key IS NULL)
           AND je.status = 'posted' AND je.entry_kind <> 'reversal' AND je.reversed_by_entry_id IS NULL
           AND a.type = 'income'
         GROUP BY je.source_id, a.code`,
@@ -835,17 +835,23 @@ async function collectInvoices(
     if (postedVat && !netByFamily.has("standard")) netByFamily.set("standard", 0);
     // Net override: apply the GL remainder per tax family, adjusted for the document's mix.
     // Source of rawPostedNet:
-    //   - CN:      postedRemainderNet — debit-side of creditNoteReversal JEs (SUM debit−credit).
-    //   - Invoice: postedInvoiceNet   — credit-side of salesInvoice/debitNote JEs (SUM credit−debit).
+    //   - CN:      postedRemainderNet — debit-side of creditNoteReversal/creditNotePartial JEs
+    //              (SUM debit−credit); OR je.memo_key IS NULL for legacy pre-0131 entries.
+    //   - Invoice: postedInvoiceNet   — credit-side of salesInvoice/debitNote JEs (SUM credit−debit);
+    //              OR je.memo_key IS NULL for legacy pre-0131 entries.
     // In both cases rawPostedNet["standard"] holds the combined GL amount for all income accounts
     // that classify as standard_sales (accounts 4010, 4020, etc.), regardless of bucket layout.
     // The block below applies three adjustments:
     // - Pure RC (all lines reverse_charge): standard entry came entirely from RC lines; remap
     //   standard→reverse_charge so credits absorb rounding in the correct family.
-    // - Mixed standard+RC: rawPostedNet["standard"] bundles both families; split proportionally
-    //   using this doc's per-family doc base (stdDocBase / rcDocBase) so stdGL + rcGL = totalGL.
+    // - Mixed standard+RC on standard_sales accounts only: rawPostedNet["standard"] bundles both
+    //   families; split proportionally using this doc's per-family doc base (stdDocBase / rcDocBase)
+    //   so stdGL + rcGL = totalGL. Guard: skip if zero_rated/exempt/out_of_scope already allocated.
     // - Margin lines: taxable base is the VAT-exclusive margin; strip standard so the GL revenue
     //   (which includes purchase cost) is not used. Zero-rated / exempt families are kept.
+    // After the block, the GL-classification cleanup (below) removes line-level families absent from
+    // postedNet to prevent double-counting when a line's vatSupplyType disagrees with its GL account
+    // (e.g. a standard-rated line posted to a zero_rated_sales account).
     const rawPostedNet = postedRemainderNet.get(inv.id) ?? postedInvoiceNet.get(inv.id);
     let postedNet: Map<Vat201Family, number> | undefined;
     if (rawPostedNet) {
@@ -861,8 +867,13 @@ async function collectInvoices(
               ([f, v]) => [f === "standard" ? "reverse_charge" : f, v] as [Vat201Family, number]
             )
           );
-        } else {
-          // Mixed: split rawPostedNet["standard"] proportionally by per-CN doc base.
+        } else if (
+          !mapped.has("zero_rated") &&
+          !mapped.has("exempt") &&
+          !mapped.has("out_of_scope")
+        ) {
+          // Mixed std+RC, all on standard_sales accounts: rawPostedNet["standard"] bundles
+          // both families; split proportionally using per-doc doc base.
           const totalGL = mapped.get("standard") ?? 0;
           const totalDocBase = stdDocBase + rcDocBase;
           if (totalGL > 0 && totalDocBase > 0) {
@@ -879,8 +890,21 @@ async function collectInvoices(
             mapped = new Map([...mapped].filter(([f]) => f !== "standard"));
           }
         }
+        // else: mixed with non-standard revenue accounts. GL families already per-account;
+        // the GL-classification cleanup removes line-level families not in postedNet.
       }
       postedNet = mapped.size > 0 ? mapped : undefined;
+    }
+    // GL classification wins: when rawPostedNet is available, remove line-level families
+    // absent from postedNet so each revenue amount is reported in exactly one Box (the one
+    // matching the posted account code, not the line's vatSupplyType). Applies to both
+    // invoices and CNs. Exception: "standard" is kept for margin-scheme docs because it
+    // represents the VAT-exclusive margin, which the GL standard entry doesn't carry.
+    if (postedNet) {
+      for (const family of [...netByFamily.keys()]) {
+        if (family === "standard" && hasMarginScheme) continue;
+        if (!postedNet.has(family)) netByFamily.delete(family);
+      }
     }
     if (postedNet) {
       for (const [family, net] of postedNet) {
