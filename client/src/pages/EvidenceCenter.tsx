@@ -635,7 +635,7 @@ export default function EvidenceCenter() {
               }
               disabled={exportingPack !== null}
             >
-              <Archive className="mr-2 h-4 w-4" />
+              <Archive className="me-2 h-4 w-4" />
               <T k="pageLabels.sourceZIP" />
             </Button>
             <Button
@@ -649,7 +649,7 @@ export default function EvidenceCenter() {
               }
               disabled={exportingPack !== null}
             >
-              <Download className="mr-2 h-4 w-4" />
+              <Download className="me-2 h-4 w-4" />
               <T k="pageLabels.workbook" />
             </Button>
             <Button
@@ -663,7 +663,7 @@ export default function EvidenceCenter() {
               }
               disabled={exportingPack !== null}
             >
-              <FileDown className="mr-2 h-4 w-4" />
+              <FileDown className="me-2 h-4 w-4" />
               <T k="pageLabels.coverPDF" />
             </Button>
           </div>
@@ -726,13 +726,13 @@ export default function EvidenceCenter() {
                   <TableHead>
                     <T k="journal.source" />
                   </TableHead>
-                  <TableHead className="text-right">
+                  <TableHead className="text-end">
                     <T k="banking.common.amount" />
                   </TableHead>
-                  <TableHead className="text-right">
+                  <TableHead className="text-end">
                     <T k="pages.action" />
                   </TableHead>
-                  <TableHead className="text-right">
+                  <TableHead className="text-end">
                     <T k="pages.audit" />
                   </TableHead>
                 </TableRow>
@@ -769,10 +769,10 @@ export default function EvidenceCenter() {
                         ) : null}
                       </TableCell>
                       <TableCell>{st(issue.sourceType || "company")}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {issue.amount ? formatCurrency(issue.amount, "AED", locale) : "-"}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {issue.href ? (
                           <Button asChild size="sm" variant="outline">
                             <Link href={issue.href}>
@@ -785,7 +785,7 @@ export default function EvidenceCenter() {
                           "-"
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         <div className="flex flex-wrap justify-end gap-2">
                           <Button
                             size="sm"
@@ -872,7 +872,7 @@ export default function EvidenceCenter() {
               }}
               data-testid="button-review-evidence-request"
             >
-              <Send className="mr-2 h-4 w-4" />
+              <Send className="me-2 h-4 w-4" />
               <T k="pageLabels.reviewExactRequest" />
             </Button>
           </div>
@@ -908,11 +908,11 @@ export default function EvidenceCenter() {
                 <TableHead>
                   <T k="pageLabels.evidenceFile" />
                 </TableHead>
-                <TableHead className="text-right">
+                <TableHead className="text-end">
                   <T k="banking.common.amount" />
                 </TableHead>
-                <TableHead className="text-right">{t["evidenceCenter.table.vat"]}</TableHead>
-                <TableHead className="text-right">{t["evidenceCenter.table.open"]}</TableHead>
+                <TableHead className="text-end">{t["evidenceCenter.table.vat"]}</TableHead>
+                <TableHead className="text-end">{t["evidenceCenter.table.open"]}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -967,20 +967,20 @@ export default function EvidenceCenter() {
                         {line.documentHref ? (
                           <Button asChild size="sm" variant="ghost" className="h-7 px-2">
                             <Link href={line.documentHref}>
-                              <Eye className="mr-1.5 h-3.5 w-3.5" />
+                              <Eye className="me-1.5 h-3.5 w-3.5" />
                               <T k="pageLabels.previewSource" />
                             </Link>
                           </Button>
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       {formatCurrency(line.amount, "AED", locale)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       {formatCurrency(Number(line.vatAmount || 0), "AED", locale)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       {line.href ? (
                         <Button asChild size="sm" variant="outline">
                           <Link href={line.href}>{t["evidenceCenter.table.open"]}</Link>
@@ -1098,7 +1098,7 @@ export default function EvidenceCenter() {
                       {ev(item.consequence, item.copy?.consequence)}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-end">
                     <p className={`font-semibold ${scoreTone(item.readinessScore)}`}>
                       {item.readinessScore}%
                     </p>

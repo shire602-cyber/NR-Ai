@@ -35,7 +35,7 @@ export function ReportWorkspacePartA({ m }: { m: DashboardModel }) {
                 key={workspace.persona}
                 type="button"
                 onClick={() => selectDashboardReportPersona(workspace.persona)}
-                className={`rounded-md border p-3 text-left transition-colors ${
+                className={`rounded-md border p-3 text-start transition-colors ${
                   workspace.isSelected
                     ? "border-accent bg-accent/5"
                     : "border-border/70 hover:border-accent hover:bg-muted/60"
