@@ -232,6 +232,61 @@ async function seedPaymentLink(t: Tenant) {
   return createPaymentLinkFixture(t, invoice.id);
 }
 
+/**
+ * Test-only setup: put the company's rows back to what `backup` holds, the way a replace restore
+ * used to. A replace restore now refuses to drop issued documents newer than the backup, so tests
+ * that need the rewound state (to prove what Merge or checkout does next) build it directly.
+ * Counters are left alone, as a replace restore keeps them. This never goes through the restore
+ * service, so it cannot hide a guard: assertions on restore behaviour still use the real routes.
+ */
+async function rewindRowsTo(t: Tenant, backup: { id: string }) {
+  const { buildBackupManifest, openSnapshot } =
+    await import("../../server/services/backup.service");
+  const [row] = await h.sql<{ data_snapshot: string; checksum: string }>(
+    "SELECT data_snapshot, checksum FROM backups WHERE id = $1",
+    [backup.id]
+  );
+  const snap = openSnapshot(row.data_snapshot, row.checksum).snapshot;
+  if (!("tables" in snap)) throw new Error("Expected an accounting snapshot");
+  const manifest = await buildBackupManifest();
+  const counters = new Set(["invoice_number_sequences", "purchase_doc_sequences"]);
+  const plan = manifest.tables.filter(
+    (m) => Object.hasOwn(snap.tables, m.name) && !counters.has(m.name) && m.pk.length > 0
+  );
+  const qi = (name: string) => `"${name.replace(/"/g, '""')}"`;
+  const rowsOf = (name: string) => snap.tables[name] as Record<string, unknown>[];
+  const recordset = (name: string, param: number) =>
+    `json_populate_recordset(NULL::${qi(name)}, $${param}::json)`;
+  const same = (m: { pk: string[] }) => m.pk.map((c) => `t.${qi(c)} = s.${qi(c)}`).join(" AND ");
+  for (const m of [...plan].reverse()) {
+    await h.sql(
+      `DELETE FROM ${qi(m.name)} t WHERE ${m.predicate}
+         AND NOT EXISTS (SELECT 1 FROM ${recordset(m.name, 2)} s WHERE ${same(m)})`,
+      [t.company.id, JSON.stringify(rowsOf(m.name))]
+    );
+  }
+  for (const m of plan) {
+    const rows = rowsOf(m.name);
+    if (!rows.length) continue;
+    const cols = Object.keys(rows[0]).filter((c) => m.columns.includes(c));
+    const json = JSON.stringify(rows);
+    const set = cols.filter((c) => !m.pk.includes(c));
+    if (set.length) {
+      await h.sql(
+        `UPDATE ${qi(m.name)} t SET ${set.map((c) => `${qi(c)} = s.${qi(c)}`).join(", ")}
+           FROM ${recordset(m.name, 1)} s WHERE ${same(m)}`,
+        [json]
+      );
+    }
+    await h.sql(
+      `INSERT INTO ${qi(m.name)} (${cols.map(qi).join(", ")})
+         SELECT ${cols.map((c) => `s.${qi(c)}`).join(", ")} FROM ${recordset(m.name, 1)} s
+          WHERE NOT EXISTS (SELECT 1 FROM ${qi(m.name)} t WHERE ${same(m)})`,
+      [json]
+    );
+  }
+}
+
 describe("AU7 accounting backup integrity", () => {
   it("keeps a cancelled public payment link inactive when restoring a legacy snapshot", async () => {
     const t = await h.createTenant();
@@ -322,6 +377,9 @@ describe("AU7 accounting backup integrity", () => {
       const invoiceId = await draftInvoice(t);
       const backup = await snapshot(t);
       await issueInvoice(t, invoiceId);
+      // Replace refuses to drop the invoice issued after `backup`, so the concurrent replace in the
+      // "cancelled during checkout" scenario restores a backup taken after issuance instead.
+      const issuedBackup = await snapshot(t);
       const lines = await journalLines(t, invoiceId);
       expect(lines.length).toBeGreaterThan(0);
       const { linkId, token } = await createPaymentLinkFixture(t, invoiceId);
@@ -333,7 +391,7 @@ describe("AU7 accounting backup integrity", () => {
       setStripeFetch(async () => {
         if (scenario === "cancelled during checkout") {
           expect(await cancelPaymentLink(t.company.id, linkId)).toBe(true);
-          const response = await replace(t, backup);
+          const response = await replace(t, issuedBackup);
           expect(response.status, response.text).toBe(200);
         }
         return {
@@ -570,8 +628,8 @@ describe("AU7 accounting backup integrity", () => {
       expect((await journalLines(t, noteId)).length).toBeGreaterThan(0);
       const backupWithNote = await snapshot(t);
 
-      const restored = await replace(t, backupWithoutNote);
-      expect(restored.status, restored.text).toBe(200);
+      // Replace now refuses to drop the issued credit note, so rewind the rows directly.
+      await rewindRowsTo(t, backupWithoutNote);
       const noteRows = () => h.sql("SELECT id FROM invoices WHERE id = $1", [noteId]);
       expect(await noteRows()).toEqual([]);
       await startCheckout(t, invoiceId, bank.id, 9000);
@@ -647,8 +705,8 @@ describe("AU7 accounting backup integrity", () => {
       expect(await journal()).toHaveLength(1);
       const after = await snapshot(t);
 
-      const restored = await replace(t, before);
-      expect(restored.status, restored.text).toBe(200);
+      // Replace now refuses to drop the newer payment, so rewind the rows directly.
+      await rewindRowsTo(t, before);
       await startCheckout(t, invoiceId, bank.id, 9000);
       for (const response of [
         await t.as.post(`/api/backups/${before.id}/restore-preview`, { mode: "merge" }),
@@ -701,8 +759,8 @@ describe("AU7 accounting backup integrity", () => {
     expect(await reversals()).toHaveLength(1);
     const after = await snapshot(t);
 
-    const restored = await replace(t, before);
-    expect(restored.status, restored.text).toBe(200);
+    // Replace now refuses to drop the newer reversal journal, so rewind the rows directly.
+    await rewindRowsTo(t, before);
     expect(await payments()).toEqual(originalPayment);
     expect(await reversals()).toEqual([]);
     await startCheckout(t, invoiceId, gl.id, 9000);
