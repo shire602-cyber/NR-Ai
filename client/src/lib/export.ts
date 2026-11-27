@@ -195,16 +195,21 @@ async function postForBlob(
   return { blob, filename };
 }
 
+// Send `locale` only when the caller supplies one; the server defaults to English.
+function localeField(locale?: string): { locale?: "ar" | "en" } {
+  return locale ? { locale: locale === "ar" ? "ar" : "en" } : {};
+}
+
 // Download an .xlsx file containing the supplied OCR-extracted rows. Uses the
 // server-side workbook builder so formatting (bold headers, currency cells,
 // totals row) stays consistent across in-flight and bulk exports.
 export async function downloadOcrExcel(
   rows: OcrExportRow[],
-  options: { filename?: string; assertActive?: () => void } = {}
+  options: { filename?: string; locale?: string; assertActive?: () => void } = {}
 ): Promise<void> {
   const { blob, filename } = await postForBlob(
     "/api/ocr/export-excel",
-    { rows, filename: options.filename },
+    { rows, filename: options.filename, ...localeField(options.locale) },
     "muhasib-ocr-receipts.xlsx",
     { assertActive: options.assertActive }
   );
@@ -216,11 +221,11 @@ export async function downloadOcrExcel(
 // `ids` to filter to a subset, or omit it to export every saved receipt.
 export async function downloadReceiptsExcel(
   companyId: string,
-  options: { ids?: string[]; assertActive?: () => void } = {}
+  options: { ids?: string[]; locale?: string; assertActive?: () => void } = {}
 ): Promise<void> {
   const { blob, filename } = await postForBlob(
     `/api/companies/${companyId}/receipts/export-excel`,
-    options.ids ? { ids: options.ids } : {},
+    { ...(options.ids ? { ids: options.ids } : {}), ...localeField(options.locale) },
     "muhasib-receipts.xlsx",
     { assertActive: options.assertActive }
   );

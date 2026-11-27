@@ -204,7 +204,7 @@ export function registerReceiptRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
-      const { ids } = req.body as z.infer<typeof receiptsExportSchema>;
+      const { ids, locale } = req.body as z.infer<typeof receiptsExportSchema>;
       const all = await storage.getReceiptsByCompanyId(companyId);
       const subset = ids && ids.length > 0 ? all.filter((r) => ids.includes(r.id)) : all;
 
@@ -222,6 +222,7 @@ export function registerReceiptRoutes(app: Express) {
       const buffer = await buildOcrReceiptsWorkbook(rows, {
         sheetName: "Receipts",
         title: "Muhasib Receipts Export",
+        locale,
       });
       const filename = buildExportFilename("muhasib-receipts");
 
@@ -1276,4 +1277,5 @@ export function registerReceiptRoutes(app: Express) {
 // passing an empty array) exports every receipt the company has access to.
 const receiptsExportSchema = z.object({
   ids: z.array(z.string().guid()).max(5000).optional(),
+  locale: z.enum(["en", "ar"]).optional(),
 });

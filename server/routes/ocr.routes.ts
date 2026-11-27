@@ -383,10 +383,11 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
     authMiddleware,
     validate({ body: ocrExportSchema }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { rows, filename } = req.body as z.infer<typeof ocrExportSchema>;
+      const { rows, filename, locale } = req.body as z.infer<typeof ocrExportSchema>;
       const buffer = await buildOcrReceiptsWorkbook(rows as OcrExportRow[], {
         sheetName: "OCR Receipts",
         title: "Muhasib OCR Export",
+        locale,
       });
       const safeName = filename
         ? `${filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80)}.xlsx`
@@ -442,6 +443,7 @@ const ocrExportRowSchema = z.object({
 const ocrExportSchema = z.object({
   rows: z.array(ocrExportRowSchema).min(1, "At least one row is required").max(5000),
   filename: z.string().max(80).optional(),
+  locale: z.enum(["en", "ar"]).optional(),
 });
 
 const genericExportColumnSchema = z.object({
