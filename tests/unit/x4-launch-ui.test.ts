@@ -15,6 +15,7 @@ import {
   buttonByText,
   click,
   flush,
+  flushUntil,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
   renderPage,
@@ -304,7 +305,7 @@ describe("[X4][J3] budget detail", () => {
         /variance/i.test(tab.textContent ?? "")
       ) ?? null
     );
-    await flush(5);
+    await flushUntil(() => byTestId("budget-summary-net") !== null);
     expect(byTestId("budget-summary-income")?.textContent).toContain("110,000");
     expect(byTestId("budget-summary-expense")?.textContent).toContain("52,456.66");
     expect(byTestId("budget-summary-net")?.textContent).toMatch(/20,043\.34/);
