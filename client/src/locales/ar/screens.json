@@ -244,5 +244,11 @@
   "screens.searchClaims": "ابحث برقم المطالبة أو العنوان أو الحالة",
   "screens.noMatchingClaims": "لا توجد مطالبات مطابقة",
   "screens.noMatchingClaimsBody": "جرّب كلمة مختلفة أو امسح البحث.",
-  "screens.claimPaymentRefPlaceholder": "مثال: مرجع التحويل البنكي أو رقم الشيك"
+  "screens.claimPaymentRefPlaceholder": "مثال: مرجع التحويل البنكي أو رقم الشيك",
+  "screens.salesEyebrow": "المبيعات",
+  "screens.searchQuotes": "ابحث برقم العرض أو اسم العميل",
+  "screens.searchCreditNotes": "ابحث بالرقم أو العميل أو الفاتورة",
+  "screens.searchDebitNotes": "ابحث بالرقم أو المورد أو الفاتورة",
+  "screens.noMatchingDocuments": "لا توجد مستندات مطابقة",
+  "screens.noMatchingDocumentsBody": "جرّب كلمة أخرى أو امسح البحث."
 }

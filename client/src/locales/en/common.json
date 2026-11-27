@@ -3,6 +3,7 @@
   "common.cancel": "Cancel",
   "common.close": "Close",
   "common.loading": "Loading…",
+  "common.loadPaused": "Loading is paused. It will resume automatically when possible.",
   "common.refreshFailed": "Couldn't refresh. Showing the last loaded information.",
   "common.save": "Save",
   "common.noPermission": "Your role does not allow this action.",

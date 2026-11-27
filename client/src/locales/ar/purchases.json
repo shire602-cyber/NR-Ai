@@ -201,6 +201,8 @@
   "purchases.debitNote.applied": "تم تطبيق الخصم على الفاتورة",
   "purchases.debitNote.emptyTitle": "لا توجد إشعارات من الموردين بعد",
   "purchases.debitNote.emptyBody": "سجّل إشعارًا مدينًا عندما يمنحك المورد خصمًا أو تُرجع بضاعة.",
+  "purchases.debitNote.billsLoading": "جارٍ تحميل أرقام الفواتير…",
+  "purchases.debitNote.billsLoadFailed": "تعذّر تحميل أرقام الفواتير",
   "purchases.claimReceipt.label": "الإيصال",
   "purchases.claimReceipt.drop": "أرفق الإيصال",
   "purchases.claimReceipt.attached": "تم إرفاق الإيصال",
