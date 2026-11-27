@@ -754,19 +754,47 @@ async function collectInvoices(
       }).vat201Family;
       netByFamily.set(fam, (netByFamily.get(fam) ?? 0) + net);
     });
-    // Apply the posted-AED remainder only for ordinary foreign credits.
-    // Reverse-charge: document lines classify as reverse_charge (Box 1 amount, no VAT); the
-    // revenue account maps to standard via POSTED_ROLE_FAMILY — applying the override creates a
-    // second Box 1 contribution from the same amount.
-    // Margin scheme: the taxable base is the VAT-exclusive margin; the posted revenue includes
-    // purchase cost and would inflate Box 1 beyond the correct margin.
     const hasMarginScheme = totals.lines.some((lt) => lt.marginFils !== null);
-    const usePostedRemainder = !inv.reverseCharge && !hasMarginScheme;
-    const postedVat = usePostedRemainder ? postedRemainderVat.get(inv.id) : undefined;
+    // Use per-line resolved family (not the header flag alone) so explicit reverse_charge
+    // supply types on lines are caught even when inv.reverseCharge is unset.
+    const hasRcLines = totals.lines.some(
+      (_lt, i) =>
+        classifySupply({
+          supplyType: docLines[i]?.vatSupplyType,
+          vatRate: docLines[i]?.vatRate,
+          reverseCharge: inv.reverseCharge,
+        }).vat201Family === "reverse_charge"
+    );
+    // VAT override: RC supplier charges no VAT; margin VAT is on the VAT-exclusive margin only.
+    const postedVat = !hasRcLines && !hasMarginScheme ? postedRemainderVat.get(inv.id) : undefined;
     const vatBase = postedVat ?? toBaseFils(totals.vatFils, rate);
     // The last credit can clear base-currency VAT rounding with only zero-rated lines left.
     if (postedVat && !netByFamily.has("standard")) netByFamily.set("standard", 0);
-    const postedNet = usePostedRemainder ? postedRemainderNet.get(inv.id) : undefined;
+    // Net override: apply the GL remainder per tax family, remapping to the correct family.
+    // - RC lines: revenue maps standard_sales→standard in POSTED_ROLE_FAMILY, but the supply
+    //   classifies as reverse_charge (Box 1 Amount). Remap standard→reverse_charge so split
+    //   credits absorb rounding in the correct family without double-counting.
+    // - Margin lines: taxable base is the VAT-exclusive margin; posted GL revenue includes the
+    //   purchase cost and would inflate Box 1. Strip standard from the remainder.
+    // - Zero-rated / exempt families are unaffected by either treatment.
+    const rawPostedNet = postedRemainderNet.get(inv.id);
+    let postedNet: Map<Vat201Family, number> | undefined;
+    if (rawPostedNet) {
+      let mapped: Map<Vat201Family, number> = rawPostedNet;
+      if (hasMarginScheme) {
+        // Discard the standard entry; the VAT-exclusive margin in netByFamily is used unchanged.
+        mapped = new Map([...mapped].filter(([f]) => f !== "standard"));
+      }
+      if (hasRcLines) {
+        // Remap standard→reverse_charge (same Box 1 Amount; enables split-credit rounding fix).
+        mapped = new Map(
+          [...mapped].map(
+            ([f, v]) => [f === "standard" ? "reverse_charge" : f, v] as [Vat201Family, number]
+          )
+        );
+      }
+      postedNet = mapped.size > 0 ? mapped : undefined;
+    }
     if (postedNet) {
       for (const [family, net] of postedNet) {
         if (net !== 0 && !netByFamily.has(family)) netByFamily.set(family, 0);

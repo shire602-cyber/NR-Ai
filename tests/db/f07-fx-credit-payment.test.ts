@@ -365,3 +365,165 @@ it("D: foreign reverse-charge credit — Box 1 is not inflated by the posted rev
   expect(Number(vat.body.box1bDubaiAmount), "Box 1 amount must net to 0").toBe(0);
   expect(Number(vat.body.box1bDubaiVat), "Box 1 VAT must be 0").toBe(0);
 });
+
+it("E: reverse-charge header flag — split credits tie Box 1 to the fil", async () => {
+  // USD 700 reverse-charge invoice at 3.6725. Two credits of USD 350 each.
+  // toBaseFils(35000, 3.6725) = 128538 fils for each half; the posted GL clears 128537 on
+  // the final credit (257075 − 128538). The remap standard→reverse_charge in postedNet lets
+  // the final credit use the GL remainder instead of re-converting USD 350, so Box 1 = 0.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000004",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Overseas LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    reverseCharge: true,
+    lines: [{ description: "RC Services", quantity: 1, unitPrice: 700, vatRate: 5 }],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  const url = `${base(t)}/invoices/${draft.body.id}/credit-note`;
+  // Partial credit: USD 350. The RC header is inherited; vatRate:5 matches the original line.
+  const cn1 = await t.as.post(url, {
+    date,
+    lines: [{ description: "RC Services", quantity: 1, unitPrice: 350, vatRate: 5 }],
+  });
+  expect(cn1.status, cn1.text).toBe(201);
+  const cn2 = await t.as.post(url, { date });
+  expect(cn2.status, cn2.text).toBe(201);
+
+  const vat = await t.as.post(`${base(t)}/vat-returns/generate`, {
+    periodStart: "2026-01-01",
+    periodEnd: "2026-03-31",
+  });
+  expect(vat.status, vat.text).toBe(201);
+  expect(Number(vat.body.box1bDubaiAmount), "Box 1 amount ties to 0 — no -0.01 drift").toBe(0);
+  expect(Number(vat.body.box1bDubaiVat), "Box 1 VAT is 0").toBe(0);
+});
+
+it("F: explicit reverse_charge supply type (no header flag) — Box 1 not inflated", async () => {
+  // vatSupplyType:'reverse_charge' on a line with no reverseCharge header.
+  // Before the fix, hasRcLines was false (checked only inv.reverseCharge), so the posted
+  // standard-sales remainder was applied and added a second Box 1 Amount contribution.
+  // After the fix, classifySupply per line detects the reverse_charge family; the standard
+  // entry is remapped to reverse_charge instead of being applied as a separate standard family.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000005",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Overseas LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      {
+        description: "RC Services",
+        quantity: 1,
+        unitPrice: 1000,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  const cn = await t.as.post(`${base(t)}/invoices/${draft.body.id}/credit-note`, { date });
+  expect(cn.status, cn.text).toBe(201);
+
+  const vat = await t.as.post(`${base(t)}/vat-returns/generate`, {
+    periodStart: "2026-01-01",
+    periodEnd: "2026-03-31",
+  });
+  expect(vat.status, vat.text).toBe(201);
+  expect(Number(vat.body.box1bDubaiAmount), "Box 1 amount nets to 0").toBe(0);
+  expect(Number(vat.body.box1bDubaiVat), "Box 1 VAT is 0 (supplier charges no VAT)").toBe(0);
+});
+
+it("G: foreign margin-scheme mixed invoice — Box 1 margin/VAT and Box 4 through partial and final credits", async () => {
+  // USD margin line (unitPrice:105, cost:84 → VAT-exclusive margin USD 20 = AED 73.45)
+  // + zero-rated line (USD 700 = AED 2,570.75) at rate 3.6725.
+  // Credit 1: zero-rated USD 350 only. Credit 2: full remainder (margin + zero-rated USD 350).
+  // The old code (strip all postedNet when hasMarginScheme) left Box 4 at −AED 0.01 on credit 2
+  // because toBaseFils(35000, 3.6725)=128538 while the GL cleared 128537 for the final portion.
+  // The new code strips only the standard entry, keeping zero_rated for rounding correction.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000006",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Margin Co LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      {
+        description: "Margin goods",
+        quantity: 1,
+        unitPrice: 105,
+        vatRate: 5,
+        marginScheme: true,
+        marginPurchaseCost: 84,
+      },
+      zero(700),
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  const url = `${base(t)}/invoices/${draft.body.id}/credit-note`;
+  const vatPeriod = { periodStart: "2026-01-01", periodEnd: "2026-03-31" };
+
+  // Initial: Box 1 = VAT-exclusive margin only (AED 73.45), not full revenue.
+  {
+    const vatDraft = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatDraft.status, vatDraft.text).toBe(201);
+    expect(Number(vatDraft.body.box1bDubaiAmount), "Box 1b = margin only").toBe(73.45);
+    expect(Number(vatDraft.body.box1bDubaiVat), "Box 1b VAT = margin VAT").toBe(3.67);
+    expect(Number(vatDraft.body.box4ZeroRatedAmount), "Box 4 = zero-rated amount").toBe(2570.75);
+  }
+
+  // Partial credit: zero-rated line USD 350 only. Margin untouched.
+  const cn1 = await t.as.post(url, { date, lines: [zero(350)] });
+  expect(cn1.status, cn1.text).toBe(201);
+
+  // Full remainder: margin USD 105 + zero-rated USD 350. hasMarginScheme=true for this
+  // credit; zero_rated remainder must still use the GL amount (128537) so Box 4 nets to 0.
+  const cn2 = await t.as.post(url, { date });
+  expect(cn2.status, cn2.text).toBe(201);
+
+  // After full credit: all boxes net to 0 to the fil.
+  {
+    const vatFinal = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatFinal.status, vatFinal.text).toBe(201);
+    expect(Number(vatFinal.body.box1bDubaiAmount), "Box 1 = 0 after full credit").toBe(0);
+    expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
+    expect(
+      Number(vatFinal.body.box4ZeroRatedAmount),
+      "Box 4 = 0 — GL remainder used, not re-converted"
+    ).toBe(0);
+  }
+});

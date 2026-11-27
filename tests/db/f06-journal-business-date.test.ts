@@ -55,6 +55,11 @@ it("F06: Dubai business date drives period locks, stored dates and reversal defa
     expect(r.status, r.text).toBe(200);
   };
 
+  // Seed a January journal before locking January — the undated reversal below needs an
+  // entry whose period is locked so it defaults to Dubai today rather than the original date.
+  const jan = await t.as.post(`${base}/journal`, entry("2026-01-15", "January seed"));
+  expect(jan.status, jan.text).toBeLessThan(300);
+
   await lock("2026-01-31");
 
   // 19:59Z on 31 Jan is 23:59 Dubai on 31 Jan: still the locked month.
@@ -82,10 +87,10 @@ it("F06: Dubai business date drives period locks, stored dates and reversal defa
   if (rev.body.reversalDate) expect(String(rev.body.reversalDate).slice(0, 10)).toBe(revStored);
 
   // Reversal without a date once the original's period is locked: today in Dubai.
-  // Clock is frozen at 2026-01-31T20:30Z → Dubai date is 2026-02-01, UTC date is 2026-01-31.
+  // January is now locked (through 2026-01-31); February 1 is open.
+  // Clock is frozen at 2026-01-31T20:30Z → UTC is 2026-01-31, Dubai is 2026-02-01.
   // The stored date must be "2026-02-01" (Dubai), not "2026-01-31" (UTC).
-  await lock("2026-02-28");
-  const rev2 = await t.as.post(`/api/journal/${next.body.id}/reverse`, {});
+  const rev2 = await t.as.post(`/api/journal/${jan.body.id}/reverse`, {});
   expect(rev2.status, rev2.text).toBe(200);
   const rev2Stored = await storedDate(rev2.body.reversalId);
   expect(rev2Stored).toBe("2026-02-01");
