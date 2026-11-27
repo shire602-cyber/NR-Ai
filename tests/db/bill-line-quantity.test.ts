@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import { useHarness } from "./harness";
 
 const h = useHarness();
+const migration = readFileSync(
+  new URL("../../migrations/0160_widen_bill_line_quantity.sql", import.meta.url),
+  "utf8"
+);
 const line = {
   description: "Fractional purchase",
   quantity: "1.234",
@@ -18,33 +22,69 @@ const bill = {
 
 describe("Four-decimal bill quantities", () => {
   it("applies migration 0160 twice and preserves values and the quantity default", async () => {
-    const migration = readFileSync(
-      new URL("../../migrations/0160_widen_bill_line_quantity.sql", import.meta.url),
-      "utf8"
-    );
     // Temporary tables shadow the migrated tables for this statement only.
     await h.sql(`DO $test$
+      DECLARE
+        po_filenode oid;
       BEGIN
         CREATE TEMP TABLE bill_line_items (quantity numeric(10,2) DEFAULT 1) ON COMMIT DROP;
         CREATE TEMP TABLE purchase_order_lines (
+          id integer GENERATED ALWAYS AS IDENTITY,
           quantity real NOT NULL,
           quantity_received real NOT NULL DEFAULT 0,
           quantity_billed real NOT NULL DEFAULT 0
         ) ON COMMIT DROP;
-        CREATE TEMP TABLE purchase_order_receipt_lines (quantity real NOT NULL) ON COMMIT DROP;
+        CREATE TEMP TABLE purchase_order_receipt_lines (
+          id integer,
+          quantity real NOT NULL
+        ) ON COMMIT DROP;
         INSERT INTO bill_line_items VALUES (12.34), (0.01), (0), (NULL), (DEFAULT);
-        INSERT INTO purchase_order_lines VALUES (2.5, 0.1, 0.1), (2048.001, DEFAULT, DEFAULT);
-        INSERT INTO purchase_order_receipt_lines VALUES (0.1), (2.5);
+        INSERT INTO purchase_order_lines (quantity, quantity_received, quantity_billed)
+          SELECT value, value, value
+          FROM (VALUES (4096.1), (0.1), (2.5), (2048), (1234.5678), (0.0049), (99999.5)) AS v(value);
+        INSERT INTO purchase_order_receipt_lines SELECT id, quantity FROM purchase_order_lines;
+
+        -- PostgreSQL's six-significant-digit float display is the real::numeric reference.
+        PERFORM set_config('extra_float_digits', '0', true);
+        CREATE TEMP TABLE legacy_quantities ON COMMIT DROP AS
+          SELECT id, quantity::text AS displayed FROM purchase_order_lines;
+        INSERT INTO purchase_order_lines (quantity, quantity_received, quantity_billed)
+          VALUES (0.00004, 0.00004, 0.00004), (0, 0.00004, 0.00004), (2.5, DEFAULT, DEFAULT);
+        INSERT INTO purchase_order_receipt_lines VALUES (8, 0.00004);
+
         EXECUTE $migration$${migration}$migration$;
         IF (SELECT format_type(atttypid, atttypmod) FROM pg_attribute
             WHERE attrelid = 'pg_temp.bill_line_items'::regclass AND attname = 'quantity')
             IS DISTINCT FROM 'numeric(16,4)' THEN
           RAISE EXCEPTION 'Migration did not widen the quantity column';
         END IF;
+        IF EXISTS (
+          SELECT 1 FROM legacy_quantities legacy
+          JOIN purchase_order_lines po USING (id)
+          JOIN purchase_order_receipt_lines receipt USING (id)
+          WHERE ARRAY[po.quantity, po.quantity_received, po.quantity_billed, receipt.quantity]
+            IS DISTINCT FROM array_fill(round(legacy.displayed::numeric, 4), ARRAY[4])
+        ) OR (SELECT quantity::text FROM purchase_order_lines WHERE id = 1)
+          IS DISTINCT FROM '4096.1000' THEN
+          RAISE EXCEPTION 'Migration changed legacy decimals';
+        END IF;
+        IF (SELECT array_agg(ARRAY[quantity, quantity_received, quantity_billed] ORDER BY id)
+            FROM purchase_order_lines WHERE id >= 8)
+            IS DISTINCT FROM ARRAY[[0.0001, 0.0001, 0.0001], [0, 0, 0], [2.5, 0, 0]]::numeric[]
+          OR (SELECT quantity::text FROM purchase_order_receipt_lines WHERE id = 8)
+            IS DISTINCT FROM '0.0001' THEN
+          RAISE EXCEPTION 'Migration lost tiny positive quantities or let counters exceed the order';
+        END IF;
+
         INSERT INTO bill_line_items VALUES (1.234), (0.004), (DEFAULT);
-        INSERT INTO purchase_order_lines VALUES (2048.0001, 2048.0001, 0.0001);
-        INSERT INTO purchase_order_receipt_lines VALUES (2048.0001);
+        INSERT INTO purchase_order_lines (quantity, quantity_received, quantity_billed)
+          VALUES (2048.0001, 2048.0001, 0.0001);
+        INSERT INTO purchase_order_receipt_lines VALUES (11, 2048.0001);
+        po_filenode := pg_relation_filenode('pg_temp.purchase_order_lines'::regclass);
         EXECUTE $migration$${migration}$migration$;
+        IF pg_relation_filenode('pg_temp.purchase_order_lines'::regclass) <> po_filenode THEN
+          RAISE EXCEPTION 'Rerun rewrote migrated purchase order lines';
+        END IF;
         IF (SELECT array_agg(quantity ORDER BY quantity NULLS LAST) FROM bill_line_items)
             IS DISTINCT FROM ARRAY[0, 0.004, 0.01, 1, 1, 1.234, 12.34, NULL]::numeric[] THEN
           RAISE EXCEPTION 'Migration changed stored quantities or the default';
@@ -59,14 +99,38 @@ describe("Four-decimal bill quantities", () => {
         ) THEN
           RAISE EXCEPTION 'Migration did not widen all purchase order and receipt quantities';
         END IF;
-        IF (SELECT array_agg(ARRAY[quantity, quantity_received, quantity_billed] ORDER BY quantity)
-            FROM purchase_order_lines)
-            IS DISTINCT FROM ARRAY[[2.5, 0.1, 0.1], [2048.0001, 2048.0001, 0.0001], [2048.001, 0, 0]]::numeric[]
-          OR (SELECT array_agg(quantity ORDER BY quantity) FROM purchase_order_receipt_lines)
-            IS DISTINCT FROM ARRAY[0.1, 2.5, 2048.0001]::numeric[] THEN
-          RAISE EXCEPTION 'Migration changed purchase order or receipt quantities';
+        IF (SELECT ARRAY[quantity, quantity_received, quantity_billed]
+            FROM purchase_order_lines WHERE id = 11)
+            IS DISTINCT FROM ARRAY[2048.0001, 2048.0001, 0.0001]::numeric[]
+          OR (SELECT quantity FROM purchase_order_receipt_lines WHERE id = 11)
+            IS DISTINCT FROM 2048.0001 THEN
+          RAISE EXCEPTION 'Rerun changed numeric quantities';
         END IF;
       END $test$`);
+  });
+
+  it("bills AED 4,096,100.00 by default for a migrated legacy quantity of 4096.1", async () => {
+    const t = await h.createTenant();
+    const po = await t.as.post(`/api/companies/${t.company.id}/purchase-orders`, {
+      vendorName: bill.vendor_name,
+      date: bill.bill_date,
+      lines: [{ description: "Legacy purchase", quantity: 4096.1, unitPrice: 1000, vatRate: 0 }],
+    });
+    expect(po.status, po.text).toBe(201);
+
+    // Put the only stored PO line into the legacy real type, then apply 0160 on the live test tables.
+    await h.sql(`
+      ALTER TABLE purchase_order_lines ALTER COLUMN quantity TYPE real;
+      ${migration}
+    `);
+    const url = `/api/purchase-orders/${po.body.id}`;
+    expect((await t.as.post(`${url}/approve`, {})).status).toBe(200);
+    const result = await t.as.post(`${url}/convert-to-bill`, {});
+    expect(result.status, result.text).toBe(201);
+    expect(result.body.bill).toMatchObject({
+      subtotal: "4096100.00",
+      line_items: [{ quantity: "4096.1000", amount: "4096100.00" }],
+    });
   });
 
   it.each(["ordered", "received", "explicit"])(
