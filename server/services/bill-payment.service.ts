@@ -13,6 +13,7 @@
  */
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { todayDubai } from "@shared/accounting-date";
+import { billLineAmount, billLineSupplyType } from "@shared/bill-line-edit";
 import type { Request } from "express";
 import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
@@ -268,25 +269,29 @@ export interface BillWriteResult {
   warnings: Array<{ code: string; message: string }>;
 }
 
-type BillFieldsInput = Partial<BillCreateInput> & Pick<BillUpdateInput, "line_items">;
+type BillFieldsInput = Omit<Partial<BillCreateInput>, "line_items"> &
+  Pick<BillUpdateInput, "line_items">;
+
+interface SavedBillLine {
+  id: string;
+  quantity: string | null;
+  unit_price: string;
+  amount: string | null;
+  vat_amount: string;
+  vat_rate: string | null;
+  vat_supply_type: string;
+  reverse_charge: boolean;
+  account_id: string | null;
+  product_id: string | null;
+  purchase_order_line_id: string | null;
+  cost_center_id: string | null;
+}
 
 interface PreparedBill {
   header: Record<string, unknown>;
   lines: Array<Record<string, unknown>> | null;
-  clearLineReverseCharge: boolean;
+  legacyLineTreatments: Array<{ id: string; supplyType: string }>;
   warnings: Array<{ code: string; message: string }>;
-}
-
-function assertBillLineQuantity(quantity: number | undefined, line: number) {
-  // bill_line_items.quantity is numeric(10,2).
-  if (quantity !== undefined && quantity < 0.005) {
-    throw new DomainError(
-      "INVALID_BILL_QUANTITY",
-      400,
-      { line },
-      "Quantity must round to at least 0.01"
-    );
-  }
 }
 
 /** Validate + compute everything for a bill create/update; no writes. */
@@ -352,7 +357,8 @@ async function prepareBill(
     String(get("currency", existing?.currency ?? companyBase)),
     companyBase
   );
-  const reverseCharge = get("reverse_charge", existing?.reverse_charge ?? false) === true;
+  const reverseCharge =
+    get("reverse_charge", existing?.reverse_charge && !existing.is_import) === true;
   const isImport = get("is_import", existing?.is_import ?? false) === true;
   if (
     !existing ||
@@ -372,49 +378,87 @@ async function prepareBill(
   }
   if (input.is_import !== undefined || !existing) header.is_import = isImport;
 
-  // Turning off a bill-wide treatment converts its reverse-charge lines to domestic VAT.
-  const clearLineReverseCharge =
-    !input.line_items &&
-    !!(existing?.reverse_charge || existing?.is_import) &&
-    !reverseCharge &&
-    !isImport;
+  const wasBillWide = !!(existing?.reverse_charge || existing?.is_import);
+  const billWideChanged = wasBillWide !== (reverseCharge || isImport);
 
   let lines: Array<Record<string, unknown>> | null = null;
+  let legacyLineTreatments: PreparedBill["legacyLineTreatments"] = [];
   const recomputeNeeded =
     !!input.line_items ||
-    input.reverse_charge !== undefined ||
-    input.is_import !== undefined ||
+    billWideChanged ||
+    (!!existing && isImport !== existing.is_import) ||
     input.import_vat_amount !== undefined ||
     input.withholding_amount !== undefined;
   if (recomputeNeeded) {
-    interface SrcLine {
-      description: string;
-      quantity: number;
-      unitPriceFils: number;
-      vatRate: number | null;
-      supplyType: string | null;
-      accountId: string | null;
-      productId: string | null;
-      poLineId: string | null;
-      costCenterId: string | null;
-    }
-    const src: SrcLine[] | undefined = input.line_items?.map((l, i) => {
-      assertBillLineQuantity(l.quantity, i);
+    const savedLines = existing
+      ? ((
+          await ledgerQueryable(tx).query(
+            `SELECT id, quantity, unit_price, amount, vat_amount, vat_rate, vat_supply_type,
+                  reverse_charge, account_id, product_id, purchase_order_line_id, cost_center_id
+             FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at, id`,
+            [existing.id]
+          )
+        ).rows as SavedBillLine[])
+      : [];
+    // Both edit paths resolve a legacy flag against the same original header. Explicit treatment
+    // now lives in the enum alone, so a header toggle leaves explicit reverse-charge lines intact.
+    const savedById = new Map(savedLines.map((line) => [line.id, line]));
+    const usedLineIds = new Set<string>();
+    const src = input.line_items?.map((l, i) => {
+      const saved = l.id ? savedById.get(l.id) : undefined;
+      if (l.id && !saved) throw new DomainError("BILL_LINE_NOT_FOUND", 404);
+      if (l.id && usedLineIds.has(l.id)) throw new DomainError("DUPLICATE_BILL_LINE", 400);
+      if (l.id) usedLineIds.add(l.id);
+      const savedQuantity = Number(saved?.quantity ?? 1);
+      const quantity = l.quantity ?? savedQuantity;
+      if (quantity === 0 && (!saved || savedQuantity !== 0)) {
+        throw new DomainError(
+          "INVALID_BILL_QUANTITY",
+          400,
+          { line: i },
+          "Quantity must be positive"
+        );
+      }
+      const previousSupply = saved ? billLineSupplyType(saved, wasBillWide) : null;
+      const supplyType = l.vat_supply_type ?? previousSupply;
+      const previousRate = saved ? (Number(saved.vat_rate ?? 5) === 0 ? 0 : 5) : null;
+      const vatRate = l.vat_rate ?? (supplyType === previousSupply ? previousRate : null);
+      const accountId = l.account_id === undefined ? (saved?.account_id ?? null) : l.account_id;
+      const savedUnitPrice = filsOf(saved?.unit_price);
+      const unchanged =
+        !!saved &&
+        quantity === savedQuantity &&
+        l.unit_price === savedUnitPrice &&
+        supplyType === previousSupply &&
+        vatRate === previousRate &&
+        accountId === saved.account_id;
       return {
         description: l.description,
-        quantity: l.quantity ?? 1,
+        quantity,
         unitPriceFils: l.unit_price,
-        vatRate: l.vat_rate ?? null,
-        supplyType: l.vat_supply_type ?? null,
-        accountId: l.account_id ?? null,
-        productId: l.product_id ?? null,
+        amountFils: billLineAmount(
+          quantity,
+          l.unit_price,
+          saved && {
+            quantity: savedQuantity,
+            unitPriceFils: savedUnitPrice,
+            amountFils: filsOf(saved.amount),
+          }
+        ),
+        vatFils: unchanged ? filsOf(saved.vat_amount) : undefined,
+        vatRate,
+        supplyType,
+        accountId,
+        productId: l.product_id === undefined ? (saved?.product_id ?? null) : l.product_id,
         poLineId: l.purchase_order_line_id ?? null,
-        costCenterId: l.cost_center_id ?? null,
+        costCenterId:
+          l.cost_center_id === undefined ? (saved?.cost_center_id ?? null) : l.cost_center_id,
+        savedTreatment: unchanged && !billWideChanged ? saved : null,
       };
     });
     if (src && input.line_items) {
       // A2 (C3): an edit keeps each line's purchase-order link so the bill still clears GRNI.
-      await linkPurchaseOrderLines(companyId, existing, input.line_items, src, tx);
+      await linkPurchaseOrderLines(companyId, existing, savedLines, input.line_items, src, tx);
     }
     if (src) {
       await assertCostCenters(
@@ -458,24 +502,24 @@ async function prepareBill(
           ? filsOf(existing?.withholding_amount)
           : (input.withholding_amount ?? 0),
     };
-    const replacement = src ? computeBillTotals({ ...tax, lines: src }) : null;
-    const totals =
-      replacement ??
-      sumBillTotals({
-        ...tax,
-        lines: (
-          await ledgerQueryable(tx).query(
-            `SELECT amount, vat_amount, reverse_charge, vat_supply_type
-              FROM bill_line_items WHERE bill_id = $1`,
-            [existing?.id]
-          )
-        ).rows.map((l) => ({
+    const replacement = src ? computeBillTotals({ lines: src }).lines : null;
+    if (!replacement && billWideChanged) {
+      legacyLineTreatments = savedLines
+        .filter((line) => line.reverse_charge)
+        .map((line) => ({ id: line.id, supplyType: billLineSupplyType(line, wasBillWide) }));
+    }
+    const totals = sumBillTotals({
+      ...tax,
+      lines:
+        replacement ??
+        savedLines.map((l) => ({
           amountFils: filsOf(l.amount),
           vatFils: filsOf(l.vat_amount),
-          reverseCharge:
-            !clearLineReverseCharge && (l.reverse_charge || l.vat_supply_type === "reverse_charge"),
+          reverseCharge: billWideChanged
+            ? billLineSupplyType(l, wasBillWide) === "reverse_charge"
+            : l.reverse_charge || l.vat_supply_type === "reverse_charge",
         })),
-      });
+    });
     header.subtotal = fromFils(totals.subtotalFils);
     header.vat_amount = fromFils(totals.vatFils);
     header.total_amount = fromFils(totals.totalFils);
@@ -488,17 +532,17 @@ async function prepareBill(
     if (src && replacement) {
       lines = src.map((l, i) => ({
         description: l.description,
-        quantity: String(replacement.lines[i].quantity),
+        quantity: String(replacement[i].quantity),
         unit_price: fromFils(l.unitPriceFils),
-        vat_rate: replacement.lines[i].vatRate,
-        amount: fromFils(replacement.lines[i].amountFils),
-        vat_amount: fromFils(replacement.lines[i].vatFils),
-        vat_supply_type: replacement.lines[i].supplyType,
+        vat_rate: replacement[i].vatRate,
+        amount: fromFils(replacement[i].amountFils),
+        vat_amount: fromFils(replacement[i].vatFils),
+        vat_supply_type: l.savedTreatment?.vat_supply_type ?? replacement[i].supplyType,
         account_id: l.accountId,
         product_id: l.productId,
         purchase_order_line_id: l.poLineId,
         cost_center_id: l.costCenterId,
-        reverse_charge: replacement.lines[i].reverseCharge,
+        reverse_charge: l.savedTreatment?.reverse_charge ?? false,
       }));
     }
   }
@@ -517,36 +561,29 @@ async function prepareBill(
         "zones), set reverse_charge explicitly.",
     });
   }
-  return { header, lines, clearLineReverseCharge, warnings };
+  return { header, lines, legacyLineTreatments, warnings };
 }
 
 /**
  * A2 (C3): resolve each edited line's purchase-order line. A line that omits
- * `purchase_order_line_id` inherits the link of the stored line it replaces (same product first,
- * else same position with the same product); `null` unlinks it. Explicit ids must be lines of
+ * `purchase_order_line_id` inherits the link of the stored line it replaces (by id, then by product
+ * or position for older callers); `null` unlinks it. Explicit ids must be lines of
  * the bill's own purchase order (or, for a new bill, of a purchase order of the company) and
  * each PO line is invoiced by at most one line of the bill.
  */
 async function linkPurchaseOrderLines(
   companyId: string,
   existing: BillRow | null,
-  input: Array<{ product_id?: string | null; purchase_order_line_id?: string | null }>,
+  prev: SavedBillLine[],
+  input: Array<{ id?: string; purchase_order_line_id?: string | null }>,
   src: Array<{ productId: string | null; poLineId: string | null }>,
   tx?: LedgerTx
 ): Promise<void> {
   const poId = existing
     ? ((existing as unknown as { purchase_order_id?: string | null }).purchase_order_id ?? null)
     : null;
-  const prev = existing
-    ? ((
-        await ledgerQueryable(tx).query(
-          `SELECT product_id, purchase_order_line_id FROM bill_line_items
-            WHERE bill_id = $1 ORDER BY created_at, id`,
-          [existing.id]
-        )
-      ).rows as Array<{ product_id: string | null; purchase_order_line_id: string | null }>)
-    : [];
   const used = new Set<string>();
+  const matched = new Set(input.map((line) => line.id));
   const explicit = input
     .map((l) => l.purchase_order_line_id)
     .filter((v): v is string => typeof v === "string");
@@ -555,10 +592,12 @@ async function linkPurchaseOrderLines(
     if (l.purchase_order_line_id !== undefined) return;
     const free = (r: { purchase_order_line_id: string | null }) =>
       !!r.purchase_order_line_id && !used.has(r.purchase_order_line_id);
+    const available = (r: SavedBillLine) => !matched.has(r.id) && free(r);
     const pid = src[i].productId;
-    const hit =
-      (pid ? prev.find((r) => free(r) && r.product_id === pid) : undefined) ??
-      (prev[i] && free(prev[i]) && (prev[i].product_id ?? null) === pid ? prev[i] : undefined);
+    const hit = l.id
+      ? prev.find((r) => r.id === l.id && free(r) && r.product_id === pid)
+      : ((pid ? prev.find((r) => available(r) && r.product_id === pid) : undefined) ??
+        (prev[i] && available(prev[i]) && prev[i].product_id === pid ? prev[i] : undefined));
     if (hit?.purchase_order_line_id) {
       src[i].poLineId = hit.purchase_order_line_id;
       used.add(hit.purchase_order_line_id);
@@ -623,15 +662,15 @@ async function writeLines(tx: LedgerTx, billId: string, lines: Array<Record<stri
 async function applyBillLines(tx: LedgerTx, billId: string, prepared: PreparedBill) {
   if (prepared.lines) {
     await writeLines(tx, billId, prepared.lines);
-  } else if (prepared.clearLineReverseCharge) {
+    return;
+  }
+  for (const line of prepared.legacyLineTreatments) {
     await txRows(
       tx,
       `UPDATE bill_line_items
-          SET reverse_charge = false,
-              vat_supply_type = CASE WHEN vat_supply_type = 'reverse_charge'
-                                     THEN 'standard_rated' ELSE vat_supply_type END
-        WHERE bill_id = $1 AND (reverse_charge OR vat_supply_type = 'reverse_charge')`,
-      [billId]
+          SET reverse_charge = false, vat_supply_type = $3
+        WHERE bill_id = $1 AND id = $2`,
+      [billId, line.id, line.supplyType]
     );
   }
 }
@@ -2023,7 +2062,6 @@ export async function createRecurringBill(
   actorId: string,
   input: RecurringBillCreateInput
 ) {
-  input.template.line_items.forEach((line, i) => assertBillLineQuantity(line.quantity, i));
   // C1 (RH1): every occurrence becomes a bill; refuse a control account on the template up front.
   await assertChosenAccountsNotControl(
     companyId,

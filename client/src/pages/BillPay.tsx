@@ -85,6 +85,8 @@ import { BillItemPicker } from "@/components/bills/BillItemPicker";
 import { isStockItem, purchasePriceOf } from "@/lib/purchase-pickers";
 import { ScrollTabs } from "@/components/ui/scroll-tabs";
 import type { BillCaptureResult, BillCaptureField } from "@shared/bill-capture";
+import { billLineAmount, billLineSupplyType } from "@shared/bill-line-edit";
+import { MoneyError } from "@shared/money";
 import { EInvoiceOriginTag } from "@/components/einvoice/EInvoiceListCell";
 import {
   billPayTabFromSearch,
@@ -290,6 +292,7 @@ interface BillLineItem {
   unit_price: string;
   vat_rate: string;
   amount: string;
+  vat_amount?: string | null;
   account_id: string | null;
   cost_center_id?: string | null;
   vat_supply_type?: string | null;
@@ -341,16 +344,28 @@ interface AgingReport {
 // Schemas
 // ===========================
 
-const billLineSchema = z.object({
-  description: z.string().min(1, "forms.errors.descriptionRequired"),
-  quantity: z.coerce.number().min(0.01, "forms.errors.quantityPositive"),
-  unit_price: z.coerce.number().min(0, "forms.errors.priceNonNegative"),
-  vat_rate: z.coerce.number().default(5),
-  vat_supply_type: z.string().default("standard_rated"),
-  account_id: z.string().optional(),
-  cost_center_id: z.string().optional(),
-  product_id: z.string().optional(),
-});
+const billLineSchema = z
+  .object({
+    savedLineId: z.string().optional(),
+    savedQuantityIsZero: z.boolean().optional(),
+    description: z.string().min(1, "forms.errors.descriptionRequired"),
+    quantity: z.preprocess(
+      (value) => (value === "" ? NaN : value),
+      z.coerce
+        .number({ error: "forms.errors.quantityPositive" })
+        .min(0, "forms.errors.quantityPositive")
+    ),
+    unit_price: z.coerce.number().min(0, "forms.errors.priceNonNegative"),
+    vat_rate: z.coerce.number().default(5),
+    vat_supply_type: z.string().default("standard_rated"),
+    account_id: z.string().optional(),
+    cost_center_id: z.string().optional(),
+    product_id: z.string().optional(),
+  })
+  .refine((line) => line.quantity > 0 || (line.savedLineId && line.savedQuantityIsZero), {
+    path: ["quantity"],
+    message: "forms.errors.quantityPositive",
+  });
 
 const billFormSchema = z.object({
   vendor_id: z.string().optional(),
@@ -629,6 +644,13 @@ export default function BillPay() {
     });
   };
 
+  const savedBillLines = useMemo(
+    () => new Map(editingBill?.line_items.map((line) => [line.id, line])),
+    [editingBill]
+  );
+  const savedLine = (id?: string) => (id ? savedBillLines.get(id) : undefined);
+  const wasBillWide = !!(editingBill?.reverse_charge || editingBill?.is_import);
+
   const buildBillPayload = (data: BillFormData) => ({
     vendor_id: data.vendor_id || null,
     vendor_name: data.vendor_name,
@@ -638,23 +660,30 @@ export default function BillPay() {
     due_date: data.due_date ? ymd(data.due_date) : null,
     currency: data.currency,
     exchange_rate: data.currency !== "AED" && data.exchange_rate ? data.exchange_rate : null,
-    reverse_charge: data.reverse_charge || data.is_import,
+    reverse_charge: data.reverse_charge,
     is_import: data.is_import,
     customs_declaration_no: data.is_import ? data.customs_declaration_no || null : null,
     import_vat_amount: data.is_import && data.import_vat_amount ? data.import_vat_amount : null,
     place_of_supply: data.place_of_supply || null,
     category: data.category || null,
     notes: data.notes || null,
-    line_items: data.line_items.map((l) => ({
-      description: l.description,
-      quantity: l.quantity,
-      unit_price: l.unit_price,
-      vat_supply_type: l.vat_supply_type,
-      vat_rate: l.vat_rate,
-      account_id: l.account_id || null,
-      cost_center_id: l.cost_center_id || null,
-      product_id: l.product_id || null,
-    })),
+    line_items: data.line_items.map((l) => {
+      const saved = savedLine(l.savedLineId);
+      return {
+        id: l.savedLineId,
+        description: l.description,
+        quantity: l.quantity,
+        unit_price: l.unit_price,
+        vat_supply_type:
+          saved && l.vat_supply_type === billLineSupplyType(saved, wasBillWide)
+            ? undefined
+            : l.vat_supply_type,
+        vat_rate: l.vat_rate,
+        account_id: l.account_id || null,
+        cost_center_id: l.cost_center_id || null,
+        product_id: l.product_id || null,
+      };
+    }),
   });
 
   /** WQ2: the file chosen in the editor becomes the bill's attachment once the bill is saved. */
@@ -875,7 +904,7 @@ export default function BillPay() {
         currency: detail.currency || "AED",
         exchange_rate:
           detail.currency && detail.currency !== "AED" ? String(detail.exchange_rate ?? "") : "",
-        reverse_charge: detail.reverse_charge === true,
+        reverse_charge: detail.reverse_charge === true && !detail.is_import,
         is_import: detail.is_import === true,
         customs_declaration_no: detail.customs_declaration_no || "",
         import_vat_amount:
@@ -888,15 +917,16 @@ export default function BillPay() {
         line_items:
           detail.line_items.length > 0
             ? detail.line_items.map((l) => ({
+                savedLineId: l.id,
+                savedQuantityIsZero: Number(l.quantity ?? 1) === 0,
                 description: l.description,
-                quantity: Number(l.quantity),
+                quantity: Number(l.quantity ?? 1),
                 unit_price: Number(l.unit_price),
-                vat_rate: Number(l.vat_rate),
-                vat_supply_type:
-                  l.reverse_charge && (!l.vat_supply_type || l.vat_supply_type === "standard_rated")
-                    ? "reverse_charge"
-                    : (l.vat_supply_type ??
-                      (Number(l.vat_rate) === 0 ? "zero_rated" : "standard_rated")),
+                vat_rate: Number(l.vat_rate ?? 5),
+                vat_supply_type: billLineSupplyType(
+                  l,
+                  !!(detail.reverse_charge || detail.is_import)
+                ),
                 account_id: l.account_id || "",
                 cost_center_id: l.cost_center_id || "",
                 product_id: l.product_id || "",
@@ -988,24 +1018,45 @@ export default function BillPay() {
 
   // Watch line items for live total calculation
   const watchLines = billForm.watch("line_items");
-  const subtotal = watchLines.reduce(
-    (sum, line) => sum + (Number(line.quantity) || 0) * (Number(line.unit_price) || 0),
-    0
-  );
+  const valuedLines = watchLines.map((line) => {
+    const saved = savedLine(line.savedLineId);
+    const quantity = Number(line.quantity) || 0;
+    const unitPriceFils = Math.round((Number(line.unit_price) || 0) * 100);
+    const savedValuation = saved && {
+      quantity: Number(saved.quantity ?? 1),
+      unitPriceFils: Math.round(Number(saved.unit_price) * 100),
+      amountFils: Math.round(Number(saved.amount) * 100),
+    };
+    let amount = (quantity * unitPriceFils) / 100;
+    try {
+      amount = billLineAmount(quantity, unitPriceFils, savedValuation) / 100;
+    } catch (error) {
+      if (!(error instanceof MoneyError)) throw error;
+      // Keep rendering while the user is typing an out-of-range price or quantity.
+    }
+    const unchanged =
+      saved &&
+      quantity === savedValuation?.quantity &&
+      unitPriceFils === savedValuation.unitPriceFils &&
+      line.vat_supply_type === billLineSupplyType(saved, wasBillWide) &&
+      Number(line.vat_rate) === Number(saved.vat_rate ?? 5) &&
+      (line.account_id || null) === saved.account_id;
+    const vat =
+      unchanged && saved.vat_amount != null
+        ? Number(saved.vat_amount)
+        : Math.round(amount * line.vat_rate) / 100;
+    return { amount, vat, reverseCharge: line.vat_supply_type === "reverse_charge" };
+  });
+  const subtotal = valuedLines.reduce((sum, line) => sum + line.amount, 0);
   const watchReverseCharge = billForm.watch("reverse_charge") || billForm.watch("is_import");
   const watchCurrency = billForm.watch("currency");
   const watchIsImport = billForm.watch("is_import");
-  const lineVat = (line: BillFormData["line_items"][number]) =>
-    ((Number(line.quantity) || 0) * (Number(line.unit_price) || 0) * line.vat_rate) / 100;
   const vatAmount =
     (watchIsImport && Number(billForm.watch("import_vat_amount"))) ||
-    watchLines.reduce((sum, line) => sum + lineVat(line), 0);
+    valuedLines.reduce((sum, line) => sum + line.vat, 0);
   const payableVat = watchReverseCharge
     ? 0
-    : watchLines.reduce(
-        (sum, line) => sum + (line.vat_supply_type === "reverse_charge" ? 0 : lineVat(line)),
-        0
-      );
+    : valuedLines.reduce((sum, line) => sum + (line.reverseCharge ? 0 : line.vat), 0);
   const totalAmount = subtotal + payableVat - Number(editingBill?.withholding_amount ?? 0);
   const cashAccounts = postablePaymentAccounts(accounts);
 
@@ -1609,7 +1660,12 @@ export default function BillPay() {
                           <FormItem>
                             <FormLabel className={lineLabelClass}>{t["forms.col.qty"]}</FormLabel>
                             <FormControl>
-                              <Input {...field} type="number" step="0.01" />
+                              <Input
+                                {...field}
+                                type="number"
+                                min={watchLines[index]?.savedQuantityIsZero ? 0 : 0.0001}
+                                step="0.0001"
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1635,10 +1691,7 @@ export default function BillPay() {
                     />
                     <LineAmount label={t["forms.col.amount"]}>
                       <Money
-                        amount={
-                          (Number(watchLines[index]?.quantity) || 0) *
-                          (Number(watchLines[index]?.unit_price) || 0)
-                        }
+                        amount={valuedLines[index]?.amount ?? 0}
                         currency={watchCurrency || "AED"}
                       />
                     </LineAmount>

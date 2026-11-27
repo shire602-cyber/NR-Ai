@@ -134,6 +134,8 @@ export async function txRows<T = Record<string, unknown>>(
 export interface BillLineCalcInput {
   quantity?: number | null;
   unitPriceFils: number;
+  amountFils?: number;
+  vatFils?: number;
   vatRate?: number | null; // 0 | 5 (percent)
   supplyType?: string | null;
 }
@@ -176,11 +178,13 @@ const ZERO_VAT_SUPPLY = new Set(["zero_rated", "exempt", "out_of_scope"]);
 export function computeBillTotals(input: BillTotalsInput): BillTotals {
   const billRc = input.reverseCharge === true || input.isImport === true;
   const lines: BillLineCalc[] = input.lines.map((l, i) => {
-    const quantity = l.quantity && l.quantity > 0 ? l.quantity : 1;
+    const quantity = l.quantity ?? 1;
     if (!Number.isSafeInteger(l.unitPriceFils) || l.unitPriceFils < 0) {
       throw new DomainError("NEGATIVE_AMOUNT", 400, { line: i }, "Line amounts cannot be negative");
     }
-    const amountFils = l.unitPriceFils === 0 ? 0 : mulRate(l.unitPriceFils, quantity);
+    const amountFils =
+      l.amountFils ??
+      (l.unitPriceFils === 0 || quantity === 0 ? 0 : mulRate(l.unitPriceFils, quantity));
     let supplyType = l.supplyType || (billRc ? "reverse_charge" : "standard_rated");
     if (billRc && supplyType === "standard_rated") supplyType = "reverse_charge";
     const lineRc = billRc || supplyType === "reverse_charge";
@@ -198,7 +202,8 @@ export function computeBillTotals(input: BillTotalsInput): BillTotals {
     } else {
       vatRate = l.vatRate === 0 ? 0 : 5;
     }
-    const vatFils = vatRate === 5 && amountFils > 0 ? mulRate(amountFils, "0.05") : 0;
+    const vatFils =
+      l.vatFils ?? (vatRate === 5 && amountFils > 0 ? mulRate(amountFils, "0.05") : 0);
     return {
       quantity,
       unitPriceFils: l.unitPriceFils,
