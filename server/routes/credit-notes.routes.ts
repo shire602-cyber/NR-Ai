@@ -73,7 +73,7 @@ async function getCanonicalCreditNote(id: string) {
   const invoice = await storage.getInvoiceById(id);
   if (!invoice || invoice.invoiceType !== "credit_note") return null;
   const originalInvoice = invoice.originalInvoiceId
-    ? await storage.getInvoiceById(invoice.originalInvoiceId)
+    ? await storage.getInvoice(invoice.originalInvoiceId, invoice.companyId)
     : undefined;
   return toCanonicalCreditNote(invoice, originalInvoice);
 }

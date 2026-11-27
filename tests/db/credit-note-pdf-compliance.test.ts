@@ -18,6 +18,7 @@ const std = (price: number) => ({
 async function issue(t: Tenant, currency: "AED" | "USD"): Promise<{ id: string; number: string }> {
   const draft = await t.as.post(`${base(t)}/invoices`, {
     customerName: "Acme",
+    customerAddress: "Shop 4, Deira, Dubai",
     date,
     placeOfSupplyEmirate: "dubai",
     currency,
@@ -48,6 +49,9 @@ it("AED credit note PDF prints the reference invoice number", async () => {
   expect(cn.status, cn.text).toBe(201);
   const pdf = await pdfText(t.token, `/api/credit-notes/${cn.body.id}/pdf`);
   expect(pdf.text).toContain(inv.number);
+  expect(pdf.text).toContain("20 Jan 2026");
+  expect(pdf.text).toContain("Shop 4, Deira, Dubai");
+  expect(pdf.text).toContain("AED 700.00"); // original net
   expect(pdf.text).not.toContain("Exchange rate");
 });
 
@@ -66,11 +70,24 @@ it("USD credit note PDF prints the reference, the posted rate and the posted AED
   );
   expect(Number(vat.aed)).toBe(64.27);
 
-  // A later change of the tenant's rate table must not alter what the PDF shows.
+  // The PDF reads only the rate stored on the credit note (never a fresh rate lookup).
   const pdf = await pdfText(t.token, `/api/credit-notes/${cn.body.id}/pdf`);
   expect(pdf.text).toContain(inv.number);
   expect(pdf.text).toContain("1 USD = 3.6725 AED");
   expect(pdf.text).toContain("AED 64.27");
+  // Art. 60(2)(e), hand-calculated: original USD 700 = AED 2,570.75; credited USD 350 = AED
+  // 1,285.38 (1,285.375 half up); corrected = 2,570.75 - 1,285.38 = AED 1,285.37 (USD 350).
+  expect(pdf.text).toContain("20 Jan 2026");
+  expect(pdf.text).toContain("Shop 4, Deira, Dubai");
+  expect(pdf.text).toContain("USD 700.00 (AED 2,570.75)");
+  expect(pdf.text).toContain("USD 350.00 (AED 1,285.37)");
+  expect(pdf.text).toContain("USD 350.00 (AED 1,285.38)");
+
+  // A voided credit note is stamped VOID.
+  const voidRes = await t.as.post(`/api/credit-notes/${cn.body.id}/void`, {});
+  expect(voidRes.status, voidRes.text).toBe(200);
+  const voided = await pdfText(t.token, `/api/credit-notes/${cn.body.id}/pdf`);
+  expect(voided.text).toContain("VOID");
 
   // The generic invoice PDF route renders a credit-note row through the same credit note layout.
   const viaInvoice = await pdfText(t.token, `/api/invoices/${cn.body.id}/pdf`);
@@ -99,4 +116,9 @@ it("another tenant cannot download the credit note PDF (404) and its invoice nev
   const pdf = await pdfText(a.token, `/api/credit-notes/${cn.body.id}/pdf`);
   expect(pdf.status).toBe(200);
   expect(pdf.text).not.toContain(invB.number);
+
+  // The JSON endpoint resolves the original invoice number tenant-scoped too.
+  const json = await a.as.get(`/api/credit-notes/${cn.body.id}`);
+  expect(json.status, json.text).toBe(200);
+  expect(json.body.invoiceNumber).toBeNull();
 });

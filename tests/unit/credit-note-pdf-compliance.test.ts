@@ -19,6 +19,7 @@ const creditNote = (currency: string) =>
     id: "cn1",
     number: "CN-7",
     customerName: "Acme",
+    customerAddress: "Shop 4, Deira, Dubai",
     date: new Date("2026-03-10"),
     reason: "Returned goods",
     status: "issued",
@@ -28,7 +29,11 @@ const creditNote = (currency: string) =>
     total: 367.5,
   }) as never;
 const line = { id: "l1", description: "Services", quantity: 1, unitPrice: 350, vatRate: 0.05 };
-const original = { id: "i1", number: "INV-4242" } as unknown as Invoice;
+const original = {
+  id: "i1",
+  number: "INV-4242",
+  date: new Date("2026-01-20"),
+} as unknown as Invoice;
 const flat = (s: string) => s.replace(/\s+/g, " ");
 
 describe("credit note PDF compliance", { timeout: 30_000 }, () => {
@@ -39,7 +44,48 @@ describe("credit note PDF compliance", { timeout: 30_000 }, () => {
       )
     );
     expect(text).toContain("INV-4242");
+    expect(text).toContain("20 Jan 2026");
+    expect(text).toContain("Shop 4, Deira, Dubai");
     expect(text).not.toContain("Exchange rate");
+    expect(text).not.toContain("VOID");
+  });
+
+  it("prints original, corrected and difference values (USD with the AED equivalents)", async () => {
+    const text = flat(
+      await pdfToText(
+        await generateCreditNotePDF(
+          creditNote("USD"),
+          [line] as never,
+          company(),
+          original,
+          { baseCurrency: "AED", exchangeRate: 3.6725, vatBase: 64.27 },
+          {
+            currency: "USD",
+            originalNet: 700,
+            correctedNet: 350,
+            differenceNet: 350,
+            base: {
+              currency: "AED",
+              originalNet: 2570.75,
+              correctedNet: 1285.37,
+              differenceNet: 1285.38,
+            },
+          }
+        )
+      )
+    );
+    expect(text).toContain("Original value of the supply");
+    expect(text).toContain("USD 700.00 (AED 2,570.75)");
+    expect(text).toContain("USD 350.00 (AED 1,285.37)");
+    expect(text).toContain("USD 350.00 (AED 1,285.38)");
+  });
+
+  it("stamps a voided credit note VOID", async () => {
+    const voided = { ...(creditNote("AED") as object), status: "void" } as never;
+    const text = flat(
+      await pdfToText(await generateCreditNotePDF(voided, [line] as never, company(), original))
+    );
+    expect(text).toContain("VOID");
   });
 
   it("USD credit note shows the reference invoice, the posted rate and the AED VAT", async () => {

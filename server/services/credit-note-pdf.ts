@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
-import { accounts, journalEntries, journalLines } from "../../shared/schema";
+import { accounts, invoices, journalEntries, journalLines } from "../../shared/schema";
 import type {
   Company,
   CreditNote,
@@ -11,7 +11,11 @@ import type {
 import { fromFils, mulRate, sumFils, toFils } from "../../shared/money";
 import { baseCurrencyOf, isForeignCurrency } from "../ledger";
 import { storage } from "../storage";
-import { generateCreditNotePDF, type CreditNotePdfFx } from "./pdf-credit-note.service";
+import {
+  generateCreditNotePDF,
+  type CreditNotePdfAdjustment,
+  type CreditNotePdfFx,
+} from "./pdf-credit-note.service";
 
 /** Credit notes live in `invoices` (invoice_type = 'credit_note') with negative amounts. */
 export function isCreditNoteRow(invoice: { invoiceType?: string | null }): boolean {
@@ -53,6 +57,64 @@ async function postedVatBase(creditNote: Invoice): Promise<number> {
 }
 
 /**
+ * Art. 60(2)(e): original value of the supply, corrected value and difference. "Original" is the
+ * original tax invoice's net; "corrected" is that net less every credit note on the invoice up to
+ * and including this one (other issued notes created earlier; drafts and voids are ignored, this
+ * note always counts). Integer fils; the base-currency figures use the stored booking rate.
+ */
+async function supplyAdjustment(
+  creditNote: Invoice,
+  original: Invoice,
+  baseCurrency: string,
+  rate: number
+): Promise<CreditNotePdfAdjustment> {
+  const others = await db
+    .select({ id: invoices.id, subtotal: invoices.subtotal, createdAt: invoices.createdAt })
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.companyId, creditNote.companyId),
+        eq(invoices.originalInvoiceId, original.id),
+        eq(invoices.invoiceType, "credit_note"),
+        sql`${invoices.status} NOT IN ('draft', 'void', 'cancelled')`
+      )
+    );
+  const own = toFils(Math.abs(Number(creditNote.subtotal) || 0));
+  const priorFils = others
+    .filter((o) => o.id !== creditNote.id && isEarlier(o, creditNote))
+    .map((o) => toFils(Math.abs(Number(o.subtotal) || 0)));
+  const originalFils = toFils(Math.abs(Number(original.subtotal) || 0));
+  const cumulative = sumFils([...priorFils, own]);
+  const num = (fils: number) => Number(fromFils(fils));
+  const result: CreditNotePdfAdjustment = {
+    currency: creditNote.currency || "AED",
+    originalNet: num(originalFils),
+    correctedNet: num(originalFils - cumulative),
+    differenceNet: num(own),
+  };
+  if (isForeignCurrency(creditNote.currency, baseCurrency) && Number.isFinite(rate) && rate > 0) {
+    const r = String(creditNote.exchangeRate);
+    const originalBase = mulRate(originalFils, r);
+    result.base = {
+      currency: baseCurrency,
+      originalNet: num(originalBase),
+      correctedNet: num(originalBase - mulRate(cumulative, r)),
+      differenceNet: num(mulRate(own, r)),
+    };
+  }
+  return result;
+}
+
+function isEarlier(
+  a: { id: string; createdAt: Date | string | null },
+  b: { id: string; createdAt: Date | string | null }
+): boolean {
+  const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+  const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+  return ta !== tb ? ta < tb : a.id < b.id;
+}
+
+/**
  * The credit note PDF for a credit-note invoice row: the reference invoice (loaded tenant-scoped,
  * another company's invoice never resolves) and, for a foreign-currency credit note, the stored
  * booking rate and the posted VAT in the base currency. The single entry point for every
@@ -78,6 +140,7 @@ export async function renderCreditNotePdf(
     number: creditNote.number,
     customerName: creditNote.customerName,
     customerTrn: creditNote.customerTrn,
+    customerAddress: creditNote.customerAddress,
     invoiceId: creditNote.originalInvoiceId,
     invoiceNumber: original?.number ?? null,
     date: creditNote.date,
@@ -86,7 +149,7 @@ export async function renderCreditNotePdf(
     vatAmount: Math.abs(Number(creditNote.vatAmount) || 0),
     total: Math.abs(Number(creditNote.total) || 0),
     status: pdfStatus(creditNote.status),
-    reason: creditNote.notes || "Invoice credit note",
+    reason: creditNote.notes || "",
   } as unknown as CreditNote;
   const canonicalLines = lines.map((line) => ({
     id: line.id,
@@ -97,5 +160,6 @@ export async function renderCreditNotePdf(
     vatRate: line.vatRate,
     vatSupplyType: line.vatSupplyType,
   })) as unknown as CreditNoteLine[];
-  return generateCreditNotePDF(canonical, canonicalLines, company, original, fx);
+  const adjustment = original ? await supplyAdjustment(creditNote, original, base, rate) : null;
+  return generateCreditNotePDF(canonical, canonicalLines, company, original, fx, adjustment);
 }
