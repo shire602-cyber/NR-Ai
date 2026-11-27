@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { VAT201_BOX_KEYS } from "../../server/tax/vat-boxes";
 import { useHarness, type Tenant } from "./harness";
 
@@ -72,57 +72,36 @@ async function boxes(t: Tenant, billId: string, date?: string) {
 }
 
 describe("Purchase VAT audit", () => {
-  it.each([
-    { encoding: "supply type", legacy: false },
-    { encoding: "legacy flag", legacy: true },
-  ])(
-    "keeps partial and full edits equivalent for reverse charge stored as $encoding",
-    async ({ legacy }) => {
-      const t = await registeredTenant();
-      const b = await bill(t, { line_items: [domestic, reverseCharge] });
-      expect(b.total_amount).toBe("2050.00");
-      await h.sql(
-        `UPDATE bill_line_items
-            SET vat_supply_type = CASE WHEN $2 THEN 'standard_rated' ELSE vat_supply_type END,
-                reverse_charge = $2
-          WHERE bill_id = $1 AND vat_supply_type = 'reverse_charge'`,
-        [b.id, legacy]
-      );
-      const edited = await t.as.patch(`/api/bills/${b.id}`, { withholding_amount: 10 });
-      expect(edited.status, edited.text).toBe(200);
-      expect(edited.body.total_amount).toBe("2040.00");
-      const { approved, vat } = await boxes(t, b.id);
-      expect(approved.total_amount).toBe("2040.00");
-      expect(vat).toMatchObject({
-        box3ReverseChargeVat: 50,
-        box9ExpensesVat: 50,
-        box10ReverseChargeVat: 50,
-      });
-      const fullDate = "2026-01-16";
-      const full = await bill(t, {
-        bill_date: fullDate,
-        bill_number: "VAT-FULL",
-        withholding_amount: 10,
-        line_items: [domestic, reverseCharge],
-      });
-      await h.sql(
-        `UPDATE bill_line_items
-            SET vat_supply_type = CASE WHEN $2 THEN 'standard_rated' ELSE vat_supply_type END,
-                reverse_charge = $2
-          WHERE bill_id = $1 AND vat_supply_type = 'reverse_charge'`,
-        [full.id, legacy]
-      );
-      // The editor submits the effective treatment for either stored encoding.
-      const replaced = await t.as.patch(`/api/bills/${full.id}`, {
-        line_items: [domestic, reverseCharge],
-        notes: "Full edit",
-      });
-      expect(replaced.status, replaced.text).toBe(200);
-      expect(replaced.body.total_amount).toBe(edited.body.total_amount);
-      expect(replaced.body.vat_amount).toBe(edited.body.vat_amount);
-      expect((await boxes(t, full.id, fullDate)).vat).toEqual(vat);
-    }
-  );
+  it("keeps a current-format mixed bill at AED 2,040 after a withholding edit", async () => {
+    const t = await registeredTenant();
+    const b = await bill(t, { line_items: [domestic, reverseCharge] });
+    expect(b.total_amount).toBe("2050.00");
+    const edited = await t.as.patch(`/api/bills/${b.id}`, { withholding_amount: 10 });
+    expect(edited.status, edited.text).toBe(200);
+    expect(edited.body.total_amount).toBe("2040.00");
+    const { approved, vat } = await boxes(t, b.id);
+    expect(approved.total_amount).toBe("2040.00");
+    expect(vat).toMatchObject({
+      box3ReverseChargeVat: 50,
+      box9ExpensesVat: 50,
+      box10ReverseChargeVat: 50,
+    });
+    const fullDate = "2026-01-16";
+    const full = await bill(t, {
+      bill_date: fullDate,
+      bill_number: "VAT-FULL",
+      withholding_amount: 10,
+      line_items: [domestic, reverseCharge],
+    });
+    const replaced = await t.as.patch(`/api/bills/${full.id}`, {
+      line_items: [domestic, reverseCharge],
+      notes: "Full edit",
+    });
+    expect(replaced.status, replaced.text).toBe(200);
+    expect(replaced.body.total_amount).toBe(edited.body.total_amount);
+    expect(replaced.body.vat_amount).toBe(edited.body.vat_amount);
+    expect((await boxes(t, full.id, fullDate)).vat).toEqual(vat);
+  });
 
   it("preserves recorded amounts for a legacy rounded quantity during withholding edits", async () => {
     const t = await registeredTenant();
@@ -145,7 +124,7 @@ describe("Purchase VAT audit", () => {
     expect(edited.body.line_items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          quantity: "0.0000",
+          quantity: "0.00",
           unit_price: "1000.00",
           amount: "4.00",
           vat_amount: "0.20",
@@ -172,128 +151,6 @@ describe("Purchase VAT audit", () => {
     expect(await vatBoxes(t)).toEqual(vat);
   });
 
-  it("preserves pre-0096 header VAT through approval and revision until line valuation changes", async () => {
-    const t = await registeredTenant();
-    const draft = await bill(t, {
-      line_items: [
-        { ...domestic, unit_price: 600 },
-        { ...domestic, description: "Services", unit_price: 400 },
-      ],
-    });
-    await h.sql("UPDATE bill_line_items SET vat_amount = 0 WHERE bill_id = $1", [draft.id]);
-    const url = `/api/bills/${draft.id}`;
-    const inputVat = () =>
-      h.sql<{ vat: string }>(
-        `SELECT SUM(jl.debit - jl.credit)::text AS vat
-           FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
-           JOIN accounts a ON a.id = jl.account_id
-          WHERE je.company_id = $1 AND je.status = 'posted' AND a.code = '1050'`,
-        [t.company.id]
-      );
-    const withholding = await t.as.patch(url, { withholding_amount: 10 });
-    expect(withholding.status, withholding.text).toBe(200);
-    expect(withholding.body).toMatchObject({ total_amount: "1040.00", vat_amount: "50.00" });
-    const { vat } = await boxes(t, draft.id);
-    expect(vat).toMatchObject({ box9ExpensesAmount: 1000, box9ExpensesVat: 50 });
-    expect(await inputVat()).toEqual([{ vat: "50.00" }]);
-
-    const line_items = withholding.body.line_items.map(editorLine);
-    const revise = (fields: Record<string, unknown>) =>
-      t.as.post(`${url}/revise`, { reason: "Edit pre-0096 bill", ...fields });
-    const notes = await revise({ notes: "Updated", line_items });
-    expect(notes.status, notes.text).toBe(200);
-    expect(notes.body).toMatchObject({ total_amount: "1040.00", vat_amount: "50.00" });
-    expect(await vatBoxes(t)).toEqual(vat);
-    expect(await inputVat()).toEqual([{ vat: "50.00" }]);
-
-    const saved = await t.as.get(url);
-    const changed = await revise({
-      line_items: saved.body.line_items.map((line: SavedLine) => ({
-        ...editorLine(line),
-        ...(line.description === domestic.description && { unit_price: 700 }),
-      })),
-    });
-    expect(changed.status, changed.text).toBe(200);
-    expect(changed.body).toMatchObject({ total_amount: "1145.00", vat_amount: "55.00" });
-    expect(await vatBoxes(t)).toMatchObject({ box9ExpensesAmount: 1100, box9ExpensesVat: 55 });
-    expect(await inputVat()).toEqual([{ vat: "55.00" }]);
-  });
-
-  it.each([false, true])(
-    "applies header-off identically to PATCH and editor payloads (legacy encoding: %s)",
-    async (legacy) => {
-      const t = await registeredTenant();
-      const cases = [];
-      for (const full of [false, true]) {
-        const date = full ? "2026-01-17" : "2026-01-16";
-        const draft = await bill(t, {
-          bill_date: date,
-          reverse_charge: true,
-          line_items: [domestic, reverseCharge],
-        });
-        if (legacy) {
-          await h.sql(
-            `UPDATE bill_line_items SET vat_supply_type = 'reverse_charge', reverse_charge = true
-              WHERE bill_id = $1 AND description = $2`,
-            [draft.id, reverseCharge.description]
-          );
-        }
-        const url = `/api/bills/${draft.id}`;
-        const saved = await t.as.get(url);
-        const line_items = saved.body.line_items.map(editorLine);
-        const off = await t.as.patch(url, {
-          reverse_charge: false,
-          ...(full && { line_items }),
-        });
-        expect(off.status, off.text).toBe(200);
-        expect(off.body).toMatchObject({ total_amount: "2050.00", vat_amount: "100.00" });
-        const { vat } = await boxes(t, draft.id, date);
-        expect(vat).toMatchObject({
-          box3ReverseChargeVat: 50,
-          box9ExpensesVat: 50,
-          box10ReverseChargeVat: 50,
-        });
-        cases.push(vat);
-      }
-      expect(cases[0]).toEqual(cases[1]);
-    }
-  );
-
-  it.each([false, true])(
-    "keeps both ambiguous legacy lines reverse charged (editor: %s)",
-    async (full) => {
-      const t = await registeredTenant();
-      const draft = await bill(t, { reverse_charge: true, line_items: [domestic, reverseCharge] });
-      // The pre-stamp writer stored the same pair for inherited and explicit reverse charge.
-      await h.sql(
-        `UPDATE bill_line_items SET vat_supply_type = 'reverse_charge', reverse_charge = true
-        WHERE bill_id = $1`,
-        [draft.id]
-      );
-      const url = `/api/bills/${draft.id}`;
-      const saved = await t.as.get(url);
-      const off = await t.as.patch(url, {
-        reverse_charge: false,
-        ...(full && { line_items: saved.body.line_items.map(editorLine) }),
-      });
-      expect(off.status, off.text).toBe(200);
-      expect(off.body).toMatchObject({ total_amount: "2000.00", vat_amount: "100.00" });
-      const explicit = await t.as.patch(url, {
-        line_items: off.body.line_items.map((line: SavedLine) => ({
-          ...editorLine(line),
-          ...(line.description === domestic.description && { vat_supply_type: "standard_rated" }),
-        })),
-      });
-      expect(explicit.status, explicit.text).toBe(200);
-      expect(explicit.body).toMatchObject({ total_amount: "2050.00", vat_amount: "100.00" });
-      expect((await boxes(t, draft.id)).vat).toMatchObject({
-        box3ReverseChargeVat: 50,
-        box9ExpensesVat: 50,
-        box10ReverseChargeVat: 50,
-      });
-    }
-  );
-
   it.each([false, true])(
     "keeps saved lines, totals and VAT boxes on single-field PATCHes (customs: %s)",
     async (isImport) => {
@@ -311,7 +168,7 @@ describe("Purchase VAT audit", () => {
         withholding_amount: 10,
         line_items: [
           { ...domestic, vat_rate: 0, account_id: account.id },
-          { ...reverseCharge, quantity: 1.234, account_id: account.id },
+          { ...reverseCharge, quantity: 1.23, account_id: account.id },
         ],
       };
       const date = (i: number) => `2026-02-${String(i + 1).padStart(2, "0")}`;
@@ -365,24 +222,15 @@ describe("Purchase VAT audit", () => {
 });
 
 describe("PR 184 reverse-charge edit matrix", () => {
-  const encodings = [
-    { name: "legacy boolean", supply: "standard_rated", flag: true },
-    { name: "legacy enum", supply: "reverse_charge", flag: true },
-    { name: "current enum", supply: "reverse_charge", flag: false },
-    { name: "no marker", supply: "standard_rated", flag: false },
-  ];
   const headerStates = [true, false];
-  const fixtures = [true, false].flatMap((headerOnly) =>
-    encodings.flatMap((encoding) =>
-      headerStates.flatMap((before) =>
-        headerStates.map((after) => ({
-          label: `${headerOnly ? "header VAT" : "line VAT"} / ${encoding.name} / ${before} → ${after}`,
-          headerOnly,
-          encoding,
-          before,
-          after,
-        }))
-      )
+  const fixtures = ["reverse_charge", "standard_rated"].flatMap((supply) =>
+    headerStates.flatMap((before) =>
+      headerStates.map((after) => ({
+        label: supply + " / " + before + " → " + after,
+        supply,
+        before,
+        after,
+      }))
     )
   );
   let tenant: Promise<Tenant> | undefined;
@@ -437,11 +285,11 @@ describe("PR 184 reverse-charge edit matrix", () => {
 
   it.each(fixtures.map((fixture, index) => ({ ...fixture, index })))(
     "$label",
-    async ({ headerOnly, encoding, before, after, index }) => {
+    async ({ supply, before, after, index }) => {
       const t = await (tenant ??= registeredTenant());
       const date = (step: number) =>
         new Date(Date.UTC(2027, 0, 1 + index * 7 + step)).toISOString().slice(0, 10);
-      const marked = encoding.flag || encoding.supply === "reverse_charge";
+      const marked = supply === "reverse_charge";
       const template = {
         vendor_name: "Audit supplier",
         vendor_trn: "100000000000003",
@@ -456,11 +304,6 @@ describe("PR 184 reverse-charge edit matrix", () => {
           bill_number: `RC-EDIT-${index}-${step}`,
           reverse_charge: before,
         });
-        await h.sql(
-          `UPDATE bill_line_items SET vat_supply_type = $2, reverse_charge = $3,
-                  vat_amount = CASE WHEN $4 THEN 0 ELSE vat_amount END WHERE bill_id = $1`,
-          [draft.id, encoding.supply, encoding.flag, headerOnly]
-        );
         return draft;
       };
       const approve = async (id: string, submit = true) => {
@@ -554,15 +397,13 @@ describe("PR 184 bill valuation matrix", () => {
     { ...domestic, description: "Exempt", vat_rate: 0, vat_supply_type: "exempt" },
   ];
   const encodings = [
-    { name: "legacy flag", lines: [reverseCharge] },
     { name: "enum", lines: [reverseCharge] },
     { name: "bill-wide", lines: [domestic], header: true },
     { name: "mixed", lines: mixed },
-    { name: "legacy mixed", lines: mixed },
-    { name: "header-only VAT", lines: [domestic] },
+    { name: "domestic", lines: [domestic] },
   ];
   const cases = encodings.flatMap((encoding) =>
-    [1, 1.23, 1.234, 0.004].flatMap((quantity) =>
+    [1, 1.23].flatMap((quantity) =>
       ["AED", "USD"].map((currency) => ({ ...encoding, quantity, currency }))
     )
   );
@@ -593,8 +434,6 @@ describe("PR 184 bill valuation matrix", () => {
         line_items: lineItems,
       };
       const recurringUrl = `/api/companies/${t.company.id}/recurring-bills`;
-      // Historical templates store input quantities and tax treatments. The persisted draft
-      // fixtures below exercise historical bill rows produced before line VAT and enum-only writes.
       const recurring = await t.as.post(recurringUrl, {
         name: `Matrix ${index}`,
         frequency: "yearly",
@@ -632,7 +471,7 @@ describe("PR 184 bill valuation matrix", () => {
         vat_amount: (lineVat * (mixedBill ? 2 : 1)).toFixed(2),
         total_amount: (
           net * lines.length +
-          (mixedBill || name === "header-only VAT" ? lineVat : 0)
+          (mixedBill || name === "domestic" ? lineVat : 0)
         ).toFixed(2),
       });
 
@@ -651,25 +490,6 @@ describe("PR 184 bill valuation matrix", () => {
           bill_number: `MATRIX-${index}-${step}`,
         });
         expect(totals(draft)).toEqual(baselineTotals);
-        if (name === "legacy flag" || name === "bill-wide") {
-          await h.sql(
-            `UPDATE bill_line_items SET vat_supply_type = $2, reverse_charge = true WHERE bill_id = $1`,
-            [draft.id, name === "legacy flag" ? "standard_rated" : "reverse_charge"]
-          );
-        }
-        if (name === "legacy mixed") {
-          await h.sql(
-            `UPDATE bill_line_items SET quantity = ROUND(quantity, 2),
-                reverse_charge = (vat_supply_type = 'reverse_charge') WHERE bill_id = $1`,
-            [draft.id]
-          );
-        }
-        if (name === "header-only VAT") {
-          await h.sql(
-            `UPDATE bill_line_items SET quantity = ROUND(quantity, 2), vat_amount = 0 WHERE bill_id = $1`,
-            [draft.id]
-          );
-        }
         const url = `/api/bills/${draft.id}`;
         const before = await t.as.get(url);
         expect(before.status, before.text).toBe(200);
@@ -725,4 +545,197 @@ describe("PR 184 bill valuation matrix", () => {
       }
     }
   );
+});
+
+describe("PR 184 legacy bills match the test branch and reject edits", () => {
+  const fixtures = [
+    { name: "header VAT domestic", lines: [domestic], headerVat: true, billWide: false },
+    {
+      name: "header VAT mixed",
+      lines: [domestic, reverseCharge],
+      headerVat: true,
+      billWide: false,
+    },
+    {
+      name: "header VAT exempt",
+      lines: [{ ...domestic, vat_supply_type: "exempt", vat_rate: 0 }],
+      headerVat: true,
+      billWide: true,
+    },
+    {
+      name: "identical markers",
+      lines: [domestic, reverseCharge],
+      headerVat: false,
+      billWide: true,
+    },
+  ];
+
+  async function persisted(id: string) {
+    return {
+      bill: await h.sql("SELECT row_to_json(b)::text FROM vendor_bills b WHERE id = $1", [id]),
+      lines: await h.sql(
+        "SELECT row_to_json(l)::text FROM bill_line_items l WHERE bill_id = $1 ORDER BY id",
+        [id]
+      ),
+      entries: await h.sql(
+        "SELECT row_to_json(e)::text FROM journal_entries e WHERE source_id = $1 ORDER BY id",
+        [id]
+      ),
+      journalLines: await h.sql(
+        `SELECT row_to_json(l)::text FROM journal_lines l
+          JOIN journal_entries e ON e.id = l.entry_id WHERE e.source_id = $1 ORDER BY l.id`,
+        [id]
+      ),
+    };
+  }
+
+  it.each(fixtures)("$name", async ({ name, lines, headerVat, billWide }) => {
+    const t = await h.createTenant({
+      planId: "professional",
+      companyColumns: { emirate: "dubai" },
+    });
+    const draft = await bill(t, { reverse_charge: billWide, line_items: lines });
+    const id = draft.id;
+    for (const line of lines) {
+      const supply =
+        name === "identical markers"
+          ? "reverse_charge"
+          : "vat_supply_type" in line
+            ? line.vat_supply_type
+            : "standard_rated";
+      await h.sql(
+        `UPDATE bill_line_items SET vat_supply_type = $2, reverse_charge = $3, vat_amount = $4
+          WHERE bill_id = $1 AND description = $5`,
+        [id, supply, supply === "reverse_charge" || billWide, headerVat ? 0 : 50, line.description]
+      );
+    }
+    const net = lines.length * 1000;
+    const vat = headerVat ? 50 : 100;
+    const payable = net + (billWide ? 0 : vat);
+    if (headerVat) {
+      await h.sql(
+        `UPDATE vendor_bills SET vat_amount = 50, total_amount = $2,
+            import_vat_amount = CASE WHEN $3 THEN 50 ELSE import_vat_amount END WHERE id = $1`,
+        [id, payable, billWide]
+      );
+    }
+    const url = `/api/bills/${id}`;
+    const original = await persisted(id);
+    const editorLines = draft.line_items.map(editorLine);
+    for (const payload of [
+      { notes: "Notes only" },
+      { withholding_amount: 10 },
+      { line_items: editorLines },
+      {
+        vendor_name: "Editor save",
+        currency: "AED",
+        reverse_charge: false,
+        line_items: editorLines,
+      },
+    ]) {
+      const edited = await t.as.patch(url, payload);
+      expect(edited.status, edited.text).toBe(409);
+      expect(edited.body.code).toBe("LEGACY_BILL_RECLASSIFY_REQUIRED");
+      expect(await persisted(id)).toEqual(original);
+    }
+    const attachment = await t.as.post(`${url}/attachment`, { file: "intentionally-not-an-image" });
+    expect(attachment.status, attachment.text).toBe(409);
+    expect(attachment.body.code).toBe("LEGACY_BILL_RECLASSIFY_REQUIRED");
+    expect(await persisted(id)).toEqual(original);
+    const tag = await t.as.post(`/api/companies/${t.company.id}/cost-centers/tag-lines`, {
+      documentType: "bill",
+      documentId: id,
+      lineIds: [draft.line_items[0].id],
+      costCenterId: null,
+    });
+    expect(tag.status, tag.text).toBe(409);
+    expect(tag.body.code).toBe("LEGACY_BILL_RECLASSIFY_REQUIRED");
+    expect(await persisted(id)).toEqual(original);
+
+    const { approved, vat: actualVat } = await boxes(t, id);
+    // Figures captured on b7273466 using these same persisted encodings.
+    expect(approved.total_amount).toBe(payable.toFixed(2));
+    const journal = await h.sql<{ code: string; balance: string }>(
+      `SELECT a.code, SUM(jl.debit - jl.credit)::text AS balance
+        FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+        JOIN accounts a ON a.id = jl.account_id WHERE je.source_id = $1
+        GROUP BY a.code HAVING SUM(jl.debit - jl.credit) <> 0`,
+      [id]
+    );
+    expect(Object.fromEntries(journal.map((row) => [row.code, row.balance]))).toEqual({
+      "1050": vat.toFixed(2),
+      "2010": (-payable).toFixed(2),
+      "5000": net.toFixed(2),
+      ...(billWide && { "2020": (-vat).toFixed(2) }),
+    });
+    expect(actualVat).toEqual({
+      ...Object.fromEntries(VAT201_BOX_KEYS.map((key) => [key, 0])),
+      ...(billWide
+        ? {
+            box3ReverseChargeAmount: net,
+            box3ReverseChargeVat: vat,
+            box8TotalAmount: net,
+            box8TotalVat: vat,
+            box10ReverseChargeAmount: net,
+            box10ReverseChargeVat: vat,
+            box12TotalDueTax: vat,
+          }
+        : { box9ExpensesAmount: net, box9ExpensesVat: vat, box14PayableTax: -vat }),
+      box11TotalAmount: net,
+      box11TotalVat: vat,
+      box13RecoverableTax: vat,
+    });
+    const posted = await persisted(id);
+    for (const payload of [{ notes: "Revision notes" }, { line_items: editorLines }]) {
+      const revised = await t.as.post(`${url}/revise`, { reason: "Correct bill", ...payload });
+      expect(revised.status, revised.text).toBe(409);
+      expect(revised.body.code).toBe("LEGACY_BILL_RECLASSIFY_REQUIRED");
+      expect(await persisted(id)).toEqual(posted);
+    }
+    expect(await vatBoxes(t)).toEqual(actualVat);
+    const reopened = await t.as.get(url);
+    expect(reopened.status, reopened.text).toBe(200);
+    expect(reopened.body.total_amount).toBe(payable.toFixed(2));
+  });
+});
+
+describe("PR 184 bill quantity precision", () => {
+  it("rejects new excess precision and runs an already-saved fractional template", async () => {
+    const t = await registeredTenant();
+    const url = `/api/companies/${t.company.id}/bills`;
+    const fields = { vendor_name: "Supplier", bill_date: "2026-01-15", line_items: [domestic] };
+    const invalid = [{ ...domestic, quantity: 1.234 }];
+    expect((await t.as.post(url, { ...fields, line_items: invalid })).status).toBe(400);
+    const draft = await bill(t, {});
+    const edited = await t.as.patch(`/api/bills/${draft.id}`, {
+      line_items: [{ ...invalid[0], id: draft.line_items[0].id }],
+    });
+    expect(edited.status, edited.text).toBe(400);
+    expect(edited.body.code).toBe("INVALID_BILL_QUANTITY");
+
+    const recurringUrl = `/api/companies/${t.company.id}/recurring-bills`;
+    const recurring = await t.as.post(recurringUrl, {
+      name: "Previous precision",
+      frequency: "monthly",
+      next_run_on: fields.bill_date,
+      template: fields,
+    });
+    expect(recurring.status, recurring.text).toBe(201);
+    await h.sql(
+      "UPDATE recurring_bills SET template = jsonb_set(template, '{line_items,0,quantity}', '0.004') WHERE id = $1",
+      [recurring.body.id]
+    );
+    const run = await t.as.post(`${recurringUrl}/${recurring.body.id}/run`, {});
+    expect(run.status, run.text).toBe(200);
+    expect(run.body.bill).toMatchObject({ subtotal: "4.00", vat_amount: "0.20" });
+    const savedUrl = `/api/bills/${run.body.bill.id}`;
+    const saved = await t.as.get(savedUrl);
+    expect(saved.body.line_items).toMatchObject([{ quantity: "0.00", amount: "4.00" }]);
+    const unchanged = await t.as.patch(savedUrl, {
+      line_items: saved.body.line_items.map(editorLine),
+      notes: "Retain the recorded valuation",
+    });
+    expect(unchanged.status, unchanged.text).toBe(200);
+    expect(unchanged.body).toMatchObject({ subtotal: "4.00", vat_amount: "0.20" });
+  });
 });

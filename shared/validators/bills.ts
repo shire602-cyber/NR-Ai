@@ -7,6 +7,7 @@
  * through debit notes.
  */
 import { z } from "zod";
+import { hasStoredBillQuantityPrecision } from "../bill-line-edit";
 import {
   zCurrency,
   zDate,
@@ -42,10 +43,15 @@ export const zFxRate = z.union([z.number(), z.string()]).transform((v, ctx) => {
 
 const zPositiveQuantity = zQuantity.refine((n) => n > 0, "Quantity must be greater than zero");
 
+const zStoredBillQuantity = zPositiveQuantity.refine(
+  hasStoredBillQuantityPrecision,
+  "Enter a quantity greater than zero with up to two decimal places"
+);
+
 export const billLineSchema = z
   .object({
     description: zText(500, { min: 1 }),
-    quantity: zPositiveQuantity.optional(),
+    quantity: zStoredBillQuantity.optional(),
     unit_price: zMoneyFils,
     vat_rate: zBillVatRate.optional().nullable(),
     vat_supply_type: zSupplyType.optional(),
@@ -303,7 +309,7 @@ export const inboundBillSchema = z
         z
           .object({
             description: zText(500, { min: 1 }),
-            quantity: zPositiveQuantity.optional(),
+            quantity: zStoredBillQuantity.optional(),
             /** Major units over the wire ("12.50"); parsed to integer fils. */
             unitPrice: zMoneyFils,
             vatRate: zBillVatRate.optional().nullable(),

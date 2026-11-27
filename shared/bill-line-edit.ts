@@ -1,4 +1,4 @@
-import { mulRate, sumFils } from "./money";
+import { mulRate } from "./money";
 
 /** Legacy flags carry reverse charge without saying whether it came from the header. */
 export function billLineSupplyType(line: {
@@ -15,22 +15,31 @@ export function hasHeaderOnlyBillVat(headerVatFils: number, lineVatFils: readonl
   return headerVatFils > 0 && lineVatFils.every((vat) => vat === 0);
 }
 
-/** A reverse-charge marker also applies to VAT stored solely on a historical bill's header. */
-export function billReverseChargeVat(
+/**
+ * The current writer stores the line's own treatment in the enum and always writes a false
+ * line flag. A historical true flag can encode either inherited or explicit reverse charge.
+ */
+export function isLegacyBill(
   headerVatFils: number,
-  lines: readonly { vatFils: number; reverseCharge: boolean }[]
-): number {
-  const reverseChargeLines = lines.filter((line) => line.reverseCharge);
-  if (
-    reverseChargeLines.length &&
+  lines: readonly { vatFils: number; reverse_charge?: boolean | null }[]
+): boolean {
+  return (
     hasHeaderOnlyBillVat(
       headerVatFils,
-      lines.map((l) => l.vatFils)
-    )
-  ) {
-    return headerVatFils;
-  }
-  return sumFils(reverseChargeLines.map((line) => line.vatFils));
+      lines.map((line) => line.vatFils)
+    ) || lines.some((line) => line.reverse_charge === true)
+  );
+}
+
+export function isBillWideReverseCharge(
+  reverseCharge?: boolean | null,
+  isImport?: boolean | null
+): boolean {
+  return reverseCharge === true || isImport === true;
+}
+
+export function hasStoredBillQuantityPrecision(quantity: number): boolean {
+  return quantity > 0 && quantity < 100_000_000 && /^\d+(?:\.\d{1,2})?$/.test(String(quantity));
 }
 
 export function billLineAmount(

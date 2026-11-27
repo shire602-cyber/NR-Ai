@@ -229,6 +229,7 @@
   "forms.errors.titleRequired": "العنوان مطلوب",
   "forms.errors.expenseItemRequired": "يلزم بند مصروف واحد على الأقل",
   "forms.errors.reviewNotesRequired": "ملاحظات المراجعة مطلوبة",
+  "forms.errors.billQuantityPrecision": "أدخل كمية أكبر من صفر وبحد أقصى منزلتين عشريتين.",
   "forms.errors.quantityPositive": "يجب أن تكون الكمية أكبر من صفر",
   "forms.errors.paidFromRequired": "اختر الحساب الذي دُفعت منه قيمة الشراء",
   "forms.errors.priceNonNegative": "يجب ألا يكون السعر سالبًا",

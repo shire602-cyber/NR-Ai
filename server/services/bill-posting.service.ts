@@ -18,7 +18,7 @@
 // Uncategorised lines post to 5000 General Expenses (created on demand), never 5130 (which the
 // seeded chart uses for Loss on Asset Disposal, R11-04).
 
-import { billReverseChargeVat } from "@shared/bill-line-edit";
+import { isBillWideReverseCharge, isLegacyBill } from "@shared/bill-line-edit";
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { sql, type SQL } from "drizzle-orm";
 import { storage } from "../storage";
@@ -177,7 +177,7 @@ const ZERO_VAT_SUPPLY = new Set(["zero_rated", "exempt", "out_of_scope"]);
  * reach here (validators reject them).
  */
 export function computeBillTotals(input: BillTotalsInput): BillTotals {
-  const billRc = input.reverseCharge === true || input.isImport === true;
+  const billRc = isBillWideReverseCharge(input.reverseCharge, input.isImport);
   const lines: BillLineCalc[] = input.lines.map((l, i) => {
     const quantity = l.quantity ?? 1;
     if (!Number.isSafeInteger(l.unitPriceFils) || l.unitPriceFils < 0) {
@@ -222,19 +222,20 @@ export function computeBillTotals(input: BillTotalsInput): BillTotals {
 export function sumBillTotals(
   input: Omit<BillTotalsInput, "lines"> & {
     lines: Pick<BillLineCalc, "amountFils" | "vatFils" | "reverseCharge">[];
-    recorded?: { subtotalFils: number; vatFils: number };
   }
 ): Omit<BillTotals, "lines"> {
   const { lines } = input;
-  const billRc = input.reverseCharge === true || input.isImport === true;
-  const subtotalFils = input.recorded?.subtotalFils ?? sumFils(lines.map((l) => l.amountFils));
-  let vatFils = input.recorded?.vatFils ?? sumFils(lines.map((l) => l.vatFils));
+  const billRc = isBillWideReverseCharge(input.reverseCharge, input.isImport);
+  const subtotalFils = sumFils(lines.map((l) => l.amountFils));
+  let vatFils = sumFils(lines.map((l) => l.vatFils));
   if (input.isImport && input.importVatFils && input.importVatFils > 0) {
     // Box 6: import VAT is the amount on the customs declaration.
     vatFils = input.importVatFils;
   }
   const anyRc = billRc || lines.some((l) => l.reverseCharge);
-  const rcVat = billRc ? vatFils : billReverseChargeVat(vatFils, lines);
+  const rcVat = billRc
+    ? vatFils
+    : sumFils(lines.filter((line) => line.reverseCharge).map((line) => line.vatFils));
   const withholdingFils =
     input.withholdingFils && input.withholdingFils > 0 ? input.withholdingFils : 0;
   const gross = subtotalFils + vatFils - rcVat;
@@ -404,6 +405,7 @@ export interface BillLineRow {
   vat_amount?: string | number | null;
   account_id: string | null;
   reverse_charge?: boolean | null;
+  vat_supply_type?: string | null;
 }
 
 export const filsOf = (v: string | number | null | undefined): number =>
@@ -518,21 +520,22 @@ export async function planBillJournal(
   // E3 (J2-r3): a company that is not VAT registered does not self-account reverse-charge VAT
   // (it is not charged at all) and cannot recover the VAT a supplier charged: that VAT is part
   // of the line's cost, nothing goes to Input VAT 1050.
-  const rcVatDoc =
-    bill.reverse_charge || bill.is_import
-      ? vatDoc
-      : billReverseChargeVat(
-          vatDoc,
-          lineItems.map((line) => ({
-            vatFils: filsOf(line.vat_amount),
-            reverseCharge: line.reverse_charge === true,
-          }))
-        );
-  const recordedRcVatBase = toBase(rcVatDoc, rate, foreign);
-  const rcVatBase = vatRegistered ? recordedRcVatBase : 0;
+  const valuedLines = lineItems.map((line) => ({ ...line, vatFils: filsOf(line.vat_amount) }));
+  const legacy = isLegacyBill(vatDoc, valuedLines);
+  const rcVatDoc = isBillWideReverseCharge(bill.reverse_charge, bill.is_import)
+    ? vatDoc
+    : sumFils(
+        valuedLines
+          .filter(
+            (line) => line.reverse_charge || (!legacy && line.vat_supply_type === "reverse_charge")
+          )
+          .map((line) => line.vatFils)
+      );
+  let rcVatBase = toBase(rcVatDoc, rate, foreign);
   const vatBase = vatRegistered
     ? toBase(vatDoc, rate, foreign)
-    : Math.max(0, toBase(vatDoc, rate, foreign) - recordedRcVatBase);
+    : Math.max(0, toBase(vatDoc, rate, foreign) - rcVatBase);
+  if (!vatRegistered) rcVatBase = 0;
   const pct = vatRegistered ? Number(bill.recoverable_vat_percent ?? 100) : 0;
   const lineAccountIds: string[] = [];
   for (const item of lineItems) {

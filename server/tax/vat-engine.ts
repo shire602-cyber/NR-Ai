@@ -23,7 +23,11 @@ import { db } from "../db";
 import { DomainError } from "../errors";
 import { invoiceLines, invoices, type InvoiceLine } from "../../shared/schema";
 import { toFils } from "../../shared/money";
-import { hasHeaderOnlyBillVat } from "../../shared/bill-line-edit";
+import {
+  hasHeaderOnlyBillVat,
+  isBillWideReverseCharge,
+  isLegacyBill,
+} from "../../shared/bill-line-edit";
 import { classifySupply, type Vat201Family } from "../../shared/vat-classification";
 import { SALES_CODES, totalsForStoredDocument } from "../services/invoice-posting.service";
 import { ledgerLines } from "../reporting";
@@ -907,7 +911,7 @@ async function collectBills(
       });
       continue;
     }
-    if (b.reverse_charge) {
+    if (isBillWideReverseCharge(b.reverse_charge, b.is_import)) {
       push({
         ...base,
         boxes: purchaseDelta("reverse_charge", subtotalBase, vatBase, recoverableTotal),
@@ -915,21 +919,20 @@ async function collectBills(
       continue;
     }
     const billLines = byBill.get(b.id) ?? [];
+    const lineVat = billLines.map((line) => ({
+      vatFils: fils(line.vat_amount),
+      reverse_charge: line.reverse_charge === true,
+    }));
+    const legacy = isLegacyBill(vatDoc, lineVat);
     if (
       billLines.length === 0 ||
       hasHeaderOnlyBillVat(
         vatDoc,
-        billLines.map((l) => fils(l.vat_amount))
+        lineVat.map((line) => line.vatFils)
       )
     ) {
-      // Legacy bill with no line-level VAT: the whole subtotal carries the bill VAT.
-      const kind = purchaseKindFor({
-        vatFils: vatDoc,
-        reverseCharge: billLines.some(
-          (line) => line.reverse_charge || line.vat_supply_type === "reverse_charge"
-        ),
-        designatedZone: b.designated_zone,
-      });
+      // For historical bills without line VAT, classify the whole subtotal from the header.
+      const kind = purchaseKindFor({ vatFils: vatDoc, designatedZone: b.designated_zone });
       push({ ...base, boxes: purchaseDelta(kind, subtotalBase, vatBase, recoverableTotal) });
       continue;
     }
@@ -943,7 +946,7 @@ async function collectBills(
       const kind = purchaseKindFor({
         supplyType: l.vat_supply_type,
         vatFils: lv,
-        reverseCharge: l.reverse_charge || l.vat_supply_type === "reverse_charge",
+        reverseCharge: l.reverse_charge || (!legacy && l.vat_supply_type === "reverse_charge"),
         designatedZone: b.designated_zone,
       });
       if (kind === "reverse_charge") {

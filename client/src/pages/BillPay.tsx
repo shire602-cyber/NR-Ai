@@ -85,7 +85,13 @@ import { BillItemPicker } from "@/components/bills/BillItemPicker";
 import { isStockItem, purchasePriceOf } from "@/lib/purchase-pickers";
 import { ScrollTabs } from "@/components/ui/scroll-tabs";
 import type { BillCaptureResult, BillCaptureField } from "@shared/bill-capture";
-import { billLineAmount, billLineSupplyType, hasHeaderOnlyBillVat } from "@shared/bill-line-edit";
+import {
+  billLineAmount,
+  billLineSupplyType,
+  hasStoredBillQuantityPrecision,
+  isBillWideReverseCharge,
+  isLegacyBill,
+} from "@shared/bill-line-edit";
 import { MoneyError } from "@shared/money";
 import { EInvoiceOriginTag } from "@/components/einvoice/EInvoiceListCell";
 import {
@@ -347,7 +353,7 @@ interface AgingReport {
 const billLineSchema = z
   .object({
     savedLineId: z.string().optional(),
-    savedQuantityIsZero: z.boolean().optional(),
+    savedQuantity: z.number().optional(),
     description: z.string().min(1, "forms.errors.descriptionRequired"),
     quantity: z.preprocess(
       (value) => (value === "" ? NaN : value),
@@ -362,10 +368,13 @@ const billLineSchema = z
     cost_center_id: z.string().optional(),
     product_id: z.string().optional(),
   })
-  .refine((line) => line.quantity > 0 || (line.savedLineId && line.savedQuantityIsZero), {
-    path: ["quantity"],
-    message: "forms.errors.quantityPositive",
-  });
+  .refine(
+    (line) => line.quantity === line.savedQuantity || hasStoredBillQuantityPrecision(line.quantity),
+    {
+      path: ["quantity"],
+      message: "forms.errors.billQuantityPrecision",
+    }
+  );
 
 const billFormSchema = z.object({
   vendor_id: z.string().optional(),
@@ -753,11 +762,10 @@ export default function BillPay() {
       });
       leaveEditor();
     },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: translateNow("toasts.failedToUpdateBill"),
-        description: error?.message || translateNow("toasts.pleaseTryAgain"),
+    onError: (error: Error) => {
+      billForm.setError("root.server", {
+        type: "server",
+        message: error.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -914,7 +922,7 @@ export default function BillPay() {
           detail.line_items.length > 0
             ? detail.line_items.map((l) => ({
                 savedLineId: l.id,
-                savedQuantityIsZero: Number(l.quantity ?? 1) === 0,
+                savedQuantity: Number(l.quantity ?? 1),
                 description: l.description,
                 quantity: Number(l.quantity ?? 1),
                 unit_price: Number(l.unit_price),
@@ -1040,34 +1048,35 @@ export default function BillPay() {
       reverseCharge: line.vat_supply_type === "reverse_charge",
     };
   });
-  const watchReverseCharge = billForm.watch("reverse_charge") || billForm.watch("is_import");
-  const watchCurrency = billForm.watch("currency");
   const watchIsImport = billForm.watch("is_import");
-  const importVat = (watchIsImport && Number(billForm.watch("import_vat_amount"))) || 0;
-  const headerVat = Number(editingBill?.vat_amount ?? 0);
-  const headerOnlyVat = hasHeaderOnlyBillVat(
-    headerVat,
-    (editingBill?.line_items ?? []).map((line) => Number(line.vat_amount ?? 0))
+  const watchReverseCharge = isBillWideReverseCharge(
+    billForm.watch("reverse_charge"),
+    watchIsImport
   );
-  const preserveHeaderVat =
-    headerOnlyVat &&
-    valuedLines.length === editingBill?.line_items.length &&
-    valuedLines.every((line) => line.savedVat !== undefined);
-  const lineVat = (line: (typeof valuedLines)[number]) =>
-    (headerOnlyVat && !preserveHeaderVat ? undefined : line.savedVat) ?? line.calculatedVat;
-  const subtotal = preserveHeaderVat
-    ? Number(editingBill?.subtotal)
-    : valuedLines.reduce((sum, line) => sum + line.amount, 0);
+  const watchCurrency = billForm.watch("currency");
+  const importVat = (watchIsImport && Number(billForm.watch("import_vat_amount"))) || 0;
+  const legacyBill =
+    editingBill &&
+    isLegacyBill(
+      Number(editingBill.vat_amount ?? 0),
+      editingBill.line_items.map((line) => ({ ...line, vatFils: Number(line.vat_amount ?? 0) }))
+    );
+  const lineVat = (line: (typeof valuedLines)[number]) => line.savedVat ?? line.calculatedVat;
+  const subtotal =
+    legacyBill && editingBill
+      ? Number(editingBill.subtotal)
+      : valuedLines.reduce((sum, line) => sum + line.amount, 0);
   const vatAmount =
-    importVat ||
-    (preserveHeaderVat ? headerVat : valuedLines.reduce((sum, line) => sum + lineVat(line), 0));
-  const payableVat =
-    watchReverseCharge || (preserveHeaderVat && valuedLines.some((line) => line.reverseCharge))
-      ? 0
-      : preserveHeaderVat
-        ? headerVat
-        : valuedLines.reduce((sum, line) => sum + (line.reverseCharge ? 0 : lineVat(line)), 0);
-  const totalAmount = subtotal + payableVat - Number(editingBill?.withholding_amount ?? 0);
+    legacyBill && editingBill
+      ? Number(editingBill.vat_amount)
+      : importVat || valuedLines.reduce((sum, line) => sum + lineVat(line), 0);
+  const payableVat = watchReverseCharge
+    ? 0
+    : valuedLines.reduce((sum, line) => sum + (line.reverseCharge ? 0 : lineVat(line)), 0);
+  const totalAmount =
+    legacyBill && editingBill
+      ? Number(editingBill.total_amount)
+      : subtotal + payableVat - Number(editingBill?.withholding_amount ?? 0);
   const cashAccounts = postablePaymentAccounts(accounts);
 
   // Expense account options
@@ -1673,8 +1682,8 @@ export default function BillPay() {
                               <Input
                                 {...field}
                                 type="number"
-                                min={watchLines[index]?.savedQuantityIsZero ? 0 : 0.0001}
-                                step="0.0001"
+                                min={watchLines[index]?.savedQuantity === 0 ? 0 : 0.01}
+                                step="0.01"
                               />
                             </FormControl>
                             <FormMessage />

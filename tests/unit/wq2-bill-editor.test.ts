@@ -28,6 +28,7 @@ import {
   type,
   unmountPage,
 } from "./helpers/form-harness";
+import { apiRequest } from "../../client/src/lib/queryClient";
 import { loadLocale, useI18n } from "../../client/src/lib/i18n";
 import type { BillCaptureResult } from "../../shared/bill-capture";
 
@@ -145,9 +146,8 @@ const capture: BillCaptureResult = {
 
 describe("[WQ2 8.2] bill editor capture", () => {
   it.each([
-    { supplyType: "standard_rated", legacyFlag: true, changeTreatment: false },
     { supplyType: "reverse_charge", legacyFlag: false, changeTreatment: false },
-    { supplyType: "standard_rated", legacyFlag: true, changeTreatment: true },
+    { supplyType: "reverse_charge", legacyFlag: false, changeTreatment: true },
   ])(
     "loads $supplyType with legacy flag $legacyFlag and supports an explicit treatment change ($changeTreatment)",
     async ({ supplyType, legacyFlag, changeTreatment }) => {
@@ -227,63 +227,7 @@ describe("[WQ2 8.2] bill editor capture", () => {
     }
   );
 
-  it.each([false, true])(
-    "keeps legacy reverse charge when revising the header (header VAT only: %s)",
-    async (headerOnly) => {
-      const url = "/api/bills/header-rc";
-      setFixtures({
-        [url]: {
-          id: "header-rc",
-          status: "approved",
-          vendor_name: VENDOR.name,
-          vendor_trn: VENDOR.trn,
-          bill_date: "2026-01-15",
-          reverse_charge: true,
-          subtotal: "1234.00",
-          vat_amount: "61.70",
-          line_items: [
-            {
-              id: "legacy-rc",
-              description: "Imported service",
-              quantity: "1.23",
-              unit_price: "1000.00",
-              vat_rate: "5.00",
-              vat_supply_type: headerOnly ? "standard_rated" : "reverse_charge",
-              reverse_charge: true,
-              amount: "1234.00",
-              vat_amount: headerOnly ? "0.00" : "61.70",
-              account_id: null,
-            },
-          ],
-          payments: [],
-        },
-      });
-      const prompt = vi.spyOn(window, "prompt").mockReturnValue("Correct bill-wide VAT");
-      try {
-        const { default: BillPay } = await import("../../client/src/pages/BillPay");
-        await renderAt(BillPay, "/bill-pay/header-rc/edit");
-        await flushUntil(() => !!byTestId("button-submit-bill"));
-        expect(byTestId("editor-total")?.textContent).toContain("1,234.00");
-        const checkbox = editorPage().querySelector('[role="checkbox"][aria-checked="true"]');
-        expect(checkbox).not.toBeNull();
-        await act(async () => (checkbox as HTMLElement).click());
-        expect(byTestId("editor-total")?.textContent).toContain("1,234.00");
-        await submit(byTestId("button-submit-bill"));
-        await flushUntil(() => apiCalls("POST").some((call) => call.url === `${url}/revise`));
-        expect(apiCalls("POST").find((call) => call.url === `${url}/revise`)!.body).toMatchObject({
-          reason: "Correct bill-wide VAT",
-          reverse_charge: false,
-          line_items: [
-            { id: "legacy-rc", quantity: 1.23, vat_supply_type: undefined, vat_rate: 5 },
-          ],
-        });
-      } finally {
-        prompt.mockRestore();
-      }
-    }
-  );
-
-  it("reopens four-place quantities and shows recorded header-only VAT on a notes edit", async () => {
+  it("shows the legacy-bill error in the editor and keeps the attempted notes", async () => {
     const url = "/api/bills/legacy-vat";
     setFixtures({
       [url]: {
@@ -292,18 +236,18 @@ describe("[WQ2 8.2] bill editor capture", () => {
         vendor_name: VENDOR.name,
         vendor_trn: VENDOR.trn,
         bill_date: "2026-01-15",
-        subtotal: "1234.50",
-        vat_amount: "61.73",
-        total_amount: "1296.23",
+        subtotal: "1000.00",
+        vat_amount: "50.00",
+        total_amount: "1050.00",
         line_items: [
           {
             id: "legacy-domestic",
             description: "Supplies",
-            quantity: "1.2345",
+            quantity: "1.00",
             unit_price: "1000.00",
             vat_rate: "5.00",
             vat_supply_type: "standard_rated",
-            amount: "1234.50",
+            amount: "1000.00",
             vat_amount: "0.00",
             account_id: null,
           },
@@ -315,17 +259,26 @@ describe("[WQ2 8.2] bill editor capture", () => {
     await renderAt(BillPay, "/bill-pay/legacy-vat/edit");
     await flushUntil(() => !!byTestId("button-submit-bill"));
     const page = editorPage();
-    expect(page.querySelector<HTMLInputElement>('[name="line_items.0.quantity"]')?.value).toBe(
-      "1.2345"
-    );
-    expect(page.textContent).toContain("1,296.23");
-    await type(page.querySelector<HTMLInputElement>('[name="notes"]')!, "Updated notes");
+    expect(page.textContent).toContain("1,050.00");
+    const message = "This bill predates line-level VAT treatment and cannot be edited as is.";
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error(message));
+    const notes = page.querySelector<HTMLTextAreaElement>('[name="notes"]')!;
+    await type(notes, "Updated notes");
     await submit(byTestId("button-submit-bill"));
-    await flushUntil(() => apiCalls("PATCH").some((call) => call.url === url));
-    expect(apiCalls("PATCH").find((call) => call.url === url)!.body).toMatchObject({
-      notes: "Updated notes",
-      line_items: [{ id: "legacy-domestic", quantity: 1.2345, vat_supply_type: undefined }],
-    });
+    await flushUntil(() => editorPage().textContent?.includes(message) === true);
+    expect(notes.value).toBe("Updated notes");
+  });
+
+  it("shows a two-decimal quantity error before sending a save", async () => {
+    const { default: BillPay } = await import("../../client/src/pages/BillPay");
+    await renderAt(BillPay, "/bill-pay/new");
+    await flushUntil(() => !!byTestId("button-submit-bill"));
+    const page = editorPage();
+    const quantity = page.querySelector<HTMLInputElement>('[name="line_items.0.quantity"]');
+    await type(quantity, "1.234");
+    await submit(byTestId("button-submit-bill"));
+    await flushUntil(() => page.textContent?.includes("up to two decimal places") === true);
+    expect(apiCalls("POST")).toEqual([]);
   });
 
   it("a dropped invoice fills the form with per-field confidence; saving posts the bill and then the attachment", async () => {

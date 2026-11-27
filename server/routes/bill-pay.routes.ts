@@ -55,6 +55,7 @@ import {
   createVendorCreditFromInbound,
   createPrepayment,
   createRecurringBill,
+  editableBillLines,
   prepareBillRevision,
   recordBillPayment,
   registerBillServices,
@@ -353,7 +354,7 @@ export function registerBillPayRoutes(app: Express) {
       const lines = (
         await pool.query(
           `SELECT description, amount, vat_amount, account_id,
-                  (reverse_charge OR vat_supply_type = 'reverse_charge') AS reverse_charge
+                  reverse_charge, vat_supply_type
              FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
           [bill.id]
         )
@@ -541,10 +542,11 @@ export function registerBillPayRoutes(app: Express) {
           vat_amount: string;
           account_id: string | null;
           reverse_charge: boolean;
+          vat_supply_type: string;
         }>(
           tx,
           `SELECT description, amount, vat_amount, account_id,
-                  (reverse_charge OR vat_supply_type = 'reverse_charge') AS reverse_charge
+                  reverse_charge, vat_supply_type
              FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
           [bill.id]
         );
@@ -766,13 +768,23 @@ export function registerBillPayRoutes(app: Express) {
     strictBody(billAttachmentSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const bill = await loadBill(req);
-      const { file, filename } = req.body as { file: string; filename?: string | null };
+      const { file, filename } = parsedBody<{ file: string; filename?: string | null }>(req);
       // WQ2: the upload guard checks the bytes; a rejected file is a 4xx, never a 500.
-      const path = await storePurchaseFile(file);
-      await pool.query(
-        `UPDATE vendor_bills SET attachment_path = $2, attachment_name = $3 WHERE id = $1 AND company_id = $4`,
-        [bill.id, path, filename ?? null, bill.company_id]
-      );
+      await withLedgerTx(async (tx) => {
+        const [locked] = await txRows<BillRow>(
+          tx,
+          `SELECT id, vat_amount FROM vendor_bills WHERE id = $1 AND company_id = $2 FOR UPDATE`,
+          [bill.id, bill.company_id]
+        );
+        if (!locked) throw new DomainError("BILL_NOT_FOUND", 404);
+        await editableBillLines(locked, tx);
+        const path = await storePurchaseFile(file);
+        await txRows(
+          tx,
+          `UPDATE vendor_bills SET attachment_path = $2, attachment_name = $3 WHERE id = $1 AND company_id = $4`,
+          [bill.id, path, filename ?? null, bill.company_id]
+        );
+      });
       res.json({ attachment_name: filename ?? null, has_attachment: true });
     })
   );
@@ -845,7 +857,7 @@ export function registerBillPayRoutes(app: Express) {
           const lines = (
             await pool.query(
               `SELECT description, amount, vat_amount, account_id,
-                      (reverse_charge OR vat_supply_type = 'reverse_charge') AS reverse_charge
+                      reverse_charge, vat_supply_type
                  FROM bill_line_items WHERE bill_id = $1`,
               [bill.id]
             )

@@ -13,7 +13,12 @@
  */
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { todayDubai } from "@shared/accounting-date";
-import { billLineAmount, billLineSupplyType, hasHeaderOnlyBillVat } from "@shared/bill-line-edit";
+import {
+  billLineAmount,
+  hasStoredBillQuantityPrecision,
+  isBillWideReverseCharge,
+  isLegacyBill,
+} from "@shared/bill-line-edit";
 import type { Request } from "express";
 import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
@@ -293,12 +298,40 @@ interface PreparedBill {
   warnings: Array<{ code: string; message: string }>;
 }
 
-/** Validate + compute everything for a bill create/update; no writes. */
+/** Load and classify persisted lines before an edit performs any writes. */
+export async function editableBillLines(bill: Pick<BillRow, "id" | "vat_amount">, tx: LedgerTx) {
+  const lines = await txRows<SavedBillLine>(
+    tx,
+    `SELECT id, quantity, unit_price, amount, vat_amount, vat_rate, vat_supply_type,
+            reverse_charge, account_id, product_id, purchase_order_line_id, cost_center_id
+       FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at, id`,
+    [bill.id]
+  );
+  if (
+    isLegacyBill(
+      filsOf(bill.vat_amount),
+      lines.map((line) => ({ ...line, vatFils: filsOf(line.vat_amount) }))
+    )
+  ) {
+    throw new DomainError("LEGACY_BILL_RECLASSIFY_REQUIRED", 409);
+  }
+  return lines;
+}
+
+/** Validate and value a bill before writing it. */
 async function prepareBill(
   companyId: string,
   input: BillFieldsInput,
   existing: BillRow | null,
-  tx?: LedgerTx
+  {
+    tx,
+    allowStoredTemplateQuantity = false,
+    savedLines = [],
+  }: {
+    tx?: LedgerTx;
+    allowStoredTemplateQuantity?: boolean;
+    savedLines?: SavedBillLine[];
+  }
 ): Promise<PreparedBill> {
   const warnings: Array<{ code: string; message: string }> = [];
   const header: Record<string, unknown> = {};
@@ -359,6 +392,7 @@ async function prepareBill(
   const reverseCharge =
     get("reverse_charge", existing?.reverse_charge && !existing.is_import) === true;
   const isImport = get("is_import", existing?.is_import ?? false) === true;
+  const billWide = isBillWideReverseCharge(reverseCharge, isImport);
   if (
     !existing ||
     (input.currency !== undefined && currency !== existing.currency) ||
@@ -373,12 +407,12 @@ async function prepareBill(
     header.exchange_rate = await resolveDocRate(companyId, currency, billDate, given, tx);
   }
   if (input.reverse_charge !== undefined || input.is_import !== undefined || !existing) {
-    header.reverse_charge = reverseCharge || isImport;
+    header.reverse_charge = billWide;
   }
   if (input.is_import !== undefined || !existing) header.is_import = isImport;
 
-  const wasBillWide = !!(existing?.reverse_charge || existing?.is_import);
-  const billWideChanged = wasBillWide !== (reverseCharge || isImport);
+  const wasBillWide = isBillWideReverseCharge(existing?.reverse_charge, existing?.is_import);
+  const billWideChanged = wasBillWide !== billWide;
 
   let lines: Array<Record<string, unknown>> | null = null;
   const recomputeNeeded =
@@ -388,21 +422,6 @@ async function prepareBill(
     input.import_vat_amount !== undefined ||
     input.withholding_amount !== undefined;
   if (recomputeNeeded) {
-    const savedLines = existing
-      ? ((
-          await ledgerQueryable(tx).query(
-            `SELECT id, quantity, unit_price, amount, vat_amount, vat_rate, vat_supply_type,
-                  reverse_charge, account_id, product_id, purchase_order_line_id, cost_center_id
-             FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at, id`,
-            [existing.id]
-          )
-        ).rows as SavedBillLine[])
-      : [];
-    const savedVatFils = filsOf(existing?.vat_amount);
-    const headerOnlyVat = hasHeaderOnlyBillVat(
-      savedVatFils,
-      savedLines.map((line) => filsOf(line.vat_amount))
-    );
     const savedById = new Map(savedLines.map((line) => [line.id, line]));
     const usedLineIds = new Set<string>();
     const src = input.line_items?.map((l, i) => {
@@ -412,10 +431,16 @@ async function prepareBill(
       if (l.id) usedLineIds.add(l.id);
       const savedQuantity = Number(saved?.quantity ?? 1);
       const quantity = l.quantity ?? savedQuantity;
-      if (quantity === 0 && (!saved || savedQuantity !== 0)) {
+      if (
+        (!saved || quantity !== savedQuantity) &&
+        !(
+          (allowStoredTemplateQuantity && quantity > 0 && quantity < 100_000_000) ||
+          hasStoredBillQuantityPrecision(quantity)
+        )
+      ) {
         throw new DomainError("INVALID_BILL_QUANTITY", 400, { line: i });
       }
-      const previousSupply = saved ? billLineSupplyType(saved) : null;
+      const previousSupply = saved?.vat_supply_type ?? null;
       const supplyType = l.vat_supply_type ?? previousSupply;
       const previousRate = saved ? (Number(saved.vat_rate ?? 5) === 0 ? 0 : 5) : null;
       const vatRate = l.vat_rate ?? (supplyType === previousSupply ? previousRate : null);
@@ -448,7 +473,6 @@ async function prepareBill(
         poLineId: l.purchase_order_line_id ?? null,
         costCenterId:
           l.cost_center_id === undefined ? (saved?.cost_center_id ?? null) : l.cost_center_id,
-        savedTreatment: saved && supplyType === previousSupply ? saved : null,
       };
     });
     if (src && input.line_items) {
@@ -497,28 +521,15 @@ async function prepareBill(
           ? filsOf(existing?.withholding_amount)
           : (input.withholding_amount ?? 0),
     };
-    const preserveHeaderVat =
-      headerOnlyVat &&
-      (!src ||
-        (src.length === savedLines.length && src.every((line) => line.vatFils !== undefined)));
-    // Populate VAT for every line when an edit moves a historical bill to line-level VAT.
-    const revalue = headerOnlyVat && !preserveHeaderVat;
-    const replacement = src
-      ? computeBillTotals({
-          lines: revalue ? src.map((line) => ({ ...line, vatFils: undefined })) : src,
-        }).lines
-      : null;
+    const replacement = src ? computeBillTotals({ lines: src }).lines : null;
     const totals = sumBillTotals({
       ...tax,
-      recorded: preserveHeaderVat
-        ? { subtotalFils: filsOf(existing?.subtotal), vatFils: savedVatFils }
-        : undefined,
       lines:
         replacement ??
         savedLines.map((l) => ({
           amountFils: filsOf(l.amount),
           vatFils: filsOf(l.vat_amount),
-          reverseCharge: billLineSupplyType(l) === "reverse_charge",
+          reverseCharge: l.vat_supply_type === "reverse_charge",
         })),
     });
     header.subtotal = fromFils(totals.subtotalFils);
@@ -538,12 +549,12 @@ async function prepareBill(
         vat_rate: replacement[i].vatRate,
         amount: fromFils(replacement[i].amountFils),
         vat_amount: fromFils(replacement[i].vatFils),
-        vat_supply_type: l.savedTreatment?.vat_supply_type ?? replacement[i].supplyType,
+        vat_supply_type: replacement[i].supplyType,
         account_id: l.accountId,
         product_id: l.productId,
         purchase_order_line_id: l.poLineId,
         cost_center_id: l.costCenterId,
-        reverse_charge: l.savedTreatment?.reverse_charge ?? false,
+        reverse_charge: false,
       }));
     }
   }
@@ -553,7 +564,7 @@ async function prepareBill(
     | undefined;
   // WQ2 (4.7): one of our own sales invoices is never a purchase.
   await assertNotOwnTrn(companyId, trn, tx);
-  if (!trn && !reverseCharge && !isImport) {
+  if (!trn && !billWide) {
     warnings.push({
       code: "VENDOR_TRN_MISSING",
       message:
@@ -745,7 +756,10 @@ type CreateBillArgs = {
 async function prepareBillCreate(args: CreateBillArgs) {
   const { companyId, actorId, input } = args;
   await assertPeriodNotLocked(companyId, input.bill_date, args.tx);
-  const prepared = await prepareBill(companyId, input as BillFieldsInput, null, args.tx);
+  const prepared = await prepareBill(companyId, input, null, {
+    tx: args.tx,
+    allowStoredTemplateQuantity: args.origin === "recurring",
+  });
   if (args.poLineIds && prepared.lines) {
     prepared.lines.forEach((l, i) => (l.purchase_order_line_id = args.poLineIds![i] ?? null));
   }
@@ -837,6 +851,7 @@ export async function updateBillInPlace(args: {
 }): Promise<BillWriteResult> {
   return withLedgerTx(async (tx) => {
     const existing = await lockBill(tx, args.billId, args.companyId);
+    const savedLines = await editableBillLines(existing, tx);
     if (!["draft", "pending", "rejected"].includes(String(existing.status))) {
       throw new DomainError(
         "BILL_LOCKED",
@@ -847,7 +862,7 @@ export async function updateBillInPlace(args: {
     }
     await assertPeriodNotLocked(args.companyId, existing.bill_date, tx);
     if (args.input.bill_date) await assertPeriodNotLocked(args.companyId, args.input.bill_date, tx);
-    const prepared = await prepareBill(args.companyId, args.input, existing, tx);
+    const prepared = await prepareBill(args.companyId, args.input, existing, { tx, savedLines });
     await updateHeader(tx, args.billId, prepared.header);
     if (prepared.lines) await writeLines(tx, args.billId, prepared.lines);
     const bill = (
@@ -866,6 +881,35 @@ export async function updateBillInPlace(args: {
   });
 }
 
+export async function tagBillLines(
+  companyId: string,
+  billId: string,
+  lineIds: string[],
+  costCenterId: string | null
+): Promise<number> {
+  return withLedgerTx(async (tx) => {
+    const bill = await lockBill(tx, billId, companyId);
+    await editableBillLines(bill, tx);
+    if (!["draft", "pending", "rejected"].includes(String(bill.status))) {
+      throw new DomainError(
+        "BILL_LOCKED",
+        409,
+        { status: bill.status },
+        "The bill is posted; revise it to change its cost centres"
+      );
+    }
+    const { rows: lines } = await ledgerQueryable(tx).query(
+      `UPDATE bill_line_items SET cost_center_id = $1
+        WHERE bill_id = $2 AND id = ANY($3::uuid[]) RETURNING id`,
+      [costCenterId, billId, lineIds]
+    );
+    if (lines.length !== lineIds.length) {
+      throw new DomainError("BILL_LINE_NOT_FOUND", 404, { updated: lines.length });
+    }
+    return lines.length;
+  });
+}
+
 /** Prepare totals and lines against the locked approved bill. */
 export async function prepareBillRevision(
   companyId: string,
@@ -873,8 +917,9 @@ export async function prepareBillRevision(
   input: BillUpdateInput,
   tx: LedgerTx
 ) {
+  const savedLines = await editableBillLines(existing, tx);
   if (input.bill_date) await assertPeriodNotLocked(companyId, input.bill_date, tx);
-  return prepareBill(companyId, input, existing, tx);
+  return prepareBill(companyId, input, existing, { tx, savedLines });
 }
 
 /** Apply a prepared revision inside `tx` (header + lines + revision bump). */
@@ -2206,6 +2251,7 @@ export async function reverseBillPayment(input: {
 }
 
 export function registerBillServices(): void {
+  if (!has("bills.tagLines")) provide("bills.tagLines", tagBillLines);
   if (!has("bills.recordPayment")) provide("bills.recordPayment", recordBillPayment);
   if (!has("bills.reversePayment")) provide("bills.reversePayment", reverseBillPayment);
   if (!has("bills.createDraftFromInbound"))
