@@ -1254,6 +1254,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       href: "/vat-filing",
     },
     {
+      id: "nav-vat-bad-debt-relief",
+      label: "Bad-debt relief",
+      group: "Navigate",
+      icon: FileSpreadsheet,
+      href: "/vat-bad-debt-relief",
+    },
+    {
       id: "nav-corp-tax",
       label: "Corporate Tax",
       group: "Navigate",

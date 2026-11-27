@@ -38,6 +38,7 @@ export const commonRoutes = [
   "/company-profile",
   "/reports",
   "/vat-filing",
+  "/vat-bad-debt-relief",
   "/corporate-tax",
   "/document-vault",
   "/tax-return-archive",
