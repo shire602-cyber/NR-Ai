@@ -8,7 +8,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { drainDomainEvents, onDomainEvent } from "../../server/platform/domain-events";
 import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness";
-import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const base = (t: Tenant) => `/api/companies/${t.company.id}`;
@@ -404,7 +403,8 @@ describe("WQ1 make recurring from an invoice (7.13)", () => {
       contactId: c.id,
       customerName: "Gulf Retail LLC",
       frequency: "monthly",
-      startDate: dubaiToday(),
+      // UTC day: scheduler selects due templates by next_run_date <= now() (UTC instant).
+      startDate: new Date().toISOString().slice(0, 10),
       autoIssue: true,
       autoSend: true,
       sendToEmail: "ap@gulfretail.example",

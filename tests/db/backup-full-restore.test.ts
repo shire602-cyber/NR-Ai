@@ -515,11 +515,9 @@ describe("W5-B backups", () => {
       connection.id,
     ]);
     clean.tables.bank_connections[0] = originalConnection;
-    clean.tables.bank_gl_migration_findings = [
-      {
-        details: { statement_company_id: randomUUID() },
-      },
-    ];
+    clean.tables.bank_gl_migration_findings = [{
+      details: { statement_company_id: randomUUID() },
+    }];
     const oldJson = JSON.stringify(clean);
     await h.sql("UPDATE backups SET data_snapshot = $2, checksum = $3 WHERE id = $1", [
       b.id,

@@ -1345,7 +1345,7 @@ async function main() {
     const qStartMonth = Math.floor(now.getUTCMonth() / 3) * 3 - 3;
     const qStart = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth, 1));
     const qEnd = new Date(Date.UTC(qStart.getUTCFullYear(), qStart.getUTCMonth() + 3, 0));
-    const ymd = (d) => dubaiIso(d);
+    const ymd = (d) => d.toISOString().slice(0, 10);
     const generated = await page.request.post(
       `${BASE}/api/companies/${companyId}/vat-returns/generate`,
       {
