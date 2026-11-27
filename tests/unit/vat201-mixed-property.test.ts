@@ -139,8 +139,7 @@ function runScenario(
 
 // --- Named scenarios ---
 
-// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
-describe.skip("vat201 mixed-doc property: Box 1 == GL at every step", () => {
+describe("vat201 mixed-doc property: Box 1 == GL at every step", () => {
   it("Sol odd-cent repro: USD 200 std + USD 700 RC, three partial credits at 3.6725 (combined account)", () => {
     runScenario(
       20000,
