@@ -101,14 +101,14 @@ export function NeedsYouStrip({
             <Link
               key={chip.id}
               href={chip.href}
-              className="group inline-flex h-10 shrink-0 items-center gap-2.5 rounded-full border border-border bg-card ps-3.5 pe-4 text-small font-medium text-foreground shadow-card-soft transition-[border-color,box-shadow,transform] duration-base ease-out hover:-translate-y-0.5 hover:border-border-strong hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="card-interactive group inline-flex h-10 shrink-0 items-center gap-2.5 rounded-full border border-border bg-card ps-3.5 pe-4 text-small font-medium text-foreground shadow-card-soft transition-[border-color,box-shadow,transform] duration-base ease-out hover:border-border-strong hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               data-testid={`needs-you-${chip.id}`}
             >
               <span aria-hidden className={cn("h-2 w-2 rounded-full", TONE_DOT[chip.tone])} />
               <Icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
               <span className="whitespace-nowrap">{chip.label}</span>
               <ArrowRight
-                className="nudge-on-hover h-3.5 w-3.5 text-muted-foreground opacity-60 group-hover:opacity-100"
+                className="nudge-on-hover h-3.5 w-3.5 text-muted-foreground opacity-60 group-hover:opacity-100 rtl:[scale:-1_1]"
                 aria-hidden
               />
             </Link>

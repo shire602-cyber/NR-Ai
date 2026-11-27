@@ -219,7 +219,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   href={href}
                   aria-current={active ? "page" : undefined}
                   className={[
-                    "group flex h-11 items-center gap-3 rounded-lg px-3.5 text-small font-medium transition-[background-color,color,box-shadow] duration-base",
+                    "nav-icon-hover flex h-11 items-center gap-3 rounded-lg px-3.5 text-small font-medium transition-[background-color,color,box-shadow] duration-base",
                     active
                       ? "bg-card text-foreground shadow-card-soft"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -227,7 +227,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                 >
                   <Icon
                     className={[
-                      "h-4 w-4 shrink-0 transition-transform duration-base group-hover:scale-110",
+                      "h-4 w-4 shrink-0",
                       active ? "text-accent" : "text-muted-foreground",
                     ].join(" ")}
                     aria-hidden

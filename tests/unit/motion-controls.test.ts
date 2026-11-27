@@ -1,24 +1,27 @@
 // @vitest-environment jsdom
 /**
  * Motion controls (front-end redesign): the pause preference, the pointer tilt / parallax
- * module and the top-bar pause button, exercised in jsdom. The last block reads index.css
- * because jsdom does not apply stylesheets, so "paused means no transform" can only be checked
- * against the rule text.
+ * module and the top-bar pause button, exercised in jsdom. Stylesheet guards cover the
+ * focus and motion selectors because jsdom cannot exercise the browser's CSS cascade.
  */
 import { createElement as h, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { parse } from "postcss";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DashboardModel } from "../../client/src/pages/dashboard/useCustomerDashboardModel";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let reduced = false;
+let finePointer = false;
 
 beforeAll(async () => {
   window.matchMedia = ((q: string) =>
     ({
-      matches: q.includes("prefers-reduced-motion") ? reduced : false,
+      matches: q.includes("prefers-reduced-motion") ? reduced : finePointer,
       media: q,
       addEventListener() {},
       removeEventListener() {},
@@ -31,6 +34,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   reduced = false;
+  finePointer = false;
   localStorage.clear();
   delete document.documentElement.dataset.motion;
 });
@@ -154,6 +158,48 @@ describe("MotionToggle", () => {
     expect(document.documentElement.dataset.motion).toBeUndefined();
   });
 
+  it("pauses and detaches pointer depth when browser storage throws", async () => {
+    finePointer = true;
+    const { MotionToggle } = await import("../../client/src/components/ui/motion-toggle");
+    const { useAmbientMotion } = await import("../../client/src/lib/motion/useAmbientMotion");
+    function MotionShell() {
+      useAmbientMotion();
+      return h(MotionToggle);
+    }
+    const storage = vi.spyOn(window, "localStorage", "get").mockImplementation(() => {
+      throw new DOMException("Storage denied", "SecurityError");
+    });
+    const add = vi.spyOn(document, "addEventListener");
+    const remove = vi.spyOn(document, "removeEventListener");
+    try {
+      act(() => root.render(h(MotionShell)));
+      const button = container.querySelector("button")!;
+      await vi.waitFor(() =>
+        expect(add).toHaveBeenCalledWith("pointermove", expect.any(Function), { passive: true })
+      );
+      const listener = add.mock.calls.find(([event]) => event === "pointermove")?.[1];
+
+      act(() => button.click());
+      expect(button.getAttribute("aria-pressed")).toBe("true");
+      expect(document.documentElement.dataset.motion).toBe("off");
+      expect(remove).toHaveBeenCalledWith("pointermove", listener);
+
+      add.mockClear();
+      act(() => button.click());
+      expect(button.getAttribute("aria-pressed")).toBe("false");
+      expect(document.documentElement.dataset.motion).toBeUndefined();
+      await vi.waitFor(() =>
+        expect(add).toHaveBeenCalledWith("pointermove", expect.any(Function), { passive: true })
+      );
+    } finally {
+      storage.mockRestore();
+      add.mockRestore();
+      remove.mockRestore();
+      const { setMotionPaused } = await import("../../client/src/lib/motion/preference");
+      act(() => setMotionPaused(false));
+    }
+  });
+
   it("shows the paused state and does not resume when the OS asks for reduced motion", async () => {
     reduced = true;
     const button = await renderToggle();
@@ -162,6 +208,67 @@ describe("MotionToggle", () => {
     act(() => button.click());
     expect(document.documentElement.dataset.motion).toBeUndefined();
   });
+});
+
+it("renders mirrored dashboard action arrows in Arabic with motion on and paused", async () => {
+  const { useI18n, useTranslation } = await import("../../client/src/lib/i18n");
+  const { setMotionPaused } = await import("../../client/src/lib/motion/preference");
+  const { CompliancePanel } = await import("../../client/src/pages/dashboard/DashboardPlanning");
+  const { NeedsYouStrip } = await import("../../client/src/pages/dashboard/NeedsYouStrip");
+  const client = new QueryClient({ defaultOptions: { queries: { queryFn: async () => [] } } });
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  function DashboardActions() {
+    const { t } = useTranslation();
+    const model = {
+      t,
+      locale: "ar",
+      compliance: {
+        auditReadiness: {
+          score: 80,
+          issues: ["Bank reconciliation"],
+          checks: [{ status: "fail" }],
+        },
+      },
+    } as DashboardModel;
+    return h(
+      QueryClientProvider,
+      { client },
+      h(CompliancePanel, { m: model }),
+      h(NeedsYouStrip, {
+        companyId: "company",
+        invoices: [],
+        compliance: { vatStatus: { filingStatus: "overdue", overdueCount: 1 } },
+      })
+    );
+  }
+  try {
+    act(() => useI18n.getState().setLocale("ar"));
+    expect(document.documentElement.dir).toBe("rtl");
+    for (const paused of [false, true]) {
+      act(() => {
+        setMotionPaused(paused);
+        root.render(h(DashboardActions));
+      });
+      for (const id of ["link-raise-score", "needs-you-vat-return"]) {
+        const link = container.querySelector(`[data-testid="${id}"]`);
+        expect(link, id).not.toBeNull();
+        expect(link!.textContent).toMatch(/\p{Script=Arabic}/u);
+        expect(link!.querySelector("svg.lucide-arrow-right")?.classList).toContain(
+          "rtl:[scale:-1_1]"
+        );
+      }
+    }
+  } finally {
+    act(() => {
+      root.unmount();
+      setMotionPaused(false);
+      useI18n.getState().setLocale("en");
+    });
+    client.clear();
+    container.remove();
+  }
 });
 
 describe("motion strings and stylesheet", () => {
@@ -184,5 +291,29 @@ describe("motion strings and stylesheet", () => {
     expect(css).toMatch(
       /@media \(prefers-reduced-motion: reduce\) \{\s*\[data-tilt\],[\s\S]*?transform: none !important/
     );
+  });
+
+  it("leaves keyboard focus rings available on every shared button variant", async () => {
+    const { buttonVariants } = await import("../../client/src/components/ui/button");
+    for (const variant of [
+      "default",
+      "outline",
+      "secondary",
+      "ghost",
+      "link",
+      "accent",
+      "destructive",
+    ] as const) {
+      expect(buttonVariants({ variant }).split(" ")).toContain("focus-visible:ring-2");
+    }
+    // A custom box-shadow takes precedence over Tailwind's ring on these app buttons.
+    const css = parse(read("client/src/index.css"));
+    css.walkRules(/\.ui-btn\b/, (rule) => {
+      rule.walkDecls("box-shadow", () => {
+        for (const selector of rule.selectors) {
+          expect(selector).toMatch(/:not\([^)]*:focus-visible[^)]*\)/);
+        }
+      });
+    });
   });
 });

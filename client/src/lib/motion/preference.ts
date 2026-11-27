@@ -12,13 +12,15 @@ const REDUCED_QUERY = "(prefers-reduced-motion: reduce)";
 
 const listeners = new Set<() => void>();
 
-function readPaused(): boolean {
+function loadPaused(): boolean {
   try {
     return localStorage.getItem(MOTION_STORAGE_KEY) === "off";
   } catch {
     return false;
   }
 }
+
+let motionPaused = loadPaused();
 
 function reducedQuery(): MediaQueryList | null {
   return typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -37,6 +39,7 @@ function applyMotion(paused: boolean): void {
 }
 
 export function setMotionPaused(paused: boolean): void {
+  motionPaused = paused;
   try {
     if (paused) localStorage.setItem(MOTION_STORAGE_KEY, "off");
     else localStorage.removeItem(MOTION_STORAGE_KEY);
@@ -49,21 +52,30 @@ export function setMotionPaused(paused: boolean): void {
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function subscribeToSystemMotion(listener: () => void): () => void {
   const query = reducedQuery();
   query?.addEventListener?.("change", listener);
-  return () => {
-    listeners.delete(listener);
-    query?.removeEventListener?.("change", listener);
-  };
+  return () => query?.removeEventListener?.("change", listener);
 }
 
 // Applied at import time so a paused preference holds from the first paint of the shell.
-applyMotion(readPaused());
+applyMotion(motionPaused);
 
 /** Motion state for the pause control and for lazy motion code. Re-renders on change. */
 export function useMotionPreference() {
-  const paused = useSyncExternalStore(subscribe, readPaused, () => false);
-  const systemReduced = useSyncExternalStore(subscribe, systemReducesMotion, () => false);
+  const paused = useSyncExternalStore(
+    subscribe,
+    () => motionPaused,
+    () => false
+  );
+  const systemReduced = useSyncExternalStore(
+    subscribeToSystemMotion,
+    systemReducesMotion,
+    () => false
+  );
   return {
     /** The user pressed pause in this browser. */
     paused,
