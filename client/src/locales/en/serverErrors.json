@@ -408,6 +408,7 @@
   "serverErrors.INVOICE_ALREADY_PAID": "This invoice is already paid.",
   "serverErrors.INVOICE_HAS_NO_VAT": "This invoice has no VAT to adjust.",
   "serverErrors.INVOICE_NOT_CHASEABLE": "This invoice cannot be chased. It may be paid, cancelled or still a draft.",
+  "serverErrors.CUSTOMER_DO_NOT_CHASE": "This customer is marked do-not-chase.",
   "serverErrors.INVOICE_NOT_DRAFT": "Only a draft invoice can be changed this way.",
   "serverErrors.INVOICE_NOT_ELIGIBLE": "This invoice is not eligible for bad-debt relief.",
   "serverErrors.INVOICE_NOT_OUTSTANDING": "This invoice has no outstanding balance.",
