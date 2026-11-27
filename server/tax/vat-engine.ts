@@ -845,6 +845,27 @@ async function collectInvoices(
       }
       postedNet = mapped.size > 0 ? mapped : undefined;
     }
+    // Invoice mixed-doc fix: for invoices (and non-FX CNs) with both standard and RC lines and
+    // no rawPostedNet, apply combined rounding to match the GL combined posting.
+    // Both supply types share account 4020 (standard_sales); the posting service does one
+    // combined toBase(stdFils + rcFils, rate) per bucket. Per-family toBaseFils can sum to one
+    // fil more than the combined amount (e.g. toBaseFils(10001) + toBaseFils(10001) = 73458 but
+    // toBase(20002) = 73457), leaving a 1-fil residual after a full credit. Using combined
+    // rounding here ensures invoice Box 1 == GL from day one, so every credit nets to zero.
+    if (!postedNet && hasRcLines && hasStandardLines && !hasMarginScheme) {
+      const stdDocFils = netByFamily.get("standard") ?? 0;
+      const rcDocFils = netByFamily.get("reverse_charge") ?? 0;
+      const totalDocFils = stdDocFils + rcDocFils;
+      if (totalDocFils > 0) {
+        const combinedBase = toBaseFils(totalDocFils, rate);
+        const rcBase = Math.round((combinedBase * rcDocFils) / totalDocFils);
+        const stdBase = combinedBase - rcBase;
+        postedNet = new Map<Vat201Family, number>([
+          ["standard", stdBase],
+          ["reverse_charge", rcBase],
+        ]);
+      }
+    }
     if (postedNet) {
       for (const [family, net] of postedNet) {
         if (net !== 0 && !netByFamily.has(family)) netByFamily.set(family, 0);

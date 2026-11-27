@@ -518,6 +518,7 @@ it("G: foreign margin-scheme mixed invoice — Box 1 margin/VAT and Box 4 throug
     expect(Number(vatMid.body.box1bDubaiAmount), "Box 1b after partial — margin untouched").toBe(
       73.45
     );
+    expect(Number(vatMid.body.box1bDubaiVat), "Box 1b VAT after partial — margin VAT unchanged").toBe(3.67);
     expect(Number(vatMid.body.box4ZeroRatedAmount), "Box 4 after partial credit").toBe(1285.37);
   }
 
@@ -694,5 +695,179 @@ it("I: mixed standard + explicit RC — split credits tie Box 1 amount and VAT t
     expect(vatFinal.status, vatFinal.text).toBe(201);
     expect(Number(vatFinal.body.box1bDubaiAmount), "Box 1 = 0 after final credit").toBe(0);
     expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after final credit").toBe(0);
+  }
+});
+
+it("J: mixed standard + explicit RC — odd-cent split credits tie Box 1 to the fil (Sol repro)", async () => {
+  // Sol review 6088308905 exact repro: USD 200 standard (5%) + USD 700 reverse_charge (0%) at 3.6725.
+  // Per-family toBaseFils would drift per CN (sum 88148 vs GL 88147 for CN1), leaving Box 1
+  // at -AED 0.01 after the final credit. The invoice combined-rounding fix and proportional CN
+  // split ensure Box 1 == GL remaining to the fil at every checkpoint.
+  //
+  // GL: invoice = toBase(90000, 3.6725) = 330525 fils = AED 3,305.25
+  // CN1 (40.01+200.01): rawPostedNet = toBase(24002) = 88147; rcGL=73453, stdGL=14694; net=242378
+  // CN2 (30+200):       rawPostedNet = toBase(23000) = 84468; rcGL=73450, stdGL=11018; net=157910
+  // CN3 (remainder):    rawPostedNet = 157910; net=0
+  // VAT: invoice 3673 fils; CN1 735 fils (AED 7.35×5 on 200 fils); CN2 551; CN3 2387. Net=0.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000009",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const vatPeriod = { periodStart: "2026-01-01", periodEnd: "2026-03-31" };
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Odd Cent LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      { description: "Standard services", quantity: 1, unitPrice: 200, vatRate: 5 },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 700,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  const url = `${base(t)}/invoices/${draft.body.id}/credit-note`;
+
+  // Initial: std 73450 + rc 257075 = AED 3,305.25; VAT 3673 fils = AED 36.73.
+  {
+    const vatInit = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatInit.status, vatInit.text).toBe(201);
+    expect(Number(vatInit.body.box1bDubaiAmount), "Box 1 initial").toBe(3305.25);
+    expect(Number(vatInit.body.box1bDubaiVat), "Box 1 VAT initial").toBe(36.73);
+  }
+
+  // CN1: USD 40.01 standard + USD 200.01 RC. Per-family fils sum = 88148 but GL = 88147.
+  const cn1 = await t.as.post(url, {
+    date,
+    lines: [
+      { description: "Standard services", quantity: 1, unitPrice: 40.01, vatRate: 5 },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 200.01,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(cn1.status, cn1.text).toBe(201);
+
+  // After CN1: GL cleared 88147; Box 1 = 330525-88147 = 242378 = AED 2,423.78.
+  // VAT: CN1 posted VAT = toBase(200, 3.6725) = 735 fils; net = 3673-735 = 2938 = AED 29.38.
+  {
+    const vatMid1 = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatMid1.status, vatMid1.text).toBe(201);
+    expect(Number(vatMid1.body.box1bDubaiAmount), "Box 1 after CN1").toBe(2423.78);
+    expect(Number(vatMid1.body.box1bDubaiVat), "Box 1 VAT after CN1").toBe(29.38);
+  }
+
+  // CN2: USD 30 standard + USD 200 RC.
+  const cn2 = await t.as.post(url, {
+    date,
+    lines: [
+      { description: "Standard services", quantity: 1, unitPrice: 30, vatRate: 5 },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 200,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(cn2.status, cn2.text).toBe(201);
+
+  // After CN2: GL cleared 84468; Box 1 = 242378-84468 = 157910 = AED 1,579.10.
+  // VAT: CN2 posted VAT = toBase(150, 3.6725) = 551 fils; net = 2938-551 = 2387 = AED 23.87.
+  {
+    const vatMid2 = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatMid2.status, vatMid2.text).toBe(201);
+    expect(Number(vatMid2.body.box1bDubaiAmount), "Box 1 after CN2").toBe(1579.1);
+    expect(Number(vatMid2.body.box1bDubaiVat), "Box 1 VAT after CN2").toBe(23.87);
+  }
+
+  // CN3: remainder.
+  const cn3 = await t.as.post(url, { date });
+  expect(cn3.status, cn3.text).toBe(201);
+
+  // After CN3: 0/0.
+  {
+    const vatFinal = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatFinal.status, vatFinal.text).toBe(201);
+    expect(Number(vatFinal.body.box1bDubaiAmount), "Box 1 = 0 after final credit").toBe(0);
+    expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after final credit").toBe(0);
+  }
+});
+
+it("K: mixed standard + explicit RC at 3.6725 — per-family rounding diverges from GL, full credit leaves 0", async () => {
+  // USD 100.01 standard (5%) + USD 100.01 reverse_charge (0%) at 3.6725.
+  // Per-family: toBaseFils(10001)+toBaseFils(10001) = 36729+36729 = 73458 fils.
+  // Combined GL: toBase(20002, 3.6725) = Decimal(73457.345).toDP(0, ROUND_HALF_UP) = 73457 fils.
+  // Without the invoice combined-rounding fix, the 1-fil gap leaves Box 1 at +AED 0.01 after
+  // the full credit. With the fix, invoice Box 1 = 73457 and the full CN clears 73457 → net 0.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000010",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const vatPeriod = { periodStart: "2026-01-01", periodEnd: "2026-03-31" };
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Odd Cent Full LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      { description: "Standard services", quantity: 1, unitPrice: 100.01, vatRate: 5 },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 100.01,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  // Initial: combined 73457 fils = AED 734.57; VAT toBase(500, 3.6725) = 1836 fils = AED 18.36.
+  {
+    const vatInit = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatInit.status, vatInit.text).toBe(201);
+    expect(Number(vatInit.body.box1bDubaiAmount), "Box 1 initial").toBe(734.57);
+    expect(Number(vatInit.body.box1bDubaiVat), "Box 1 VAT initial").toBe(18.36);
+  }
+
+  // Full credit note (remaining).
+  const cn = await t.as.post(
+    `${base(t)}/invoices/${draft.body.id}/credit-note`,
+    { date }
+  );
+  expect(cn.status, cn.text).toBe(201);
+
+  // After full credit: 0/0 — no residual fil.
+  {
+    const vatFinal = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatFinal.status, vatFinal.text).toBe(201);
+    expect(Number(vatFinal.body.box1bDubaiAmount), "Box 1 = 0 after full credit").toBe(0);
+    expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
   }
 });
