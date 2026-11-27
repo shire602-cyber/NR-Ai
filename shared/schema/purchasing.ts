@@ -282,7 +282,7 @@ export const billLineItems = pgTable(
       .notNull()
       .references(() => vendorBills.id, { onDelete: "cascade" }),
     description: text("description").notNull(),
-    quantity: numeric("quantity", { precision: 10, scale: 2 }).default("1"),
+    quantity: numeric("quantity", { precision: 16, scale: 4 }).default("1"),
     unitPrice: amount12("unit_price").notNull(),
     vatRate: numeric("vat_rate", { precision: 5, scale: 2 }).default("5"),
     amount: amount12("amount"),

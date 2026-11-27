@@ -341,7 +341,10 @@ interface AgingReport {
 
 const billLineSchema = z.object({
   description: z.string().min(1, "forms.errors.descriptionRequired"),
-  quantity: z.coerce.number().min(0.01, "forms.errors.quantityPositive"),
+  quantity: z.coerce
+    .number()
+    .min(0.0001, "forms.errors.quantityPositive")
+    .multipleOf(0.0001, "forms.errors.billQuantityPrecision"),
   unit_price: z.coerce.number().min(0, "forms.errors.priceNonNegative"),
   vat_rate: z.coerce.number().default(5),
   vat_supply_type: z.string().default("standard_rated"),
@@ -1599,7 +1602,7 @@ export default function BillPay() {
                           <FormItem>
                             <FormLabel className={lineLabelClass}>{t["forms.col.qty"]}</FormLabel>
                             <FormControl>
-                              <Input {...field} type="number" step="0.01" />
+                              <Input {...field} type="number" min={0.0001} step="0.0001" />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
