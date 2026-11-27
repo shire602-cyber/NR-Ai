@@ -48,7 +48,8 @@ it("firm_admin cannot assign staff (403 FIRM_PERMISSION_DENIED)", async () => {
 
 it("firm_owner can assign a preparer to a client (200)", async () => {
   const { owner, client } = await linkedClient();
-  const preparer = await h.createTenant({ firmRole: "preparer" });
+  const preparer = await h.createTenant();
+  await h.sql("UPDATE users SET firm_role = 'preparer' WHERE id = $1", [preparer.user.id]);
 
   const r = await owner.as.post(`/api/firm/clients/${client.company.id}/assign-staff`, {
     staffUserId: preparer.user.id,
