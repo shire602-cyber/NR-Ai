@@ -33,6 +33,9 @@ import {
 } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { LeaveWithoutSavingDialog } from "@/components/invoices/LeaveWithoutSavingDialog";
+import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import { SettingsLoadError } from "@/components/layout/SettingsLoadError";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
@@ -201,6 +204,7 @@ export default function CompanySettings() {
     },
   });
   const vatFrequency = useWatch({ control: form.control, name: "vatFilingFrequency" });
+  const formDirty = form.formState.isDirty;
 
   useEffect(() => {
     if (!company) return;
@@ -255,6 +259,8 @@ export default function CompanySettings() {
           : undefined,
       }),
     onSuccess: () => {
+      // What was just saved is the new baseline, so the leave guard stays quiet after a save.
+      form.reset(form.getValues());
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
@@ -272,6 +278,7 @@ export default function CompanySettings() {
   });
 
   const onSubmit = (data: SubmitValues) => updateMutation.mutate(data);
+  const leaveGuard = useUnsavedChangesGuard(formDirty && !updateMutation.isPending);
 
   // S1 (R14-13): the logo is uploaded to /api/companies/:id/logo (stored file, served
   // endpoint), never saved as an inline data: URL on the company row.
@@ -353,6 +360,10 @@ export default function CompanySettings() {
           title={t["pageLabels.companySettings.title"]}
           description={t["pageLabels.companySettings.description"]}
         />
+
+        {loadError && company && (
+          <StaleDataNotice onRetry={() => refetch()} testId="company-settings-stale-notice" />
+        )}
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-6">
@@ -1097,6 +1108,14 @@ export default function CompanySettings() {
         {/* W3-D: WPS / MOL settings used by the payroll SIF (SCR record). */}
         {companyId && <WpsSettingsCard companyId={companyId} />}
       </div>
+      {leaveGuard.pending && (
+        <LeaveWithoutSavingDialog
+          open={leaveGuard.pending}
+          onStay={leaveGuard.cancel}
+          onLeave={leaveGuard.confirm}
+          body={t["pages.companySettingsLeaveBody"]}
+        />
+      )}
     </SettingsLayout>
   );
 }

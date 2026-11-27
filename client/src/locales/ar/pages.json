@@ -762,6 +762,7 @@
   "pages.companyProfileInvalidLogo": "شعار غير صالح",
   "pages.companyProfileLogoUploaded": "تم رفع الشعار",
   "pages.companyProfileLogoFailed": "تعذّر رفع الشعار",
+  "pages.companySettingsLeaveBody": "ستفقد التغييرات التي أجريتها على إعدادات الشركة.",
   "pages.inventoryProductCount": "{count} منتج في المخزون",
   "pages.inventoryNoMatch": "لا توجد منتجات مطابقة لبحثك.",
   "pages.inventoryLoadError": "تعذّر تحميل المنتجات. حاول مرة أخرى بعد قليل.",
