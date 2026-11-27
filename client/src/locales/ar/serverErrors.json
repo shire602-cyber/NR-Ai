@@ -408,6 +408,7 @@
   "serverErrors.INVOICE_ALREADY_PAID": "هذه الفاتورة مدفوعة بالفعل.",
   "serverErrors.INVOICE_HAS_NO_VAT": "لا توجد ضريبة قيمة مضافة في هذه الفاتورة لتعديلها.",
   "serverErrors.INVOICE_NOT_CHASEABLE": "لا يمكن متابعة تحصيل هذه الفاتورة. قد تكون مدفوعة أو ملغاة أو مسودة.",
+  "serverErrors.CUSTOMER_DO_NOT_CHASE": "هذا العميل مستثنى من تذكيرات الدفع.",
   "serverErrors.INVOICE_NOT_DRAFT": "لا يمكن تغيير إلا الفاتورة المسودة بهذه الطريقة.",
   "serverErrors.INVOICE_NOT_ELIGIBLE": "هذه الفاتورة غير مؤهلة لإعفاء الديون المعدومة.",
   "serverErrors.INVOICE_NOT_OUTSTANDING": "لا يوجد رصيد مستحق على هذه الفاتورة.",

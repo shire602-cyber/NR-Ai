@@ -27,6 +27,14 @@ export class ContactStorage extends ReceiptStorage {
       .orderBy(desc(customerContacts.createdAt));
   }
 
+  async getDoNotChaseContactIds(companyId: string): Promise<string[]> {
+    const contacts = await db
+      .select({ id: customerContacts.id })
+      .from(customerContacts)
+      .where(and(eq(customerContacts.companyId, companyId), eq(customerContacts.doNotChase, true)));
+    return contacts.map((contact) => contact.id);
+  }
+
   async getCustomerContactByEmail(
     companyId: string,
     email: string
