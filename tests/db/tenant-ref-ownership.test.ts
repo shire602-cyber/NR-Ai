@@ -6,9 +6,10 @@
 import { describe, expect, it } from "vitest";
 import { useHarness } from "./harness";
 import { insertRow } from "./row-factory";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 describe("J4: foreign ids in write payloads are rejected at write time", () => {
   it("J4: bills, quotes, purchase orders and fixed assets refuse another company's ids", async () => {

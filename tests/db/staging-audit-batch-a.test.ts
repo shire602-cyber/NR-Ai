@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { accountByCode, useHarness } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 afterEach(() => vi.unstubAllEnvs());
@@ -10,7 +11,7 @@ it("keeps expired trial data and billing recovery readable while blocking change
   const base = `/api/companies/${t.company.id}`;
   const body = {
     customerName: "Original customer",
-    date: new Date().toISOString().slice(0, 10),
+    date: dubaiToday(),
     lines: [{ description: "Existing service", quantity: 1, unitPrice: 125, vatRate: 5 }],
   };
   const draft = await t.as.post(`${base}/invoices`, body);

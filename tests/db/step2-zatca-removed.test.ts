@@ -6,10 +6,11 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const TRN = "100000000000003";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 const UUID = "00000000-0000-4000-8000-000000000001";
 
 let uae: Tenant;

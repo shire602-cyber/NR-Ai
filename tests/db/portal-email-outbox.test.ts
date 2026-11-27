@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const resendSend = vi.fn();
 vi.mock("resend", () => ({
@@ -26,7 +27,7 @@ afterEach(async () => {
 async function issued(t: Tenant) {
   const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
     customerName: "Mail Co",
-    date: new Date().toISOString().slice(0, 10),
+    date: dubaiToday(),
     lines: [{ description: "Work", quantity: 1, unitPrice: 200, vatRate: 5 }],
   });
   expect(inv.status, inv.text).toBe(200);

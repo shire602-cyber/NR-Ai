@@ -12,6 +12,7 @@ import { planPrice, PAID_PLAN_IDS, type BillingCycle, type PaidPlanId } from "..
 import { useHarness, type Tenant } from "./harness";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { dubaiToday } from "../helpers/dates";
 
 const oauthNext: { path: string } = { path: "/dashboard" };
 const profiles: Array<Record<string, unknown>> = [];
@@ -36,7 +37,7 @@ vi.mock("../../server/services/oauth.service", async (importOriginal) => {
 });
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 function setEnforcement(v: "true" | "false" | undefined) {
   if (v === undefined) delete process.env.BILLING_ENFORCEMENT;

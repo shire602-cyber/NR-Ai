@@ -47,6 +47,7 @@ import { createRequire } from "node:module";
 import { chromium, devices } from "playwright-core";
 import pg from "pg";
 import { classifyLines } from "./lib/latin-text.mjs";
+import { dubaiIso } from "../helpers/dates.mjs";
 
 const BASE = (process.env.BASE_URL || "http://localhost:5000").replace(/\/$/, "");
 const SHOT_DIR = process.env.SHOT_DIR || "";
@@ -206,7 +207,7 @@ async function seed() {
     name: "Desert Rose Catering FZ-LLC",
     email: `ap+${RUN}@desertrose.example`,
   });
-  const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  const day = (n) => dubaiIso(new Date(Date.now() + n * 86400000));
   const invoiceIds = [];
   for (const price of [1000, 2500]) {
     const inv = await api("POST", `/api/companies/${cid}/invoices`, owner.token, {

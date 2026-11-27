@@ -6,9 +6,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { gunzipSync } from "node:zlib";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 async function seed(t: Tenant) {
@@ -514,9 +515,11 @@ describe("W5-B backups", () => {
       connection.id,
     ]);
     clean.tables.bank_connections[0] = originalConnection;
-    clean.tables.bank_gl_migration_findings = [{
-      details: { statement_company_id: randomUUID() },
-    }];
+    clean.tables.bank_gl_migration_findings = [
+      {
+        details: { statement_company_id: randomUUID() },
+      },
+    ];
     const oldJson = JSON.stringify(clean);
     await h.sql("UPDATE backups SET data_snapshot = $2, checksum = $3 WHERE id = $1", [
       b.id,

@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { chromium } from "playwright-core";
+import { dubaiToday } from "../helpers/dates.mjs";
 
 const base = new URL(process.env.BASE_URL || "http://127.0.0.1:5000");
 assert.ok(
@@ -38,7 +39,7 @@ try {
   const [company] = await json("/api/companies", { headers });
   const companyPath = `/api/companies/${company.id}`;
   await json(companyPath, { method: "PATCH", headers, data: { emirate: "dubai" } });
-  const date = new Date().toISOString().slice(0, 10);
+  const date = dubaiToday();
   await json(`${companyPath}/invoices`, {
     method: "POST",
     headers,

@@ -9,9 +9,10 @@
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 const parallel = <T>(n: number, fn: (i: number) => Promise<T>) =>
   Promise.all(Array.from({ length: n }, (_, i) => fn(i)));
 const untaxedLine = (description: string, unitPrice: number, quantity = 1) => ({

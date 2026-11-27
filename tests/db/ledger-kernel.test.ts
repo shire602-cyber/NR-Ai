@@ -13,12 +13,13 @@ import path from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { allocate } from "../../shared/money";
 import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness";
+import { dubaiIso, dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const pg = () => h.mode === "postgres";
 // The ledger's posting "today" is the UAE calendar date (UTC+4).
-const today = () => new Date(Date.now() + 4 * 3600_000).toISOString().slice(0, 10);
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+const today = () => dubaiToday();
+const daysAgo = (n: number) => dubaiIso(new Date(Date.now() - n * 86_400_000));
 const parallel = <T>(n: number, fn: (i: number) => Promise<T>) =>
   Promise.all(Array.from({ length: n }, (_, i) => fn(i)));
 

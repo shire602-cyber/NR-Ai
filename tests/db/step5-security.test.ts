@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 import { useHarness, type Tenant } from "./harness";
 import { installInviteMailbox, inviteMail, inviteToken } from "./invite-mailbox";
+import { dubaiToday } from "../helpers/dates";
 
 // Capture everything the app logs, at any level, to prove no secret reaches a log line.
 const captured: Array<{ level: string; text: string }> = vi.hoisted(() => []);
@@ -309,7 +310,7 @@ describe("S5-SEC-6 portal payment refusal, header and messages", () => {
 
     const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
       contactId: cid,
-      date: new Date().toISOString().slice(0, 10),
+      date: dubaiToday(),
       lines: [{ description: "Service", quantity: 1, unitPrice: 100, vatRate: 5 }],
     });
     expect(inv.status, inv.text).toBe(200);

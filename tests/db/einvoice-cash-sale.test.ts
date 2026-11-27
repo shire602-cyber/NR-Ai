@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseXml, textAt } from "../../server/services/einvoice/dom";
 import { ublToGets } from "../../server/services/einvoice/providers/complyance-gets";
 import { useHarness } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 
@@ -22,7 +23,7 @@ describe("UAE PINT AE cash sales", () => {
     const sale = await tenant.as.post(`${base}/cash-sales`, {
       customerName: "Walk-in customer",
       buyerType: "consumer",
-      date: new Date().toISOString().slice(0, 10),
+      date: dubaiToday(),
       placeOfSupplyEmirate: "dubai",
       paymentAccountId: bank.body.glAccountId,
       method: "cash",
@@ -98,7 +99,7 @@ describe("UAE PINT AE cash sales", () => {
       const sale = await tenant.as.post(`${base}/cash-sales`, {
         customerName: "Counter buyer",
         buyerType,
-        date: new Date().toISOString().slice(0, 10),
+        date: dubaiToday(),
         placeOfSupplyEmirate: "dubai",
         paymentAccountId: bank.body.glAccountId,
         lines: [{ description: "Counter service", quantity: 1, unitPrice: 100, vatRate: 0.05 }],
@@ -171,7 +172,7 @@ describe("UAE PINT AE cash sales", () => {
     expect(bank.status, bank.text).toBe(201);
     // Seed the legacy series before issue and post both journal effects through the normal APIs.
     // PGlite's one-connection pool cannot run the cash-sale route's nested settlement reads.
-    const date = new Date().toISOString().slice(0, 10);
+    const date = dubaiToday();
     const sale = await tenant.as.post(`${base}/invoices`, {
       customerName: "Unknown walk-in",
       date,
@@ -317,7 +318,7 @@ describe("UAE PINT AE cash sales", () => {
       expect(bank.status, bank.text).toBe(201);
       const sale = await tenant.as.post(`${base}/cash-sales`, {
         contactId: contact.body.id,
-        date: new Date().toISOString().slice(0, 10),
+        date: dubaiToday(),
         placeOfSupplyEmirate: "dubai",
         paymentAccountId: bank.body.glAccountId,
         method,

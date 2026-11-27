@@ -5,6 +5,7 @@
  */
 import { afterEach, expect, it, vi } from "vitest";
 import { useHarness } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 afterEach(() => vi.unstubAllEnvs());
@@ -13,7 +14,7 @@ it("[TRIAL-RO] expired trial: reads pass, every write is 402, plan choice stays 
   vi.stubEnv("BILLING_ENFORCEMENT", "true");
   const t = await h.createTenant();
   const base = `/api/companies/${t.company.id}`;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dubaiToday();
   const draft = await t.as.post(`${base}/invoices`, {
     customerName: "Before expiry",
     date: today,

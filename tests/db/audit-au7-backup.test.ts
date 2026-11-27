@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { accountByCode, type Tenant, useHarness } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 
@@ -91,7 +92,7 @@ async function draftInvoice(t: Tenant, contactId?: string): Promise<string> {
   const response = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
     customerName: "Fixture customer",
     contactId,
-    date: new Date().toISOString().slice(0, 10),
+    date: dubaiToday(),
     lines: [
       {
         description: "Consulting",
@@ -114,7 +115,7 @@ async function issueInvoice(t: Tenant, invoiceId: string) {
 
 async function recordPartialPayment(t: Tenant, invoiceId: string, bankId: string) {
   const payment = await t.as.post(`/api/companies/${t.company.id}/invoices/${invoiceId}/payments`, {
-    date: new Date().toISOString().slice(0, 10),
+    date: dubaiToday(),
     method: "bank",
     amount: 30,
     paymentAccountId: bankId,
@@ -461,7 +462,7 @@ describe("AU7 accounting backup integrity", () => {
       const bank = await accountByCode(t, "1020");
       const deposit = await t.as.post(`${base}/customer-deposits`, {
         contactId: contact.body.id,
-        date: new Date().toISOString().slice(0, 10),
+        date: dubaiToday(),
         amount: "50",
         vatTreatment: "out_of_scope",
         paymentAccountId: bank.id,
@@ -615,7 +616,7 @@ describe("AU7 accounting backup integrity", () => {
       const invoiceId = await partiallyPaidInvoice(t, bank.id, contact.body.id);
       const deposit = await t.as.post(`${base}/customer-deposits`, {
         contactId: contact.body.id,
-        date: new Date().toISOString().slice(0, 10),
+        date: dubaiToday(),
         amount: "50",
         vatTreatment: "out_of_scope",
         paymentAccountId: bank.id,
@@ -1155,7 +1156,7 @@ describe("AU7 accounting backup integrity", () => {
         const bank = await accountByCode(t, "1020");
         const paid = await t.as.post(`/api/payroll-runs/${runId}/pay`, {
           paymentAccountId: bank.id,
-          paymentDate: new Date().toISOString().slice(0, 10),
+          paymentDate: dubaiToday(),
         });
         expect(paid.status, paid.text).toBe(200);
         const unpaid = await t.as.post(`/api/payroll-runs/${runId}/unpay`, {

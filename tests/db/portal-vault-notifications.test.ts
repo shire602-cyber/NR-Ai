@@ -5,6 +5,7 @@
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiIso, dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const retiredProviderTitle = ["Bank", "feed", "sync", "failed"].join(" ");
@@ -142,7 +143,7 @@ describe("W4-D document vault", () => {
     const other = await h.createSecondTenant();
     const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
       customerName: "Versioned Co",
-      date: new Date().toISOString().slice(0, 10),
+      date: dubaiToday(),
       lines: [{ description: "Line", quantity: 1, unitPrice: 100, vatRate: 5 }],
     });
     expect(inv.status).toBe(200);
@@ -152,7 +153,7 @@ describe("W4-D document vault", () => {
     ).toBe(404);
     const otherInv = await other.as.post(`/api/companies/${other.company.id}/invoices`, {
       customerName: "Not yours",
-      date: new Date().toISOString().slice(0, 10),
+      date: dubaiToday(),
       lines: [{ description: "Line", quantity: 1, unitPrice: 1, vatRate: 5 }],
     });
     expect(
@@ -313,7 +314,7 @@ describe("W4-D notification engine", () => {
     );
     const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
       customerName: "Notify Co",
-      date: new Date(Date.now() - 40 * 86_400_000).toISOString().slice(0, 10),
+      date: dubaiIso(new Date(Date.now() - 40 * 86_400_000)),
       lines: [{ description: "Line", quantity: 1, unitPrice: 100, vatRate: 5 }],
     });
     expect(inv.status, inv.text).toBe(200);

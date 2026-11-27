@@ -8,6 +8,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { drainDomainEvents, onDomainEvent } from "../../server/platform/domain-events";
 import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const base = (t: Tenant) => `/api/companies/${t.company.id}`;
@@ -403,7 +404,7 @@ describe("WQ1 make recurring from an invoice (7.13)", () => {
       contactId: c.id,
       customerName: "Gulf Retail LLC",
       frequency: "monthly",
-      startDate: new Date().toISOString().slice(0, 10),
+      startDate: dubaiToday(),
       autoIssue: true,
       autoSend: true,
       sendToEmail: "ap@gulfretail.example",

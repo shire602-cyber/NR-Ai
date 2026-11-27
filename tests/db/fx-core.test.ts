@@ -5,11 +5,12 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiIso } from "../helpers/dates";
 
 const h = useHarness();
 
 const DAY = 24 * 60 * 60 * 1000;
-const isoDaysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString().slice(0, 10);
+const isoDaysAgo = (n: number) => dubaiIso(new Date(Date.now() - n * DAY));
 const AS_OF = isoDaysAgo(1);
 const NEXT_DAY = isoDaysAgo(0);
 

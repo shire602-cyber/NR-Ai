@@ -24,6 +24,7 @@ import {
 } from "../../server/services/einvoice/providers/company-credentials.ts";
 import { apiClient, PASSWORD } from "./lib/sweep-personas.mjs";
 import { createRedisRestCertificate, startRedisRestFixture } from "../fixtures/redis-rest.mjs";
+import { dubaiIso } from "../helpers/dates.mjs";
 
 const database = new URL(process.env.DATABASE_URL ?? "postgresql://invalid/");
 assert.ok(
@@ -405,7 +406,7 @@ async function seedOutbound(persona, existingContactId) {
         city: "Dubai",
       })
     ).id;
-  const date = (days) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+  const date = (days) => dubaiIso(new Date(Date.now() + days * 86_400_000));
   const invoice = await request(persona.token, "POST", `${clientPath}/invoices`, {
     contactId,
     date: date(-2),
