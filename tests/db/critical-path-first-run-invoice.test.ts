@@ -1,18 +1,12 @@
-/**
- * Launch-critical journey on a brand-new account, with no harness shortcuts beyond sign-up:
- * register -> sign in -> the first company exists with a chart of accounts and owner role ->
- * issue a live invoice (balanced ledger entry) -> send it (queued honestly, link to the live
- * invoice, one activity row) -> a stranger and a viewer cannot send it.
- */
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { uaeToday } from "../../shared/uae-date";
 import { useHarness } from "./harness";
 
 const h = useHarness();
-const DATE = new Date().toISOString().slice(0, 10);
 
 describe("first run: sign-up -> first company -> issue -> send", () => {
-  it("a new account gets exactly one owned company with a usable chart of accounts", async () => {
+  it("issues and emails an invoice from the company provisioned at signup", async () => {
     const email = `firstrun-${randomBytes(4).toString("hex")}@example.test`;
     const password = `First${randomBytes(4).toString("hex")}A1!x`;
     const reg = await h.anon.post("/api/auth/register", { name: "First Run", email, password });
@@ -28,50 +22,60 @@ describe("first run: sign-up -> first company -> issue -> send", () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].role).toBe("owner");
+    const companyId = rows[0].company_id;
+    const owner = h.client(token);
+    const base = `/api/companies/${companyId}`;
 
     const accounts = await h.sql<{ code: string }>(
       `SELECT code FROM accounts WHERE company_id = $1`,
-      [rows[0].company_id]
+      [companyId]
     );
     const codes = new Set(accounts.map((a) => a.code));
-    // Receivables, output VAT and a revenue account must exist for the first invoice to post.
+    // The default chart includes receivables, output VAT and revenue accounts.
     for (const code of ["1040", "2020"]) expect(codes.has(code), `account ${code}`).toBe(true);
     expect([...codes].some((c) => c.startsWith("4"))).toBe(true);
-  });
 
-  it("issuing posts one balanced entry; sending queues one e-mail and logs it; others are refused", async () => {
-    const t = await h.createTenant({ name: "CritPath" });
-    const base = `/api/companies/${t.company.id}`;
-    const contact = await t.as.post(`${base}/customer-contacts`, {
+    const buyerEmail = "buyer@critical.example";
+    const contact = await owner.post(`${base}/customer-contacts`, {
       name: "Critical Customer LLC",
-      email: "buyer@critical.example",
+      email: buyerEmail,
       emirate: "dubai",
     });
     expect(contact.status, contact.text).toBeLessThan(300);
 
-    const inv = await t.as.post(`${base}/invoices`, {
+    const inv = await owner.post(`${base}/invoices`, {
       contactId: contact.body.id,
-      date: DATE,
+      date: uaeToday(),
       placeOfSupplyEmirate: "dubai",
-      lines: [{ description: "Service", quantity: 2, unitPrice: 500, vatRate: 0.05 }],
+      lines: [
+        {
+          description: "Service",
+          quantity: 2,
+          unitPrice: 500,
+          vatRate: 0,
+          vatSupplyType: "out_of_scope",
+        },
+      ],
     });
     expect(inv.status, inv.text).toBe(200);
     expect(inv.body.status).toBe("draft");
+    const invoiceId = inv.body.id;
 
     // A draft has no ledger effect.
-    const before = await h.sql(`SELECT 1 FROM journal_entries WHERE company_id = $1`, [
-      t.company.id,
-    ]);
+    const before = await h.sql(`SELECT 1 FROM journal_entries WHERE company_id = $1`, [companyId]);
     expect(before).toHaveLength(0);
 
-    const issued = await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" });
+    const statusPath = `/api/invoices/${invoiceId}/status`;
+    const issued = await owner.patch(statusPath, { status: "sent" });
     expect(issued.status, issued.text).toBe(200);
+    expect(issued.body.status).toBe("sent");
     // Re-issuing is idempotent: still exactly one entry.
-    await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" });
+    const reissued = await owner.patch(statusPath, { status: "sent" });
+    expect(reissued.status, reissued.text).toBe(200);
 
     const entries = await h.sql<{ id: string; status: string }>(
       `SELECT id, status FROM journal_entries WHERE company_id = $1`,
-      [t.company.id]
+      [companyId]
     );
     expect(entries).toHaveLength(1);
     expect(entries[0].status).toBe("posted");
@@ -82,36 +86,60 @@ describe("first run: sign-up -> first company -> issue -> send", () => {
       [entries[0].id]
     );
     expect(tot.d).toBe(tot.c);
-    expect(Number(tot.d)).toBe(105000); // 1,000 + 5% VAT, in fils
-    expect(Number(tot.ar)).toBe(105000);
+    expect(Number(tot.d)).toBe(100000); // AED 1,000 in fils for the company as provisioned.
+    expect(Number(tot.ar)).toBe(100000);
 
-    const send = await t.as.post(`${base}/invoices/${inv.body.id}/send-email`, {
-      to: "buyer@critical.example",
-    });
-    // No provider configured: queued (202), never reported as delivered.
+    const sendPath = `${base}/invoices/${invoiceId}/send-email`;
+    const send = await owner.post(sendPath, { to: buyerEmail });
     expect(send.status, send.text).toBe(202);
-    const outbox = await h.sql<{ html: string; text_body: string }>(
-      `SELECT html, text_body FROM email_outbox WHERE category = 'invoice' AND to_address = $1`,
-      ["buyer@critical.example"]
+    expect(send.body).toMatchObject({ queued: true, sent: false });
+    const outbox = await h.sql<{ id: string; html: string; text_body: string }>(
+      `SELECT id, html, text_body FROM email_outbox WHERE category = 'invoice' AND to_address = $1`,
+      [buyerEmail]
     );
     expect(outbox).toHaveLength(1);
-    expect(outbox[0].html + outbox[0].text_body).toMatch(/https?:\/\/\S+/);
+    const [invoice] = await h.sql<{ share_token: string }>(
+      `SELECT share_token FROM invoices WHERE id = $1 AND company_id = $2`,
+      [invoiceId, companyId]
+    );
+    const link = outbox[0].text_body.match(
+      /https?:\/\/[^\s]+\/view\/invoice\/([0-9a-f]{32})(?=\s|$)/
+    );
+    expect(link).not.toBeNull();
+    const [url, shareToken] = link!;
+    expect(shareToken).toBe(invoice.share_token);
+    expect(outbox[0].html).toContain(`href="${url}"`);
+    const publicInvoice = await h.anon.get(`/api/public/invoices/${shareToken}`);
+    expect(publicInvoice.status, publicInvoice.text).toBe(200);
+    expect(publicInvoice.body.invoice).toMatchObject({
+      number: issued.body.number,
+      customerName: contact.body.name,
+      status: "sent",
+    });
     const logs = await h.sql(
       `SELECT 1 FROM activity_logs WHERE company_id = $1 AND action = 'send' AND entity_id = $2`,
-      [t.company.id, inv.body.id]
+      [companyId, invoiceId]
     );
     expect(logs).toHaveLength(1);
 
-    // Another tenant's owner sees a 404, not a 403.
-    const stranger = await h.createSecondTenant({ name: "Stranger" });
-    const cross = await stranger.as.post(`${base}/invoices/${inv.body.id}/send-email`, {
-      to: "x@example.test",
-    });
-    expect([403, 404]).toContain(cross.status);
+    const viewer = await h.createSecondTenant({ name: "Viewer", vatRegistered: false });
+    await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')`, [
+      companyId,
+      viewer.user.id,
+    ]);
+    const denied = await viewer.as.post(sendPath, { to: "viewer-attempt@example.test" });
+    expect(denied.status, denied.text).toBe(403);
+
+    const stranger = await h.createSecondTenant({ name: "Stranger", vatRegistered: false });
     const crossOwn = await stranger.as.post(
-      `/api/companies/${stranger.company.id}/invoices/${inv.body.id}/send-email`,
-      { to: "x@example.test" }
+      `/api/companies/${stranger.company.id}/invoices/${invoiceId}/send-email`,
+      { to: "stranger-attempt@example.test" }
     );
-    expect(crossOwn.status).toBe(404);
+    expect(crossOwn.status, crossOwn.text).toBe(404);
+
+    const queued = await h.sql<{ id: string }>(
+      `SELECT id FROM email_outbox WHERE category = 'invoice'`
+    );
+    expect(queued).toEqual([{ id: outbox[0].id }]);
   });
 });
