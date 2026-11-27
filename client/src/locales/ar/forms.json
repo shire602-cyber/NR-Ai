@@ -454,7 +454,7 @@
   "forms.serverErrors.PAYMENT_ACCOUNT_NOT_CASH_OR_BANK": "يمكن إيداع الدفعات في حساب نقدي أو بنكي فقط.",
   "forms.serverErrors.PAYMENT_METHOD_RESERVED": "طريقة الدفع هذه يحددها النظام. اختر طريقة أخرى.",
   "forms.serverErrors.REINSTATE_BEFORE_WRITE_OFF": "لا يمكن إعادة إثبات الدين المشطوب بتاريخ يسبق تاريخ شطبه.",
-  "forms.serverErrors.REINSTATEMENT_NOT_REVERSIBLE": "لا يمكن عكس إعادة الإثبات. اشطب الفاتورة مرة أخرى بدلاً من ذلك.",
+  "forms.serverErrors.REINSTATEMENT_NOT_REVERSIBLE": "لا يمكن عكس إعادة الإثبات. اشطب الفاتورة مرة أخرى بدلًا من ذلك.",
   "forms.serverErrors.CURRENCY_MISMATCH": "العملات غير متطابقة.",
   "forms.serverErrors.CUSTOMER_CREDIT_NOT_FOUND": "تعذّر العثور على رصيد العميل.",
   "forms.serverErrors.CUSTOMER_CREDIT_CLOSED": "رصيد العميل هذا مستهلك بالكامل.",

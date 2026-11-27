@@ -328,9 +328,31 @@ describe("bad-debt reinstatement preserves A/R history", () => {
       `SELECT count(*)::text AS n FROM journal_lines jl
          JOIN journal_entries je ON je.id = jl.entry_id
          JOIN accounts a ON a.id = jl.account_id
-        WHERE je.company_id = $1 AND a.name_en ILIKE '%exchange%'`,
+        WHERE je.company_id = $1 AND a.code IN ('4090', '5140', '4091', '5141')`,
       [cid]
     );
     expect(Number(fx[0].n)).toBe(0);
+  });
+
+  it("a reinstatement row cannot itself be reversed (422 REINSTATEMENT_NOT_REVERSIBLE)", async () => {
+    const t = await tenant("RI-norev");
+    const inv = await issue(t, D1);
+    await writeOff(t, inv.id, D2);
+    expect((await reinstate(t, inv.id, D3)).status).toBe(200);
+    const [row] = await h.sql<{ id: string }>(
+      `SELECT id FROM invoice_payments WHERE invoice_id = $1 AND method = 'write_off_reinstatement'`,
+      [inv.id]
+    );
+    const { reverseInvoicePayment } = await import("../../server/services/invoice-payment.service");
+    const snap = await snapshots(t, DATES);
+    await expect(
+      reverseInvoicePayment({
+        companyId: t.company.id,
+        paymentId: row.id,
+        actorId: t.user.id,
+        reason: "undo",
+      })
+    ).rejects.toMatchObject({ code: "REINSTATEMENT_NOT_REVERSIBLE", statusCode: 422 });
+    expect(await snapshots(t, DATES)).toEqual(snap);
   });
 });
