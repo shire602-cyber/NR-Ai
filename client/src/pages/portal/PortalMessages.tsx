@@ -12,6 +12,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { apiRequest, portalQuery } from "@/lib/queryClient";
+import { PortalLoadNotice } from "@/components/portal/PortalLoadNotice";
+import { usePortalRetry } from "@/hooks/usePortalRetry";
 import { portalRequestHeaders } from "@/lib/portal-state";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/format-date";
@@ -39,9 +41,12 @@ export default function PortalMessages() {
   const [subject, setSubject] = useState("");
   const [content, setContent] = useState("");
 
-  const { data: messages = [], isLoading } = useQuery<any[]>({
-    ...portalQuery("/api/client-portal/messages", supplier),
-  });
+  const messagesQuery = portalQuery("/api/client-portal/messages", supplier);
+  const query = useQuery<any[]>({ ...messagesQuery });
+  const { data: loaded, isPaused, isFetching } = query;
+  const messages = loaded ?? [];
+  const { error, isLoading, retryPending, retry } = usePortalRetry(messagesQuery.queryKey, query);
+  const showNotice = !isLoading && Boolean(error || isPaused || (retryPending && isFetching));
 
   const sendMutation = useMutation({
     mutationFn: (payload: { subject: string | null; content: string }) =>
@@ -81,11 +86,22 @@ export default function PortalMessages() {
 
       <Card>
         <CardContent className="p-0">
+          {showNotice ? (
+            <PortalLoadNotice
+              error={error}
+              paused={isPaused}
+              retrying={isFetching}
+              retryPending={retryPending}
+              onRetry={retry}
+              compact={loaded !== undefined}
+              resource="messages"
+            />
+          ) : null}
           {isLoading ? (
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
             </div>
-          ) : thread.length === 0 ? (
+          ) : loaded === undefined ? null : thread.length === 0 ? (
             <EmptyState
               headingLevel="h2"
               icon={MessageSquare}

@@ -33,7 +33,7 @@ export function PortalLoadNotice({
   onRetry?: () => void;
   /** The list already shows cached rows. */
   compact?: boolean;
-  resource: "documents" | "invoices" | "statements";
+  resource: "account" | "dashboard" | "documents" | "invoices" | "messages" | "statements";
 }) {
   const { t } = useTranslation();
   const online = useSyncExternalStore(subscribeOnline, isOnline);

@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PortalLoadNotice } from "@/components/portal/PortalLoadNotice";
+import { usePortalRetry } from "@/hooks/usePortalRetry";
 import { PageHeader } from "@/components/ui/page-header";
 import { ChangePasswordCard } from "@/pages/security/ChangePasswordCard";
 import { currentUserQueryKey, useCurrentUser } from "@/hooks/useCurrentUser";
@@ -59,10 +61,17 @@ export default function PortalAccount() {
       setSavingName(false);
     }
   };
-  const { data: accounts = [] } = useQuery<PortalAccountRow[]>({
-    ...portalQuery("/api/client-portal/accounts", selected),
+  const accountsQuery = portalQuery("/api/client-portal/accounts", selected);
+  const accountsResult = useQuery<PortalAccountRow[]>({
+    ...accountsQuery,
     staleTime: 5 * 60 * 1000,
   });
+  const { data: loadedAccounts, isPaused, isFetching } = accountsResult;
+  const accounts = loadedAccounts ?? [];
+  const accountsRetry = usePortalRetry(accountsQuery.queryKey, accountsResult);
+  const accountsNotice =
+    !accountsRetry.isLoading &&
+    Boolean(accountsRetry.error || isPaused || (accountsRetry.retryPending && isFetching));
 
   const signOutEverywhere = async () => {
     setBusy(true);
@@ -157,6 +166,17 @@ export default function PortalAccount() {
           <CardDescription>{t["portal.account.suppliersHint"]}</CardDescription>
         </CardHeader>
         <CardContent>
+          {accountsNotice ? (
+            <PortalLoadNotice
+              error={accountsRetry.error}
+              paused={isPaused}
+              retrying={isFetching}
+              retryPending={accountsRetry.retryPending}
+              onRetry={accountsRetry.retry}
+              compact={loadedAccounts !== undefined}
+              resource="account"
+            />
+          ) : null}
           <ul className="divide-y divide-border" data-testid="portal-account-suppliers">
             {accounts.map((a) => (
               <li key={a.id} className="flex items-center justify-between gap-3 py-3">
