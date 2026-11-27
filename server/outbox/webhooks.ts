@@ -17,6 +17,16 @@ export interface ParsedDeliveryEvent {
   outboxId: string | null;
   type: ProviderEventType;
   detail: string | null;
+  /** When the provider says the event happened (null when the payload carries no usable time). */
+  occurredAt: Date | null;
+}
+
+/** A provider timestamp, or null when absent or unparseable. Future times are clamped to now. */
+export function parseEventTime(value: unknown, now: Date = new Date()): Date | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return null;
+  return at.getTime() > now.getTime() ? now : at;
 }
 
 const RESEND_TYPES: Record<string, ProviderEventType> = {
@@ -63,6 +73,7 @@ export function verifySvixSignature(args: {
 export function parseResendEvent(body: unknown): ParsedDeliveryEvent | null {
   const evt = body as {
     type?: string;
+    created_at?: string;
     data?: { email_id?: string; bounce?: { message?: string; type?: string } };
   } | null;
   const type = evt?.type ? RESEND_TYPES[evt.type] : undefined;
@@ -71,7 +82,13 @@ export function parseResendEvent(body: unknown): ParsedDeliveryEvent | null {
     type === "bounced"
       ? [evt?.data?.bounce?.type, evt?.data?.bounce?.message].filter(Boolean).join(": ") || null
       : null;
-  return { providerMessageId: evt?.data?.email_id ?? null, outboxId: null, type, detail };
+  return {
+    providerMessageId: evt?.data?.email_id ?? null,
+    outboxId: null,
+    type,
+    detail,
+    occurredAt: parseEventTime(evt?.created_at),
+  };
 }
 
 function headerValue(block: string, name: string): string | null {
@@ -106,5 +123,6 @@ export function parseSmtpDsn(raw: string): ParsedDeliveryEvent | null {
     outboxId: outboxHeader ?? fromMessageId,
     type,
     detail: [status, diagnostic].filter(Boolean).join(" ") || null,
+    occurredAt: parseEventTime(headerValue(raw, "Arrival-Date")),
   };
 }
