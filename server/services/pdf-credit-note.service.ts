@@ -19,6 +19,9 @@ export interface CreditNotePdfAdjustment {
   base?: { currency: string; originalNet: number; correctedNet: number; differenceNet: number };
 }
 
+/** The canonical credit note plus the recipient address printed under "Credit to". */
+export type CreditNotePdfSource = CreditNote & { customerAddress?: string | null };
+
 export interface CreditNotePdfFx {
   baseCurrency: string;
   /** Base currency per 1 unit of the document currency, as stored on the credit note. */
@@ -32,7 +35,7 @@ export interface CreditNotePdfFx {
  * The status is not printed (a draft carries the DRAFT watermark instead).
  */
 export async function generateCreditNotePDF(
-  creditNote: CreditNote,
+  creditNote: CreditNotePdfSource,
   lines: CreditNoteLine[],
   company: Company,
   originalInvoice?: Invoice | null,
@@ -129,7 +132,7 @@ export async function generateCreditNotePDF(
               text: adjLine("correctedNet"),
             },
             {
-              label: bi("Difference (net credited)", "الفرق (الصافي المدين)"),
+              label: bi("Difference (net credited)", "الفرق (صافي المبلغ الدائن)"),
               text: adjLine("differenceNet"),
             },
           ]
@@ -149,7 +152,8 @@ export async function generateCreditNotePDF(
     ],
     beforeEnd: (doc) => {
       if (isDraftStatus(creditNote.status)) stampDraftWatermark(doc);
-      else if (isVoidedStatus(creditNote.status)) stampDraftWatermark(doc, "void");
+      else if (isVoidedStatus(creditNote.status))
+        stampDraftWatermark(doc, "void", { masculine: true });
     },
   });
 }

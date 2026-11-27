@@ -2,7 +2,7 @@
 // posted booking rate and the VAT in AED (never a fresh rate lookup).
 import { describe, expect, it } from "vitest";
 import { generateCreditNotePDF } from "../../server/services/pdf-credit-note.service";
-import { pdfToText } from "./pdf-test-helpers";
+import { hasEnglishStamp, pdfToText, pdfWords } from "./pdf-test-helpers";
 import type { Company, Invoice } from "../../shared/schema";
 
 const company = (locale = "en") =>
@@ -82,10 +82,20 @@ describe("credit note PDF compliance", { timeout: 30_000 }, () => {
 
   it("stamps a voided credit note VOID", async () => {
     const voided = { ...(creditNote("AED") as object), status: "void" } as never;
-    const text = flat(
-      await pdfToText(await generateCreditNotePDF(voided, [line] as never, company(), original))
-    );
-    expect(text).toContain("VOID");
+    const pdf = await generateCreditNotePDF(voided, [line] as never, company(), original);
+    expect(await hasEnglishStamp(pdf, "VOID")).toBe(true);
+    // The Arabic stamp agrees with the masculine noun (إشعار): ملغى. Rotated Arabic only extracts
+    // reliably with poppler (CI); xpdf on a developer machine has no -bbox, so skip it there.
+    if (
+      await pdfWords(pdf).then(
+        () => true,
+        () => false
+      )
+    ) {
+      const arabic = (await pdfToText(pdf)).normalize("NFKC").replace(/\s+/g, "");
+      expect(arabic.includes("ملغى") || arabic.includes("ىغلم")).toBe(true);
+      expect(arabic.includes("ملغاة") || arabic.includes("ةاغلم")).toBe(false);
+    }
   });
 
   it("USD credit note shows the reference invoice, the posted rate and the AED VAT", async () => {
