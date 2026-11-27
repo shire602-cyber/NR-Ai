@@ -147,4 +147,22 @@ describe("bank statement CSV import", () => {
     expect(result.errors).toEqual([]);
     expect(result.skippedRows).toBe(0);
   });
+
+  it("non-numeric amount values produce a row-level error, not a silent zero import (S05)", () => {
+    // A cell value like "pending" or "N/A" must surface as a parse error so the
+    // operator knows the row was dropped — the fix for the S05 silent-zero bug.
+    const result = parseBankCsv(
+      [
+        "Date,Description,Debit,Credit,Balance",
+        "2026-06-01,Valid debit,820.50,,9179.50",
+        "2026-06-02,Pending transfer,pending,,9179.50",
+        "2026-06-03,Valid credit,,5000.00,14179.50",
+      ].join("\n")
+    );
+    // The "pending" row must appear in errors, not be silently imported as debit: 0
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors.some((e) => /pending/i.test(e))).toBe(true);
+    // Only the two valid rows are imported
+    expect(result.transactions).toHaveLength(2);
+  });
 });
