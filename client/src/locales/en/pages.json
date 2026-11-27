@@ -762,6 +762,7 @@
   "pages.companyProfileInvalidLogo": "Invalid logo",
   "pages.companyProfileLogoUploaded": "Logo uploaded",
   "pages.companyProfileLogoFailed": "Logo upload failed",
+  "pages.companySettingsLeaveBody": "Your changes to the company settings will be lost.",
   "pages.inventoryProductCount": "{count} product(s) in inventory",
   "pages.inventoryNoMatch": "No products match your search.",
   "pages.inventoryLoadError": "Products could not be loaded. Try again in a moment.",

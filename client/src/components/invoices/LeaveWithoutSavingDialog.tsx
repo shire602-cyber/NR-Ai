@@ -15,10 +15,13 @@ export function LeaveWithoutSavingDialog({
   open,
   onStay,
   onLeave,
+  body,
 }: {
   open: boolean;
   onStay: () => void;
   onLeave: () => void;
+  /** Overrides the invoice wording (other screens name what would be lost). */
+  body?: string;
 }) {
   const { t } = useTranslation();
   return (
@@ -26,7 +29,7 @@ export function LeaveWithoutSavingDialog({
       <AlertDialogContent data-testid="dialog-leave-without-saving" data-leave-guard-ignore="">
         <AlertDialogHeader>
           <AlertDialogTitle>{t["invoices.leave.title"]}</AlertDialogTitle>
-          <AlertDialogDescription>{t["invoices.leave.body"]}</AlertDialogDescription>
+          <AlertDialogDescription>{body ?? t["invoices.leave.body"]}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel data-testid="button-stay-on-editor">
