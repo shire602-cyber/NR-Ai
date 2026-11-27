@@ -30,6 +30,7 @@ import { documentCurrency, loadBaseCurrency, withLedgerTx } from "../ledger";
 import type { LedgerTx } from "../ledger/types";
 import { has, resolve } from "../platform/service-registry";
 import type { FxGetRate } from "./fx";
+import { recordAudit } from "./audit.service";
 import { companyIsVatRegistered } from "../tax/vat-registration";
 
 /** systemVat (B1: NC1): the VAT line this service derives; the kernel lets it sit on 1050 / 2020. */
@@ -522,6 +523,22 @@ export async function postReceipt(
       },
       tx
     );
+    await recordAudit({
+      userId,
+      companyId: current.companyId,
+      action: "receipt.post",
+      entityType: "receipt",
+      entityId: current.id,
+      before: { posted: false },
+      after: {
+        posted: true,
+        journalEntryId: result.entry.id,
+        merchant: current.merchant,
+        amount: current.amount,
+      },
+      tx,
+      required: true,
+    });
     return { receipt: result.receipt, entryId: result.entry.id };
   });
 }

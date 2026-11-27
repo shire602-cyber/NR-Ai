@@ -136,6 +136,16 @@ export const postReceiptBody = z
   .strict();
 export type PostReceiptBody = z.output<typeof postReceiptBody>;
 
+/** Human decision on an AI-extracted receipt (R05-23); recorded as an audit row only. */
+export const receiptReviewDecisionBody = z
+  .object({
+    decision: z.enum(["accepted", "corrected", "rejected"]),
+    band: z.enum(["high", "review", "low"]),
+    note: z.string().max(500).optional(),
+  })
+  .strict();
+export type ReceiptReviewDecisionBody = z.output<typeof receiptReviewDecisionBody>;
+
 export const reviseReceiptBody = z
   .object({
     merchant,
