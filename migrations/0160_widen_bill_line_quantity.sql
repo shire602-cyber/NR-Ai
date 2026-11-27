@@ -2,7 +2,58 @@
 -- Idempotent: widen quantities to four decimal places.
 -- Type changes take ACCESS EXCLUSIVE locks and rewrite each changed table once.
 DO $$
+DECLARE
+  table_name text;
+  real_columns text[];
+  column_name text;
+  bad_id text;
+  bad_value text;
+  changes text[];
+  alterations text[] := ARRAY[]::text[];
+  alteration text;
 BEGIN
+  FOREACH table_name IN ARRAY ARRAY['purchase_order_lines', 'purchase_order_receipt_lines']
+  LOOP
+    SELECT array_agg(attname::text ORDER BY attnum) INTO real_columns
+    FROM pg_attribute
+    WHERE attrelid = table_name::regclass
+      AND attname IN ('quantity', 'quantity_received', 'quantity_billed')
+      AND atttypid = 'real'::regtype;
+
+    IF real_columns IS NULL THEN
+      CONTINUE;
+    END IF;
+
+    -- Use the shortest round-trip text the app read, regardless of the caller's setting.
+    SET LOCAL extra_float_digits = 1;
+    -- Prevent writes between the pre-check and conversion.
+    EXECUTE format('LOCK TABLE %I IN ACCESS EXCLUSIVE MODE', table_name);
+    changes := ARRAY[]::text[];
+
+    FOREACH column_name IN ARRAY real_columns
+    LOOP
+      EXECUTE format(
+        'SELECT id::text, %1$I::text FROM %2$I
+         WHERE %1$I > 0 AND round(%1$I::text::numeric, 4) = 0
+         ORDER BY id LIMIT 1',
+        column_name, table_name
+      ) INTO bad_id, bad_value;
+
+      IF bad_value IS NOT NULL THEN
+        RAISE EXCEPTION 'Cannot widen %.%: id %, value % rounds to 0.0000',
+          table_name, column_name, bad_id, bad_value;
+      END IF;
+
+      changes := array_append(changes, format(
+        'ALTER COLUMN %1$I TYPE numeric(16,4) USING round(%1$I::text::numeric, 4)', column_name
+      ));
+    END LOOP;
+
+    alterations := array_append(alterations, format(
+      'ALTER TABLE %I %s', table_name, array_to_string(changes, ', ')
+    ));
+  END LOOP;
+
   IF EXISTS (
     SELECT 1 FROM pg_attribute
     WHERE attrelid = 'bill_line_items'::regclass AND attname = 'quantity'
@@ -10,47 +61,9 @@ BEGIN
   ) THEN
     ALTER TABLE bill_line_items ALTER COLUMN quantity TYPE numeric(16,4);
   END IF;
-END $$;
 
--- Cast real directly to numeric using PostgreSQL's six-significant-digit conversion.
--- Keep positive values that would round to zero at the minimum quantity of 0.0001.
-DO $$
-DECLARE
-  column_name text;
-  converted text;
-  changes text[] := ARRAY[]::text[];
-BEGIN
-  FOR column_name IN
-    SELECT attname FROM pg_attribute
-    WHERE attrelid = 'purchase_order_lines'::regclass
-      AND attname IN ('quantity', 'quantity_received', 'quantity_billed')
-      AND atttypid = 'real'::regtype
+  FOREACH alteration IN ARRAY alterations
   LOOP
-    converted := format('GREATEST(%1$I::numeric, CASE WHEN %1$I > 0 THEN 0.0001 END)', column_name);
-    IF column_name <> 'quantity' THEN
-      -- USING reads the old row. Cap each counter at the converted ordered quantity.
-      converted := format(
-        'LEAST(%s, GREATEST(quantity::numeric, CASE WHEN quantity > 0 THEN 0.0001 END))',
-        converted
-      );
-    END IF;
-    changes := array_append(
-      changes, format('ALTER COLUMN %I TYPE numeric(16,4) USING %s', column_name, converted)
-    );
+    EXECUTE alteration;
   END LOOP;
-  IF cardinality(changes) > 0 THEN
-    EXECUTE 'ALTER TABLE purchase_order_lines ' || array_to_string(changes, ', ');
-  END IF;
-END $$;
-
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_attribute
-    WHERE attrelid = 'purchase_order_receipt_lines'::regclass AND attname = 'quantity'
-      AND atttypid = 'real'::regtype
-  ) THEN
-    ALTER TABLE purchase_order_receipt_lines ALTER COLUMN quantity TYPE numeric(16,4)
-      USING GREATEST(quantity::numeric, CASE WHEN quantity > 0 THEN 0.0001 END);
-  END IF;
 END $$;
