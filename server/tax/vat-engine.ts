@@ -684,7 +684,7 @@ async function collectInvoices(
          JOIN journal_lines jl ON jl.entry_id = je.id
          JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
         WHERE je.company_id = $1 AND je.source = 'invoice' AND je.source_id = ANY($2::uuid[])
-          AND je.memo_key = 'creditNoteReversal'
+          AND je.memo_key IN ('creditNoteReversal', 'creditNotePartial')
           AND je.status = 'posted' AND je.entry_kind <> 'reversal' AND je.reversed_by_entry_id IS NULL
         GROUP BY je.source_id, a.code, a.type, a.is_vat_account`,
       [companyId, foreignCreditIds]
@@ -702,6 +702,41 @@ async function collectInvoices(
         byFamily.set(family, (byFamily.get(family) ?? 0) + fils(row.net));
         postedRemainderNet.set(row.source_id, byFamily);
       }
+    }
+  }
+
+  const foreignInvoiceIds = docs
+    .filter(
+      ({ invoice }) =>
+        invoice.invoiceType !== "credit_note" && isForeignCurrency(invoice.currency, baseCurrency)
+    )
+    .map(({ invoice }) => invoice.id);
+  const postedInvoiceNet = new Map<string, Map<Vat201Family, number>>();
+  if (foreignInvoiceIds.length) {
+    // A foreign-currency invoice (or debit note) posts one toBase(bucket, rate) per revenue-account
+    // bucket. When std and RC lines share one account the bucket is combined (toBase(std+rc, rate));
+    // when they use different accounts each bucket is rounded independently. Querying the actual
+    // posted credit amounts gives the correct Box 1 whatever the layout, without duplicating the
+    // bucket computation here. income-account filter: skip AR, VAT payable, etc.
+    const { rows: invRows } = await ledgerQueryable(tx).query(
+      `SELECT je.source_id, a.code,
+              COALESCE(SUM(jl.credit - jl.debit), 0) AS net
+         FROM journal_entries je
+         JOIN journal_lines jl ON jl.entry_id = je.id
+         JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
+        WHERE je.company_id = $1 AND je.source = 'invoice' AND je.source_id = ANY($2::uuid[])
+          AND je.memo_key IN ('salesInvoice', 'debitNote')
+          AND je.status = 'posted' AND je.entry_kind <> 'reversal' AND je.reversed_by_entry_id IS NULL
+          AND a.type = 'income'
+        GROUP BY je.source_id, a.code`,
+      [companyId, foreignInvoiceIds]
+    );
+    for (const row of invRows) {
+      const family = POSTED_ROLE_FAMILY[revenueRoleForCode(String(row.code))];
+      if (!family) continue;
+      const byFamily = postedInvoiceNet.get(row.source_id) ?? new Map<Vat201Family, number>();
+      byFamily.set(family, (byFamily.get(family) ?? 0) + fils(row.net));
+      postedInvoiceNet.set(row.source_id, byFamily);
     }
   }
 
@@ -799,17 +834,19 @@ async function collectInvoices(
     // The last credit can clear base-currency VAT rounding with only zero-rated lines left.
     if (postedVat && !netByFamily.has("standard")) netByFamily.set("standard", 0);
     // Net override: apply the GL remainder per tax family, adjusted for the document's mix.
-    // - Pure RC (all lines reverse_charge): standard entry in POSTED_ROLE_FAMILY came entirely
-    //   from RC lines; remap standard→reverse_charge so split credits absorb rounding in the
-    //   correct family without double-counting Box 1.
-    // - Mixed standard+RC: both supply types post to the same standard_sales account (4020);
-    //   rawPostedNet["standard"] bundles both families. Split it proportionally using this CN's
-    //   per-family doc base (stdDocBase / rcDocBase) so the GL remainder is absorbed in full to
-    //   the fil. The GL clears exactly toBaseFils(combinedNetFils, rate) for each CN; the
-    //   proportional allocation ensures stdGL + rcGL = totalGL exactly (integer arithmetic).
+    // Source of rawPostedNet:
+    //   - CN:      postedRemainderNet — debit-side of creditNoteReversal JEs (SUM debit−credit).
+    //   - Invoice: postedInvoiceNet   — credit-side of salesInvoice/debitNote JEs (SUM credit−debit).
+    // In both cases rawPostedNet["standard"] holds the combined GL amount for all income accounts
+    // that classify as standard_sales (accounts 4010, 4020, etc.), regardless of bucket layout.
+    // The block below applies three adjustments:
+    // - Pure RC (all lines reverse_charge): standard entry came entirely from RC lines; remap
+    //   standard→reverse_charge so credits absorb rounding in the correct family.
+    // - Mixed standard+RC: rawPostedNet["standard"] bundles both families; split proportionally
+    //   using this doc's per-family doc base (stdDocBase / rcDocBase) so stdGL + rcGL = totalGL.
     // - Margin lines: taxable base is the VAT-exclusive margin; strip standard so the GL revenue
     //   (which includes purchase cost) is not used. Zero-rated / exempt families are kept.
-    const rawPostedNet = postedRemainderNet.get(inv.id);
+    const rawPostedNet = postedRemainderNet.get(inv.id) ?? postedInvoiceNet.get(inv.id);
     let postedNet: Map<Vat201Family, number> | undefined;
     if (rawPostedNet) {
       let mapped: Map<Vat201Family, number> = rawPostedNet;
@@ -844,27 +881,6 @@ async function collectInvoices(
         }
       }
       postedNet = mapped.size > 0 ? mapped : undefined;
-    }
-    // Invoice mixed-doc fix: for invoices (and non-FX CNs) with both standard and RC lines and
-    // no rawPostedNet, apply combined rounding to match the GL combined posting.
-    // Both supply types share account 4020 (standard_sales); the posting service does one
-    // combined toBase(stdFils + rcFils, rate) per bucket. Per-family toBaseFils can sum to one
-    // fil more than the combined amount (e.g. toBaseFils(10001) + toBaseFils(10001) = 73458 but
-    // toBase(20002) = 73457), leaving a 1-fil residual after a full credit. Using combined
-    // rounding here ensures invoice Box 1 == GL from day one, so every credit nets to zero.
-    if (!postedNet && hasRcLines && hasStandardLines && !hasMarginScheme) {
-      const stdDocFils = netByFamily.get("standard") ?? 0;
-      const rcDocFils = netByFamily.get("reverse_charge") ?? 0;
-      const totalDocFils = stdDocFils + rcDocFils;
-      if (totalDocFils > 0) {
-        const combinedBase = toBaseFils(totalDocFils, rate);
-        const rcBase = Math.round((combinedBase * rcDocFils) / totalDocFils);
-        const stdBase = combinedBase - rcBase;
-        postedNet = new Map<Vat201Family, number>([
-          ["standard", stdBase],
-          ["reverse_charge", rcBase],
-        ]);
-      }
     }
     if (postedNet) {
       for (const [family, net] of postedNet) {
