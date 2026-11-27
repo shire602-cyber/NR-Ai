@@ -230,6 +230,8 @@
   "components.statusOverdueOneDay": "متأخر يومًا واحدًا",
   "components.rowMoreActions": "إجراءات أخرى",
   "components.ui.more": "المزيد",
+  "components.cashBalance.overdrawn": "مكشوف",
+  "components.cashBalance.negative": "رصيد سالب",
   "components.ui.other": "أخرى",
   "components.ui.preview": "معاينة",
   "components.ui.fileDropPrompt": "أفلت ملفًا هنا",

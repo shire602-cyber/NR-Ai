@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { Label } from "@/components/ui/label";
 import { MoneyCell, Money } from "@/components/ui/money";
+import { CashBalance, CashBalanceCell } from "@/components/ui/cash-balance";
 import { StatCard } from "@/components/ui/stat-card";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -216,7 +217,7 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
             />
             <StatCard
               label={t["analytics.closingCash"]}
-              value={<Money amount={s?.closingCash} />}
+              value={<CashBalance amount={s?.closingCash} />}
               hint={s ? formatDate(window.to, locale) : undefined}
               loading={statement.isLoading}
               testId="stat-insights-closing-cash"
@@ -327,7 +328,7 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
                       <InOutCell inflow={b.investingInflow} outflow={b.investingOutflow} />
                       <InOutCell inflow={b.financingInflow} outflow={b.financingOutflow} />
                       <MoneyCell amount={b.netCashFlow} showCurrency={false} tone="auto" />
-                      <MoneyCell amount={b.endingBalance} showCurrency={false} />
+                      <CashBalanceCell amount={b.endingBalance} showCurrency={false} />
                     </TableRow>
                   ))}
                 </TableBody>
