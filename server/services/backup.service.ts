@@ -1417,21 +1417,11 @@ export async function countIssuedAfterBackup(
   return counts;
 }
 
-async function validateReplaceExternalState(
+async function validatePaymentAndPayrollState(
   client: Queryable,
   companyId: string,
   plan: RestoreTable[]
 ): Promise<void> {
-  const issued = await countIssuedAfterBackup(client, companyId, plan);
-  const blocking = Object.fromEntries(Object.entries(issued).filter(([, n]) => n > 0));
-  if (Object.keys(blocking).length) {
-    throw new DomainError(
-      "BACKUP_REPLACE_ISSUED_DOCUMENTS",
-      409,
-      { categories: blocking },
-      "Replace restore is unavailable: this company has issued, sent, posted or filed documents newer than the backup, and replacing would delete them and reuse their numbers."
-    );
-  }
   if (plan.some(({ table }) => !table.appendOnly)) {
     // A paid link and its webhook receipt survive replace. The snapshot can
     // rewind its payment, ledger, credits and invoice independently. Processing
@@ -1601,6 +1591,29 @@ async function validateReplaceExternalState(
       409,
       { table: "invoices" },
       "Replace restore would rewind or remove an invoice or its accounting records with e-invoice transmission history."
+    );
+  }
+}
+
+/**
+ * Everything replace restore must check before it deletes anything. The payment-link and payroll
+ * checks run first so their specific conflicts keep their own message; the issued-document
+ * guard then refuses any remaining replace that would drop or renumber issued documents.
+ */
+async function validateReplaceExternalState(
+  client: Queryable,
+  companyId: string,
+  plan: RestoreTable[]
+): Promise<void> {
+  await validatePaymentAndPayrollState(client, companyId, plan);
+  const issued = await countIssuedAfterBackup(client, companyId, plan);
+  const blocking = Object.fromEntries(Object.entries(issued).filter(([, n]) => n > 0));
+  if (Object.keys(blocking).length) {
+    throw new DomainError(
+      "BACKUP_REPLACE_ISSUED_DOCUMENTS",
+      409,
+      { categories: blocking },
+      "Replace restore is unavailable: this company has issued, sent, posted or filed documents newer than the backup, and replacing would delete them and reuse their numbers."
     );
   }
 }
