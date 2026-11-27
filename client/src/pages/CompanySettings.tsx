@@ -319,6 +319,7 @@ export default function CompanySettings() {
           error={loadError}
           onRetry={() => refetch()}
           testId="company-settings-load-error"
+          forbiddenDescription={tr["pageLabels.companySettings.companyAccessForbiddenBody"]}
         />
       </div>
     );

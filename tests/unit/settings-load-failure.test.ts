@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadLocale, useI18n } from "@/lib/i18n";
 import { queryClient } from "@/lib/queryClient";
+import CompanySettings from "@/pages/CompanySettings";
 import DeveloperSettings from "@/pages/DeveloperSettings";
 import NotificationPreferences from "@/pages/NotificationPreferences";
 
@@ -52,6 +53,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  fetchMock.mockClear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("fetch", fetchMock);
   queryClient.clear();
@@ -69,6 +71,21 @@ afterEach(async () => {
 });
 
 describe("Settings screens when the load fails", () => {
+  it.each([
+    { locale: "en", guidance: "Ask your company owner or administrator to grant you access." },
+    { locale: "ar", guidance: "اطلب من مالك شركتك أو مسؤولها منحك صلاحية الوصول." },
+  ] as const)(
+    "Company Settings shows company access guidance on a 403 ($locale)",
+    async ({ locale, guidance }) => {
+      useI18n.getState().setLocale(locale);
+      await renderPage(CompanySettings);
+      expect(fetchMock).toHaveBeenCalledWith("/api/companies/company-1", expect.anything());
+      expect(
+        container.querySelector('[data-testid="company-settings-load-error"] p')?.textContent
+      ).toBe(guidance);
+    }
+  );
+
   it("notification preferences shows a load error, not editable defaults", async () => {
     useI18n.getState().setLocale("ar");
     await renderPage(NotificationPreferences);
