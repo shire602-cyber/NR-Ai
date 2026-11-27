@@ -262,7 +262,27 @@ describe.each(reports)("$name query states", (report) => {
     expectCachedFigures(report);
   });
 
-  it.each([403, 404])("a %i refresh keeps the figures and still offers retry", async (status) => {
+  // A 403/404 on a refresh means the reader lost access to this company's data (another tenant's
+  // row is a 404): the cache drops the figures, so the tab shows the access error, never stale rows.
+  it.each([
+    [403, "firm.loadForbiddenTitle"],
+    [404, "firm.loadNotFoundTitle"],
+  ])("a %i refresh drops the figures and shows the access error", async (status, titleKey) => {
+    await mount(report);
+    response = { status, body: { message: "database exploded" } };
+    await refresh();
+    expect(byId(loadError)?.textContent).toContain(translateNow(titleKey));
+    expect(byId(refreshError)).toBeNull();
+    expect(text()).not.toContain("database exploded");
+    expectNoFigures();
+
+    response = { status: 200, body: report.payload };
+    await refresh();
+    expect(byId(loadError)).toBeNull();
+    expectCachedFigures(report);
+  });
+
+  it.each([502, 503])("a %i refresh keeps the figures and still offers retry", async (status) => {
     await mount(report);
     response = { status, body: { message: "database exploded" } };
     await refresh();

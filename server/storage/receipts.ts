@@ -329,6 +329,16 @@ export class ReceiptStorage extends SalesStorage {
     });
   }
 
+  /** Whether any of the company's receipts still points at this stored file (split parts share it). */
+  async isReceiptImageReferenced(companyId: string, imagePath: string): Promise<boolean> {
+    const [row] = await db
+      .select({ id: receipts.id })
+      .from(receipts)
+      .where(and(eq(receipts.companyId, companyId), eq(receipts.imagePath, imagePath)))
+      .limit(1);
+    return row !== undefined;
+  }
+
   async deleteReceipt(id: string, companyId: string): Promise<void> {
     await db.delete(receipts).where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)));
   }

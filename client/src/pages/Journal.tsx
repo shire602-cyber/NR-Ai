@@ -39,6 +39,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Money, MoneyCell } from "@/components/ui/money";
 import {
   Table,
@@ -180,7 +181,16 @@ export default function Journal() {
     retry: false,
   });
 
-  const { data: allEntries, isLoading } = useQuery<any[]>({
+  const {
+    data: allEntries,
+    isLoading,
+    isError,
+    isLoadingError,
+    isSuccess: entriesLoaded,
+    fetchStatus: entriesFetchStatus,
+    error: entriesError,
+    refetch: refetchEntries,
+  } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "journal"],
     enabled: !!selectedCompanyId,
   });
@@ -191,6 +201,9 @@ export default function Journal() {
   const entries = draftsOnly
     ? allEntries?.filter((e) => (e.lifecycleStatus ?? e.status) === "draft")
     : allEntries;
+
+  // A paused query (network or focus) is neither loading nor failed; do not guess the cause.
+  const entriesPaused = entriesFetchStatus === "paused";
 
   const form = useForm<JournalFormData>({
     resolver: zodResolver(journalSchema),
@@ -894,8 +907,53 @@ export default function Journal() {
         </div>
       )}
 
-      {isLoading ? (
+      {entriesPaused && (
+        <p
+          role="status"
+          className="rounded-lg border bg-surface-sunken px-3 py-2 text-small text-muted-foreground"
+          data-testid="journal-paused"
+        >
+          {t["journal.pausedStatus"]}
+        </p>
+      )}
+
+      {/* A failed refresh keeps the cached result: say so without replacing the list. */}
+      {isError && !isLoadingError && !entriesPaused && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-surface-sunken px-3 py-2 text-small"
+          data-testid="journal-refresh-error"
+        >
+          <span role="alert" className="text-danger">
+            {t["toasts.refreshFailed"]}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void refetchEntries()}
+            data-testid="button-retry-journal-refresh"
+          >
+            {t["firm.retry"]}
+          </Button>
+        </div>
+      )}
+
+      {!selectedCompanyId ? (
+        <Card>
+          <CardContent
+            className="p-6 text-center text-small text-muted-foreground"
+            data-testid="journal-waiting-company"
+          >
+            {t["journal.waitingForCompany"]}
+          </CardContent>
+        </Card>
+      ) : isLoading ? (
         <CardListSkeleton count={4} />
+      ) : isLoadingError && !entriesPaused ? (
+        <LoadErrorState
+          error={entriesError}
+          onRetry={() => void refetchEntries()}
+          testId="journal-load-error"
+        />
       ) : entries && entries.length > 0 ? (
         <VirtualList
           items={entries as any[]}
@@ -1221,13 +1279,15 @@ export default function Journal() {
             );
           }}
         />
-      ) : (
+      ) : entriesLoaded && entries?.length === 0 && !entriesPaused ? (
         <Card>
           <CardContent className="p-0">
             <EmptyState
               icon={BookMarked}
-              title={t["journal.emptyTitle"]}
-              description={t["journal.emptyDescription"]}
+              title={draftsOnly ? t["journal.draftsEmptyTitle"] : t["journal.emptyTitle"]}
+              description={
+                draftsOnly ? t["journal.draftsEmptyDescription"] : t["journal.emptyDescription"]
+              }
               action={{
                 label: t.newEntry,
                 icon: Plus,
@@ -1238,7 +1298,7 @@ export default function Journal() {
             />
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -1,0 +1,21 @@
+{
+  "complianceCalendar.eyebrow": "Compliance",
+  "complianceCalendar.next30Days": "Next 30 days",
+  "complianceCalendar.overdue": "Overdue",
+  "complianceCalendar.noEventsOnDay": "No deadlines on this day.",
+  "complianceCalendar.noDeadlinesYet": "No deadlines yet. Add VAT, corporate tax and licence details in settings.",
+  "complianceCalendar.loadErrorTitle": "Couldn't load compliance tasks",
+  "complianceCalendar.obligationsErrorTitle": "Couldn't load some filing deadlines",
+  "complianceCalendar.status.upcoming": "Upcoming",
+  "complianceCalendar.status.completed": "Completed",
+  "complianceCalendar.status.overdue": "Overdue",
+  "complianceCalendar.status.dismissed": "Dismissed",
+  "complianceCalendar.status.pending": "Pending",
+  "complianceCalendar.status.in_progress": "In progress",
+  "complianceCalendar.status.cancelled": "Cancelled",
+  "complianceCalendar.stillLoading": "Deadlines still loading.",
+  "complianceCalendar.refreshPaused": "Deadline refresh is paused. Deadlines may be incomplete or stale.",
+  "complianceCalendar.deadlinesIncomplete": "Deadlines are incomplete.",
+  "complianceCalendar.tasksRefreshErrorTitle": "Couldn't refresh tasks. Showing previous data.",
+  "complianceCalendar.obligationsRefreshErrorTitle": "Couldn't refresh filing deadlines. Showing previous data."
+}

@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { Segmented } from "../../Segmented";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatAmountDigits, formatMoneyText } from "@/lib/format-money";
+import { TRIAL_LIMITS } from "@shared/plans";
 import {
   BILLING_CYCLES,
   COMPARE_GROUPS,
@@ -157,6 +158,21 @@ const CYCLE_LABEL: Record<BillingCycle, string> = {
   monthly: "marketing.prCycleMonthly",
   yearly: "marketing.prCycleYearly",
 };
+
+export function PricingLead({
+  locale,
+  fallback,
+}: Pick<LegacySectionProps, "locale"> & {
+  fallback: string;
+}) {
+  const text = useMarketingText(locale);
+  const lead = text("prBodyTrial", {
+    companies: TRIAL_LIMITS.maxCompanies,
+    credits: TRIAL_LIMITS.aiCreditsPerMonth,
+    storageGb: TRIAL_LIMITS.maxStorageMb / 1024,
+  });
+  return <p className="phase-lead">{lead || fallback}</p>;
+}
 
 /** Body of /en/pricing and /ar/pricing; the page wrapper renders the h1. */
 export function PricingPage({ base, locale, tr }: LegacySectionProps) {

@@ -19,6 +19,7 @@ import { recordAudit } from "../services/audit.service";
 import { actorFromRequest, assertCompanyPermission } from "../services/approval-rules.service";
 import { readFormat, sendTabular } from "../reporting/http";
 import { fromFils, toFils } from "../../shared/money";
+import { todayDubai } from "@shared/accounting-date";
 import {
   assetClassBody,
   capitalizeBody,
@@ -70,7 +71,7 @@ import { registerFixedAssetJobs } from "../services/fixed-assets/monthly-job";
 import { companyIsVatRegistered } from "../tax/vat-registration";
 
 const log = createLogger("fixed-assets");
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => todayDubai();
 
 async function assertAccess(req: Request, companyId: string): Promise<void> {
   const ok = await storage.hasCompanyAccess(req.user!.id, companyId);

@@ -347,12 +347,16 @@ export const newOnboardingEntity: Partial<typeof einvoiceLegalEntities.$inferIns
 };
 
 /** Serialize onboarding state writes with company identity and provider selection changes. */
-export async function lockOnboardingCompany(companyId: string, conn: Pick<AppDatabase, "select">) {
+export async function lockOnboardingCompany(
+  companyId: string,
+  conn: Pick<AppDatabase, "select">,
+  lock: "update" | "no key update" = "update"
+) {
   const [company] = await conn
     .select()
     .from(companies)
     .where(eq(companies.id, companyId))
-    .for("update");
+    .for(lock);
   return company;
 }
 

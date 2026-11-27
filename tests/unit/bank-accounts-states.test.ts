@@ -237,10 +237,36 @@ describe("bank accounts offline and refresh states", { timeout: 90_000 }, () => 
   it("keeps cached empty data empty (with a retry) when the refresh fails", async () => {
     const good = { [`${C}/bank-accounts`]: [], [IMPORTS_PATH]: [] };
     setFixtures(good);
-    await mount();
-    await flushUntil(() => document.body.textContent?.includes("No imports yet") === true);
+    await mountPage();
+    await flushUntil(
+      () =>
+        document.body.textContent?.includes("No bank accounts yet") === true &&
+        document.body.textContent?.includes("No imports yet") === true
+    );
+    expect(document.body.textContent).toContain("No bank accounts yet");
+    expect(document.body.textContent).toContain("No imports yet");
     await failRefresh(good);
-    await flushUntil(() => byTestId("bank-imports-refresh-error") !== null);
+    await flushUntil(
+      () =>
+        byTestId("bank-accounts-refresh-error") !== null &&
+        byTestId("bank-imports-refresh-error") !== null
+    );
+    expect(byTestId("bank-accounts-refresh-error")).not.toBeNull();
+    expect(byTestId("bank-imports-refresh-error")).not.toBeNull();
+    expect(byTestId("bank-accounts-error")).toBeNull();
+    expect(document.body.textContent).toContain("No bank accounts yet");
+    expect(document.body.textContent).toContain("No imports yet");
+
+    setFixtures(good);
+    await click(buttonByText(/^Retry$/, byTestId("bank-accounts-refresh-error")!));
+    await click(buttonByText(/^Retry$/, byTestId("bank-imports-refresh-error")!));
+    await flushUntil(
+      () =>
+        byTestId("bank-accounts-refresh-error") === null &&
+        byTestId("bank-imports-refresh-error") === null
+    );
+    expect(byTestId("bank-accounts-refresh-error")).toBeNull();
+    expect(byTestId("bank-imports-refresh-error")).toBeNull();
     expect(byTestId("bank-accounts-error")).toBeNull();
     expect(document.body.textContent).toContain("No bank accounts yet");
     expect(document.body.textContent).toContain("No imports yet");

@@ -38,7 +38,12 @@ import {
 } from "../ledger";
 import type { Account } from "../../shared/schema";
 import { vendorBills } from "../../shared/schema";
-import { afterBillPosted, planBillStock, reverseBillStock } from "./inventory/documents";
+import {
+  afterBillPosted,
+  lockDocumentProducts,
+  planBillStock,
+  reverseBillStock,
+} from "./inventory/documents";
 import { fixedAssetCostAccountIds, syncBillAssets, type BillAssetLine } from "./fixed-assets/index";
 import { loadRecoveryRules, resolveRecovery } from "../tax/vat-recovery";
 import { companyIsVatRegistered } from "../tax/vat-registration";
@@ -778,8 +783,36 @@ export async function reverseBillJournal(
   tx: LedgerTx,
   bill: Pick<BillRow, "id" | "company_id">,
   actorId: string,
-  opts: { void?: boolean; reason?: string | null } = {}
+  opts: {
+    void?: boolean;
+    reason?: string | null;
+    /**
+     * Approved revision: product ids the bill will be re-posted with, locked together with the
+     * old movements' products. `null` = the bill's current line products (lines unchanged);
+     * omitted = no extra products (void).
+     */
+    revisionProductIds?: string[] | null;
+  } = {}
 ) {
+  let extraProductIds: string[] = [];
+  if (opts.revisionProductIds === null) {
+    const rows = await txRows<{ product_id: string | null }>(
+      tx,
+      `SELECT product_id FROM bill_line_items WHERE bill_id = $1 AND product_id IS NOT NULL`,
+      [bill.id]
+    );
+    extraProductIds = rows.map((r) => r.product_id).filter((id): id is string => !!id);
+  } else if (opts.revisionProductIds) {
+    extraProductIds = opts.revisionProductIds;
+  }
+  // Products (id order) before the journal-number lock that reverseBySource takes: a stocktake
+  // holds product locks while it asks for that lock, so the reverse order can deadlock.
+  await lockDocumentProducts(tx, {
+    companyId: bill.company_id,
+    sourceType: "bill",
+    sourceId: bill.id,
+    productIds: extraProductIds,
+  });
   const reversals = await reverseBySource(
     bill.company_id,
     BILL_JE_SOURCE,

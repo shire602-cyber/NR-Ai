@@ -248,9 +248,16 @@ describe("CASH-SERIES own number series", () => {
   it("[CASH-SERIES-rollback] a cash sale that fails after allocating does not burn its number", async () => {
     const t = await h.createTenant();
     const bank = await bankGl(t);
-    // Another document already carries the number the series would give next.
+    // A failure after the number is allocated (here: the line insert) must roll the counter back.
+    // The blocker invoice keeps the later "series continues" assertions meaningful.
     const blocker = await invoice(t);
-    await h.sql(`UPDATE invoices SET number = 'CS-2026-00001' WHERE id = $1`, [blocker.body.id]);
+    await h.sql(`UPDATE invoices SET number = 'INV-2026-00001' WHERE id = $1`, [blocker.body.id]);
+    await h.sql(
+      `CREATE FUNCTION test_fail_line() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced line failure'; END $$`
+    );
+    await h.sql(
+      `CREATE TRIGGER force_line_failure BEFORE INSERT ON invoice_lines FOR EACH ROW EXECUTE FUNCTION test_fail_line()`
+    );
     const before = await h.sql(
       `SELECT count(*)::int AS n FROM journal_entries WHERE company_id = $1`,
       [t.company.id]
@@ -268,8 +275,8 @@ describe("CASH-SERIES own number series", () => {
         t.company.id,
       ])
     ).toEqual([]);
-    // Once the clash is gone the series continues with no gap.
-    await h.sql(`UPDATE invoices SET number = 'INV-2026-00001' WHERE id = $1`, [blocker.body.id]);
+    // Once the failure is gone the series continues with no gap.
+    await h.sql(`DROP TRIGGER force_line_failure ON invoice_lines`);
     const ok = await cashSale(t, bank);
     expect(ok.status, ok.text).toBe(201);
     expect(ok.body.number).toBe("CS-2026-00001");

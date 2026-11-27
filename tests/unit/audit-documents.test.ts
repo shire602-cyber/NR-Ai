@@ -1,0 +1,309 @@
+import { expect, it } from "vitest";
+import { PINT_AE_FIXTURES, fixtureCompany } from "../fixtures/pint-ae/fixtures";
+import { generateEInvoiceXML } from "../../server/services/einvoice.service";
+import { prepareEInvoiceSubmission } from "../../server/services/einvoice-submit.service";
+import { attr, children, first, parseXml, text, textAt } from "../../server/services/einvoice/dom";
+import { ublToGets } from "../../server/services/einvoice/providers/complyance-gets";
+import { generateInvoicePDF } from "../../server/services/pdf-invoice.service";
+import { pdfToText, pdfWords } from "./pdf-test-helpers";
+
+const standard = PINT_AE_FIXTURES[0];
+const invoice = {
+  ...standard.invoice,
+  discountType: null,
+  discountAmount: 0,
+  discountValue: null,
+  subtotal: 1040,
+  vatAmount: 10,
+  total: 1050,
+  status: "sent",
+};
+const line = {
+  ...standard.lines[1],
+  description: "Second-hand equipment",
+  quantity: 1,
+  unitPrice: 1050,
+  marginScheme: true,
+  marginPurchaseCost: 840,
+  netAmount: 1040,
+};
+
+it("keeps the agreed VAT-inclusive margin-scheme selling price on the e-invoice", () => {
+  // (1050 − 840) × 5 / 105 = 10 AED embedded VAT. The customer owes 1050.
+  const result = generateEInvoiceXML(invoice, [line], fixtureCompany, standard.customer);
+  const root = parseXml(result.xml).documentElement;
+  expect(textAt(root, "cac:LegalMonetaryTotal/cbc:PayableAmount")).toBe("1050.00");
+});
+
+it("keeps a margin-scheme PDF line consistent with its VAT-inclusive selling price", async () => {
+  const pdf = await generateInvoicePDF(invoice, [line], fixtureCompany);
+  const text = await pdfToText(pdf);
+  expect(text).toContain("1,050.00");
+  // The net line is 1040 and its embedded VAT is 10. Charging 5% of the entire net
+  // line would display 52 in tax and a gross line of 1092, exceeding the invoice total.
+  expect(text).not.toMatch(/\b52\.00\b|\b1,092\.00\b/);
+}, 60_000);
+
+it("renders the stored PDF line net after the quantity loses precision in PostgreSQL real", async () => {
+  const pdf = await generateInvoicePDF(
+    { ...invoice, subtotal: 1_000_000.01, vatAmount: 50_000, total: 1_050_000.01 },
+    [
+      {
+        ...standard.lines[1],
+        quantity: Math.fround(10_000.0001),
+        unitPrice: 100,
+        netAmount: 1_000_000.01,
+      },
+    ],
+    fixtureCompany
+  );
+  const text = await pdfToText(pdf);
+  expect(text).toContain("1,000,000.01");
+  expect(text).toContain("1,050,000.01");
+  expect(text).not.toMatch(/\b1,000,000\.00\b|\b1,050,000\.00\b/);
+}, 60_000);
+
+it.each([
+  { scope: "line", onDocument: false, withMargin: false },
+  { scope: "document", onDocument: true, withMargin: false },
+  { scope: "line on a mixed invoice", onDocument: false, withMargin: true },
+])(
+  "generates the PDF when a fixed $scope discount already reduced the stored net to zero",
+  async ({ onDocument, withMargin }) => {
+    const discount = { discountType: "amount", discountValue: 1_000_000.01 };
+    const pdf = await generateInvoicePDF(
+      {
+        ...invoice,
+        ...(onDocument ? discount : {}),
+        discountAmount: 1_000_000.01,
+        subtotal: withMargin ? invoice.subtotal : 0,
+        vatAmount: withMargin ? invoice.vatAmount : 0,
+        total: withMargin ? invoice.total : 0,
+      },
+      [
+        {
+          ...standard.lines[1],
+          ...(!onDocument ? { ...discount, discountAmount: 1_000_000.01 } : {}),
+          quantity: Math.fround(10_000.0001),
+          unitPrice: 100,
+          netAmount: 0,
+        },
+        ...(withMargin ? [line] : []),
+      ],
+      fixtureCompany
+    );
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+  },
+  60_000
+);
+
+it("renders zero line amounts after a fixed document discount on a mixed invoice", async () => {
+  const pdf = await generateInvoicePDF(
+    {
+      ...invoice,
+      discountType: "amount",
+      discountValue: 1_001_050.01,
+      discountAmount: 1_001_050.01,
+      subtotal: 0,
+      vatAmount: 0,
+      total: 0,
+    },
+    [
+      {
+        ...standard.lines[1],
+        description: "Consulting",
+        quantity: Math.fround(10_000.0001),
+        unitPrice: 100,
+        netAmount: 0,
+      },
+      { ...line, description: "Equipment", netAmount: 0 },
+    ],
+    fixtureCompany
+  );
+  const words = await pdfWords(pdf);
+  for (const [description, price] of [
+    ["Consulting", "100.00"],
+    ["Equipment", "1,050.00"],
+  ]) {
+    const row = words.find((word) => word.text === description);
+    expect(row).toBeDefined();
+    const amounts = words
+      .filter((word) => Math.abs(word.yMin - row!.yMin) < 1 && /^[\d,]+\.\d{2}$/.test(word.text))
+      .sort((a, b) => a.xMin - b.xMin)
+      .map((word) => word.text);
+    expect(amounts).toEqual([price, "0.00", "0.00", "0.00"]);
+  }
+}, 60_000);
+
+it("preserves the stored net in validated XML and the frozen provider amounts", async () => {
+  const foreign = PINT_AE_FIXTURES.find((fixture) => fixture.name === "foreign currency")!;
+  const result = await prepareEInvoiceSubmission({
+    invoice: {
+      ...foreign.invoice,
+      status: "sent",
+      subtotal: 1_000_000.01,
+      vatAmount: 50_000,
+      total: 1_050_000.01,
+    },
+    lines: [
+      {
+        ...foreign.lines[0],
+        quantity: Math.fround(10_000.0001),
+        unitPrice: 100,
+        netAmount: 1_000_000.01,
+      },
+    ],
+    company: fixtureCompany,
+    ctx: { customer: foreign.customer, options: foreign.opts },
+    now: new Date("2027-01-15T12:00:00Z"),
+  });
+  expect(result).toMatchObject({
+    ok: true,
+    documentCurrencyLines: [{ taxAmount: 50_000, lineTotal: 1_050_000.01 }],
+  });
+  if (!result.ok) return;
+  const root = parseXml(result.xml).documentElement;
+  expect(textAt(root, "cac:InvoiceLine/cbc:LineExtensionAmount")).toBe("1000000.01");
+  expect(textAt(root, "cac:LegalMonetaryTotal/cbc:PayableAmount")).toBe("1050000.01");
+  expect(textAt(root, "cac:InvoiceLine/cac:ItemPriceExtension/cbc:Amount")).toBe("3856125.04");
+  expect(textAt(root, "cac:InvoiceLine/cac:ItemPriceExtension/cac:TaxTotal/cbc:TaxAmount")).toBe(
+    "183625.00"
+  );
+}, 60_000);
+
+it("preserves the posted VAT and payable when VAT rounds up on two AED 0.10 lines", async () => {
+  const result = await prepareEInvoiceSubmission({
+    invoice: { ...invoice, subtotal: 0.2, vatAmount: 0.02, total: 0.22 },
+    lines: standard.lines.map((line) => ({
+      ...line,
+      quantity: 1,
+      unitPrice: 0.1,
+      discountType: null,
+      discountValue: null,
+      discountAmount: 0,
+      netAmount: 0.1,
+    })),
+    company: fixtureCompany,
+    ctx: { customer: standard.customer, options: standard.opts },
+    now: new Date("2027-01-15T12:00:00Z"),
+  });
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  const root = parseXml(result.xml).documentElement;
+  expect(textAt(root, "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount")).toBe("0.20");
+  expect(textAt(root, "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount")).toBe("0.02");
+  expect(textAt(root, "cac:TaxTotal/cbc:TaxAmount")).toBe("0.02");
+  expect(textAt(root, "cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount")).toBe("0.22");
+  expect(textAt(root, "cac:LegalMonetaryTotal/cbc:PayableAmount")).toBe("0.22");
+  expect(
+    children(root, "cac:InvoiceLine").map((line) =>
+      textAt(line, "cac:ItemPriceExtension/cac:TaxTotal/cbc:TaxAmount")
+    )
+  ).toEqual(["0.01", "0.01"]);
+}, 60_000);
+
+it("validates six AED 0.10 lines with AED 0.06 posted line VAT and AED 0.66 payable", async () => {
+  const result = await prepareEInvoiceSubmission({
+    invoice: { ...invoice, subtotal: 0.6, vatAmount: 0.06, total: 0.66 },
+    lines: Array.from({ length: 6 }, () => ({
+      ...standard.lines[1],
+      quantity: 1,
+      unitPrice: 0.1,
+      netAmount: 0.1,
+    })),
+    company: fixtureCompany,
+    ctx: { customer: standard.customer, options: standard.opts },
+    now: new Date("2027-01-15T12:00:00Z"),
+  });
+  expect(result).toMatchObject({
+    ok: true,
+    validation: { valid: true, schematron: { available: true } },
+  });
+  if (!result.ok) return;
+  const root = parseXml(result.xml).documentElement;
+  expect(textAt(root, "cac:TaxTotal/cbc:TaxAmount")).toBe("0.03");
+  expect(textAt(root, "cac:LegalMonetaryTotal/cbc:PayableRoundingAmount")).toBe("0.03");
+  expect(textAt(root, "cac:LegalMonetaryTotal/cbc:PayableAmount")).toBe("0.66");
+  expect(
+    children(root, "cac:InvoiceLine").map((row) =>
+      textAt(row, "cac:ItemPriceExtension/cac:TaxTotal/cbc:TaxAmount")
+    )
+  ).toEqual(Array(6).fill("0.01"));
+}, 60_000);
+
+it("keeps the posted one-fil allowance on the zero-rated line after quantity precision loss", async () => {
+  const result = await prepareEInvoiceSubmission({
+    invoice: {
+      ...invoice,
+      discountType: "amount",
+      discountValue: 0.01,
+      discountAmount: 0.01,
+      subtotal: 2_000_000,
+      vatAmount: 50_000,
+      total: 2_050_000,
+    },
+    lines: [0, 0.01].map((share) => ({
+      ...standard.lines[1],
+      quantity: Math.fround((1_000_000 + share) / 100),
+      unitPrice: 100,
+      vatRate: share ? 0 : 0.05,
+      vatSupplyType: share ? "zero_rated" : "standard_rated",
+      documentDiscountAmount: share,
+      netAmount: 1_000_000,
+    })),
+    company: fixtureCompany,
+    ctx: { customer: standard.customer, options: standard.opts },
+    now: new Date("2027-01-15T12:00:00Z"),
+  });
+  expect(result).toMatchObject({ ok: true, validation: { valid: true } });
+  if (!result.ok) return;
+  const root = parseXml(result.xml).documentElement;
+  expect(
+    children(root, "cac:InvoiceLine").map((row) => textAt(row, "cbc:LineExtensionAmount"))
+  ).toEqual(["1000000.00", "1000000.01"]);
+  expect(children(root, "cac:AllowanceCharge")).toHaveLength(1);
+  expect(textAt(root, "cac:AllowanceCharge/cac:TaxCategory/cbc:ID")).toBe("Z");
+  expect(textAt(root, "cac:AllowanceCharge/cbc:Amount")).toBe("0.01");
+}, 60_000);
+
+it("expresses both UAE line extension amounts in AED on a USD tax invoice", () => {
+  // PINT AE BTAE-08 and BTAE-10 are denominated in AED, even when the invoice is in USD.
+  const foreign = PINT_AE_FIXTURES.find((fixture) => fixture.name === "foreign currency")!;
+  const { xml } = generateEInvoiceXML(
+    foreign.invoice,
+    foreign.lines,
+    fixtureCompany,
+    foreign.customer,
+    foreign.opts
+  );
+  const root = parseXml(xml).documentElement;
+  const extension = first(root, "cac:InvoiceLine/cac:ItemPriceExtension")!;
+  const amounts = ["cbc:Amount", "cac:TaxTotal/cbc:TaxAmount"].map((path) => {
+    const amount = first(extension, path);
+    return [attr(amount, "currencyID"), text(amount)];
+  });
+  // At 3.6725 AED/USD, 1050 USD gross and 50 USD VAT round half-up to the fils.
+  expect(amounts).toEqual([
+    ["AED", "3856.13"],
+    ["AED", "183.63"],
+  ]);
+});
+
+it("passes exact document currency line amounts when AED rounding loses precision", () => {
+  const foreign = PINT_AE_FIXTURES.find((fixture) => fixture.name === "foreign currency")!;
+  const { xml } = generateEInvoiceXML(
+    { ...foreign.invoice, currency: "INR", exchangeRate: 1 },
+    foreign.lines,
+    fixtureCompany,
+    foreign.customer,
+    { ...foreign.opts, taxExchangeRate: "0.0313" }
+  );
+  const root = parseXml(xml).documentElement;
+  expect(textAt(root, "cac:InvoiceLine/cac:ItemPriceExtension/cbc:Amount")).toBe("32.87");
+  expect(textAt(root, "cac:InvoiceLine/cac:ItemPriceExtension/cac:TaxTotal/cbc:TaxAmount")).toBe(
+    "1.57"
+  );
+  expect(ublToGets(xml, [{ taxAmount: 50, lineTotal: 1050 }]).payload).toMatchObject({
+    lineItems: [expect.objectContaining({ taxAmount: 50, lineTotal: 1050 })],
+  });
+});

@@ -109,8 +109,8 @@ const plan = (id: string, name: string, year: number) => ({
 const URL = `/api/companies/${CID}/budget-plans`;
 const LINES_URL = "/api/budget-plans/a/lines";
 const VARIANCE_URL = "/api/budget-plans/a/variance";
-const PAUSED = "You're offline. Budget data will load when you reconnect.";
-const WAITING = "Waiting to load budget data…";
+const PAUSED = enFinanceViews["budgets.readPaused"];
+const WAITING = enFinanceViews["budgets.loadWaiting"];
 
 function setDetailFixtures() {
   fixtures[URL] = [plan("a", "موازنة التسويق", 2026)];
@@ -221,13 +221,16 @@ describe("budgets list states", () => {
     await act(async () => qc.invalidateQueries({ queryKey: [URL] }));
     await settle();
     expect(text()).toContain("Marketing 2026");
-    expect(q("budgets-load-error")?.textContent).toContain("Could not refresh budget data");
+    expect(q("budgets-refresh-failed")?.textContent).toContain(
+      enFinanceViews["budgets.refreshFailed"]
+    );
+    expect(q("budgets-load-error")).toBeNull();
     expect(q("budgets-empty")).toBeNull();
 
     failing.delete(URL);
     fixtures[URL] = [plan("a", "Updated marketing plan", 2026)];
-    await clickRetry("budgets-load-error", "Try again");
-    expect(q("budgets-load-error")).toBeNull();
+    await clickRetry("budgets-refresh-failed", "Try again");
+    expect(q("budgets-refresh-failed")).toBeNull();
     expect(text()).toContain("Updated marketing plan");
   });
 

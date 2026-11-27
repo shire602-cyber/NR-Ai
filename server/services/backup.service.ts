@@ -27,6 +27,7 @@
  * the managed Postgres) and an off-site copy of these snapshots is an
  * external bucket — both are EXTERNAL actions documented in docs/api/backups.md.
  */
+import { todayDubai } from "@shared/accounting-date";
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 import { pool } from "../db";
@@ -579,7 +580,7 @@ export async function createCompanyBackup(
           VALUES ($1, $2, $3, $4, 'in_progress', $5, $6, true) RETURNING id, company_id, name, status`,
     [
       args.companyId,
-      args.name || `Backup ${new Date().toISOString().slice(0, 10)}`,
+      args.name || `Backup ${todayDubai()}`,
       args.description ?? (args.backupType === "manual" ? "Manual backup" : null),
       args.backupType,
       args.userId,

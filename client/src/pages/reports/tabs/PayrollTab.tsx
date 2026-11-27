@@ -24,12 +24,14 @@ import {
 } from "../shared";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useReportsPageContext } from "../context";
+import { SecondaryQueryError } from "../ReportQueryNotice";
 
 export default function PayrollTab() {
   const { t } = useTranslation();
-  const { payrollLoading, payrollReport, reportSectionClass } = useReportsPageContext();
+  const { payrollLoading, payrollReport, reportSectionClass, secondaryLoadErrors } = useReportsPageContext();
   return (
     <>
+      <SecondaryQueryError error={secondaryLoadErrors.payrollRuns} testId="payroll-tab-runs-error" />
       <div
         className={reportSectionClass(
           ["payroll-summary", "wps-sif-summary"],

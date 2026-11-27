@@ -282,14 +282,24 @@ describe("PERF-AGING aging output is unchanged", () => {
   it("a chart without 1040 / 2010 falls back to the receivable / payable account by name, VAT and tax accounts excluded", async () => {
     if (WRITE) return;
     const t = await h.createTenant({ name: "PerfAging Chart" });
+    const { agedPayables, agedReceivables } = await import("../../server/reporting");
+    const args = { companyId: t.company.id, asOf: "2026-11-15" };
     await h.sql(
-      `UPDATE accounts SET code = CASE code WHEN '1040' THEN '1041' WHEN '2010' THEN '2011' ELSE code END
+      `INSERT INTO accounts (company_id, code, name_en, type)
+       VALUES ($1, '1000-VAT', 'VAT Receivable', 'asset'),
+              ($1, '2000-TAX', 'Tax Payable', 'liability'),
+              ($1, '2000-TRADE', 'Trade Payables', 'liability')`,
+      [t.company.id]
+    );
+    expect((await agedPayables(args)).reconciliation.controlAccountCode).toBe("2010");
+    await h.sql(
+      `UPDATE accounts SET code = CASE code
+        WHEN '1040' THEN '1041' WHEN '2010' THEN '2011' WHEN '2000-TRADE' THEN '2020-TRADE' ELSE code END
         WHERE company_id = $1`,
       [t.company.id]
     );
-    const { agedPayables, agedReceivables } = await import("../../server/reporting");
-    const ar = await agedReceivables({ companyId: t.company.id, asOf: "2026-11-15" });
-    const ap = await agedPayables({ companyId: t.company.id, asOf: "2026-11-15" });
+    const ar = await agedReceivables(args);
+    const ap = await agedPayables(args);
     expect(ar.reconciliation.controlAccountCode).toBe("1041");
     expect(ar.reconciliation.controlAccountName).toBe("Accounts Receivable");
     expect(ap.reconciliation.controlAccountCode).toBe("2011");

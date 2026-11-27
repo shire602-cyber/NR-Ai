@@ -1,3 +1,4 @@
+import { recordTestAppointment } from "./einvoice-appointment-fixture";
 /**
  * E2: UAE e-invoicing through Complyance on the real app + Postgres, against an in-memory
  * Complyance built from the doc-derived fixtures (tests/fixtures/pint-ae/asp/complyance/README.md).
@@ -347,7 +348,8 @@ for (const k of ENV_KEYS) saved[k] = process.env[k];
 
 let credentialVariable: string | null = null;
 
-function useComplyance(t: Tenant, webhookSecret: string | null = SECRET) {
+async function useComplyance(t: Tenant, webhookSecret: string | null = SECRET) {
+  await recordTestAppointment(t, "complyance");
   const context = {
     companyId: t.company.id,
     provider: "complyance",
@@ -469,7 +471,7 @@ async function readyTenant(columns: Record<string, unknown> = SELLER_COLUMNS) {
   const t = await h.createTenant({
     companyColumns: { ...columns, einvoice_partner: "complyance" },
   });
-  useComplyance(t);
+  await useComplyance(t);
   fake.authorised = true;
   fake.ready = true;
   const r = await connect(t);
@@ -521,11 +523,107 @@ describe("E2 without Complyance configured: nothing named, nothing sent", () => 
 });
 
 describe("E2 onboarding gates sending", () => {
+  it("PR #178 requires the resolved provider's direct tenant consent for submission", async () => {
+    vi.stubEnv("EINVOICE_PROVIDER", "mock");
+    vi.stubEnv("EINVOICE_ASP_COMPLYANCE_TERMS_URL", "https://partner.example/terms");
+    vi.stubEnv("EINVOICE_ASP_COMPLYANCE_TERMS_VERSION", "pr178");
+    vi.stubEnv("EINVOICE_ASP_ACUBE_TERMS_URL", "https://other-partner.example/terms");
+    vi.stubEnv("EINVOICE_ASP_ACUBE_TERMS_VERSION", "pr178");
+    try {
+      const t = await readyTenant();
+      const partnerPath = `/api/companies/${t.company.id}/einvoice/partner`;
+      const { getAppointment, confirmEmaraTaxAppointment } =
+        await import("../../server/services/einvoice-appointment.service");
+      const previouslyAccepted = (await getAppointment(t.company.id, "complyance"))!;
+      await recordTestAppointment(t, "acube");
+      const acubeAcceptance = (await getAppointment(t.company.id, "acube"))!;
+      expect(acubeAcceptance.termsVersion).toBe(previouslyAccepted.termsVersion);
+      const acceptBody = {
+        expectedProvider: "complyance",
+        accepted: true,
+        termsVersion: "pr178",
+      };
+      const confirmBody = {
+        expectedProvider: "complyance",
+        expectedAcceptanceRevision: previouslyAccepted.termsAcceptedAt.toISOString(),
+        confirmed: true,
+      };
+
+      const foreign = await h.createSecondTenant();
+      for (const [action, body] of [
+        ["accept-terms", acceptBody],
+        ["confirm-emaratax", confirmBody],
+        ["revoke", {}],
+      ] as const) {
+        const blocked = await foreign.as.post(`${partnerPath}/${action}`, body);
+        expect(blocked.status, blocked.text).toBe(404);
+      }
+      const revoked = await t.as.post(`${partnerPath}/revoke`, {});
+      expect(revoked.status, revoked.text).toBe(200);
+      const issued = await issuedInvoice(t);
+      const invoicePath = `/api/invoices/${issued.id}/einvoice`;
+      const blockedSubmit = await t.as.post(`${invoicePath}/submit`, {});
+      expect(blockedSubmit.status, blockedSubmit.text).toBe(409);
+      expect(blockedSubmit.body).toMatchObject({
+        code: "EINVOICE_APPOINTMENT_REQUIRED",
+        state: "revoked",
+      });
+
+      const wrongProviderTerms = await t.as.post(`${partnerPath}/accept-terms`, {
+        ...acceptBody,
+        expectedProvider: "acube",
+      });
+      expect(wrongProviderTerms.status, wrongProviderTerms.text).toBe(409);
+      expect(wrongProviderTerms.body.code).toBe("EINVOICE_PROVIDER_MISMATCH");
+      expect((await t.as.get(partnerPath)).body.state).toBe("revoked");
+
+      const accepted = await t.as.post(`${partnerPath}/accept-terms`, acceptBody);
+      expect(accepted.status, accepted.text).toBe(200);
+      expect(accepted.body.state).toBe("awaiting_emaratax");
+      expect(
+        await confirmEmaraTaxAppointment({ accepted: previouslyAccepted, userId: t.user.id })
+      ).toBeNull();
+
+      const wrongProviderConfirmation = await t.as.post(`${partnerPath}/confirm-emaratax`, {
+        ...confirmBody,
+        expectedProvider: "acube",
+        expectedAcceptanceRevision: acubeAcceptance.termsAcceptedAt.toISOString(),
+      });
+      expect(wrongProviderConfirmation.status, wrongProviderConfirmation.text).toBe(409);
+      expect(wrongProviderConfirmation.body.code).toBe("EINVOICE_PROVIDER_MISMATCH");
+
+      const staleConfirmation = await t.as.post(`${partnerPath}/confirm-emaratax`, confirmBody);
+      expect(staleConfirmation.status, staleConfirmation.text).toBe(409);
+      expect(staleConfirmation.body.code).toBe("EINVOICE_ACCEPTANCE_REVISION_MISMATCH");
+
+      await h.sql("UPDATE invoices SET einvoice_status = 'failed' WHERE id = $1", [issued.id]);
+      const blockedResubmit = await t.as.post(`${invoicePath}/resubmit`, {});
+      expect(blockedResubmit.status, blockedResubmit.text).toBe(409);
+      expect(blockedResubmit.body).toMatchObject({
+        code: "EINVOICE_APPOINTMENT_REQUIRED",
+        state: "awaiting_emaratax",
+      });
+      const current = await t.as.get(partnerPath);
+      expect(current.status, current.text).toBe(200);
+      expect(current.body.state).toBe("awaiting_emaratax");
+      const confirmed = await t.as.post(`${partnerPath}/confirm-emaratax`, {
+        ...confirmBody,
+        expectedAcceptanceRevision: current.body.appointment.termsAcceptedAt,
+      });
+      expect(confirmed.status, confirmed.text).toBe(200);
+      expect(confirmed.body.state).toBe("active");
+      const queued = await t.as.post(`${invoicePath}/resubmit`, {});
+      expect(queued.status, queued.text).toBe(202);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("does not activate a Complyance taxpayer superseded while its response was pending", async () => {
     const t = await h.createTenant({
       companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
     });
-    useComplyance(t);
+    await useComplyance(t);
     fake.authorised = true;
     fake.ready = true;
     fake.beforeConnectReply = async () => {
@@ -628,7 +726,7 @@ describe("E2 onboarding gates sending", () => {
     const t = await h.createTenant({
       companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
     });
-    useComplyance(t);
+    await useComplyance(t);
     const started = await connect(t);
     expect(started.body.legalEntity.status).toBe("reserved");
     fake.authorised = true;
@@ -647,7 +745,7 @@ describe("E2 onboarding gates sending", () => {
     const t = await h.createTenant({
       companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
     });
-    useComplyance(t);
+    await useComplyance(t);
     expect((await connect(t)).body.legalEntity.status).toBe("reserved");
     fake.authorised = true;
     const creates = fake.creates;
@@ -668,7 +766,7 @@ describe("E2 onboarding gates sending", () => {
     const t = await h.createTenant({
       companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
     });
-    useComplyance(t);
+    await useComplyance(t);
     const prov = await t.as.get(`/api/companies/${t.company.id}/einvoicing/provider`);
     expect(prov.body.provider).toMatchObject({
       id: "complyance",
@@ -751,7 +849,7 @@ describe("Complyance taxpayer verification", () => {
     const t = await h.createTenant({
       companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
     });
-    useComplyance(t);
+    await useComplyance(t);
     fake.authorised = true;
     fake.ready = true;
     fake.companyTin = "1005555555";
@@ -1708,7 +1806,7 @@ describe("E2 webhook authentication", () => {
       received: true,
       ignored: true,
     });
-    useComplyance(t, null);
+    await useComplyance(t, null);
     expect((await webhook(t, "invoice.passed", { documentId: "x" })).status).toBe(503);
   });
 });
