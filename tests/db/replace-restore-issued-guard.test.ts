@@ -5,7 +5,7 @@
  * it never lowers a document number counter when it is allowed (drafts only).
  */
 import { describe, expect, it } from "vitest";
-import { useHarness, type Tenant } from "./harness";
+import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
 const today = () => new Date().toISOString().slice(0, 10);
@@ -144,5 +144,73 @@ describe("LOOP2-REPLACE-RESTORE replace restore keeps issued documents and numbe
     const next = await createInvoice(t, "After restore");
     expect(next.number).not.toBe(first.number);
     expect(next.number).not.toBe(draft.number);
+  });
+
+  async function journal(t: Tenant, status: "draft" | "posted") {
+    const bank = await accountByCode(t, "1020");
+    const capital = await accountByCode(t, "3010");
+    const r = await t.as.post(`/api/companies/${t.company.id}/journal`, {
+      date: today(),
+      status,
+      lines: [
+        { accountId: bank.id, debit: 100 },
+        { accountId: capital.id, credit: 100, vatTreatment: "out_of_scope" },
+      ],
+    });
+    expect(r.status, r.text).toBe(200);
+    return r.body as { id: string };
+  }
+
+  it("(e) refuses replace when a draft journal in the backup was posted in place", async () => {
+    const t = await h.createTenant();
+    const draft = await journal(t, "draft");
+    const b = await backup(t);
+    const posted = await t.as.post(`/api/journal/${draft.id}/post`, {});
+    expect(posted.status, posted.text).toBe(200);
+
+    const r = await replace(t, b);
+    expect(r.status, r.text).toBe(409);
+    expect(errCode(r.body)).toBe("BACKUP_REPLACE_ISSUED_DOCUMENTS");
+    expect(errCategories(r.body).journal_entries).toBe(1);
+    expect(await h.sql("SELECT status FROM journal_entries WHERE id = $1", [draft.id])).toEqual([
+      { status: "posted" },
+    ]);
+  });
+
+  it("(f) refuses replace when a posted journal in the backup was voided after it", async () => {
+    const t = await h.createTenant();
+    const entry = await journal(t, "posted");
+    const b = await backup(t);
+    const voided = await t.as.post(`/api/journal/${entry.id}/void`, { reason: "Wrong entry" });
+    expect(voided.status, voided.text).toBe(200);
+
+    const r = await replace(t, b);
+    expect(r.status, r.text).toBe(409);
+    expect(errCode(r.body)).toBe("BACKUP_REPLACE_ISSUED_DOCUMENTS");
+    expect(errCategories(r.body).journal_entries).toBeGreaterThanOrEqual(1);
+    // The void adds a reversing entry the backup does not have; the original is untouched.
+    expect(
+      (
+        await h.sql("SELECT count(*)::int AS n FROM journal_entries WHERE company_id = $1", [
+          t.company.id,
+        ])
+      )[0].n
+    ).toBe(2);
+  });
+
+  it("(g) refuses replace when a draft invoice in the backup was issued in place", async () => {
+    const t = await h.createTenant();
+    const draft = await createInvoice(t, "Draft in backup");
+    const b = await backup(t);
+    const sent = await t.as.patch(`/api/invoices/${draft.id}/status`, { status: "sent" });
+    expect(sent.status, sent.text).toBe(200);
+
+    const r = await replace(t, b);
+    expect(r.status, r.text).toBe(409);
+    expect(errCode(r.body)).toBe("BACKUP_REPLACE_ISSUED_DOCUMENTS");
+    expect(errCategories(r.body).invoices).toBe(1);
+    expect(await h.sql("SELECT status FROM invoices WHERE id = $1", [draft.id])).toEqual([
+      { status: "sent" },
+    ]);
   });
 });

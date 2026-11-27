@@ -689,7 +689,11 @@ async function diffTable(
   const portalColumn = portalProtection ? `, (${portalProtection}) AS backup_portal_protected` : "";
   const changed = t.columns
     .map((c) => {
-      const differs = `to_jsonb(cur.${q(c)}) IS DISTINCT FROM to_jsonb(s.${q(c)})`;
+      // Counters only move up (GREATEST), so a lower backup value changes nothing.
+      const differs =
+        counterColumn(t.name, false) === c
+          ? `cur.${q(c)} < s.${q(c)}`
+          : `to_jsonb(cur.${q(c)}) IS DISTINCT FROM to_jsonb(s.${q(c)})`;
       return portalProtection && preservesPortalValue(t, c)
         ? `(NOT cur.backup_portal_protected AND ${differs})`
         : differs;
@@ -1351,6 +1355,16 @@ export const REPLACE_ISSUED_DOCUMENT_CATEGORIES = [
  * the live row with the backup's own rows, not clocks: a live row whose id is not in the backup,
  * or that was still a draft / unfiled / open there, counts. Drafts never block. Counted per
  * category so the caller can tell the user what is in the way.
+ *
+ * State must match as well as ids: drafts are issued/posted in place under the same id (invoices
+ * draft -> issued, journals draft -> posted via the ledger kernel, posted -> void via voidEntry,
+ * receipts, VAT returns, period closes), so every category compares the backup row's state, not
+ * only its presence. Payment rows are insert-only (a reversal is a new journal entry and a
+ * deleted payment), so id presence is enough there.
+ *
+ * Numbering gap: replace deletes newer drafts that already hold a number (drafts consume
+ * invoice_number_sequences) while the counters keep their GREATEST value, so a gap in numbering
+ * is possible. A gap is deliberate; reusing a number would be worse.
  */
 export async function countIssuedAfterBackup(
   client: Queryable,
@@ -1384,7 +1398,8 @@ export async function countIssuedAfterBackup(
         AND t.status = 'draft'`,
     journal_entries: () => `SELECT count(*) FROM journal_entries t WHERE t.company_id = $1
         AND t.status IN ('posted', 'void')
-        AND NOT EXISTS (SELECT 1 FROM ${snap("journal_entries")} s WHERE s.id = t.id)`,
+        AND NOT EXISTS (SELECT 1 FROM ${snap("journal_entries")} s WHERE s.id = t.id
+          AND s.status = t.status)`,
     receipts: () => `SELECT count(*) FROM receipts t WHERE t.company_id = $1 AND t.posted
         AND NOT EXISTS (SELECT 1 FROM ${snap("receipts")} s WHERE s.id = t.id AND s.posted)`,
     payments: () => `SELECT (SELECT count(*) FROM invoice_payments t WHERE t.company_id = $1
@@ -1613,7 +1628,7 @@ async function validateReplaceExternalState(
       "BACKUP_REPLACE_ISSUED_DOCUMENTS",
       409,
       { categories: blocking },
-      "Replace restore is unavailable: this company has issued, sent, posted or filed documents newer than the backup, and replacing would delete them and reuse their numbers."
+      "Replace restore is unavailable: this company has issued, sent, posted or filed documents that are newer than the backup or were already sent to customers, and replacing would delete them and reuse their numbers."
     );
   }
 }

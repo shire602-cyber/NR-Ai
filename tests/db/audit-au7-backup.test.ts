@@ -238,6 +238,10 @@ async function seedPaymentLink(t: Tenant) {
  * that need the rewound state (to prove what Merge or checkout does next) build it directly.
  * Counters are left alone, as a replace restore keeps them. This never goes through the restore
  * service, so it cannot hide a guard: assertions on restore behaviour still use the real routes.
+ *
+ * It does not model everything replace does: it also deletes rows from the append-only archive
+ * tables (`einvoice_archive`, `tax_return_archive`) that a real replace never touches, and it skips
+ * tables without a primary key. Do not reuse it to prove restore behaviour for those.
  */
 async function rewindRowsTo(t: Tenant, backup: { id: string }) {
   const { buildBackupManifest, openSnapshot } =
@@ -440,8 +444,13 @@ describe("AU7 accounting backup integrity", () => {
     async () => {
       const t = await h.createTenant();
       const invoiceId = await draftInvoice(t);
-      const backup = await snapshot(t);
       await issueInvoice(t, invoiceId);
+      // Replace refuses to drop an invoice issued after the backup, so the backup is taken after
+      // issuance while the invoice is not payable (void). The invoice is then made payable again
+      // live, and the concurrent replace restores the non-payable state under the link request.
+      await h.sql("UPDATE invoices SET status = 'void' WHERE id = $1", [invoiceId]);
+      const backup = await snapshot(t);
+      await h.sql("UPDATE invoices SET status = 'sent' WHERE id = $1", [invoiceId]);
       const bank = await accountByCode(t, "1020");
       const { pool } = await import("../../server/db");
       const gate = await pool.connect();
