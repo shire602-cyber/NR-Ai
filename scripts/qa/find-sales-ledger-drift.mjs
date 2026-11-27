@@ -16,7 +16,7 @@
 //                          (pre-W3-A credit notes on paid invoices, R03-08).
 //
 // Usage: DATABASE_URL=postgres://... node scripts/qa/find-sales-ledger-drift.mjs [--json] [--company <uuid>]
-// Exit code is always 0 unless the database cannot be read.
+// Exit codes: 0 for a completed report, 1 for a database failure, 2 for missing configuration.
 
 import pg from "pg";
 
@@ -30,28 +30,37 @@ const ci = process.argv.indexOf("--company");
 const companyId = ci > 0 ? process.argv[ci + 1] : null;
 
 const client = new pg.Client({ connectionString: url });
-await client.connect();
+async function queryRows(check, sql, params) {
+  try {
+    const { rows } = await client.query(sql, params);
+    return rows;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${check} failed: ${detail}`, { cause: error });
+  }
+}
+
 try {
+  await client.connect();
   await client.query("BEGIN READ ONLY");
   const scope = companyId ? "AND i.company_id = $1" : "";
   const params = companyId ? [companyId] : [];
 
-  const ambiguousZeroRated = (
-    await client.query(
-      `SELECT i.company_id, i.id AS invoice_id, i.number, i.status, i.invoice_type,
+  const ambiguousZeroRated = await queryRows(
+    "ambiguousZeroRated",
+    `SELECT i.company_id, i.id AS invoice_id, i.number, i.status, i.invoice_type,
               il.id AS line_id, il.description, il.vat_supply_type,
               (il.quantity * il.unit_price)::numeric(15,2)::text AS net
          FROM invoice_lines il JOIN invoices i ON i.id = il.invoice_id
         WHERE il.vat_rate = 0 AND (il.vat_supply_type IS NULL OR il.vat_supply_type = 'standard_rated')
           ${scope}
         ORDER BY i.company_id, i.date, i.number`,
-      params
-    )
-  ).rows;
+    params
+  );
 
-  const zeroRatedOn4010 = (
-    await client.query(
-      `SELECT i.company_id, i.id AS invoice_id, i.number
+  const zeroRatedOn4010 = await queryRows(
+    "zeroRatedOn4010",
+    `SELECT i.company_id, i.id AS invoice_id, i.number
          FROM invoices i
         WHERE i.status IN ('sent','posted','partial','paid') ${scope}
           AND i.invoice_type <> 'credit_note'
@@ -63,13 +72,12 @@ try {
              WHERE je.source = 'invoice' AND je.source_id = i.id AND je.status = 'posted'
                AND a.code IN ('4060','4070','4030') AND jl.credit > 0)
         ORDER BY i.company_id, i.number`,
-      params
-    )
-  ).rows;
+    params
+  );
 
-  const phantomVoidBalance = (
-    await client.query(
-      `SELECT i.company_id, i.id AS invoice_id, i.number, i.currency, i.exchange_rate::text AS rate,
+  const phantomVoidBalance = await queryRows(
+    "phantomVoidBalance",
+    `SELECT i.company_id, i.id AS invoice_id, i.number, i.currency, i.exchange_rate::text AS rate,
               (SUM(jl.debit) - SUM(jl.credit))::text AS ar_net
          FROM invoices i
          JOIN journal_entries je ON je.source_id = i.id AND je.company_id = i.company_id
@@ -80,13 +88,12 @@ try {
         GROUP BY i.company_id, i.id, i.number, i.currency, i.exchange_rate
        HAVING SUM(jl.debit) - SUM(jl.credit) <> 0
         ORDER BY i.company_id, i.number`,
-      params
-    )
-  ).rows;
+    params
+  );
 
-  const creditNotesOn4010 = (
-    await client.query(
-      `SELECT cn.company_id, cn.id AS credit_note_id, cn.number, o.number AS invoice_number
+  const creditNotesOn4010 = await queryRows(
+    "creditNotesOn4010",
+    `SELECT cn.company_id, cn.id AS credit_note_id, cn.number, o.number AS invoice_number
          FROM invoices cn JOIN invoices o ON o.id = cn.original_invoice_id
         WHERE cn.invoice_type = 'credit_note' ${scope.replace("i.company_id", "cn.company_id")}
           AND EXISTS (SELECT 1 FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
@@ -101,14 +108,12 @@ try {
                        WHERE je.source_id = cn.id AND je.status = 'posted'
                          AND a.code IN ('4060','4070','4030') AND jl.debit > 0)
         ORDER BY cn.company_id, cn.number`,
-      params
-    )
-  ).rows;
+    params
+  );
 
-  const negativeReceivable = (
-    await client
-      .query(
-        `SELECT i.company_id, i.id AS invoice_id, i.number, i.total::text AS total,
+  const negativeReceivable = await queryRows(
+    "negativeReceivable",
+    `SELECT i.company_id, i.id AS invoice_id, i.number, i.total::text AS total,
               COALESCE((SELECT SUM(amount) FROM invoice_payments p WHERE p.invoice_id = i.id), 0)::text AS paid,
               COALESCE((SELECT SUM(-c.total) FROM invoices c WHERE c.original_invoice_id = i.id
                           AND c.invoice_type = 'credit_note' AND c.status NOT IN ('void','cancelled','draft')), 0)::text AS credited
@@ -119,10 +124,10 @@ try {
                           AND c.invoice_type = 'credit_note' AND c.status NOT IN ('void','cancelled','draft')), 0)
           AND NOT EXISTS (SELECT 1 FROM customer_credits cc WHERE cc.invoice_id = i.id)
         ORDER BY i.company_id, i.number`,
-        params
-      )
-      .catch(() => ({ rows: [] }))
-  ).rows;
+    params
+  );
+
+  await client.query("ROLLBACK");
 
   const report = {
     ambiguousZeroRated,
@@ -143,7 +148,9 @@ try {
       "\nNothing was changed. Correct ambiguous lines with a credit note + reissue; never edit posted rows."
     );
   }
-  await client.query("ROLLBACK");
+} catch (error) {
+  console.error(`Sales ledger drift: ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
 } finally {
   await client.end();
 }
