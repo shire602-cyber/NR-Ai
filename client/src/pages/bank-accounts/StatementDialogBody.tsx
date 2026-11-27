@@ -60,9 +60,12 @@ const isKnownOffline = () => !onlineManager.isOnline();
 export default function StatementDialogBody({
   companyId,
   accountId,
+  currency,
 }: {
   companyId: string;
   accountId: string;
+  /** The bank account's currency: the saved-history column is in it. */
+  currency?: string;
 }) {
   // No declared namespaces: this still re-renders when a catalog lands; the effect below loads ours.
   const { t, locale } = useTranslation();
@@ -314,7 +317,11 @@ export default function StatementDialogBody({
                 <TableRow key={r.id}>
                   <TableCell>{r.periodEnd}</TableCell>
                   <TableCell>
-                    <CashBalance amount={r.statementClosingBalance} showCurrency={false} />
+                    <CashBalance
+                      amount={r.statementClosingBalance}
+                      currency={currency}
+                      showCurrency={false}
+                    />
                   </TableCell>
                   <TableCell>{r.difference}</TableCell>
                   <TableCell>

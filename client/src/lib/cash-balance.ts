@@ -12,7 +12,12 @@
  * is the plain-string form for aria labels, tooltips and toasts.
  */
 
-import { formatMoneyParts, formatMoneyText, type MoneyLocale } from "./format-money";
+import {
+  currencyFractionDigits,
+  formatMoneyParts,
+  formatMoneyText,
+  type MoneyLocale,
+} from "./format-money";
 
 export type CashBalanceState = "overdrawn" | "zero" | "positive";
 
@@ -61,9 +66,10 @@ export function isCashOrBankAccount(a: CashAccountLike | null | undefined): bool
 export function cashBalanceLabel(
   amount: number | string | null | undefined,
   t: Record<string, string>,
-  kind: CashBalanceKind = "actual"
+  kind: CashBalanceKind = "actual",
+  currency?: string | null
 ): string {
-  if (cashBalanceState(amount) !== "overdrawn") return "";
+  if (cashBalanceState(amount, currencyFractionDigits(currency)) !== "overdrawn") return "";
   const key = CASH_BALANCE_LABEL_KEYS[kind];
   return t[key] ?? key;
 }
@@ -76,7 +82,8 @@ export function cashBalanceText(
   t: Record<string, string>,
   kind: CashBalanceKind = "actual"
 ): string {
-  const money = formatMoneyText(amount, currency, locale);
-  const label = cashBalanceLabel(amount, t, kind);
+  const digits = currencyFractionDigits(currency);
+  const money = formatMoneyText(amount, currency, locale, { fractionDigits: digits });
+  const label = cashBalanceLabel(amount, t, kind, currency);
   return label ? `${money} (${label})` : money;
 }

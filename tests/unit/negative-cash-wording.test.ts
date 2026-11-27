@@ -18,9 +18,12 @@ import {
   renderPage,
   resetHarness,
   setFixtures,
+  type as typeInto,
   unmountPage,
 } from "./helpers/form-harness";
 import { loadLocale, t as catalogs, useI18n } from "../../client/src/lib/i18n";
+import { currencyFractionDigits } from "../../client/src/lib/format-money";
+import { DashboardOverview } from "../../client/src/pages/dashboard/DashboardOverview";
 import {
   cashBalanceLabel,
   cashBalanceState,
@@ -106,6 +109,20 @@ describe("P2 cash balance helper", () => {
     expect(cashBalanceState("abc")).toBeNull();
   });
 
+  it("uses the currency's own digits: KWD -0.004 is overdrawn, JPY -0.4 is zero", () => {
+    expect(currencyFractionDigits("KWD")).toBe(3);
+    expect(currencyFractionDigits("jpy")).toBe(0);
+    expect(currencyFractionDigits("AED")).toBe(2);
+    expect(currencyFractionDigits(undefined)).toBe(2);
+    expect(cashBalanceLabel(-0.004, catalogs.en, "actual", "KWD")).toBe(EN.overdrawn);
+    expect(cashBalanceLabel(-0.004, catalogs.en, "actual", "AED")).toBe("");
+    expect(cashBalanceLabel(-0.4, catalogs.en, "actual", "JPY")).toBe("");
+    expect(cashBalanceLabel(-0.6, catalogs.en, "actual", "JPY")).toBe(EN.overdrawn);
+    expect(stripBidiControls(cashBalanceText(-0.004, "KWD", "en", catalogs.en))).toBe(
+      "KWD −0.004 (Overdrawn)"
+    );
+  });
+
   it("recognises cash, bank and petty cash asset accounts like the balance sheet does", () => {
     expect(isCashOrBankAccount({ type: "asset", subType: "bank", code: "1100" })).toBe(true);
     expect(isCashOrBankAccount({ type: "asset", code: "1020", nameEn: "Current" })).toBe(true);
@@ -175,6 +192,17 @@ describe("P2 <CashBalance>", () => {
       expect(labels()).toEqual([words.negative]);
     });
   }
+
+  it("labels KWD -0.004 with three decimals and leaves JPY -0.4 (shown as 0) unlabelled", async () => {
+    useI18n.setState({ locale: "en" });
+    await renderPage(CashBalance, { amount: -0.004, currency: "KWD" });
+    expect(labels()).toEqual([EN.overdrawn]);
+    expect(document.querySelector(".money")!.textContent).toBe("−0.004");
+    await unmountPage();
+    await renderPage(CashBalance, { amount: -0.4, currency: "JPY" });
+    expect(labels()).toEqual([]);
+    expect(document.querySelector(".money")!.textContent).toBe("0");
+  });
 
   it("does not call zero or a positive balance negative", async () => {
     useI18n.setState({ locale: "ar" });
@@ -255,6 +283,79 @@ describe("P2 account ledger of a bank account", () => {
       expect(labels(byTestId("row-entry-l1")!)).toEqual([]);
     });
   }
+});
+
+describe("P2 account ledger under a search filter", () => {
+  // With a search active the server builds running and closing balances from the matching lines
+  // only, so a positive account searched for credits looks negative: that is a subtotal, not an
+  // overdraft, and must never be worded "Overdrawn".
+  const FILTERED = {
+    entries: [ledgerEntry("l1", -700, 700), ledgerEntry("l2", -1500, 800)],
+    allEntries: [],
+    account: BANK_ACCOUNT,
+    openingBalance: 0,
+    totalDebit: 0,
+    totalCredit: 1500,
+    closingBalance: -1500,
+    totalCount: 2,
+  };
+  for (const [locale, words] of [
+    ["en", EN],
+    ["ar", AR],
+  ] as const) {
+    it(`does not say overdrawn on filtered subtotals of a positive account (${locale})`, async () => {
+      useI18n.setState({ locale });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(JSON.stringify(FILTERED), { status: 200 }))
+      );
+      window.history.replaceState({}, "", `/accounts/${BANK_ID}/ledger`);
+      await renderPage(AccountLedger);
+      await flushUntil(() => !!document.querySelector('[data-testid="row-entry-l2"]'));
+      // Unfiltered, the same figures are a real overdraft and are labelled.
+      expect(labels(byTestId("text-closing-balance")!)).toEqual([words.overdrawn]);
+
+      await typeInto(byTestId("input-search-ledger"), "payment");
+      await flushUntil(() => labels().length === 0);
+      expect(labels()).toEqual([]);
+      expect(document.body.textContent).not.toContain(words.overdrawn);
+      // The figure keeps its sign.
+      expect(byTestId("text-closing-balance")!.querySelector(".money")!.textContent).toBe(
+        "−1,500.00"
+      );
+    });
+  }
+
+  it("leaves a negative credit-card (liability) ledger unlabelled", async () => {
+    useI18n.setState({ locale: "en" });
+    const card = {
+      ...BANK_ACCOUNT,
+      code: "2200",
+      nameEn: "Corporate Credit Card",
+      type: "liability",
+      subType: "credit_card",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              ...LEDGER,
+              account: card,
+              closingBalance: -1500,
+              openingBalance: -100,
+            }),
+            { status: 200 }
+          )
+      )
+    );
+    window.history.replaceState({}, "", `/accounts/${BANK_ID}/ledger`);
+    await renderPage(AccountLedger);
+    await flushUntil(() => !!document.querySelector('[data-testid="row-entry-l2"]'));
+    expect(labels()).toEqual([]);
+    expect(document.body.textContent).not.toContain(EN.overdrawn);
+  });
 });
 
 const FORECAST_PREFIX = `/api/companies/${COMPANY_ID}/cashflow/forecast`;
@@ -347,9 +448,45 @@ describe("P2 dashboard bank against ledger", () => {
 });
 
 describe("P2 dashboard cash position KPI", () => {
-  it("sources the cash KPI through CashBalance", async () => {
-    const fs = await import("fs");
-    const src = fs.readFileSync("client/src/pages/dashboard/DashboardOverview.tsx", "utf8");
-    expect(src).toMatch(/<CashBalance\s+amount=\{stats\?\.cashPosition/);
-  });
+  const series = { series: [] as number[], delta: undefined };
+  const model = (cashPosition: number, locale: "en" | "ar") =>
+    ({
+      t: catalogs[locale],
+      stats: {
+        cashPosition,
+        cashRunway: null,
+        revenue: 0,
+        expenses: 0,
+        otherIncome: 0,
+        outstanding: 0,
+        outstandingPayables: 0,
+        dpo: null,
+        margin: null,
+        prior: { margin: null },
+        vat: { netPayable: 0 },
+        corporateTax: { estimatedLiability: 0 },
+        links: {},
+      },
+      statsLoading: false,
+      recentInvoices: [],
+      invoicesLoading: false,
+      sparks: { revenue: series, expenses: series, profit: series },
+      profit: 0,
+    }) as any;
+
+  for (const [locale, words] of [
+    ["en", EN],
+    ["ar", AR],
+  ] as const) {
+    it(`labels an overdrawn cash position and not a positive one (${locale})`, async () => {
+      useI18n.setState({ locale });
+      await renderPage(DashboardOverview, { m: model(-250, locale) });
+      const kpi = byTestId("text-cash-position")!.closest('[data-cash-balance="overdrawn"]')!;
+      expect(labels(kpi)).toEqual([words.overdrawn]);
+      expect(kpi.querySelector(".money")!.textContent).toBe("−250.00");
+      await unmountPage();
+      await renderPage(DashboardOverview, { m: model(250, locale) });
+      expect(labels()).toEqual([]);
+    });
+  }
 });

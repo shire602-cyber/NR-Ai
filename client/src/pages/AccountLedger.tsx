@@ -570,7 +570,7 @@ export default function AccountLedger() {
             value={
               ledger &&
               (isCashLedger ? (
-                <CashBalance amount={ledger.closingBalance} />
+                <CashBalance amount={ledger.closingBalance} unlabelled={!!search} />
               ) : (
                 <Money
                   amount={Math.abs(ledger.closingBalance)}
@@ -765,6 +765,7 @@ export default function AccountLedger() {
                     <CashBalanceCell
                       amount={entry.runningBalance}
                       showCurrency={false}
+                      unlabelled={!!search}
                       className="font-medium"
                       data-cell="amount"
                     />

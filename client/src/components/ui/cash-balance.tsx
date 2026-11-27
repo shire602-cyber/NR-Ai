@@ -2,6 +2,7 @@ import type * as React from "react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 import { TableCell } from "@/components/ui/table";
+import { currencyFractionDigits } from "@/lib/format-money";
 import { Money, type MoneyProps } from "@/components/ui/money";
 import {
   CASH_BALANCE_LABEL_KEYS,
@@ -16,6 +17,11 @@ export interface CashBalanceProps extends Omit<MoneyProps, "amount" | "tone" | "
   kind?: CashBalanceKind;
   /** "inline" puts the label after the figure; "stacked" puts it on its own line (narrow cells). */
   layout?: "inline" | "stacked";
+  /**
+   * Keep the signed figure but drop the "Overdrawn" label. For a running or closing balance that
+   * is only a subtotal (a search-filtered ledger), where "overdrawn" would be a false statement.
+   */
+  unlabelled?: boolean;
 }
 
 /**
@@ -29,16 +35,22 @@ export function CashBalance({
   amount,
   kind = "actual",
   layout = "inline",
+  unlabelled = false,
   className,
   ...props
 }: CashBalanceProps) {
   const { t } = useTranslation();
-  const state = cashBalanceState(amount);
+  // The state and the shown figure use the same currency precision (KWD -0.004 is overdrawn,
+  // JPY -0.4 shows 0 and is not).
+  const fractionDigits = currencyFractionDigits(props.currency);
+  const state = cashBalanceState(amount, fractionDigits);
   const value = state === null ? null : Number(amount);
-  if (state !== "overdrawn") {
+  if (state !== "overdrawn" || unlabelled) {
     return (
       <Money
         amount={value}
+        tone={unlabelled ? "auto" : undefined}
+        fractionDigits={fractionDigits}
         className={className}
         data-cash-balance={state ?? undefined}
         {...props}
@@ -57,7 +69,7 @@ export function CashBalance({
       )}
       data-cash-balance="overdrawn"
     >
-      <Money amount={value} tone="auto" {...props} />
+      <Money amount={value} tone="auto" fractionDigits={fractionDigits} {...props} />
       <span
         className="cash-balance-label inline-flex items-center whitespace-nowrap rounded-full bg-danger-subtle px-2 py-0.5 text-xs font-medium leading-4 text-danger-subtle-foreground"
         data-testid="cash-balance-label"
@@ -74,6 +86,7 @@ export interface CashBalanceCellProps extends React.TdHTMLAttributes<HTMLTableCe
   showCurrency?: boolean;
   kind?: CashBalanceKind;
   layout?: CashBalanceProps["layout"];
+  unlabelled?: boolean;
 }
 
 /** Table cell for a cash or bank balance: end-aligned like `MoneyCell`, worded like `CashBalance`. */
@@ -83,6 +96,7 @@ export function CashBalanceCell({
   showCurrency,
   kind,
   layout,
+  unlabelled,
   className,
   ...props
 }: CashBalanceCellProps) {
@@ -94,6 +108,7 @@ export function CashBalanceCell({
         showCurrency={showCurrency}
         kind={kind}
         layout={layout}
+        unlabelled={unlabelled}
       />
     </TableCell>
   );
