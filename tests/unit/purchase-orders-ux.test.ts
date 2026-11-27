@@ -256,7 +256,7 @@ describe("purchase order list load states", () => {
 
     let resolve!: (rows: unknown[]) => void;
     fetchOrders.mockReturnValueOnce(new Promise((r) => (resolve = r)));
-    await click(buttonByText(/^Retry$/, byTestId("error-purchase-orders")!));
+    await click(buttonByText(/^Try again$/, byTestId("error-purchase-orders")!));
 
     expect(fetchOrders).toHaveBeenCalledTimes(2);
     expect(byTestId("error-purchase-orders")).toBeNull();
@@ -273,7 +273,7 @@ describe("purchase order list load states", () => {
     await renderPage(PurchaseOrders);
     await flushUntil(() => !!byTestId("error-purchase-orders"));
 
-    await click(buttonByText(/^Retry$/, byTestId("error-purchase-orders")!));
+    await click(buttonByText(/^Try again$/, byTestId("error-purchase-orders")!));
     await flushUntil(() => !!byTestId("error-purchase-orders"));
 
     expect(fetchOrders).toHaveBeenCalledTimes(2);
@@ -281,13 +281,16 @@ describe("purchase order list load states", () => {
     expectNoEmptyState();
   });
 
-  it("shows an offline state for a paused first load and recovers on reconnect", async () => {
+  it("announces a paused first load and recovers on reconnect", async () => {
     onlineManager.setOnline(false);
     fetchOrders.mockResolvedValue([row]);
     await renderPage(PurchaseOrders);
-    await flushUntil(() => !!byTestId("offline-purchase-orders"));
+    await flushUntil(() => !!byTestId("list-query-waiting"));
 
-    expect(byTestId("offline-purchase-orders")?.textContent).toContain("Offline");
+    expect(byTestId("list-query-waiting")?.getAttribute("role")).toBe("status");
+    expect(byTestId("list-query-waiting")?.textContent).toBe(
+      "Loading is paused. It will resume automatically when possible."
+    );
     expect(fetchOrders).not.toHaveBeenCalled();
     expectNoEmptyState();
 
@@ -295,7 +298,7 @@ describe("purchase order list load states", () => {
     await flushUntil(() => !!table()?.textContent?.includes("PO-001"));
 
     expect(table()?.textContent).toContain("PO-001");
-    expect(byTestId("offline-purchase-orders")).toBeNull();
+    expect(byTestId("list-query-waiting")).toBeNull();
   });
 
   it("shows the empty state only after a successful empty load", async () => {
@@ -305,7 +308,7 @@ describe("purchase order list load states", () => {
 
     expect(byTestId("empty-purchase-orders")).not.toBeNull();
     expect(byTestId("error-purchase-orders")).toBeNull();
-    expect(byTestId("offline-purchase-orders")).toBeNull();
+    expect(byTestId("list-query-waiting")).toBeNull();
   });
 
   it("shows loading, no empty message and no request while there is no company", async () => {
@@ -318,7 +321,7 @@ describe("purchase order list load states", () => {
       expect(byTestId("table-skeleton")).not.toBeNull();
       expectNoEmptyState();
       expect(byTestId("error-purchase-orders")).toBeNull();
-      expect(byTestId("offline-purchase-orders")).toBeNull();
+      expect(byTestId("list-query-waiting")).toBeNull();
       expect(document.body.textContent).not.toContain("No purchase orders yet");
       expect(fetchOrders).not.toHaveBeenCalled();
       expect(apiCalls()).toEqual([]);
@@ -327,7 +330,7 @@ describe("purchase order list load states", () => {
     }
   });
 
-  it("shows the error and Retry when a refresh fails over a cached empty list", async () => {
+  it("keeps a cached empty list and offers Retry when the refresh fails", async () => {
     fetchOrders.mockResolvedValueOnce([]);
     await renderPage(PurchaseOrders);
     await flushUntil(() => !!byTestId("empty-purchase-orders"));
@@ -339,10 +342,11 @@ describe("purchase order list load states", () => {
     expect(table()).not.toBeNull();
     expect(table()?.querySelector("table")).toBeNull();
     expect(byTestId("table-skeleton")).toBeNull();
-    expectNoEmptyState();
-    expect(byTestId("error-purchase-orders")?.getAttribute("role")).toBe("alert");
-    expect(buttonByText(/^Retry$/, byTestId("error-purchase-orders")!)).toBeTruthy();
-    expect(byTestId("offline-purchase-orders")).toBeNull();
+    expect(byTestId("empty-purchase-orders")).not.toBeNull();
+    expect(byTestId("error-purchase-orders")).toBeNull();
+    expect(byTestId("stale-data-notice")?.getAttribute("role")).toBe("alert");
+    expect(buttonByText(/^Retry$/, byTestId("stale-data-notice")!)).toBeTruthy();
+    expect(byTestId("list-query-waiting")).toBeNull();
   });
 
   it.each(["failed", "paused"] as const)(
@@ -361,7 +365,7 @@ describe("purchase order list load states", () => {
       else expect(state?.fetchStatus).toBe("paused");
       expect(table()?.textContent).toContain("PO-001");
       expect(byTestId("error-purchase-orders")).toBeNull();
-      expect(byTestId("offline-purchase-orders")).toBeNull();
+      expect(byTestId("list-query-waiting")).toBeNull();
 
       await type(byTestId("input-search-po"), "no-such-order");
       expect(byTestId("empty-purchase-orders-search")).not.toBeNull();

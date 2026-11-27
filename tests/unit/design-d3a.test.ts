@@ -132,12 +132,22 @@ describe("D3a design pass", () => {
       "CustomerContacts",
     ];
     // Source-level on purpose: this guards how each page is written, across all its data states.
-    // Check both shared wrappers. The trailing \s keeps the `<DataTableCardProps>` type argument
-    // from counting as a render.
+    // Follow the shared wrappers to the table frame. The whitespace after each JSX tag name
+    // keeps similarly named types from counting as a render.
     const queryTable = read("client/src/components/contacts/query-state.tsx");
     expect(queryTable.split("export function QueryTableCard")[1]).toMatch(/<DataTableCard\s/);
     const documentTable = read("client/src/components/documents/DocumentListTable.tsx");
-    expect(documentTable.split("export function DocumentListTable")[1]).toMatch(/<DataTableCard\s/);
+    const listQueryTableImport =
+      /import \{[^}]*\bListQueryTable\b[^}]*\} from "@\/components\/ui\/list-query-table"/;
+    expect(documentTable).toMatch(listQueryTableImport);
+    expect(documentTable.split("export function DocumentListTable")[1]).toMatch(
+      /<ListQueryTable\s/
+    );
+    const listQueryTable = read("client/src/components/ui/list-query-table.tsx");
+    expect(listQueryTable).toMatch(
+      /import \{[^}]*\bDataTableCard\b[^}]*\} from "@\/components\/ui\/data-table"/
+    );
+    expect(listQueryTable.split("export function ListQueryTable")[1]).toMatch(/<DataTableCard\s/);
     for (const name of screens) {
       const src = read(`client/src/pages/${name}.tsx`);
       if (name === "Vendors" || name === "CustomerContacts") {
@@ -150,6 +160,11 @@ describe("D3a design pass", () => {
           /import \{[^}]*\bDocumentListTable\b[^}]*\} from "@\/components\/documents\/DocumentListTable"/
         );
         expect(src, name).toMatch(/<DocumentListTable\s/);
+      } else if (
+        ["RecurringInvoices", "PurchaseOrders", "ChartOfAccounts", "FixedAssets"].includes(name)
+      ) {
+        expect(src, name).toMatch(listQueryTableImport);
+        expect(src, name).toMatch(/<ListQueryTable\s/);
       } else {
         expect(src, name).toContain("<DataTableCard");
       }

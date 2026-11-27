@@ -238,16 +238,16 @@ describe("fixed assets offline and summary failure", () => {
   }
 
   it.each(["en", "ar"] as const)(
-    "opened offline shows offline copy, not first-use, and recovers on reconnect (%s)",
+    "announces a paused first load and recovers on reconnect (%s)",
     async (locale) => {
       await act(async () => useI18n.getState().setLocale(locale));
       onlineManager.setOnline(false);
       await renderAssets();
-      await flushUntil(() => !!byTestId("offline-state-fixed-assets"));
+      await flushUntil(() => !!byTestId("list-query-waiting"));
 
-      const offline = byTestId("offline-state-fixed-assets");
-      expect(offline?.textContent).toContain(catalogs[locale]["screens.assetsOfflineTitle"]);
-      expect(offline?.textContent).toContain(catalogs[locale]["screens.assetsOfflineBody"]);
+      const offline = byTestId("list-query-waiting");
+      expect(offline?.getAttribute("role")).toBe("status");
+      expect(offline?.textContent).toBe(catalogs[locale]["common.loadPaused"]);
       expect(offline?.querySelector("button")).toBeNull();
       expect(byTestId("empty-state-fixed-assets")).toBeNull();
       expect(queryClient.getQueryState([registerPath])?.fetchStatus).toBe("paused");
@@ -257,7 +257,7 @@ describe("fixed assets offline and summary failure", () => {
       });
       await flushUntil(() => rowsText().includes("Delivery van"));
       expect(rowsText()).toContain("Delivery van");
-      expect(byTestId("offline-state-fixed-assets")).toBeNull();
+      expect(byTestId("list-query-waiting")).toBeNull();
     }
   );
 
@@ -278,7 +278,7 @@ describe("fixed assets offline and summary failure", () => {
     expect(queryClient.getQueryState([registerPath])?.fetchStatus).toBe("paused");
     expect(rowsText()).toContain("Delivery van");
     expect(search()).not.toBeNull();
-    expect(byTestId("offline-state-fixed-assets")).toBeNull();
+    expect(byTestId("list-query-waiting")).toBeNull();
 
     mode.failKeys = /\/fixed-assets(\/summary)?$/;
     mode.failWith = { status: 500 };

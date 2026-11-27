@@ -96,7 +96,7 @@ describe("chart of accounts states", { timeout: 30000 }, () => {
     const retry = container.querySelector<HTMLButtonElement>(
       '[data-testid="coa-load-error"] button'
     );
-    expect(retry?.textContent).toContain("Retry");
+    expect(retry?.textContent).toContain("Try again");
     expect(container.textContent).not.toContain("No accounts yet");
 
     await act(async () => {
@@ -107,7 +107,10 @@ describe("chart of accounts states", { timeout: 30000 }, () => {
 
     expect(queryFn).toHaveBeenCalledTimes(1);
     expect(container.textContent).not.toContain("No accounts yet");
-    expect(container.querySelector('[data-testid="table-skeleton"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="table-skeleton"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="list-query-waiting"]')?.getAttribute("role")
+    ).toBe("status");
 
     await act(async () => {
       onlineManager.setOnline(true);
