@@ -278,4 +278,59 @@ describe("bad-debt reinstatement preserves A/R history", () => {
     );
     expect(reinst.map((r) => r.d)).toEqual([D2]);
   });
+
+  it("a foreign-currency (USD) write-off and reinstatement ties to GL 1040 with no FX gain or loss", async () => {
+    const t = await tenant("RI-usd");
+    const cid = t.company.id;
+    const rate = async (r: number, effectiveDate: string) => {
+      const x = await t.as.post(`/api/companies/${cid}/exchange-rates`, {
+        fromCurrency: "USD",
+        rate: r,
+        effectiveDate,
+      });
+      expect(x.status, x.text).toBeLessThan(300);
+    };
+    await rate(3.6725, "2026-01-01");
+    const c = await t.as.post(`/api/companies/${cid}/invoices`, {
+      contactId: contacts.get(cid),
+      placeOfSupplyEmirate: "dubai",
+      date: D1,
+      currency: "USD",
+      exchangeRate: 3.6725,
+      lines: [
+        {
+          description: "Export",
+          quantity: 1,
+          unitPrice: 1000,
+          vatRate: 0,
+          vatSupplyType: "zero_rated",
+        },
+      ],
+    });
+    expect(c.status, c.text).toBe(200);
+    const s1 = await t.as.patch(`/api/invoices/${c.body.id}/status`, { status: "sent" });
+    expect(s1.status, s1.text).toBe(200);
+    await writeOff(t, c.body.id, D2);
+    // The market rate moves before the reinstatement; the booking rate must still be used.
+    await rate(3.7, "2026-03-10");
+    const re = await reinstate(t, c.body.id, D3);
+    expect(re.status, re.text).toBe(200);
+
+    for (const d of DATES) {
+      const a = await aging(t, d);
+      const gl = await gl1040(t, d);
+      expect(a.reconciliation.isReconciled, d).toBe(true);
+      expect(a.totals.total, d).toBe(gl);
+      const open = d < D1 || (d >= D2 && d < D3) ? 0 : 3672.5;
+      expect(gl, d).toBe(open);
+    }
+    const fx = await h.sql<{ n: string }>(
+      `SELECT count(*)::text AS n FROM journal_lines jl
+         JOIN journal_entries je ON je.id = jl.entry_id
+         JOIN accounts a ON a.id = jl.account_id
+        WHERE je.company_id = $1 AND a.name_en ILIKE '%exchange%'`,
+      [cid]
+    );
+    expect(Number(fx[0].n)).toBe(0);
+  });
 });

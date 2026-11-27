@@ -513,7 +513,7 @@ export async function reverseInvoicePayment(
     }
     if (payment.method === WRITE_OFF_REINSTATEMENT_METHOD) {
       throw new DomainError(
-        "PAYMENT_METHOD_RESERVED",
+        "REINSTATEMENT_NOT_REVERSIBLE",
         422,
         { method: payment.method },
         "A write-off reinstatement cannot be reversed; write the invoice off again."

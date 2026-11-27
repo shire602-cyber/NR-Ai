@@ -453,6 +453,8 @@
   "forms.serverErrors.PAYMENT_ACCOUNT_NOT_FOUND": "Choose the bank or cash account that received the payment.",
   "forms.serverErrors.PAYMENT_ACCOUNT_NOT_CASH_OR_BANK": "Payments can only go to a cash or bank account.",
   "forms.serverErrors.PAYMENT_METHOD_RESERVED": "This payment method is set by the system. Choose another one.",
+  "forms.serverErrors.REINSTATE_BEFORE_WRITE_OFF": "A write-off cannot be reinstated before the date it was written off.",
+  "forms.serverErrors.REINSTATEMENT_NOT_REVERSIBLE": "A reinstatement cannot be reversed. Write the invoice off again instead.",
   "forms.serverErrors.CURRENCY_MISMATCH": "The currencies do not match.",
   "forms.serverErrors.CUSTOMER_CREDIT_NOT_FOUND": "Customer credit not found.",
   "forms.serverErrors.CUSTOMER_CREDIT_CLOSED": "This customer credit is already used up.",
