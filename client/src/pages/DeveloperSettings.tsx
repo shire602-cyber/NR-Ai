@@ -312,7 +312,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               compact
               error={loadError}
               onRetry={() => refetch()}
-              forbiddenDescription={t["developerSettings.apiKeysForbiddenBody"]}
+              forbiddenDescription={t["developerSettings.companyAccessForbiddenBody"]}
               testId="api-keys-load-error"
             />
           ) : !apiKeys?.length ? (
@@ -743,6 +743,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               compact
               error={loadError}
               onRetry={() => refetch()}
+              forbiddenDescription={t["developerSettings.companyAccessForbiddenBody"]}
               testId="webhooks-load-error"
             />
           ) : !webhooks?.length ? (

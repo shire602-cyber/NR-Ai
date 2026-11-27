@@ -79,10 +79,37 @@ describe("Settings screens when the load fails", () => {
     expect(container.textContent).toContain("الإعدادات");
   });
 
-  it("developer settings shows a load error instead of an empty API key list", async () => {
-    useI18n.getState().setLocale("ar");
-    await renderPage(DeveloperSettings);
-    expect(container.querySelector('[data-testid="api-keys-load-error"]')).not.toBeNull();
-    expect(container.textContent).not.toContain("Settings");
-  });
+  it.each([
+    {
+      locale: "en",
+      webhooksTab: "Webhooks",
+      guidance: "Ask your company owner or administrator to grant you API access.",
+    },
+    {
+      locale: "ar",
+      webhooksTab: "الويب هوك (Webhooks)",
+      guidance: "اطلب من مالك شركتك أو مسؤولها منحك صلاحية الوصول إلى واجهة برمجة التطبيقات.",
+    },
+  ] as const)(
+    "both Developer Settings tabs show company access guidance on a 403 ($locale)",
+    async ({ locale, webhooksTab, guidance }) => {
+      useI18n.getState().setLocale(locale);
+      await renderPage(DeveloperSettings);
+      expect(container.querySelector('[data-testid="api-keys-load-error"]')?.textContent).toContain(
+        guidance
+      );
+
+      const tab = [...container.querySelectorAll('[role="tab"]')].find(
+        (candidate) => candidate.textContent === webhooksTab
+      );
+      expect(tab).toBeDefined();
+      await flush(() =>
+        tab!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+      );
+
+      const webhooksError = () => container.querySelector('[data-testid="webhooks-load-error"]');
+      for (let i = 0; i < 6 && !webhooksError(); i++) await flush();
+      expect(webhooksError()?.textContent).toContain(guidance);
+    }
+  );
 });
