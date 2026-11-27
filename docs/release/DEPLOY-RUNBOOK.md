@@ -1,10 +1,10 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 through 0149)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 through 0159)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
 For the Vercel production deployment, follow the [Vercel and UAE PostgreSQL runbook](vercel-uae-production-config.md).
 
-Owner-run. The first deploy of this branch applies 66 migrations (through 0149) that rewrite some production data
+Owner-run. The first deploy of this branch applies 72 journal entries (0089 through 0159) that rewrite some production data
 (users, roles, FX rates, bank GL links and reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items
 (A-Cube, email, Stripe, WPS, GPSSA, FAF) are listed in section 9 and stay off until proven.
@@ -257,10 +257,22 @@ historic unbalanced entries and duplicate reversals need accountant review per t
 
 ### 2e. Scripted rehearsal and the 2026-11-18 record
 
-`docs/release/rehearsal/rehearse.sh` runs sections 1, 2a-2d, the idempotency re-runs and the
-section 7 restore in one command against a restored snapshot (never production). The production-like
-rehearsal record, with its findings (two missing indexes on the settlement rule, 0097 deactivating
-every pre-existing rule, 0109 time per audit row), is in [MIGRATION-REHEARSAL.md](MIGRATION-REHEARSAL.md).
+Build the candidate with `npm run build`. From the repo root, run the driver in a rehearsal
+environment with isolated dependencies for the production boot check. Point `PGURL` at the scratch
+PostgreSQL server and `SNAPSHOT_DB` at the restored copy. Use a fresh output directory for each run.
+
+```bash
+PGURL=postgres://localhost:5432 SNAPSHOT_DB=rehearsal OUT=./rehearsal-out \
+  bash docs/release/rehearsal/rehearse.sh
+```
+
+The driver checks the backup and both restores, the two migration paths and their schema
+equivalence, required post-migration schema, and idempotency in journal order. It runs the
+production release command and starts the built server on a free port to check for HTTP 200
+from `/health/ready` and `/api/version`. A failed gate returns a nonzero exit. Review the
+gate statuses in `steps.log`, the individual logs and `schema.diff` in `OUT`, and the QA findings
+before signing off. The earlier production-like run and its findings are in
+[MIGRATION-REHEARSAL.md](MIGRATION-REHEARSAL.md).
 
 ## 3. Environment to set on Railway BEFORE the deploy
 
@@ -379,7 +391,7 @@ without a CAPTCHA.
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089 through 0149, then run it a second time to confirm it is a no-op.
+0089 through 0159 in journal order, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):

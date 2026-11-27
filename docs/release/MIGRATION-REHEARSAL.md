@@ -262,12 +262,13 @@ on the migrated schema. Treat it as unverified. The data-preserving rollback is 
 
 ## Re-run on the real snapshot
 
-From the repo root on the release branch, with a restored production dump in a scratch database
-(never production):
+Build the candidate with `npm run build`. From the repo root on the release branch, use a restored
+production dump in a scratch database and the isolated boot environment in
+[the deploy runbook](DEPLOY-RUNBOOK.md#2e-scripted-rehearsal-and-the-2026-11-18-record).
 
 ```bash
 PGURL=postgres://user:pass@host:5432 SNAPSHOT_DB=rehearsal OUT=./rehearsal-out bash docs/release/rehearsal/rehearse.sh
 ```
 
-It writes `steps.log`, `pre-counts.txt`, `post-counts.txt`, `per-file.json`, the QA script
-outputs, `rerun.txt` and the schema diff to `OUT`. Do not commit the outputs or the dump.
+It writes `steps.log`, the migration, restore and boot logs, the QA findings and the schema
+diff to `OUT`. A failed gate returns a nonzero exit. Do not commit the outputs or the dump.

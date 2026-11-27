@@ -1,4 +1,4 @@
--- DEPLOY-RUNBOOK section 2a (BEFORE migrating). Run with psql -X -v ON_ERROR_STOP=0.
+-- DEPLOY-RUNBOOK section 2a (BEFORE migrating).
 \pset footer off
 \echo '== row counts (section 1)'
 SELECT (SELECT count(*) FROM companies) AS companies, (SELECT count(*) FROM users) AS users,
@@ -21,10 +21,11 @@ SELECT count(*) AS email_case_duplicates FROM (SELECT lower(trim(email)) FROM us
 SELECT (SELECT count(*) FROM companies) AS companies, count(*) AS rates,
        count(*) FILTER (WHERE source <> 'fta') AS non_fta_rates,
        count(*) FILTER (WHERE source = 'manual') AS manual_rates FROM exchange_rates;
-\echo '== 0097 reconciliation rules (account_id does not exist before 0097: the second query errors on main)'
+\echo '== 0097 reconciliation rules (all active rules are unscoped before account_id exists)'
 SELECT count(*) FILTER (WHERE match_type NOT IN ('exact','contains','starts_with','regex','equals','equal','is')) AS bad_match_type,
        count(*) FILTER (WHERE is_active) AS active FROM reconciliation_rules;
-SELECT count(*) FILTER (WHERE account_id IS NULL AND is_active) AS active_without_account FROM reconciliation_rules;
+SELECT count(*) FILTER (WHERE to_jsonb(r)->>'account_id' IS NULL AND is_active) AS active_without_account
+  FROM reconciliation_rules r;
 \echo '== 0103 plaintext portal tokens'
 SELECT count(*) AS plaintext_portal_tokens FROM customer_contacts WHERE portal_access_token IS NOT NULL;
 \echo '== 0113 companies without a subscription'

@@ -10,10 +10,28 @@
 // on the snapshot itself for the end-to-end timing (see rehearse.sh).
 //
 // Usage: DATABASE_URL=... node docs/release/rehearsal/time-migrations.mjs [--json out.json]
+//        node docs/release/rehearsal/time-migrations.mjs --list-candidates
 import fs from "node:fs";
 import path from "node:path";
 import pg from "pg";
 import { readMigrationFiles } from "drizzle-orm/migrator";
+
+const migrationsFolder = path.resolve(process.cwd(), "migrations");
+const journal = JSON.parse(
+  fs.readFileSync(path.join(migrationsFolder, "meta/_journal.json"), "utf8")
+);
+const files = readMigrationFiles({ migrationsFolder });
+
+if (process.argv.includes("--list-candidates")) {
+  const baseline = journal.entries.findIndex(({ tag }) => tag === "0088_emirate_no_default");
+  if (baseline < 0 || baseline === files.length - 1) {
+    throw new Error("Expected the pre-release baseline followed by candidate migrations");
+  }
+  for (const { tag } of journal.entries.slice(baseline + 1)) {
+    console.log(`migrations/${tag}.sql`);
+  }
+  process.exit(0);
+}
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -22,11 +40,6 @@ if (!url) {
 }
 const outIdx = process.argv.indexOf("--json");
 const outFile = outIdx > 0 ? process.argv[outIdx + 1] : null;
-const migrationsFolder = path.resolve(process.cwd(), "migrations");
-const journal = JSON.parse(
-  fs.readFileSync(path.join(migrationsFolder, "meta/_journal.json"), "utf8")
-);
-const files = readMigrationFiles({ migrationsFolder });
 
 const client = new pg.Client({ connectionString: url });
 client.on("notice", (n) => notices.push(n.message));

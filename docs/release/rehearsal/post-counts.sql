@@ -1,4 +1,4 @@
--- DEPLOY-RUNBOOK section 2b + 2d (AFTER migrating). Run with psql -X -v ON_ERROR_STOP=0.
+-- DEPLOY-RUNBOOK section 2b + 2d (AFTER migrating).
 \pset footer off
 \echo '== row counts'
 SELECT (SELECT count(*) FROM companies) AS companies, (SELECT count(*) FROM users) AS users,
@@ -36,3 +36,26 @@ UNION ALL SELECT 'uq_employees_company_iban', to_regclass('uq_employees_company_
 UNION ALL SELECT 'uq_employees_company_emirates_id', to_regclass('uq_employees_company_emirates_id') IS NOT NULL;
 \echo '== S-H3 0054 owner account state (must be unchanged by the chain)'
 SELECT email, is_admin, user_type, firm_role FROM users WHERE lower(email) = 'shire602@gmail.com';
+
+\echo '== 2d required schema assertions'
+DO $$
+DECLARE
+  stale_tables text[];
+  missing_indexes text[];
+BEGIN
+  SELECT array_agg(table_name ORDER BY table_name) INTO stale_tables
+    FROM information_schema.tables
+   WHERE table_schema = 'public'
+     AND (table_name LIKE 'zatca\_%' OR table_name IN ('subscription_plans', 'user_subscriptions'));
+  SELECT array_agg(expected ORDER BY expected) INTO missing_indexes
+    FROM unnest(ARRAY['uq_employees_company_employee_number', 'uq_employees_company_iban',
+                      'uq_employees_company_emirates_id']) AS indexes(expected)
+   WHERE NOT EXISTS (
+     SELECT FROM pg_index WHERE indexrelid = to_regclass('public.' || expected)
+       AND indisvalid AND indisunique
+   );
+  IF stale_tables IS NOT NULL OR missing_indexes IS NOT NULL THEN
+    RAISE EXCEPTION 'Release schema check failed. Stale tables: %. Missing or invalid indexes: %.',
+      coalesce(stale_tables::text, '{}'), coalesce(missing_indexes::text, '{}');
+  END IF;
+END $$;
