@@ -205,5 +205,14 @@
   "dashboard.gsBankLines": "Bring in your bank lines",
   "dashboard.gsBankLinesHint": "Add a bank account and import a statement, so reconciliation can start.",
   "dashboard.gsEinvoice": "Get ready for e-invoicing",
-  "dashboard.gsEinvoiceHint": "Check your details against the UAE e-invoicing rules."
+  "dashboard.gsEinvoiceHint": "Check your details against the UAE e-invoicing rules.",
+  "dashboard.clientFallbackName": "Client",
+  "dashboard.clientUrgent": "Urgent",
+  "dashboard.clientUpcoming": "Upcoming",
+  "dashboard.clientActivityLogged": "Activity logged",
+  "dashboard.clientDocsInVault": "documents in vault",
+  "dashboard.clientUpcomingDeadline": "Upcoming deadline",
+  "dashboard.clientDueInDays": "due in {count, plural, one {# day} other {# days}}",
+  "dashboard.clientTasksIncomplete": "tasks incomplete",
+  "dashboard.clientItemsThisWeek": "items this week"
 }

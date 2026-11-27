@@ -150,6 +150,30 @@ export async function lockProduct(
   return rows[0];
 }
 
+/**
+ * Lock a set of product rows in one statement, ordered by id (FOR UPDATE). Every multi-product
+ * entry point (stocktake create/post, invoice, credit note, bill, purchase return, reversal) takes
+ * its locks this way first, so two transactions touching overlapping products always acquire them
+ * in the same order and cannot deadlock. Ids that are not the company's are skipped here; the
+ * per-line `lockProduct` that follows still raises PRODUCT_NOT_FOUND.
+ */
+export async function lockProductsOrdered(
+  tx: LedgerTx,
+  companyId: string,
+  productIds: Iterable<string | null | undefined>
+): Promise<void> {
+  const ids = [...new Set([...productIds].filter((id): id is string => !!id))];
+  if (!ids.length) return;
+  await tx.execute(
+    sql`SELECT id FROM products WHERE company_id = ${companyId}
+         AND id IN (${sql.join(
+           ids.map((id) => sql`${id}`),
+           sql`, `
+         )})
+         ORDER BY id FOR UPDATE`
+  );
+}
+
 export const isStocked = (p: Pick<ProductRow, "product_type" | "track_inventory">): boolean =>
   p.product_type === "inventory" && p.track_inventory !== false;
 

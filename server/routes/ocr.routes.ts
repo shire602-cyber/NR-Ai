@@ -27,7 +27,7 @@ import {
   describeOcrProviders,
   summarizeOcrProviderError,
 } from "../services/ocr-provider-clients";
-import { parseReceiptOcrText } from "@shared/receipt-ocr-parser";
+import { parseReceiptOcrText, UNKNOWN_RECEIPT_MERCHANT } from "@shared/receipt-ocr-parser";
 import { deriveConfidenceBand, type ValidationIssue } from "@shared/receipt-confidence";
 import { buildLimiter, limiterProfiles } from "../middleware/rateLimit";
 import { extractReceipt, type ExtractionClients } from "../services/ai/receipt-extraction";
@@ -39,6 +39,7 @@ import { sanityCheckReceipt } from "../services/ai/structured-output";
 import { assertAiQuota, type AiContext } from "../services/ai/usage-meter";
 import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
 import { errorCode, errorMessage, errorProperty } from "../errors";
+import { todayDubai } from "@shared/accounting-date";
 
 const log = createLogger("ocr");
 
@@ -202,7 +203,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       const enrichWithInternalClassifier = async (aiResult: LooseOcrResult) => {
         try {
           const merchant =
-            (aiResult?.merchant ? String(aiResult.merchant) : "") || "Unknown Merchant";
+            (aiResult?.merchant ? String(aiResult.merchant) : "") || UNKNOWN_RECEIPT_MERCHANT;
           const lineItems = Array.isArray(aiResult?.lineItems)
             ? (aiResult.lineItems as Array<{ description?: unknown } | null>).map((li) => ({
                 description: String(li?.description || ""),
@@ -584,7 +585,7 @@ function buildResult(
       ? aiResult.category
       : "Other";
 
-  let parsedDate = new Date().toISOString().split("T")[0];
+  let parsedDate = todayDubai();
   if (typeof aiResult.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(aiResult.date)) {
     parsedDate = aiResult.date;
   }
@@ -634,7 +635,9 @@ function buildResult(
   });
 
   return {
-    merchant: aiResult.merchant ? String(aiResult.merchant).slice(0, 200) : "Unknown Merchant",
+    merchant: aiResult.merchant
+      ? String(aiResult.merchant).slice(0, 200)
+      : UNKNOWN_RECEIPT_MERCHANT,
     date: parsedDate,
     invoiceNumber: aiResult.invoiceNumber ? String(aiResult.invoiceNumber).slice(0, 100) : null,
     subtotal: derivedSubtotal,

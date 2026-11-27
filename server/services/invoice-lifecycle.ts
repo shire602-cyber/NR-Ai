@@ -376,6 +376,7 @@ export interface PreparedSalesLine {
   discountType: string | null;
   discountValue: number | null;
   discountAmount: number;
+  documentDiscountAmount: number;
   netAmount: number;
   productId: string | null;
   costCenterId: string | null;
@@ -449,6 +450,7 @@ export function prepareSalesLines(
       discountType: l.discountType ?? null,
       discountValue: l.discountType ? Number(l.discountValue) : null,
       discountAmount: Number(fromFils(t.lineDiscountFils)),
+      documentDiscountAmount: Number(fromFils(t.documentDiscountFils)),
       netAmount: Number(fromFils(t.netFils)),
       productId: l.productId ?? null,
       costCenterId: l.costCenterId ?? null,

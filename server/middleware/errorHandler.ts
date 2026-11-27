@@ -7,6 +7,9 @@ import { captureException } from "../services/monitoring";
 import { MoneyError } from "../../shared/money";
 import { flattenIssues, zodFieldErrors } from "../http/strict-body";
 import { portalInviteLogPath } from "../http/portal-invite-privacy";
+import { createLogger } from "../config/logger";
+
+const log = createLogger("error-handler");
 
 /** 5xx answers that are the documented "not configured" state, not faults: never reported. */
 export const EXPECTED_UNAVAILABLE_CODES: ReadonlySet<string> = new Set([
@@ -26,7 +29,7 @@ function withRequestId<T extends object>(body: T, req: Request): T & { requestId
  * Drizzle wraps the underlying pg error in DrizzleQueryError, so the code
  * usually lives one level down.
  */
-function findMappedPgErrorCode(err: unknown): string | null {
+function findMappedPgError(err: unknown): { code: string; source: object } | null {
   let current: unknown = err;
   for (let depth = 0; depth < 5 && current && typeof current === "object"; depth++) {
     const code = (current as { code?: unknown }).code;
@@ -34,7 +37,7 @@ function findMappedPgErrorCode(err: unknown): string | null {
       typeof code === "string" &&
       (Object.hasOwn(PG_ERRORS, code) || /^2[23][0-9A-Z]{3}$/.test(code))
     ) {
-      return code;
+      return { code, source: current };
     }
     current = (current as { cause?: unknown }).cause;
   }
@@ -224,9 +227,23 @@ export function globalErrorHandler(
   // Postgres data/integrity errors caused by client input (bad uuid/date,
   // numeric overflow, duplicates, FK) — 400/409 with a stable code, never the
   // SQL text. Drizzle wraps the pg error, so walk the cause chain.
-  const pgCode = err instanceof AppError ? null : findMappedPgErrorCode(err);
+  const pgFound = err instanceof AppError ? null : findMappedPgError(err);
+  const pgCode = pgFound?.code ?? null;
   const pgMapped = pgCode ? PG_ERRORS[pgCode] : undefined;
-  if (pgMapped) {
+  if (pgMapped && pgFound) {
+    const pg = pgFound.source as { constraint?: unknown; table?: unknown };
+    log.warn(
+      {
+        requestId: req.id,
+        pgCode,
+        code: pgMapped.code,
+        constraint: pg.constraint,
+        table: pg.table,
+        method: req.method,
+        route: typeof req.route?.path === "string" ? req.route.path : undefined,
+      },
+      "postgres error mapped to client response"
+    );
     if (pgMapped.status === 503) res.setHeader("Retry-After", "1");
     res
       .status(pgMapped.status)

@@ -45,8 +45,13 @@ describe("migrations", () => {
       breakpoints: true,
     });
     expect(sqlFile(auditTag)).toContain("--> statement-breakpoint");
+    const allocationTag = "0159_preserve_invoice_line_document_discounts";
+    expect(journal.entries.find((x) => x.tag === allocationTag)).toMatchObject({
+      version: "7",
+      breakpoints: true,
+    });
     for (const e of journal.entries.filter((x) => x.idx >= 88)) {
-      if (e.tag === auditTag) {
+      if (e.tag === auditTag || e.tag === allocationTag) {
         // Fixed generated timestamp and breakpoints, asserted above instead of the legacy cadence.
         continue;
       }
@@ -72,7 +77,11 @@ describe("migrations", () => {
         // workstream, declares the SQL idempotent, and every DDL statement is re-runnable.
         // Wave workstreams (W1-A ... W5-E) and the final sweep workers (S1 ... S9).
         if (e.tag === auditTag) {
-          expect(body, e.tag).toMatch(new RegExp(`^-- ${auditTag}\\b.*\\(accounting audit\\)`, "m"));
+          expect(body, e.tag).toMatch(
+            new RegExp(`^-- ${auditTag}\\b.*\\(accounting audit\\)`, "m")
+          );
+        } else if (e.tag === allocationTag) {
+          expect(body, e.tag).toMatch(new RegExp(`^-- ${allocationTag}\\b`, "m"));
         } else {
           expect(body, e.tag).toMatch(/^-- \d{4}_\w+\b.*\b(W\d-[A-E]|S\d)\b/m);
         }

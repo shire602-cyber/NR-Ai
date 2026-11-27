@@ -1,6 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import { Link } from "wouter";
 import { MARKETING_BRAND } from "@shared/marketing-brand";
+import { TRIAL_LIMITS } from "@shared/plans";
 import { bankCopy, type Bilingual } from "../content";
 import type { Translate } from "../shared";
 import type { LegacySectionProps, SectionProps } from "./types";
@@ -54,6 +55,9 @@ export function FaqList({ locale, tr }: Pick<SectionProps, "locale"> & { tr: Tra
     largeAppoint: formatDeadlineDate(DEADLINES.large.appoint, locale),
     largeLive: formatDeadlineDate(DEADLINES.large.live, locale),
     ...PENALTY_TEXT_VARS,
+    companies: TRIAL_LIMITS.maxCompanies,
+    credits: TRIAL_LIMITS.aiCreditsPerMonth,
+    storageGb: TRIAL_LIMITS.maxStorageMb / 1024,
   };
   const entries = FAQ_ITEMS.map(({ id, q, a }) => ({ id, q: text(q, vars), a: text(a, vars) }));
   entries.splice(2, 0, { id: BANK_FAQ.id, q: tr(BANK_FAQ.q), a: tr(BANK_FAQ.a) });

@@ -7,6 +7,10 @@ import type * as React from "react";
  */
 import { PracticeNav } from "@/components/firm/PracticeNav";
 import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { PausedReadNotice } from "@/components/ui/paused-read-notice";
+import { Skeleton } from "@/components/ui/skeleton";
+import { hasReadData, queryReadState } from "@/lib/queryReadState";
 import { loadErrorMessage } from "@/lib/loadError";
 import { matchesSearchText } from "@shared/arabic-text";
 import { PracticePlanTab } from "@/pages/firm/PracticePlanTab";
@@ -17,7 +21,7 @@ import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   ArrowDownRight,
@@ -80,7 +84,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import {
   FirmEInvoicingCell,
   type FirmEInvoicingValue,
@@ -221,7 +225,7 @@ export default function FirmCommandCenter() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { t } = useTranslation();
-  const qc = useQueryClient();
+  const refreshAlertList = () => refreshAfterWrite(["/api/firm/command-center/alerts"]);
 
   const [search, setSearch] = useState("");
   const [rankBy, setRankBy] = useState<RankBy>("health");
@@ -239,18 +243,24 @@ export default function FirmCommandCenter() {
 
   const healthQuery = useQuery<ClientHealthRow[]>({
     queryKey: ["/api/firm/command-center/clients/health", rankBy],
-    queryFn: () =>
-      apiRequest("GET", `/api/firm/command-center/clients/health?by=${rankBy}&dir=desc`),
+    queryFn: ({ signal }) =>
+      apiRequest(
+        "GET",
+        `/api/firm/command-center/clients/health?by=${rankBy}&dir=desc`,
+        undefined,
+        undefined,
+        { signal }
+      ),
   });
 
   const alertsQuery = useQuery<FirmAlertRow[]>({
     queryKey: ["/api/firm/command-center/alerts", severityFilter],
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       const url =
         severityFilter === "all"
           ? "/api/firm/command-center/alerts"
           : `/api/firm/command-center/alerts?severity=${severityFilter}`;
-      return apiRequest("GET", url);
+      return apiRequest("GET", url, undefined, undefined, { signal });
     },
   });
 
@@ -260,15 +270,21 @@ export default function FirmCommandCenter() {
 
   const comparisonQuery = useQuery<ComparisonResponse>({
     queryKey: ["/api/firm/command-center/metrics/comparison", granularity],
-    queryFn: () =>
-      apiRequest("GET", `/api/firm/command-center/metrics/comparison?granularity=${granularity}`),
+    queryFn: ({ signal }) =>
+      apiRequest(
+        "GET",
+        `/api/firm/command-center/metrics/comparison?granularity=${granularity}`,
+        undefined,
+        undefined,
+        { signal }
+      ),
   });
 
   // ─── Mutations ─────────────────────────────────────────────────────
   const refreshAlerts = useMutation({
     mutationFn: () => apiRequest("POST", "/api/firm/command-center/alerts/refresh"),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] });
+      refreshAlertList();
       toast({ title: t["firmCommandCenter.alertsRefreshed"] });
     },
     onError: (e: Error) =>
@@ -282,13 +298,13 @@ export default function FirmCommandCenter() {
   const markRead = useMutation({
     mutationFn: (alertId: string) =>
       apiRequest("PATCH", `/api/firm/command-center/alerts/${alertId}/read`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] }),
+    onSuccess: refreshAlertList,
   });
 
   const resolveAlert = useMutation({
     mutationFn: (alertId: string) =>
       apiRequest("PATCH", `/api/firm/command-center/alerts/${alertId}/resolve`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] }),
+    onSuccess: refreshAlertList,
   });
 
   const batchVat = useMutation({
@@ -335,7 +351,7 @@ export default function FirmCommandCenter() {
     mutationFn: (companyIds: string[]) =>
       apiRequest("POST", "/api/firm/command-center/batch/chase-documents", { companyIds }),
     onSuccess: (data: { chasedClientCount?: number }) => {
-      qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] });
+      refreshAlertList();
       toast({
         title: translateNow("toasts.documentChaseQueued"),
         description: formatMessage(translateNow("toasts.clientsNotified"), {
@@ -353,8 +369,20 @@ export default function FirmCommandCenter() {
   });
 
   // ─── Derived data ──────────────────────────────────────────────────
+  const dashboardState = queryReadState(dashboardQuery);
+  const healthState = queryReadState(healthQuery);
+  const alertsState = queryReadState(alertsQuery);
+  const alertsPaused = alertsQuery.fetchStatus === "paused";
+  const workloadState = queryReadState(workloadQuery);
+  const comparisonState = queryReadState(comparisonQuery);
+  const alerts = hasReadData(alertsState) ? (alertsQuery.data ?? []) : [];
+  const workload = hasReadData(workloadState) ? (workloadQuery.data ?? []) : [];
+  const comparison = hasReadData(comparisonState) ? comparisonQuery.data : undefined;
   const summary = dashboardQuery.data?.summary;
-  const allClients = useMemo(() => healthQuery.data ?? [], [healthQuery.data]);
+  const allClients = useMemo(
+    () => (hasReadData(healthState) ? (healthQuery.data ?? []) : []),
+    [healthState, healthQuery.data]
+  );
   const filteredClients = useMemo(
     () => allClients.filter((c) => matchesSearchText(search, c.companyName)),
     [allClients, search]
@@ -390,17 +418,13 @@ export default function FirmCommandCenter() {
   const selectedIds = Array.from(selectedClients);
   const selectedCount = selectedIds.length;
 
-  const workloadChartData = useMemo(
-    () =>
-      (workloadQuery.data ?? []).map((w) => ({
-        name: w.userName,
-        clients: w.clientCount,
-      })),
-    [workloadQuery.data]
-  );
+  const workloadChartData = workload.map((w) => ({
+    name: w.userName,
+    clients: w.clientCount,
+  }));
 
   const comparisonChartData = useMemo(() => {
-    const c = comparisonQuery.data;
+    const c = comparison;
     if (!c) return [];
     return [
       {
@@ -416,14 +440,14 @@ export default function FirmCommandCenter() {
         receipts: c.current.receipts,
       },
     ];
-  }, [comparisonQuery.data, t]);
+  }, [comparison, t]);
 
   // ─── Render ────────────────────────────────────────────────────────
-  if (dashboardQuery.isError) {
+  if (dashboardState === "error") {
     return (
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Firm"
+          eyebrow={t["firm.eyebrowFirm"]}
           title={t["firmCommandCenter.firmCommandCenter"]}
           testId="page-title"
         />
@@ -440,7 +464,7 @@ export default function FirmCommandCenter() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
+        eyebrow={t["firm.eyebrowFirm"]}
         title={t["firmCommandCenter.firmCommandCenter"]}
         testId="page-title"
         description={t["firmCommandCenter.birdSEyeViewAcross"]}
@@ -461,6 +485,13 @@ export default function FirmCommandCenter() {
         }
       />
       <PracticeNav />
+
+      {dashboardState === "stale" && (
+        <StaleDataNotice
+          onRetry={() => void dashboardQuery.refetch()}
+          testId="firm-command-center-stale"
+        />
+      )}
 
       {/* Metrics row */}
       <div className="mobile-keep-cols grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
@@ -580,6 +611,14 @@ export default function FirmCommandCenter() {
               </div>
             </CardHeader>
             <CardContent>
+              {healthState === "stale" && (
+                <div className="mb-3">
+                  <StaleDataNotice
+                    onRetry={() => void healthQuery.refetch()}
+                    testId="clients-health-stale"
+                  />
+                </div>
+              )}
               {selectedCount > 0 && (
                 <div className="flex items-center gap-2 mb-3 p-3 rounded-md bg-muted">
                   <span className="text-sm font-medium">
@@ -716,7 +755,14 @@ export default function FirmCommandCenter() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {healthQuery.isError && (
+                  {healthState === "pending" && (
+                    <TableRow>
+                      <TableCell colSpan={10}>
+                        <Skeleton className="h-24 w-full" data-testid="clients-health-loading" />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {healthState === "error" && (
                     <TableRow>
                       <TableCell colSpan={10}>
                         <LoadErrorState
@@ -728,17 +774,15 @@ export default function FirmCommandCenter() {
                       </TableCell>
                     </TableRow>
                   )}
-                  {filteredClients.length === 0 &&
-                    !healthQuery.isLoading &&
-                    !healthQuery.isError && (
-                      <TableRow>
-                        <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                          {search
-                            ? t["firmCommandCenter.noClientsMatchYourSearch"]
-                            : t["pages.noClientsYet"]}
-                        </TableCell>
-                      </TableRow>
-                    )}
+                  {filteredClients.length === 0 && hasReadData(healthState) && (
+                    <TableRow>
+                      <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                        {search
+                          ? t["firmCommandCenter.noClientsMatchYourSearch"]
+                          : t["pages.noClientsYet"]}
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
               {pageCount > 1 && (
@@ -809,7 +853,22 @@ export default function FirmCommandCenter() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {(alertsQuery.data ?? []).map((a) => (
+                {alertsPaused && hasReadData(alertsState) && (
+                  <PausedReadNotice cached testId="alerts-paused-cached" />
+                )}
+                {!alertsPaused && alertsState === "stale" && (
+                  <StaleDataNotice
+                    onRetry={() => void alertsQuery.refetch()}
+                    testId="alerts-stale"
+                  />
+                )}
+                {alertsState === "pending" &&
+                  (alertsPaused ? (
+                    <PausedReadNotice testId="alerts-waiting" />
+                  ) : (
+                    <Skeleton className="h-24 w-full" data-testid="alerts-loading" />
+                  ))}
+                {alerts.map((a) => (
                   <div
                     key={a.id}
                     className={`p-3 border rounded-md flex items-center justify-between gap-3 ${
@@ -847,7 +906,7 @@ export default function FirmCommandCenter() {
                     </div>
                   </div>
                 ))}
-                {alertsQuery.isError && (
+                {alertsState === "error" && (
                   <LoadErrorState
                     compact
                     error={alertsQuery.error}
@@ -855,13 +914,11 @@ export default function FirmCommandCenter() {
                     testId="alerts-error"
                   />
                 )}
-                {(alertsQuery.data ?? []).length === 0 &&
-                  !alertsQuery.isLoading &&
-                  !alertsQuery.isError && (
-                    <div className="text-center text-muted-foreground py-8">
-                      {t["firmCommandCenter.noActiveAlertsClickRefresh"]}
-                    </div>
-                  )}
+                {alerts.length === 0 && hasReadData(alertsState) && (
+                  <div className="text-center text-muted-foreground py-8">
+                    {t["firmCommandCenter.noActiveAlertsClickRefresh"]}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -876,7 +933,22 @@ export default function FirmCommandCenter() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {workloadChartData.length > 0 ? (
+              {workloadState === "stale" && (
+                <StaleDataNotice
+                  onRetry={() => void workloadQuery.refetch()}
+                  testId="workload-stale"
+                />
+              )}
+              {workloadState === "pending" ? (
+                <Skeleton className="h-24 w-full" data-testid="workload-loading" />
+              ) : workloadState === "error" ? (
+                <LoadErrorState
+                  compact
+                  error={workloadQuery.error}
+                  onRetry={() => void workloadQuery.refetch()}
+                  testId="workload-error"
+                />
+              ) : workloadChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={workloadChartData}>
                     <CartesianGrid {...chartTheme.grid} />
@@ -892,7 +964,7 @@ export default function FirmCommandCenter() {
                 </ResponsiveContainer>
               ) : (
                 <p className="text-center text-muted-foreground py-8">
-                  No firm_admin staff configured yet.
+                  {t["firmOps.noFirmAdminStaff"]}
                 </p>
               )}
               <Table className="mt-4">
@@ -913,7 +985,7 @@ export default function FirmCommandCenter() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(workloadQuery.data ?? []).map((w) => (
+                  {workload.map((w) => (
                     <TableRow key={w.userId}>
                       <TableCell className="font-medium">{w.userName}</TableCell>
                       <TableCell className="text-muted-foreground">{w.userEmail}</TableCell>
@@ -921,7 +993,7 @@ export default function FirmCommandCenter() {
                       <TableCell>
                         {Object.entries(w.rolesByName).map(([role, n]) => (
                           <Badge key={role} variant="outline" className="me-1">
-                            {role} × {n}
+                            {t[`firm.assignmentRole.${role}`] ?? role} × {n}
                           </Badge>
                         ))}
                       </TableCell>
@@ -961,44 +1033,64 @@ export default function FirmCommandCenter() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                <DeltaCard
-                  label={t["pages.revenue"]}
-                  value={comparisonQuery.data?.deltas.revenuePct ?? 0}
-                />
-                <DeltaCard
-                  label={t["shell.nav.receipts"]}
-                  value={comparisonQuery.data?.deltas.receiptsPct ?? 0}
-                />
-                <DeltaCard
-                  label={t["shell.nav.invoices"]}
-                  value={comparisonQuery.data?.deltas.invoicesPct ?? 0}
-                />
-              </div>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={comparisonChartData}>
-                  <CartesianGrid {...chartTheme.grid} />
-                  <XAxis dataKey="name" {...chartTheme.xAxis} />
-                  <YAxis {...chartTheme.yAxis} tickFormatter={formatAxisCompact} />
-                  <RechartsTooltip {...chartTheme.tooltip} content={<ChartTooltipContent />} />
-                  <Legend />
-                  <Bar
-                    dataKey="revenue"
-                    {...chartTheme.bar("brand")}
-                    name={t["firmOps.chartRevenue"]}
+              {comparisonState === "stale" && (
+                <div className="mb-3">
+                  <StaleDataNotice
+                    onRetry={() => void comparisonQuery.refetch()}
+                    testId="comparison-stale"
                   />
-                  <Bar
-                    dataKey="invoices"
-                    {...chartTheme.bar("slate")}
-                    name={t["firmOps.chartInvoices"]}
+                </div>
+              )}
+              {comparisonState === "pending" && (
+                <Skeleton className="h-24 w-full" data-testid="comparison-loading" />
+              )}
+              {comparisonState === "error" && (
+                <LoadErrorState
+                  compact
+                  error={comparisonQuery.error}
+                  onRetry={() => void comparisonQuery.refetch()}
+                  testId="comparison-error"
+                />
+              )}
+              {comparison && (
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <DeltaCard label={t["pages.revenue"]} value={comparison.deltas.revenuePct} />
+                  <DeltaCard
+                    label={t["shell.nav.receipts"]}
+                    value={comparison.deltas.receiptsPct}
                   />
-                  <Bar
-                    dataKey="receipts"
-                    {...chartTheme.bar("ochre")}
-                    name={t["firmOps.chartReceipts"]}
+                  <DeltaCard
+                    label={t["shell.nav.invoices"]}
+                    value={comparison.deltas.invoicesPct}
                   />
-                </BarChart>
-              </ResponsiveContainer>
+                </div>
+              )}
+              {comparison && (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={comparisonChartData}>
+                    <CartesianGrid {...chartTheme.grid} />
+                    <XAxis dataKey="name" {...chartTheme.xAxis} />
+                    <YAxis {...chartTheme.yAxis} tickFormatter={formatAxisCompact} />
+                    <RechartsTooltip {...chartTheme.tooltip} content={<ChartTooltipContent />} />
+                    <Legend />
+                    <Bar
+                      dataKey="revenue"
+                      {...chartTheme.bar("brand")}
+                      name={t["firmOps.chartRevenue"]}
+                    />
+                    <Bar
+                      dataKey="invoices"
+                      {...chartTheme.bar("slate")}
+                      name={t["firmOps.chartInvoices"]}
+                    />
+                    <Bar
+                      dataKey="receipts"
+                      {...chartTheme.bar("ochre")}
+                      name={t["firmOps.chartReceipts"]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1047,6 +1139,7 @@ function BatchActionButton({
   pending: boolean;
   description: string;
 }) {
+  const { t } = useTranslation();
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
@@ -1065,7 +1158,9 @@ function BatchActionButton({
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Confirm: {label}</AlertDialogTitle>
+          <AlertDialogTitle>
+            {formatMessage(t["firmOps.confirmAction"], { action: label })}
+          </AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

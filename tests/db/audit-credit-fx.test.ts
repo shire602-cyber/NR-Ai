@@ -317,6 +317,57 @@ it("rejects an ordinary partial credit that would use the VAT of a margin-scheme
   expect(Number(remainder.body.vatAmount)).toBe(-1);
 });
 
+it("[PR174] issues a full credit draft using the posted net for its zero-rated cost centre", async () => {
+  const t = await h.createTenant();
+  const costCenterId = await center(t, "EXPORT");
+  const id = await issue(
+    t,
+    [
+      { ...standard(100), quantity: 10_000.0002 },
+      { ...exported(100), quantity: 10_000.0018, costCenterId },
+    ],
+    { discountType: "amount", discountValue: 0.01 }
+  );
+  const draft = await t.as.post(`${base(t)}/credit-notes`, { invoiceId: id, date });
+  expect(draft.status, draft.text).toBe(201);
+
+  // Repricing the rounded quantities preserves the total but moves two fils to the zero-rated line.
+  const issued = await t.as.post(`/api/credit-notes/${draft.body.id}/issue`, {});
+  expect(issued.status, issued.text).toBe(200);
+  expect(issued.body).toMatchObject({ status: "issued", total: 2_050_000.19 });
+  const postings = await h.sql(
+    `SELECT je.source_id, jl.debit, jl.credit FROM journal_lines jl
+     JOIN journal_entries je ON je.id = jl.entry_id
+     WHERE jl.cost_center_id = $1 AND je.status = 'posted' AND je.source = 'invoice'
+       AND je.source_id IN ($2, $3)
+     ORDER BY jl.debit DESC`,
+    [costCenterId, id, draft.body.id]
+  );
+  expect(postings.map((row) => [row.source_id, Number(row.debit), Number(row.credit)])).toEqual([
+    [draft.body.id, 1_000_000.17, 0],
+    [id, 0, 1_000_000.17],
+  ]);
+});
+
+it("[PR174] keeps the legacy discount fallback when mirroring an invoice without an allocation", async () => {
+  const t = await h.createTenant();
+  const id = await issue(t, [standard(100)], { discountType: "amount", discountValue: 0.01 });
+  await h.sql("UPDATE invoice_lines SET document_discount_amount = NULL WHERE invoice_id = $1", [
+    id,
+  ]);
+  const draft = await t.as.post(`${base(t)}/credit-notes`, { invoiceId: id, date });
+  expect(draft.status, draft.text).toBe(201);
+  expect(
+    await h.sql("SELECT document_discount_amount FROM invoice_lines WHERE invoice_id = $1", [
+      draft.body.id,
+    ])
+  ).toEqual([{ document_discount_amount: null }]);
+
+  const issued = await t.as.post(`/api/credit-notes/${draft.body.id}/issue`, {});
+  expect(issued.status, issued.text).toBe(200);
+  expect(issued.body).toMatchObject({ status: "issued", total: 104.99 });
+});
+
 it("issues a generated remainder draft with its original VAT allocation across treatments", async () => {
   const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
   const id = await issue(t, [

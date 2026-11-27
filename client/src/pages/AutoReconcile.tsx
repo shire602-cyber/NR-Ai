@@ -11,6 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/format-date";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
+import { translateMatchReasons } from "./auto-reconcile-match-reasons";
+import { hasBankRowWriteInFlight } from "./bank-row-writes";
 
 /**
  * Bank reconciliation → Suggestions (spec 3.9; the former /auto-reconcile page). "Find matches"
@@ -42,22 +44,6 @@ interface AutoReconcileResult {
 
 /** At or above this confidence a suggestion counts as confident. */
 const CONFIDENT = 75;
-
-/** The server explains a match with fixed English phrases; each one has a catalog label. */
-const REASON_KEYS: Record<string, string> = {
-  "Exact amount match": "banking.suggest.reason.exactAmount",
-  "Amount within 1%": "banking.suggest.reason.amount1",
-  "Amount within 5%": "banking.suggest.reason.amount5",
-  "Same date": "banking.suggest.reason.sameDate",
-  "Within 1 day": "banking.suggest.reason.day1",
-  "Within 3 days": "banking.suggest.reason.day3",
-  "Within 7 days": "banking.suggest.reason.day7",
-  "Reference number match": "banking.suggest.reason.reference",
-  "Strong description match": "banking.suggest.reason.descStrong",
-  "Partial description match": "banking.suggest.reason.descPartial",
-  "Weak description match": "banking.suggest.reason.descWeak",
-  "Entry on this bank account": "banking.suggest.reason.sameAccount",
-};
 
 function confidenceTone(confidence: number): StatusTone {
   if (confidence >= CONFIDENT) return "success";
@@ -123,6 +109,15 @@ export function MatchSuggestions({
       }),
   });
 
+  // Checked at submit, not at render: a scan can already see a line the server has unmatched
+  // while the Unmatch response is still outstanding. Other lines in the batch still apply.
+  const submitApply = (matches: ReconcileMatch[]) => {
+    const eligible = matches.filter(
+      (m) => !hasBankRowWriteInFlight(companyId, m.bankTransactionId)
+    );
+    if (eligible.length > 0) apply.mutate(eligible);
+  };
+
   useEffect(() => {
     if (scanRequest > 0 && companyId) scan.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -137,14 +132,7 @@ export function MatchSuggestions({
     if (result) onSuggestedCount?.(new Set(open.map((m) => m.bankTransactionId)).size);
   }, [result, open, onSuggestedCount]);
   const confident = open.filter((m) => m.confidence >= CONFIDENT);
-  const reasons = (raw: string) =>
-    raw
-      .split(";")
-      .map((r) => r.trim())
-      .filter(Boolean)
-      .map((r) => (REASON_KEYS[r] ? tt[REASON_KEYS[r]] : null))
-      .filter(Boolean)
-      .join(" · ");
+  const reasons = (raw: string) => translateMatchReasons(raw, tt);
 
   if (scan.isPending && !result) {
     return (
@@ -221,7 +209,7 @@ export function MatchSuggestions({
           size="sm"
           variant="outline"
           disabled={confident.length === 0 || apply.isPending}
-          onClick={() => apply.mutate(confident)}
+          onClick={() => submitApply(confident)}
           data-testid="button-accept-confident"
         >
           {apply.isPending ? (
@@ -274,7 +262,7 @@ export function MatchSuggestions({
                 size="sm"
                 variant="outline"
                 disabled={apply.isPending}
-                onClick={() => apply.mutate([match])}
+                onClick={() => submitApply([match])}
                 data-testid={`button-accept-${match.bankTransactionId}`}
               >
                 {tt["banking.suggest.accept"]}

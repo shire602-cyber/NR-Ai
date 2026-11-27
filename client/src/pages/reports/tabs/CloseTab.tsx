@@ -33,6 +33,7 @@ import {
 import { format } from "date-fns";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
+import { SecondaryQueryError } from "../ReportQueryNotice";
 
 export default function CloseTab() {
   const { t, locale } = useTranslation();
@@ -53,9 +54,12 @@ export default function CloseTab() {
     monthEndReadinessPercent,
     monthEndReviewChecks,
     reportSectionClass,
+    secondaryLoadErrors,
   } = useReportsPageContext();
   return (
     <>
+      <SecondaryQueryError error={secondaryLoadErrors.monthEndCloseStatus} testId="close-tab-month-end-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.consolidatedStatements} testId="close-tab-consolidated-statements-error" />
       <div
         className={reportSectionClass(
           ["month-end-close-status", "audit-trail", "consolidated-statements"],

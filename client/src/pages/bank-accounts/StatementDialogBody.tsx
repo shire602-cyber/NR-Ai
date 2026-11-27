@@ -1,6 +1,6 @@
 /** Body of the reconciliation statement dialog; loaded on demand by the Bank accounts page. */
-import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { onlineManager, useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,12 +8,14 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
-import { useTranslation } from "@/lib/i18n";
+import { loadNamespaces, t as catalogs, useTranslation, type Locale } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import { FileDown } from "lucide-react";
 import { sectionState } from "./query-states";
 import { RefreshFailed } from "./RefreshFailed";
+import { BodyLoadFailed } from "./BodyLoadFailed";
+import { STATEMENT_NAMESPACES } from "./statement-namespaces";
 
 interface StatementItem {
   id: string;
@@ -23,6 +25,7 @@ interface StatementItem {
 }
 
 interface Statement {
+  currency?: string;
   totals: Record<string, string>;
   differenceFils: number;
   depositsInTransit: StatementItem[];
@@ -40,6 +43,11 @@ interface SavedReconciliation {
   signedOffAt: string | null;
 }
 
+// A paused query is not proof of being offline (an unfocused retry pauses too), so offline copy
+// follows React Query's connectivity state only.
+const subscribeConnectivity = (notify: () => void) => onlineManager.subscribe(notify);
+const isKnownOffline = () => !onlineManager.isOnline();
+
 export default function StatementDialogBody({
   companyId,
   accountId,
@@ -47,9 +55,23 @@ export default function StatementDialogBody({
   companyId: string;
   accountId: string;
 }) {
-  const { t } = useTranslation();
+  // No declared namespaces: this still re-renders when a catalog lands; the effect below loads ours.
+  const { t, locale } = useTranslation();
   const tr = (k: string) => t[k] ?? k;
   const { toast } = useToast();
+  const knownOffline = useSyncExternalStore(subscribeConnectivity, isKnownOffline);
+  // The opening locale's catalog arrives with this chunk; a language switch while open loads the
+  // other one. A failure counts only for the locale that is still current.
+  const [failedLocale, setFailedLocale] = useState<Locale | null>(null);
+  useEffect(() => {
+    let stale = false;
+    loadNamespaces(locale, STATEMENT_NAMESPACES).catch(() => {
+      if (!stale) setFailedLocale(locale);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [locale]);
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState(new Date().toISOString().slice(0, 10));
   const [closing, setClosing] = useState("");
@@ -58,8 +80,17 @@ export default function StatementDialogBody({
   const historyQuery = useQuery<SavedReconciliation[]>({ queryKey: historyKey });
   const { data: history, refetch: refetchHistory } = historyQuery;
   const historyState = sectionState(historyQuery);
-  const onError = (err: Error) =>
+  // A foreign-currency account whose ledger lacks account-currency amounts is refused (409); the
+  // localized reason is shown in place of a statement.
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const onError = (err: Error) => {
+    if (err instanceof ApiError && err.body?.code === "FX_RECONCILIATION_UNSUPPORTED") {
+      setStatement(null);
+      setRefusal(err.message);
+      return;
+    }
     toast({ variant: "destructive", title: tr("banking.common.error"), description: err?.message });
+  };
 
   const previewMutation = useMutation({
     mutationFn: async () => {
@@ -70,7 +101,10 @@ export default function StatementDialogBody({
         `/api/companies/${companyId}/bank-accounts/${accountId}/reconciliation-statement?${q}`
       )) as Statement;
     },
-    onSuccess: setStatement,
+    onSuccess: (st: Statement) => {
+      setRefusal(null);
+      setStatement(st);
+    },
     onError,
   });
   const saveMutation = useMutation({
@@ -81,6 +115,7 @@ export default function StatementDialogBody({
         ...(periodStart ? { periodStart } : {}),
       }),
     onSuccess: (row: { statement: Statement }) => {
+      setRefusal(null);
       setStatement(row.statement);
       queryClient.invalidateQueries({ queryKey: historyKey });
     },
@@ -90,7 +125,7 @@ export default function StatementDialogBody({
     mutationFn: (id: string) =>
       apiRequest("POST", `/api/companies/${companyId}/bank-reconciliations/${id}/sign-off`, {}),
     onSuccess: () => {
-      toast({ title: tr("banking.statement.signedOff") });
+      toast({ title: tr("bankStatement.signedOff") });
       queryClient.invalidateQueries({ queryKey: historyKey });
     },
     onError,
@@ -98,39 +133,51 @@ export default function StatementDialogBody({
 
   const rows: Array<[string, string, StatementItem[] | null]> = statement
     ? [
-        ["banking.statement.bankBalance", statement.totals.statementClosingBalance, null],
+        ["bankStatement.bankBalance", statement.totals.statementClosingBalance, null],
         [
-          "banking.statement.depositsInTransit",
+          "bankStatement.depositsInTransit",
           statement.totals.depositsInTransit,
           statement.depositsInTransit,
         ],
         [
-          "banking.statement.outstandingPayments",
+          "bankStatement.outstandingPayments",
           statement.totals.outstandingPayments,
           statement.outstandingPayments,
         ],
-        ["banking.statement.adjustedBank", statement.totals.adjustedBankBalance, null],
-        ["banking.statement.glBalance", statement.totals.glBalance, null],
+        ["bankStatement.adjustedBank", statement.totals.adjustedBankBalance, null],
+        ["bankStatement.glBalance", statement.totals.glBalance, null],
         [
-          "banking.statement.unrecordedReceipts",
+          "bankStatement.unrecordedReceipts",
           statement.totals.unrecordedReceipts,
           statement.unrecordedReceipts,
         ],
         [
-          "banking.statement.unrecordedPayments",
+          "bankStatement.unrecordedPayments",
           statement.totals.unrecordedPayments,
           statement.unrecordedPayments,
         ],
-        ["banking.statement.adjustedBook", statement.totals.adjustedBookBalance, null],
-        ["banking.statement.difference", statement.totals.difference, null],
+        ["bankStatement.adjustedBook", statement.totals.adjustedBookBalance, null],
+        ["bankStatement.difference", statement.totals.difference, null],
       ]
     : [];
+
+  // Never show raw keys while the current locale's copy is missing; the form state is kept.
+  // Read the raw catalog: the hook's view can fall back to the other locale or the key itself.
+  if (!catalogs[locale]["bankStatement.history"]) {
+    return failedLocale === locale ? (
+      <BodyLoadFailed />
+    ) : (
+      <p role="status" className="text-small text-muted-foreground">
+        {t["banking.common.loading"]}
+      </p>
+    );
+  }
 
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
-          <Label htmlFor="st-start">{tr("banking.statement.periodStart")}</Label>
+          <Label htmlFor="st-start">{tr("bankStatement.periodStart")}</Label>
           <DatePicker id="st-start" value={periodStart} onChange={setPeriodStart} />
         </div>
         <div>
@@ -138,7 +185,7 @@ export default function StatementDialogBody({
           <DatePicker id="st-end" value={periodEnd} onChange={setPeriodEnd} />
         </div>
         <div>
-          <Label htmlFor="st-close">{tr("banking.statement.closingBalance")}</Label>
+          <Label htmlFor="st-close">{tr("bankStatement.closingBalance")}</Label>
           <Input
             id="st-close"
             inputMode="decimal"
@@ -153,22 +200,35 @@ export default function StatementDialogBody({
           onClick={() => previewMutation.mutate()}
           disabled={!closing || !periodEnd || previewMutation.isPending}
         >
-          {tr("banking.statement.preview")}
+          {tr("bankStatement.preview")}
         </Button>
         <Button
           onClick={() => saveMutation.mutate()}
           disabled={!closing || !periodEnd || saveMutation.isPending}
         >
-          {tr("banking.statement.saveDraft")}
+          {tr("bankStatement.saveDraft")}
         </Button>
       </div>
+      {refusal && (
+        <div
+          role="alert"
+          data-testid="bank-statement-fx-refusal"
+          className="rounded-md border p-3 text-sm"
+        >
+          <p className="font-semibold">{tr("bankStatement.fxUnsupportedTitle")}</p>
+          <p className="text-muted-foreground">{refusal}</p>
+        </div>
+      )}
       {statement && (
         <Card>
           <CardHeader>
             <CardDescription>
               {statement.differenceFils === 0
-                ? tr("banking.statement.reconciled")
-                : tr("banking.statement.notReconciled")}
+                ? tr("bankStatement.reconciled")
+                : tr("bankStatement.notReconciled")}
+              {statement.currency
+                ? ` · ${tr("bankStatement.amountsIn")} ${statement.currency}`
+                : ""}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-1 text-sm">
@@ -195,7 +255,7 @@ export default function StatementDialogBody({
         </Card>
       )}
       <div>
-        <p className="text-sm font-semibold mb-2">{tr("banking.statement.history")}</p>
+        <p className="text-sm font-semibold mb-2">{tr("bankStatement.history")}</p>
         {historyState.refreshFailed && (
           <RefreshFailed
             message={tr("banking.common.refreshFailed")}
@@ -213,20 +273,22 @@ export default function StatementDialogBody({
             data-testid="bank-history-offline"
             className="text-small text-muted-foreground"
           >
-            {tr("banking.common.offline")}. {tr("banking.common.offlineBody")}{" "}
+            {knownOffline
+              ? `${tr("banking.common.offline")}. ${tr("banking.common.offlineBody")}`
+              : tr("banking.query.paused")}{" "}
             <Button variant="link" size="sm" onClick={() => void refetchHistory()}>
               {t["components.errorRetry"]}
             </Button>
           </p>
         ) : historyState.kind === "error" ? (
           <p role="alert" className="text-small text-muted-foreground">
-            {tr("banking.statement.historyError")}{" "}
+            {tr("bankStatement.historyError")}{" "}
             <Button variant="link" size="sm" onClick={() => void refetchHistory()}>
               {t["components.errorRetry"]}
             </Button>
           </p>
         ) : history?.length === 0 ? (
-          <p className="text-small text-muted-foreground">{tr("banking.statement.historyNone")}</p>
+          <p className="text-small text-muted-foreground">{tr("bankStatement.historyNone")}</p>
         ) : (
           <Table>
             <TableBody>
@@ -238,7 +300,7 @@ export default function StatementDialogBody({
                   <TableCell>
                     <Badge variant={r.status === "signed_off" ? "default" : "outline"}>
                       {r.status === "signed_off"
-                        ? tr("banking.statement.signedOff")
+                        ? tr("bankStatement.signedOff")
                         : tr("banking.statement.draft")}
                     </Badge>
                   </TableCell>
@@ -250,7 +312,7 @@ export default function StatementDialogBody({
                           onClick={() => signMutation.mutate(r.id)}
                           disabled={signMutation.isPending}
                         >
-                          {tr("banking.statement.signOff")}
+                          {tr("bankStatement.signOff")}
                         </Button>
                       )}
                       {(["pdf", "xlsx"] as const).map((f) => (
@@ -262,8 +324,8 @@ export default function StatementDialogBody({
                           >
                             <FileDown className="w-3 h-3" />
                             {f === "pdf"
-                              ? tr("banking.statement.exportPdf")
-                              : tr("banking.statement.exportXlsx")}
+                              ? tr("bankStatement.exportPdf")
+                              : tr("bankStatement.exportXlsx")}
                           </a>
                         </Button>
                       ))}

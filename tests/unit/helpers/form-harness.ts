@@ -86,9 +86,9 @@ export function formHarnessQueryClientMock() {
   return {
     apiRequest: vi.fn(apiRequest),
     queryClient: qc,
-    refreshAfterWrite: (queryKey: readonly unknown[]) => {
+    refreshAfterWrite: vi.fn((queryKey: readonly unknown[]) => {
       void qc.cancelQueries({ queryKey }).then(() => qc.invalidateQueries({ queryKey }));
-    },
+    }),
     ApiError,
     getQueryFn:
       () =>
@@ -160,7 +160,7 @@ export async function flush(ms = 0) {
 }
 
 /**
- * Flush until `done()` holds (or `timeoutMs` passes). Lazy chunks and locale namespaces load
+ * Flush until `done()` holds, throwing if it stays false. Lazy chunks and locale namespaces load
  * through dynamic imports whose time grows with machine load, so a fixed number of flushes is
  * flaky; wait on the observable condition instead.
  */
@@ -172,6 +172,7 @@ export async function flushUntil(done: () => boolean, timeoutMs = 10_000) {
     });
   }
   await flush();
+  if (!done()) throw new Error(`Condition did not become true within ${timeoutMs} ms`);
 }
 
 export const byTestId = (id: string) =>

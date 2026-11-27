@@ -6,7 +6,7 @@
  * accessible names, and the P2 polish (focus, funnel source, flash, read-only forms, one trial-end
  * rule, UTC pin) is pinned here as behaviour.
  */
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { createElement, act } from "react";
@@ -18,10 +18,20 @@ import { TRIAL_DAYS, trialState } from "../../shared/trial";
 import { applySignupChange, readSignupPlan } from "../../client/src/components/auth/signup-plan";
 import { planCta, planPhase } from "../../client/src/lib/plan-state";
 
+const { maxCompanies, aiCreditsPerMonth, maxStorageMb } = TRIAL_LIMITS;
+const storageGb = maxStorageMb / 1024;
+const trialCaps = {
+  en: `During the trial: up to ${maxCompanies} companies, ${aiCreditsPerMonth} AI credits per month and ${storageGb} GB of storage.`,
+  ar: `خلال الفترة التجريبية: حتى ${maxCompanies} شركات و${aiCreditsPerMonth} من أرصدة الذكاء الاصطناعي شهريًا، و${storageGb} غيغابايت من التخزين.`,
+};
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+// File-level timeout is vitest's default (5 s); per-test overrides cover the two slow cases:
 
 const sub = vi.hoisted(() => ({
   state: {} as Record<string, unknown>,
+  /** Overrides the gate's subscription query (unset = a loaded one built from `state`). */
+  query: null as Record<string, unknown> | null,
   canBilling: true,
   user: { id: "u1", isAdmin: false, firmRole: null } as {
     id: string;
@@ -31,15 +41,21 @@ const sub = vi.hoisted(() => ({
 }));
 vi.mock("../../client/src/hooks/useSubscription", () => ({
   useSubscription: () => sub.state,
-  useCompanySubscription: () => ({
-    data: {
-      trialLocked: sub.state.isReadOnly,
-      entitlement: {
-        chosenPlan: sub.state.chosenPlan,
-        activationRequestedAt: sub.state.activationRequestedAt,
+  useCompanySubscription: () =>
+    sub.query ?? {
+      data: {
+        trialLocked: sub.state.isReadOnly,
+        entitlement: {
+          chosenPlan: sub.state.chosenPlan,
+          activationRequestedAt: sub.state.activationRequestedAt,
+        },
       },
+      isPending: false,
+      isLoadingError: false,
+      fetchStatus: "idle",
+      error: null,
+      refetch: () => {},
     },
-  }),
   usePlanChoiceActions: () => ({
     choose: { isPending: false, mutate: () => {} },
     activate: { isPending: false, mutate: () => {} },
@@ -53,6 +69,11 @@ vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
 }));
 vi.mock("../../client/src/hooks/useCompanyPermission", () => ({
   useCompanyPermission: () => ({ can: () => sub.canBilling, gate: () => ({}) }),
+}));
+// Onboarding's first screen for an account with no company yet.
+vi.mock("../../client/src/components/ActiveCompanyProvider", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useActiveCompany: () => ({ company: undefined, isLoading: false }),
 }));
 
 let container: HTMLDivElement;
@@ -101,6 +122,12 @@ function stateFor(name: PhaseName): Record<string, unknown> {
     trial,
     subscription: { id: "s1", planId: "free", status: "active", billingCycle: "monthly" },
     usage: undefined,
+    planLoading: false,
+    loadError: null,
+    isPaused: false,
+    refreshError: null,
+    retryLoad: () => {},
+    usageState: { loaded: true, loadError: null, refreshError: null, retry: () => {} },
     chosenPlan: withChoice ? chosen : null,
     activationRequestedAt: requested ? REQUESTED : null,
     canWrite: () => false,
@@ -140,6 +167,7 @@ beforeEach(() => {
   sub.canBilling = true;
   sub.user = { id: "u1", isAdmin: false, firmRole: null };
   sub.state = stateFor("running-none");
+  sub.query = null;
 });
 
 afterEach(() => {
@@ -413,6 +441,47 @@ describe.each(["en", "ar"] as const)("trial lock screen and plan-limit dialog (%
   );
 });
 
+// ── the gate while the plan is unknown ─────────────────────────────────────────────────────
+// Real React Query behaviour for these states: trial-access-gate-load-states.test.ts.
+
+describe("trial gate when the first plan load fails", () => {
+  async function gate(path: string, refetch: () => void) {
+    window.history.replaceState(null, "", path);
+    sub.query = {
+      data: undefined,
+      isPending: false,
+      isLoadingError: true,
+      fetchStatus: "idle",
+      error: Object.assign(new Error("boom"), { status: 503 }),
+      refetch,
+    };
+    const { TrialAccessGate } = await import("../../client/src/components/billing/TrialAccessGate");
+    await render(
+      createElement(TrialAccessGate, {
+        children: createElement("div", null, "Workspace records"),
+        billing: createElement("div", null, "Billing recovery"),
+      })
+    );
+    expect(text()).not.toContain("Workspace records");
+    expect(text()).not.toContain("Billing recovery");
+    expect(text()).not.toContain("boom");
+  }
+
+  it("on /subscription shows the Billing error and retries the query", async () => {
+    const refetch = vi.fn();
+    await gate("/subscription", refetch);
+    const error = q("subscription-load-error")!;
+    await act(async () => error.querySelector("button")!.click());
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("elsewhere keeps the workspace closed with the access-check screen", async () => {
+    await gate("/invoices", () => {});
+    expect(q("trial-recovery-layout")).not.toBeNull();
+    expect(q("subscription-load-error")).toBeNull();
+  });
+});
+
 // ── Settings > Billing ──────────────────────────────────────────────────────────────────────
 
 describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) => {
@@ -424,6 +493,29 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
     const { default: Subscription } = await import("../../client/src/pages/Subscription");
     await render(createElement(Subscription));
   }
+
+  it("a failed plan load shows a translated error with Retry, not an empty plan page", async () => {
+    const retry = vi.fn();
+    sub.state = {
+      ...stateFor("running-none"),
+      planState: null,
+      entitlement: null,
+      trial: null,
+      subscription: undefined,
+      loadError: Object.assign(new Error("boom"), { status: 500 }),
+      retryLoad: retry,
+    };
+    const { default: Subscription } = await import("../../client/src/pages/Subscription");
+    await render(createElement(Subscription));
+    const err = q("subscription-load-error");
+    expect(err).not.toBeNull();
+    expect(text(err!)).toContain(L("Try again", "أعد المحاولة"));
+    expect(text()).not.toContain("boom");
+    expect(q("plan-choose-professional")).toBeNull();
+    const btn = err!.querySelector("button")!;
+    await act(async () => btn.click());
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
 
   it("running + chosen: honest 'choosing alone does not keep you working', sentence-form billing, trial caps", async () => {
     await page("running-chosen");
@@ -439,16 +531,8 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
     expect(body).toContain(L("AED 119, billed monthly", "تُدفع شهريًا"));
     expect(body).not.toContain("billed Monthly");
     expect(body).not.toContain("فوترة شهري");
-    // "Every feature" plus a line with the trial caps, from the shared constants.
-    expect(body).toContain(
-      L("Every feature is open during the trial.", "كل الميزات متاحة خلال الفترة التجريبية.")
-    );
-    expect(q("trial-caps")!.textContent).toContain(
-      L(
-        `up to ${TRIAL_LIMITS.maxCompanies} companies, ${TRIAL_LIMITS.aiCreditsPerMonth} AI credits and ${TRIAL_LIMITS.maxStorageMb / 1024} GB of storage`,
-        "حتى 3 شركات"
-      )
-    );
+    expect(body).toContain(L("You're on an Enterprise trial.", "أنت في تجربة خطة المؤسسات."));
+    expect(q("trial-caps")!.textContent).toBe(trialCaps[locale]);
     expect(q("button-activate-plan")).not.toBeNull();
     expect(q("button-see-plans")).toBeNull();
   });
@@ -515,6 +599,67 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
   });
 });
 
+// ── onboarding: the trial caps note ────────────────────────────────────────────────────────
+
+describe.each(["en", "ar"] as const)("onboarding trial note (%s)", (locale) => {
+  beforeEach(async () => setLocale(locale));
+
+  // Warm the heavy onboarding import outside the test timer; reused by both locales.
+  let CustomerOnboarding: typeof import("../../client/src/pages/onboarding/CustomerOnboarding").CustomerOnboarding;
+  beforeAll(async () => {
+    ({ CustomerOnboarding } = await import("../../client/src/pages/onboarding/CustomerOnboarding"));
+  });
+
+  // One stable client with a local demo queryFn, so the industry-template query neither logs a
+  // missing queryFn nor refetches on the paid rerender.
+  const onboardingClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        queryFn: async ({ queryKey }) =>
+          queryKey[0] === "/api/onboarding/coa-templates"
+            ? [{ id: "general", label: { en: "General", ar: "عام" }, accounts: 0 }]
+            : null,
+      },
+    },
+  });
+
+  async function onboarding() {
+    await act(async () => {
+      root.render(
+        createElement(
+          QueryClientProvider,
+          { client: onboardingClient },
+          createElement(CustomerOnboarding)
+        )
+      );
+    });
+    expect(q("express-company-name")).not.toBeNull();
+  }
+
+  it("shows during the trial and not once the chosen plan is paid and active", async () => {
+    sub.state = stateFor("running-chosen");
+    await onboarding();
+    expect(text(q("onboarding-trial-note")!)).toContain(String(aiCreditsPerMonth));
+
+    // Activation keeps the recorded choice; the trial's caps no longer apply.
+    sub.state = {
+      ...stateFor("running-chosen"),
+      planState: "active",
+      trial: null,
+      entitlement: {
+        state: "active",
+        planId: "professional",
+        storedPlanId: "professional",
+        features: planFeatures("professional"),
+        chosenPlan: chosen,
+      },
+    };
+    await onboarding();
+    expect(q("onboarding-trial-note")).toBeNull();
+  });
+});
+
 // ── sign-up step: accessible names, sticky Continue, focus, funnel source, flash ───────────
 
 describe.each(["en", "ar"] as const)("sign-up plan step (%s)", (locale) => {
@@ -572,13 +717,12 @@ describe.each(["en", "ar"] as const)("sign-up plan step (%s)", (locale) => {
     expect(classes).toContain("sticky");
     expect(classes).toContain("bottom-0");
     expect(classes.some((c) => c.startsWith("max-sm:sticky"))).toBe(false);
-    // "Every feature" with a caption of the trial caps from the shared constants.
     expect(text(q("signup-plan-step")!)).toContain(
-      locale === "en" ? "days of every feature, free" : "مع كل الميزات"
+      locale === "en"
+        ? `Try Enterprise free for ${TRIAL_DAYS} days. No card needed.`
+        : `جرّب باقة المؤسسات مجانًا لمدة ${TRIAL_DAYS} يومًا، دون بطاقة.`
     );
-    expect(q("signup-trial-caps")!.textContent).toContain(
-      locale === "en" ? "3 companies, 100 AI credits and 1 GB of storage" : "100"
-    );
+    expect(q("signup-trial-caps")!.textContent).toBe(trialCaps[locale]);
   });
 });
 
@@ -808,33 +952,37 @@ describe("read-only forms follow what the server gates", () => {
     expect(disabled("f-input")).toBe(false);
   });
 
-  it("every locked page maps to a rule the server enforces (shared gate lists)", async () => {
-    const { CORE_ROUTE_MODULES } = await import("../../shared/plan-gates");
-    const { PLAN_ROUTE_FEATURES } = await import("../../client/src/lib/plan-routes");
-    const { featureForRequest } = await import("../../server/middleware/featureGate");
-    const id = "11111111-1111-4111-8111-111111111111";
-    for (const [prefix, module] of CORE_ROUTE_MODULES) {
-      const viaCompany = featureForRequest("POST", `/api/companies/${id}/${module}`);
-      const viaRow = featureForRequest("PUT", `/api/${module}/${id}`);
-      expect(viaCompany ?? viaRow, `${prefix} -> ${module}`).not.toBeNull();
-    }
-    const samples: Record<string, string> = {
-      payroll: `companies/${id}/payroll/x`,
-      fixedAssets: `companies/${id}/fixed-assets`,
-      budgets: `companies/${id}/budget-plans`,
-      monthEnd: `companies/${id}/month-end/x`,
-      costCenters: `companies/${id}/cost-centers`,
-      purchaseOrders: `companies/${id}/purchase-orders`,
-      expenseClaims: `companies/${id}/expense-claims`,
-      corporateTax: `companies/${id}/corporate-tax/x`,
-      apiAccess: `companies/${id}/api-keys`,
-      recurringInvoices: `companies/${id}/recurring-invoices`,
-      aiAssistant: "ai/chat",
-    };
-    for (const [prefix, feature] of PLAN_ROUTE_FEATURES) {
-      expect(featureForRequest("POST", `/api/${samples[feature]}`), prefix).toBe(feature);
-    }
-  });
+  it(
+    "every locked page maps to a rule the server enforces (shared gate lists)",
+    async () => {
+      const { CORE_ROUTE_MODULES } = await import("../../shared/plan-gates");
+      const { PLAN_ROUTE_FEATURES } = await import("../../client/src/lib/plan-routes");
+      const { featureForRequest } = await import("../../server/middleware/featureGate");
+      const id = "11111111-1111-4111-8111-111111111111";
+      for (const [prefix, module] of CORE_ROUTE_MODULES) {
+        const viaCompany = featureForRequest("POST", `/api/companies/${id}/${module}`);
+        const viaRow = featureForRequest("PUT", `/api/${module}/${id}`);
+        expect(viaCompany ?? viaRow, `${prefix} -> ${module}`).not.toBeNull();
+      }
+      const samples: Record<string, string> = {
+        payroll: `companies/${id}/payroll/x`,
+        fixedAssets: `companies/${id}/fixed-assets`,
+        budgets: `companies/${id}/budget-plans`,
+        monthEnd: `companies/${id}/month-end/x`,
+        costCenters: `companies/${id}/cost-centers`,
+        purchaseOrders: `companies/${id}/purchase-orders`,
+        expenseClaims: `companies/${id}/expense-claims`,
+        corporateTax: `companies/${id}/corporate-tax/x`,
+        apiAccess: `companies/${id}/api-keys`,
+        recurringInvoices: `companies/${id}/recurring-invoices`,
+        aiAssistant: "ai/chat",
+      };
+      for (const [prefix, feature] of PLAN_ROUTE_FEATURES) {
+        expect(featureForRequest("POST", `/api/${samples[feature]}`), prefix).toBe(feature);
+      }
+    },
+    30000 // dynamic-import chain may take up to ~10 s on cold transforms; 30 s is the ceiling
+  );
 });
 
 describe("ended + no choice says choose AND activate", () => {
@@ -977,7 +1125,14 @@ describe("catalog copy", () => {
       expect(note).not.toMatch(/\b14\b/);
       const billing = read(lang, "components")["components.ui.settingsNav.billing"];
       const phrase = read(lang, "marketing")["marketing.prPlanPhrase_professional"];
-      const out = formatMessage(note, { days: TRIAL_DAYS, plan: phrase, billing });
+      const out = formatMessage(note, {
+        days: TRIAL_DAYS,
+        companies: maxCompanies,
+        credits: aiCreditsPerMonth,
+        storageGb,
+        plan: phrase,
+        billing,
+      });
       expect(out).toContain(String(TRIAL_DAYS));
       expect(out).toContain(billing);
       expect(out).toContain(phrase);
@@ -1031,22 +1186,32 @@ describe("catalog copy", () => {
 
 describe("the server process runs in UTC", () => {
   it("pins TZ=UTC at startup even when the host says Asia/Dubai, so timestamp columns never shift", () => {
-    const tsx = path.join(process.cwd(), "node_modules/.bin/tsx");
-    const out = execFileSync(
-      tsx,
-      [
-        "-e",
-        "import './server/config/pin-timezone'; console.log(JSON.stringify({ tz: process.env.TZ, offset: new Date(2026, 0, 1, 12).getTimezoneOffset(), iso: new Date('2026-11-19 10:00:00').toISOString() }));",
-      ],
-      { env: { ...process.env, TZ: "Asia/Dubai" }, encoding: "utf8", cwd: process.cwd() }
-    );
+    const tsxBin = path.join(process.cwd(), "node_modules/.bin/tsx");
+    const script =
+      "import './server/config/pin-timezone'; console.log(JSON.stringify({ tz: process.env.TZ, offset: new Date(2026, 0, 1, 12).getTimezoneOffset(), iso: new Date('2026-11-19 10:00:00').toISOString() }));";
+    const spawnEnv = { ...process.env, TZ: "Asia/Dubai" };
+    const result =
+      process.platform === "win32"
+        ? spawnSync("cmd", ["/c", tsxBin + ".cmd", "-e", script], {
+            env: spawnEnv,
+            encoding: "utf8",
+            cwd: process.cwd(),
+          })
+        : spawnSync(tsxBin, ["-e", script], {
+            env: spawnEnv,
+            encoding: "utf8",
+            cwd: process.cwd(),
+          });
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error(result.stderr ?? String(result.status));
+    const out = result.stdout;
     expect(JSON.parse(out.trim().split("\n").pop()!)).toEqual({
       tz: "UTC",
       offset: 0,
       // A zone-less timestamp read as local time stays the same wall time in UTC.
       iso: "2026-11-19T10:00:00.000Z",
     });
-  });
+  }, 15000); // spawnSync startup + cold tsx transforms can take up to ~10 s
 
   it("the Dockerfile and both compose files set TZ=UTC", () => {
     // Source inspection: the container configs have no behaviour to run in a unit test.

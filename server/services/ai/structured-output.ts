@@ -2,6 +2,7 @@
 // validation, one retry with validator feedback, and receipt sanity checks. A model's
 // missing confidence is never defaulted: it counts as low.
 
+import { todayDubai } from "@shared/accounting-date";
 import { z } from "zod";
 import type { ValidationIssue } from "../../../shared/receipt-confidence";
 import { validateUaeTrn } from "../../../shared/receipt-ocr-parser";
@@ -200,7 +201,7 @@ export function sanityCheckReceipt(
   opts: { today?: string } = {}
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const todayMs = Date.parse(`${opts.today ?? new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+  const todayMs = Date.parse(`${opts.today ?? todayDubai()}T00:00:00Z`);
   const subtotal = Number(data.subtotal) || 0;
   const vat = Number(data.vatAmount) || 0;
   const total = Number(data.total) || 0;
