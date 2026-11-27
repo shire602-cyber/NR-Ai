@@ -460,11 +460,13 @@ export interface IStorage {
     tx?: typeof db
   ): Promise<{ receipt: Receipt; entry: JournalEntry; reversal: JournalEntry }>;
   splitReceiptAtomic(args: SplitReceiptAtomicArgs): Promise<Receipt[]>;
+  isReceiptImageReferenced(companyId: string, imagePath: string): Promise<boolean>;
   deleteReceipt(id: string, companyId: string): Promise<void>;
 
   // Customer Contacts
   getCustomerContact(id: string): Promise<CustomerContact | undefined>;
   getCustomerContactsByCompanyId(companyId: string): Promise<CustomerContact[]>;
+  getDoNotChaseContactIds(companyId: string): Promise<string[]>;
   getCustomerContactByEmail(companyId: string, email: string): Promise<CustomerContact | undefined>;
   getCustomerContactByTrn(companyId: string, trn: string): Promise<CustomerContact | undefined>;
   createCustomerContact(contact: InsertCustomerContact): Promise<CustomerContact>;

@@ -1,0 +1,511 @@
+/* Hero live stage. Classes: mz-stage-*. Sizes are em so the whole composition scales as one. */
+
+.phase-site .mz-stage {
+  --mz-stage-dir: 1;
+  --mz-stage-ease: var(--mz-ease, cubic-bezier(0.22, 1, 0.36, 1));
+  position: relative;
+  container-type: inline-size;
+  inline-size: 100%;
+  /* Reserved box: the placeholder and the live stage share it, so nothing shifts when it loads.
+     Narrow screens use a tall ratio and scale the type with the box (cqw) so the stacked
+     composition always fits; wide screens use 16:9. */
+  aspect-ratio: 20 / 32;
+  max-inline-size: 480px;
+  margin-inline: auto;
+  overflow: hidden;
+  border: 1px solid var(--mz-line-dark);
+  border-radius: 20px;
+  background: #f4f8f5;
+  color: var(--mz-ink-soft);
+  box-shadow:
+    0 30px 80px rgb(0 0 0 / 0.5),
+    0 0 0 1px rgb(93 242 180 / 0.08),
+    0 0 120px -20px rgb(93 242 180 / 0.25);
+  text-align: start;
+}
+.phase-site .mz-stage[dir="rtl"] {
+  --mz-stage-dir: -1;
+}
+@media (min-width: 720px) {
+  .phase-site .mz-stage {
+    aspect-ratio: 2.2 / 1;
+    max-inline-size: none;
+  }
+}
+
+.phase-site .mz-stage-wrap {
+  position: relative;
+  inline-size: 100%;
+  max-inline-size: 480px;
+  margin-inline: auto;
+}
+@media (min-width: 720px) {
+  .phase-site .mz-stage-wrap {
+    max-inline-size: none;
+  }
+}
+.phase-site .mz-stage-pause {
+  position: absolute;
+  inset-block-end: 0.7rem;
+  inset-inline-start: 0.7rem;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 44px;
+  padding-block: 0;
+  padding-inline: 12px;
+  border: 1px solid var(--mz-line-dark);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.92);
+  color: var(--mz-ink);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.phase-site .mz-stage-pause svg {
+  inline-size: 14px;
+  block-size: 14px;
+}
+.phase-site .mz-stage-pause:focus-visible {
+  outline: 2px solid var(--mz-emerald);
+  outline-offset: 2px;
+}
+
+.phase-site .mz-stage-inner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  font-size: 3.6cqw;
+  line-height: 1.35;
+  animation: mz-stage-fade 0.6s var(--mz-stage-ease) both;
+}
+@media (min-width: 720px) {
+  .phase-site .mz-stage-inner {
+    grid-template-columns: 13em 1fr;
+    font-size: clamp(10px, 1.62cqw, 20px);
+  }
+}
+
+.phase-site .mz-stage-sample {
+  position: absolute;
+  inset-block-start: 0.9em;
+  inset-inline-end: 0.9em;
+  z-index: 2;
+  padding: 0.25em 0.8em;
+  border-radius: 999px;
+  background: var(--mz-ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.phase-site .mz-stage--placeholder {
+  background:
+    linear-gradient(135deg, rgb(255 255 255 / 0.09), rgb(255 255 255 / 0.03)), var(--mz-ink-soft);
+}
+
+/* Sidebar */
+.phase-site .mz-stage-side {
+  display: none;
+  align-content: start;
+  gap: 0.3em;
+  padding: 1.4em 1em;
+  background: var(--mz-emerald-deep);
+  color: #fff;
+}
+@media (min-width: 720px) {
+  .phase-site .mz-stage-side {
+    display: grid;
+  }
+}
+.phase-site .mz-stage-logo {
+  inline-size: 2.2em;
+  block-size: 2.2em;
+  margin-block-end: 1em;
+  border-radius: 0.6em;
+  background: var(--mz-mint);
+}
+.phase-site .mz-stage-nav {
+  padding: 0.6em 0.8em;
+  border-radius: 0.6em;
+  color: #cfe5da;
+  font-weight: 600;
+  animation: mz-stage-nav-in 0.5s var(--mz-stage-ease) both;
+  animation-delay: calc(0.25s + var(--i, 0) * 0.07s);
+}
+.phase-site .mz-stage-nav[data-active="true"] {
+  background: rgb(255 255 255 / 0.14);
+  color: #fff;
+}
+
+/* Main grid */
+.phase-site .mz-stage-main {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 1em;
+  padding: 1em;
+  padding-block-start: 3em;
+  min-block-size: 0;
+}
+@media (min-width: 720px) {
+  .phase-site .mz-stage-main {
+    grid-template-rows: none;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 1.4em;
+    padding: 1.6em;
+    padding-block-start: 3.2em;
+  }
+}
+
+/* The band paints its paragraphs for the dark surface; the stage cards are light surfaces. */
+.phase-site .mz-band .mz-stage p {
+  color: var(--mz-ink-soft);
+}
+.phase-site .mz-band .mz-stage p.mz-stage-muted {
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-band .mz-stage .mz-stage-vat small {
+  color: #c9dbd1;
+}
+
+/* Cards: hidden until their data-on flips, then they settle in. */
+.phase-site .mz-stage-invoice,
+.phase-site .mz-stage-vat,
+.phase-site .mz-stage-expense {
+  background: #fff;
+  border: 1px solid var(--mz-line-light);
+  border-radius: 1em;
+  box-shadow: 0 6px 22px rgb(10 23 19 / 0.08);
+  opacity: 0;
+  transform: translateY(0.8em);
+  transition:
+    opacity 0.55s var(--mz-stage-ease),
+    transform 0.55s var(--mz-stage-ease);
+}
+.phase-site .mz-stage-invoice[data-on="true"],
+.phase-site .mz-stage-vat[data-on="true"],
+.phase-site .mz-stage-expense[data-on="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+/* Invoice */
+.phase-site .mz-stage-invoice {
+  display: grid;
+  align-content: start;
+  gap: 0.7em;
+  padding: 1.1em 1.2em;
+  min-block-size: 0;
+}
+.phase-site .mz-stage-invhead {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  font-size: 1.1em;
+}
+.phase-site .mz-stage-invhead strong {
+  white-space: nowrap;
+}
+.phase-site .mz-stage-num {
+  white-space: nowrap;
+  color: var(--mz-muted-light);
+  font-weight: 600;
+}
+.phase-site .mz-stage-lang {
+  margin-inline-start: auto;
+  display: inline-flex;
+  padding: 0.15em;
+  border-radius: 999px;
+  background: #e9f0ec;
+  font-size: 0.85em;
+  font-weight: 700;
+}
+.phase-site .mz-stage-lang > span {
+  padding: 0.2em 0.7em;
+  border-radius: 999px;
+  color: var(--mz-muted-light);
+  transition:
+    background-color 0.3s,
+    color 0.3s;
+}
+.phase-site .mz-stage-lang > span[data-active="true"] {
+  background: var(--mz-emerald-deep);
+  color: #fff;
+}
+.phase-site .mz-stage-body {
+  display: grid;
+  gap: 0.45em;
+}
+.phase-site .mz-stage-body p {
+  margin: 0;
+}
+.phase-site .mz-stage-customer {
+  font-weight: 700;
+  font-size: 1.1em;
+}
+.phase-site .mz-stage-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1em;
+  font-variant-numeric: tabular-nums;
+}
+.phase-site .mz-stage-muted {
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-stage-total {
+  padding-block-start: 0.5em;
+  border-block-start: 1px solid var(--mz-line-light);
+  font-weight: 800;
+  font-size: 1.1em;
+}
+
+/* Typing: a clip reveal, mirrored for RTL, staggered with --i. */
+.phase-site .mz-stage-invoice[data-on="true"] .mz-stage-type {
+  animation: mz-stage-type-ltr 0.7s steps(16, end) both;
+  animation-delay: calc(0.15s + var(--i, 0) * 0.22s);
+}
+.phase-site .mz-stage-invoice[dir="rtl"][data-on="true"] .mz-stage-type {
+  animation-name: mz-stage-type-rtl;
+}
+
+/* Status */
+.phase-site .mz-stage-statusrow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.7em;
+}
+.phase-site .mz-stage-pill,
+.phase-site .mz-stage-draft {
+  animation: mz-stage-pop 0.45s var(--mz-stage-ease) both;
+  font-size: 1em;
+}
+.phase-site .mz-stage-draft {
+  padding: 0.25em 0.9em;
+  border-radius: 999px;
+  background: #e3e8e5;
+  color: var(--mz-muted-light);
+  font-weight: 700;
+}
+.phase-site .mz-stage-track {
+  display: inline-flex;
+  gap: 0.3em;
+  margin-inline-start: auto;
+}
+.phase-site .mz-stage-track i {
+  inline-size: 1.6em;
+  block-size: 0.35em;
+  border-radius: 999px;
+  background: #dbe4df;
+  transition: background-color 0.4s;
+}
+.phase-site .mz-stage-track i[data-done="true"] {
+  background: var(--mz-mint);
+}
+
+/* Right column */
+.phase-site .mz-stage-side-col {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 1em;
+  min-block-size: 0;
+}
+.phase-site .mz-stage-capture {
+  position: relative;
+  min-block-size: 8em;
+}
+.phase-site .mz-stage-receipt {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 12%;
+  display: grid;
+  gap: 0.4em;
+  padding: 1em 1.1em 1.3em;
+  background: #fffdf6;
+  border: 1px solid #e6dfc9;
+  border-radius: 0.5em 0.5em 0.2em 0.2em;
+  box-shadow: 0 10px 28px rgb(10 23 19 / 0.14);
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(calc(var(--mz-stage-dir) * 3em)) rotate(calc(var(--mz-stage-dir) * 2deg));
+  transition:
+    opacity 0.6s var(--mz-stage-ease),
+    transform 0.6s var(--mz-stage-ease);
+}
+.phase-site .mz-stage-receipt[data-on="true"] {
+  opacity: 1;
+  transform: none;
+}
+.phase-site .mz-stage-receipt[data-done="true"] {
+  opacity: 0;
+  transform: scale(0.94) translateY(-0.6em);
+}
+.phase-site .mz-stage-receipt strong {
+  font-size: 0.85em;
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-stage-receipt i {
+  display: block;
+  block-size: 0.5em;
+  border-radius: 999px;
+  background: #e9e3cf;
+}
+.phase-site .mz-stage-receipt i:nth-of-type(2) {
+  inline-size: 70%;
+}
+.phase-site .mz-stage-receipt i:nth-of-type(3) {
+  inline-size: 45%;
+}
+.phase-site .mz-stage-receipt span {
+  justify-self: end;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.phase-site .mz-stage-receipt[data-scan="true"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 0;
+  block-size: 2px;
+  background: var(--mz-mint);
+  box-shadow: 0 0 14px 2px var(--mz-mint);
+  animation: mz-stage-scan 1.3s ease-in-out both;
+}
+.phase-site .mz-stage-expense {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 0.9em 1.1em;
+}
+.phase-site .mz-stage-expense-main,
+.phase-site .mz-stage-expense-amount {
+  display: grid;
+  gap: 0.2em;
+}
+.phase-site .mz-stage-expense-main small {
+  color: var(--mz-muted-light);
+}
+.phase-site .mz-stage-expense-amount {
+  justify-items: end;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.phase-site .mz-stage-expense-amount em {
+  font-style: normal;
+  font-size: 0.85em;
+  font-weight: 700;
+  padding: 0.15em 0.7em;
+  border-radius: 999px;
+  background: #e3f1e9;
+  color: var(--mz-emerald-deep);
+}
+.phase-site .mz-stage-vat {
+  display: grid;
+  gap: 0.2em;
+  padding: 1em 1.2em;
+  background: var(--mz-ink);
+  border-color: var(--mz-ink);
+  color: #fff;
+}
+.phase-site .mz-stage-vat strong {
+  font-size: 2em;
+  line-height: 1.1;
+  color: var(--mz-mint);
+  font-variant-numeric: tabular-nums;
+  text-align: start;
+}
+.phase-site .mz-stage-vat small {
+  color: #c9dbd1;
+}
+
+/* Hero copy and layout around the stage */
+.phase-site .mz-hero-visual {
+  margin-block-start: clamp(32px, 4.6vw, 60px);
+}
+.phase-site .mz-hero-cta {
+  row-gap: 14px;
+}
+
+@keyframes mz-stage-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes mz-stage-nav-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--mz-stage-dir, 1) * -0.8em));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mz-stage-type-ltr {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes mz-stage-type-rtl {
+  from {
+    clip-path: inset(0 0 0 100%);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes mz-stage-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes mz-stage-scan {
+  0% {
+    inset-block-start: 0;
+    opacity: 0;
+  }
+  10%,
+  90% {
+    opacity: 1;
+  }
+  100% {
+    inset-block-start: calc(100% - 2px);
+    opacity: 0;
+  }
+}
+
+/* Static final frame: everything visible, nothing moving. */
+.phase-site .mz-stage[data-animated="false"] .mz-stage-inner,
+.phase-site .mz-stage[data-animated="false"] .mz-stage-inner * {
+  animation: none;
+  transition: none;
+}
+.phase-site .mz-stage[data-animated="false"] .mz-stage-receipt {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-site .mz-stage-inner,
+  .phase-site .mz-stage-inner *,
+  .phase-site .mz-stage-inner *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

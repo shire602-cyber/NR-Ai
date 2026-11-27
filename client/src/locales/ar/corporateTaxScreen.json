@@ -1,0 +1,14 @@
+{
+  "corporateTaxScreen.returnsPaused": "تحميل إقرارات ضريبة الشركات متوقف مؤقتًا.",
+  "corporateTaxScreen.returnsLoadError": "تعذّر تحميل إقرارات ضريبة الشركات.",
+  "corporateTaxScreen.returnsRefreshError": "تعذّر تحديث إقرارات ضريبة الشركات. المعروض من آخر تحميل ناجح.",
+  "corporateTaxScreen.yearEndLoadError": "تعذّر تحميل بعض بيانات نهاية السنة. القوائم أدناه قد تكون غير مكتملة.",
+  "corporateTaxScreen.yearEndRefreshError": "تعذّر تحديث بعض بيانات نهاية السنة. المعروض من آخر تحميل ناجح.",
+  "corporateTaxScreen.yearEndPaused": "تحميل بيانات نهاية السنة متوقف مؤقتًا.",
+  "corporateTaxScreen.emptyPeriod": "لم يتم العثور على قيود يومية مرحّلة لهذه الفترة، لذا فإن الأرقام أدناه صفر لعدم وجود ما يُحتسب، وليس لأن الضريبة المستحقة صفر. تحقق من تواريخ الفترة أو أدخل بنود ورقة العمل يدويًا.",
+  "corporateTaxScreen.taxableAmountAboveThreshold": "المبلغ الخاضع للضريبة (فوق الحد)",
+  "corporateTaxScreen.basedOnEntries": "بناءً على {count} قيد يومية مرحّل في الفترة المحددة.",
+  "corporateTaxScreen.basedOnManual": "بناءً على بنود ورقة عمل ضريبة الشركات اليدوية أعلاه.",
+  "corporateTaxScreen.notesOptional": "ملاحظات (اختياري)",
+  "corporateTaxScreen.saveAsDraft": "حفظ كمسودة"
+}

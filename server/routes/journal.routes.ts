@@ -69,6 +69,7 @@ import { assertRetentionExpired } from "../services/retention.service";
 import { inspectUpload } from "../services/upload-guard";
 import { readReceiptImage, saveReceiptFile } from "../services/fileStorage";
 import { buildManualJournalLines } from "../services/journal-lines.service";
+import { assertPeriodNotLocked } from "../services/period-lock.service";
 
 const log = createLogger("journal");
 
@@ -303,9 +304,13 @@ export function registerJournalRoutes(app: Express) {
       });
       const adjustmentReason = control.length ? (body.controlAdjustment?.reason ?? null) : null;
       const requested = body.status ?? "draft";
+      const accountingDate =
+        (await assertPeriodNotLocked(companyId, body.date, { storesBusinessDate: true })) ??
+        { date: new Date(body.date) };
+      const entryDate = accountingDate.date;
       const input = {
         companyId,
-        date: body.date,
+        date: entryDate,
         memo: memoOf(body),
         reference: body.reference ?? null,
         source: "manual",
@@ -497,10 +502,14 @@ export function registerJournalRoutes(app: Express) {
         req,
         controlAdjustment: reason ? { reason, role } : null,
       };
+      const accountingDate =
+        (await assertPeriodNotLocked(entry.companyId, body.date, { storesBusinessDate: true })) ??
+        { date: new Date(body.date) };
+      const entryDate = accountingDate.date;
       let result = await updateDraftEntry(
         entry.id,
         {
-          date: body.date,
+          date: entryDate,
           memo: memoOf(body),
           reference: body.reference ?? null,
           autoReverseOn: body.autoReverseOn ?? null,
@@ -603,9 +612,15 @@ export function registerJournalRoutes(app: Express) {
       const body: ReverseJournalBody = reverseJournalBody.parse(req.body);
       // B1 (NH2): a document's journal is undone through the document, not here.
       assertUserReversible(entry);
+      const reversalAccountingDate = await assertPeriodNotLocked(
+        entry.companyId,
+        body.date ?? new Date(),
+        { storesBusinessDate: true }
+      );
+      const now = reversalAccountingDate!.date;
       const r = await reverseEntry(
         entry.id,
-        { date: body.date ?? null, reason: body.reason ?? null },
+        { date: body.date ? now : null, reason: body.reason ?? null },
         { actorId: userIdOf(req), companyId: entry.companyId, req }
       );
       log.info({ id: entry.id, reversalEntryId: r.reversal.id }, "Entry reversed");

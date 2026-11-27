@@ -38,7 +38,11 @@ BEGIN
         AND entry_number LIKE prefix || '-%'
         AND entry_number ~ ('^' || prefix || '-[0-9]+$');
     UPDATE journal_entries
-      SET entry_number = prefix || '-' || LPAD(new_seq::text, 3, '0')
+      SET entry_number = prefix || '-' || (
+        CASE WHEN length(new_seq::text) >= 3
+             THEN new_seq::text
+             ELSE LPAD(new_seq::text, 3, '0')
+        END)
       WHERE id = dup.id;
   END LOOP;
 END

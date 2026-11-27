@@ -33,6 +33,7 @@ export interface ChaseInvoice {
   chaseLevel?: number;
   lastChasedAt?: Date | string | null;
   doNotChase?: boolean;
+  invoiceType?: string | null;
 }
 
 export interface ChasePayment {
@@ -79,7 +80,8 @@ const LEVEL_THRESHOLDS: Array<{ minDays: number; level: ChaseLevel }> = [
   { minDays: 1, level: 1 },
 ];
 
-const TERMINAL_INVOICE_STATUSES = new Set(["paid", "void", "cancelled"]);
+/** Only issued, unpaid invoices are chased (matches the dunning scan and send-reminder). */
+const CHASEABLE_INVOICE_STATUSES = new Set(["sent", "posted", "partial"]);
 
 // ─── Aging ───────────────────────────────────────────────────────────────────
 
@@ -149,15 +151,15 @@ export function buildAgingRow(
 /**
  * Filter to invoices that should appear in the chasing dashboard. An invoice
  * is "overdue and chaseable" when:
- *   - status is sent or partial (not draft, paid, void)
+ *   - status is sent or partial (only sent, posted or partial: never draft, paid, void or cancelled)
  *   - dueDate is in the past
  *   - outstanding > 0
  *   - doNotChase is not set
  */
 export function isOverdueAndChaseable(row: ChaseAgingRow): boolean {
   const inv = row.invoice;
-  if (TERMINAL_INVOICE_STATUSES.has(inv.status)) return false;
-  if (inv.status === "draft") return false;
+  if (!CHASEABLE_INVOICE_STATUSES.has(inv.status)) return false;
+  if (inv.invoiceType === "credit_note") return false;
   if (inv.doNotChase) return false;
   if (row.outstanding <= 0) return false;
   if (row.daysOverdue <= 0) return false;

@@ -82,6 +82,47 @@ async function renderTab(tabModule: string, extra: Record<string, unknown>) {
       selectedCompanyId: "c-1",
       dateRange: { from: new Date("2026-11-01T00:00:00"), to: new Date("2026-11-19T00:00:00") },
       reportSectionClass: (_ids: string[], base?: string) => base ?? "",
+      reportLoadErrors: { pl: null, bs: null, vat: null, tb: null },
+      secondaryLoadErrors: {
+        cashFlowStatement: null,
+        agingReport: null,
+        vendorBills: null,
+        advancedPeriodComparison: null,
+        vatReturns: null,
+        invoices: null,
+        receipts: null,
+        bankTransactions: null,
+        expenseClaims: null,
+        payrollRuns: null,
+        journalEntries: null,
+        activityLogs: null,
+        budgetPlans: null,
+        fixedAssets: null,
+        inventoryProducts: null,
+        inventoryMovements: null,
+        costCenterProfitability: null,
+        billAgingReport: null,
+        fxGainsLosses: null,
+        corporateTaxEstimate: null,
+        salesProductServiceReport: null,
+        overdueReport: null,
+        expenseClaimSummary: null,
+        monthEndCloseStatus: null,
+        varianceReport: null,
+        cashFlowForecast: null,
+        balanceSummaries: null,
+        fixedAssetSummary: null,
+        comparisonProfitLoss: null,
+        comparisonBalanceSheet: null,
+        comparisonVat: null,
+        comparisonSalesProductService: null,
+        comparisonCostCenter: null,
+        comparisonCorporateTax: null,
+        consolidatedStatements: null,
+      },
+      trialBalance: undefined,
+      trialBalanceSummary: undefined,
+      tbFetchStatus: "idle" as const,
       ...extra,
     } as Record<string, unknown>,
     {
@@ -110,6 +151,32 @@ const account = (over: Record<string, unknown> = {}) => ({
 });
 
 describe("Reports in Arabic: no English UI text", () => {
+  it.each([
+    ["ProfitLossTab", "pl", "report-pl-load-error"],
+    ["BalanceSheetTab", "bs", "report-bs-load-error"],
+    ["VatTab", "vat", "report-vat-load-error"],
+  ])(
+    "%s: a failed fetch is an Arabic error with retry, not a zero statement",
+    async (tab, key, id) => {
+      const retry = vi.fn();
+      await renderTab(tab, {
+        reportLoadErrors: {
+          pl: null,
+          bs: null,
+          vat: null,
+          [key]: { error: new Error("x"), retry },
+        },
+      });
+      expect(container.querySelector(`[data-testid="${id}"]`)).not.toBeNull();
+      expect(englishLines()).toEqual([]);
+      expect(container.textContent).toContain("أعد المحاولة");
+      expect(container.textContent).not.toMatch(/0\.00|٠٫٠٠/);
+      const button = container.querySelector(`[data-testid="${id}"] button`) as HTMLButtonElement;
+      await act(async () => button.click());
+      expect(retry).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it("VAT summary", async () => {
     await renderTab("VatTab", {
       dateRange: { from: undefined, to: undefined },

@@ -3,7 +3,8 @@
  * D1: public site (landing, pricing, auth, legal) on the shared marketing shell.
  * Behaviour tests: render the real pages in jsdom and check what a visitor gets:
  * per-route SEO meta, a complete Arabic rendering, honest VAT copy, consistent
- * sample figures, and a light/dark theme that does not leak into the app.
+ * sample figures, one header and footer on every public page, and a light-only public site that
+ * leaves the saved app theme alone.
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -160,11 +161,11 @@ describe("D1 public site", () => {
       await import("../../client/src/components/marketing/phase/PhaseSite");
     await act(async () => root.render(createElement(PhaseSite)));
     const h1 = container.querySelector("h1");
-    expect(h1?.textContent).toBe("Accounting and VAT for UAE businesses");
+    expect(h1?.textContent).toBe("Your books. Your VAT. Your e-invoices. Done.");
     expect(document.title).toContain(h1?.textContent);
     expect(
       document.head.querySelector('meta[name="description"]')?.getAttribute("content")
-    ).toContain("Send bilingual invoices");
+    ).toContain("Bilingual tax invoices, AI receipt capture");
     // Primary CTAs keep their routes.
     const register = container.querySelector('[data-testid="button-hero-start"]');
     expect(register?.getAttribute("href")).toBe("/register?step=account");
@@ -172,6 +173,32 @@ describe("D1 public site", () => {
       "/en/book-demo"
     );
     expect(container.textContent).toContain("then submit it in EmaraTax.");
+    // Every homepage section is present, under its own stable anchor.
+    for (const id of [
+      "announcement",
+      "hero",
+      "e-invoicing-deadlines",
+      "tour",
+      "savings",
+      "switch",
+      "features",
+      "firms",
+      "trust",
+      "migration",
+      "pricing",
+      "faq",
+      "final-cta",
+    ]) {
+      expect(
+        container.querySelector(`section#${id}[data-testid="section-${id}"]`),
+        id
+      ).not.toBeNull();
+    }
+    // The competitor comparison lives on the /compare pages, not on the homepage.
+    expect(container.querySelector('[data-testid="section-compare"]')).toBeNull();
+    // No provider is named; the e-invoicing answer says it is built in and included.
+    expect(container.textContent).not.toMatch(/A-?Cube|Complyance/i);
+    expect(container.textContent).toContain("accredited service provider, built into");
     expect(container.textContent).toContain("Upload a CSV exported from your bank");
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(container.textContent ?? "", String(claim)).not.toMatch(claim);
@@ -195,15 +222,24 @@ describe("D1 public site", () => {
     window.history.replaceState(null, "", "/ar");
     try {
       await act(async () => root.render(createElement(PhaseRoot)));
-      const title = "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات";
+      const title = "دفاترك. ضريبتك. فواتيرك الإلكترونية. كلها منجزة.";
       expect(container.querySelector("h1")?.textContent).toBe(title);
       expect(document.title).toContain(title);
       expect(container.querySelector('.phase-site[lang="ar"][dir="rtl"]')).not.toBeNull();
-      expect(container.querySelector(".phase-hero img")?.getAttribute("src")).toBe(
-        "/product/dashboard-ar.webp"
-      );
+      // The hero stage is lazy-loaded; wait for the live stage to replace its placeholder.
+      for (let i = 0; i < 30 && !container.querySelector('[data-testid="hero-stage"]'); i++) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      }
+      const stage = container.querySelector('.mz-hero [data-testid="hero-stage"]');
+      expect(stage?.getAttribute("role")).toBe("img");
+      expect(stage?.getAttribute("aria-label")).toMatch(/[؀-ۿ]{3}/);
+      expect(stage?.textContent).toContain("بيانات تجريبية");
+      expect(container.querySelector(".mz-hero img")).toBeNull();
       expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
-      expect(container.textContent).toContain("اختر مزوّد خدمة معتمدًا واحدًا لكل شركة");
+      expect(container.textContent).toContain("عبر مزوّد خدمة معتمد مدمج في");
+      expect(container.textContent).not.toMatch(/A-?Cube|Complyance|أكيوب|كومبلاينس/i);
       expect(container.textContent).toContain("ارفع كشف حسابك البنكي بصيغة CSV");
       expect(container.querySelector('a[href="/ar/migration-guides/zoho"] bdi')?.textContent).toBe(
         "Zoho Books"
@@ -232,40 +268,169 @@ describe("D1 public site", () => {
     expect(arabicModeEnglishLines()).toEqual([]);
   });
 
-  it("[D1b] public pages use the app's one theme system (light / dark / system)", async () => {
-    await render("MuhasibLanding");
+  it("public pages are light only and hand the saved theme back to the app", async () => {
     const html = document.documentElement;
-    expect(html.classList.contains("dark")).toBe(false);
-    const choose = async (option: "light" | "dark" | "system") => {
-      const trigger = container.querySelector<HTMLButtonElement>(
-        '[data-testid="button-theme-toggle"]'
-      );
-      expect(trigger, "the shared ThemeToggle is in the marketing header").not.toBeNull();
-      await act(async () => {
-        trigger!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-      });
-      const item = document.querySelector<HTMLElement>(`[data-testid="theme-option-${option}"]`);
-      expect(item, `menu offers ${option}`).not.toBeNull();
-      await act(async () => item!.click());
-    };
-    await choose("dark");
+    const { setThemePreference } = await import("../../client/src/lib/theme");
+    act(() => setThemePreference("dark"));
     expect(html.classList.contains("dark")).toBe(true);
-    expect(window.localStorage.getItem("muhasib-theme")).toBe("dark");
-    await choose("system");
-    expect(window.localStorage.getItem("muhasib-theme")).toBe("system");
-    await choose("dark");
+
+    for (const page of ["PrivacyPolicy", "ForgotPassword", "HelpCenter"] as const) {
+      await render(page);
+      // One look for the public site: the homepage system has no dark variant and no switch.
+      expect(html.classList.contains("dark"), page).toBe(false);
+      expect(container.querySelector('[data-testid="button-theme-toggle"]'), page).toBeNull();
+      // The preference itself is untouched, and the app gets it back when the page goes away.
+      expect(window.localStorage.getItem("muhasib-theme")).toBe("dark");
+      act(() => root.unmount());
+      root = createRoot(container);
+      expect(html.classList.contains("dark"), page).toBe(true);
+    }
+
+    const { default: PhaseSite } =
+      await import("../../client/src/components/marketing/phase/PhaseSite");
+    await act(async () => root.render(createElement(PhaseSite)));
+    expect(html.classList.contains("dark")).toBe(false);
     act(() => root.unmount());
     root = createRoot(container);
-    // One system: leaving the public site keeps the visitor's choice for the app too.
     expect(html.classList.contains("dark")).toBe(true);
-    const { useTheme } = await import("../../client/src/lib/theme");
-    expect(typeof useTheme).toBe("function");
-    await act(async () => {
-      const { setThemePreference } = await import("../../client/src/lib/theme");
-      setThemePreference("light");
-    });
+    act(() => setThemePreference("light"));
     expect(html.classList.contains("dark")).toBe(false);
   });
+
+  /** The shared header and footer of a page that has one URL for both languages. */
+  async function expectSharedChrome(locale: "en" | "ar") {
+    const { metaText } = await import("../../client/src/components/marketing/phase/meta-text");
+    const base = `/${locale}`;
+    const direction = locale === "ar" ? "rtl" : "ltr";
+    expect(container.querySelectorAll("header.phase-header").length).toBe(1);
+    const header = container.querySelector("header.phase-header")!;
+    expect(container.querySelector(".mk-header, .mk-footer")).toBeNull();
+    expect(header.closest(".phase-site")?.getAttribute("dir")).toBe(direction);
+    // Same destinations as the homepage header.
+    expect(header.querySelector(".phase-brand")?.getAttribute("href")).toBe(base);
+    const nav = header.querySelector("nav.phase-desktop");
+    expect(nav?.getAttribute("aria-label")).toBe(metaText(locale, "hxNavMain"));
+    for (const path of ["/product", "/services", "/tools", "/resources", "/pricing"]) {
+      expect(nav?.querySelector(`a[href="${base}${path}"]`), path).not.toBeNull();
+    }
+    expect(header.querySelector('a.phase-primary[href="/register?step=account"]')).not.toBeNull();
+    // One URL for both languages: the switch changes the language in place.
+    expect(container.querySelectorAll('[data-testid="button-language-toggle"]').length).toBe(1);
+    expect(header.querySelector('[data-testid="button-language-toggle"]')?.textContent).toBe(
+      locale === "ar" ? "EN" : "العربية"
+    );
+    expect(container.querySelectorAll("footer").length).toBe(1);
+    const footer = container.querySelector("footer.mz-foot")!;
+    expect(footer.closest(".phase-site")?.getAttribute("dir")).toBe(direction);
+    expect(footer.querySelector(`nav.mz-foot-nav a[href="${base}/about"]`)).not.toBeNull();
+    expect(footer.querySelector('nav.mz-foot-nav a[href="/privacy"]')).not.toBeNull();
+  }
+
+  it.each(["en", "ar"] as const)(
+    "the real /login route carries the shared header and footer in %s",
+    async (locale) => {
+      const originalUrl = window.location.href;
+      const { useI18n, t } = await import("../../client/src/lib/i18n");
+      const { queryClient } = await import("../../client/src/lib/queryClient");
+      try {
+        window.history.replaceState(null, "", "/login");
+        await setLocale(locale);
+        // Signed out: the session check fails, so the sign-in form stays.
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async () => Response.json({}, { status: 401 }))
+        );
+        vi.stubGlobal(
+          "matchMedia",
+          vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} }))
+        );
+        const [{ default: PublicApp }] = await Promise.all([
+          import("../../client/src/PublicApp"),
+          import("../../client/src/pages/Login"),
+          import("../../client/src/components/marketing/PublicProviders"),
+        ]);
+        await act(async () => root.render(createElement(PublicApp)));
+        await vi.waitFor(
+          async () => {
+            await act(async () => {});
+            expect(container.querySelector('[data-testid="input-password"]')).not.toBeNull();
+          },
+          { timeout: 4000 }
+        );
+        await expectSharedChrome(locale);
+        const main = container.querySelector("main#main-content");
+        expect(container.querySelectorAll("main").length).toBe(1);
+        expect(container.querySelector("a.phase-skip")?.getAttribute("href")).toBe("#main-content");
+        for (const id of ["input-email", "button-login", "input-password"]) {
+          expect(main?.querySelector(`[data-testid="${id}"]`), id).not.toBeNull();
+        }
+        expect(main?.textContent).not.toContain(t[locale]["marketing.authFooter"]);
+        expect(container.textContent).toContain(t[locale]["marketing.authFooter"]);
+        if (locale === "ar") expect(arabicModeEnglishLines()).toEqual([]);
+
+        // Switching language keeps the visitor on /login, with what they have typed.
+        const email = main!.querySelector<HTMLInputElement>('[data-testid="input-email"]')!;
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+            email,
+            "owner@example.com"
+          );
+          email.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        const other = locale === "ar" ? "en" : "ar";
+        await act(async () =>
+          container
+            .querySelector<HTMLButtonElement>('[data-testid="button-language-toggle"]')!
+            .click()
+        );
+        await vi.waitFor(async () => {
+          await act(async () => {});
+          expect(useI18n.getState().locale).toBe(other);
+          expect(document.documentElement.dir).toBe(other === "ar" ? "rtl" : "ltr");
+        });
+        await expectSharedChrome(other);
+        expect(window.location.pathname).toBe("/login");
+        expect(
+          container.querySelector<HTMLInputElement>('[data-testid="input-email"]')?.value
+        ).toBe("owner@example.com");
+      } finally {
+        act(() => root.render(null));
+        queryClient.clear();
+        vi.unstubAllGlobals();
+        window.history.replaceState(null, "", originalUrl);
+      }
+    },
+    15000
+  );
+
+  it.each([
+    ["en", "/en"],
+    ["ar", "/ar"],
+  ] as const)(
+    "legal, help and 404 pages carry the homepage header and footer in %s",
+    async (locale) => {
+      await setLocale(locale);
+      const { default: PublicNotFound } = await import("../../client/src/pages/PublicNotFound");
+      const pages = [
+        (await PAGES.PrivacyPolicy()).default,
+        (await PAGES.HelpCenter()).default,
+        PublicNotFound,
+      ];
+      for (const page of pages) {
+        act(() => root.unmount());
+        root = createRoot(container);
+        await act(async () => root.render(createElement(page)));
+        await expectSharedChrome(locale);
+        expect(container.textContent).not.toMatch(/A-?Cube|Complyance|أكيوب|كومبلاينس|ZATCA/i);
+      }
+      const toggle = container.querySelector<HTMLButtonElement>(
+        '[data-testid="button-language-toggle"]'
+      )!;
+      await act(async () => toggle.click());
+      const { useI18n } = await import("../../client/src/lib/i18n");
+      expect(useI18n.getState().locale).toBe(locale === "ar" ? "en" : "ar");
+    }
+  );
 
   it("[D1b] help, trust, migration, demo and services render without English body copy in Arabic", async () => {
     await setLocale("ar");
@@ -282,6 +447,22 @@ describe("D1 public site", () => {
       expect(arabicModeEnglishLines(), page).toEqual([]);
     }
   });
+
+  it.each(["en", "ar"] as const)(
+    "[help] the review request mailto subject follows the %s locale",
+    async (locale) => {
+      await setLocale(locale);
+      await render("HelpCenter");
+      const { t } = await import("../../client/src/lib/i18n");
+      const link = [...container.querySelectorAll<HTMLAnchorElement>('a[href^="mailto:"]')].find(
+        (a) => a.getAttribute("href")!.includes("subject=")
+      );
+      expect(link).toBeDefined();
+      const subject = new URL(link!.getAttribute("href")!).searchParams.get("subject");
+      expect(subject).toBe(t[locale]["marketing.helpReviewMailSubject"]);
+      if (locale === "ar") expect(subject).not.toBe("Migration review");
+    }
+  );
 
   it("[D1b] the product preview shows the post-D2 dashboard strip with shared money and status components", async () => {
     await render("MuhasibLanding");
@@ -314,15 +495,24 @@ describe("D1 public site", () => {
   });
 
   it.each([
-    ["en", "read-only", "A-Cube or Complyance"],
-    ["ar", "للقراءة فقط", "A-Cube أو Complyance"],
+    [
+      "en",
+      "read-only",
+      "UAE e-invoicing is built in and included on every plan, delivered through an accredited service provider.",
+    ],
+    [
+      "ar",
+      "للقراءة فقط",
+      "الفوترة الإلكترونية في الإمارات مدمجة ومشمولة في كل باقة، وتتم عبر مزوّد خدمة معتمد.",
+    ],
   ] as const)(
-    "explains trial expiry and provider choice in %s pricing",
-    async (locale, lock, providers) => {
+    "explains trial expiry and included e-invoicing in %s pricing",
+    async (locale, lock, einvoicing) => {
       await setLocale(locale);
       await render("Pricing");
       expect(container.textContent).toContain(lock);
-      expect(container.textContent).toContain(providers);
+      expect(container.textContent).toContain(einvoicing);
+      expect(container.textContent).not.toMatch(/A-?Cube|Complyance/i);
     }
   );
 });

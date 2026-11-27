@@ -27,6 +27,7 @@ import {
   Search,
   Download,
   BookCheck,
+  WifiOff,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { TableSkeleton, StatCardSkeleton } from "@/components/ui/loading-skeletons";
 import {
   Table,
@@ -88,12 +90,13 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
+import { matchesAssetSearch } from "@/lib/fixed-asset-search";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { accountDisplayName } from "@/lib/account-name";
 import { parseCalendarDate } from "@/lib/format-date";
@@ -236,15 +239,31 @@ export default function FixedAssets() {
 
   // ─── Queries ────────────────────────────────────────────
 
-  const { data: assets = [], isLoading: isLoadingAssets } = useQuery<FixedAsset[]>({
-    queryKey: [`/api/companies/${companyId}/fixed-assets`],
-    enabled: !!companyId,
-  });
+  const assetsKey = [`/api/companies/${companyId}/fixed-assets`];
+  const summaryKey = [`/api/companies/${companyId}/fixed-assets/summary`];
 
-  const { data: summary } = useQuery<AssetSummary>({
-    queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
+  const {
+    data: assetsData,
+    isLoading: isLoadingAssets,
+    isLoadingError: showAssetsError,
+    isPaused: assetsPaused,
+    refetch: refetchAssets,
+  } = useQuery<FixedAsset[]>({
+    queryKey: assetsKey,
     enabled: !!companyId,
   });
+  const assets = assetsData ?? [];
+
+  // isLoadingError: only a first load with nothing cached; a failed refresh keeps the cache.
+  const {
+    data: summary,
+    isLoadingError: summaryLoadFailed,
+    refetch: refetchSummary,
+  } = useQuery<AssetSummary>({
+    queryKey: summaryKey,
+    enabled: !!companyId,
+  });
+  const categories = summary?.byCategory ?? [];
 
   // ─── Forms ──────────────────────────────────────────────
 
@@ -302,6 +321,11 @@ export default function FixedAssets() {
       (a.code === "1010" || a.code === "1020" || /cash|bank/i.test(a.subType ?? ""))
   );
 
+  const refreshAssetReads = () => {
+    refreshAfterWrite(assetsKey);
+    refreshAfterWrite(summaryKey);
+  };
+
   const capitalizeMutation = useMutation({
     mutationFn: ({
       id,
@@ -317,7 +341,7 @@ export default function FixedAssets() {
         ...(inputVat && inputVat > 0 ? { inputVat } : {}),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
+      refreshAssetReads();
       setCapitalizeTarget(null);
       toast({ title: fa.capitalized });
     },
@@ -341,10 +365,7 @@ export default function FixedAssets() {
           : {}),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.assetCreated"),
         description: translateNow("toasts.theFixedAssetHasBeenAddedSuccessfully"),
@@ -367,10 +388,7 @@ export default function FixedAssets() {
       return apiRequest("PATCH", `/api/fixed-assets/${id}`, rest);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.assetUpdated"),
         description: translateNow("toasts.theFixedAssetHasBeenUpdatedSuccessfully"),
@@ -391,10 +409,7 @@ export default function FixedAssets() {
   const deleteAssetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/fixed-assets/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.assetDeleted"),
         description: translateNow("toasts.theFixedAssetHasBeenDeleted"),
@@ -415,10 +430,7 @@ export default function FixedAssets() {
     onSuccess: (data: any) => {
       setDepRunDialogOpen(false);
       setDepAsset(null);
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.depreciationRecorded"),
         description: formatMessage(translateNow("toasts.monthlyDepreciationRecorded"), {
@@ -447,10 +459,7 @@ export default function FixedAssets() {
         notes: data.notes || null,
       }),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       const glType = data.gainLossType === "gain" ? "Gain" : "Loss";
       toast({
         title: translateNow("toasts.assetDisposed"),
@@ -476,10 +485,7 @@ export default function FixedAssets() {
     mutationFn: (data: DepreciationRunData) =>
       apiRequest("POST", `/api/companies/${companyId}/fixed-assets/run-depreciation`, data),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
-      });
+      refreshAssetReads();
       toast({
         title: translateNow("toasts.batchDepreciationComplete"),
         description: formatMessage(translateNow("toasts.processedAssetsFor"), {
@@ -609,17 +615,12 @@ export default function FixedAssets() {
     }
   };
 
-  const filteredAssets = assets.filter((asset) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      asset.asset_name.toLowerCase().includes(q) ||
-      asset.category.toLowerCase().includes(q) ||
-      (asset.asset_number && asset.asset_number.toLowerCase().includes(q)) ||
-      (asset.serial_number && asset.serial_number.toLowerCase().includes(q)) ||
-      (asset.asset_name_ar && asset.asset_name_ar.includes(q))
-    );
-  });
+  const filteredAssets = assets.filter((asset) =>
+    matchesAssetSearch(asset, searchQuery, t[`forms.asset.cat.${asset.category}`])
+  );
+  const hasSearch = searchQuery.trim().length > 0;
+  // Offline before the first fetch: the register is unknown, not empty.
+  const showAssetsOffline = assetsPaused && assetsData === undefined;
 
   // ─── Loading State ─────────────────────────────────────
 
@@ -684,6 +685,18 @@ export default function FixedAssets() {
         }
       />
 
+      {summaryLoadFailed && (
+        <Card>
+          <ErrorState
+            compact
+            title={t["screens.assetSummaryErrorTitle"]}
+            description={t["screens.assetSummaryErrorBody"]}
+            onRetry={() => void refetchSummary()}
+            testId="error-state-fixed-assets-summary"
+          />
+        </Card>
+      )}
+
       {/* Spec 2.6: no KPI row of zeros before the first asset exists. */}
       {summary && assets.length > 0 && (
         <div className="mobile-keep-cols grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -716,7 +729,7 @@ export default function FixedAssets() {
 
       {/* Assets */}
       <section className="space-y-3">
-        {(assets.length > 0 || searchQuery) && (
+        {!showAssetsError && !showAssetsOffline && (assets.length > 0 || searchQuery) && (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="relative w-full sm:w-80">
               <Search
@@ -737,32 +750,53 @@ export default function FixedAssets() {
           </div>
         )}
         <DataTableCard
-          status={isLoadingAssets ? "loading" : filteredAssets.length === 0 ? "empty" : "ready"}
+          status={
+            isLoadingAssets
+              ? "loading"
+              : showAssetsError
+                ? "error"
+                : showAssetsOffline || filteredAssets.length === 0
+                  ? "empty"
+                  : "ready"
+          }
+          error={{
+            title: t["common.loadFailedTitle"],
+            description: t["common.loadFailedBody"],
+            onRetry: () => void refetchAssets(),
+            testId: "error-state-fixed-assets",
+          }}
           columnLabels={[t["pageLabels.assetName"], t["screens.cost"], t["screens.nbv"], t.status]}
           empty={
-            searchQuery
+            showAssetsOffline
               ? {
-                  icon: Building2,
-                  title: t["screens.noMatchingAssets"],
-                  description: t["screens.noMatchingAssetsBody"],
-                  action: {
-                    label: t["screens.clearSearch"],
-                    onClick: () => setSearchQuery(""),
-                    variant: "outline",
-                  },
-                  testId: "empty-state-fixed-assets-search",
+                  icon: WifiOff,
+                  title: t["screens.assetsOfflineTitle"],
+                  description: t["screens.assetsOfflineBody"],
+                  testId: "offline-state-fixed-assets",
                 }
-              : {
-                  icon: Building2,
-                  title: t["screens.noFixedAssets"],
-                  description: t["screens.noFixedAssetsBody"],
-                  action: {
-                    label: t["pageLabels.addAsset"],
-                    icon: Plus,
-                    onClick: handleOpenCreateDialog,
-                  },
-                  testId: "empty-state-fixed-assets",
-                }
+              : hasSearch
+                ? {
+                    icon: Building2,
+                    title: t["screens.noMatchingAssets"],
+                    description: t["screens.noMatchingAssetsBody"],
+                    action: {
+                      label: t["screens.clearSearch"],
+                      onClick: () => setSearchQuery(""),
+                      variant: "outline",
+                    },
+                    testId: "empty-state-fixed-assets-search",
+                  }
+                : {
+                    icon: Building2,
+                    title: t["screens.noFixedAssets"],
+                    description: t["screens.noFixedAssetsBody"],
+                    action: {
+                      label: t["pageLabels.addAsset"],
+                      icon: Plus,
+                      onClick: handleOpenCreateDialog,
+                    },
+                    testId: "empty-state-fixed-assets",
+                  }
           }
         >
           <Table className="row-cards">
@@ -915,7 +949,7 @@ export default function FixedAssets() {
       </section>
 
       {/* Category breakdown */}
-      {summary && summary.byCategory.length > 0 && (
+      {categories.length > 0 && (
         <SectionCard title={t["pageLabels.assetCategoryBreakdown"]} flush>
           <Table className="mobile-fit">
             <TableHeader>
@@ -938,7 +972,7 @@ export default function FixedAssets() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {summary.byCategory.map((cat) => (
+              {categories.map((cat) => (
                 <TableRow key={cat.category}>
                   <TableCell className="font-medium">
                     {t[`forms.asset.cat.${cat.category}`] || cat.category}

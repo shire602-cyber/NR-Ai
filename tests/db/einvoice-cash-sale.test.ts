@@ -36,18 +36,21 @@ describe("UAE PINT AE cash sales", () => {
 
     const { drainDomainEvents } = await import("../../server/platform/domain-events");
     await drainDomainEvents();
+    const eventKeys = [
+      `invoice.issued:${sale.body.id}`,
+      `invoice.paid:${sale.body.id}`,
+      `payment.received:${sale.body.payment.id}`,
+    ];
     const signals = await h.sql<{ user_id: string; event_key: string }>(
       "SELECT user_id, event_key FROM notifications WHERE company_id = $1 AND event_key = ANY($2::text[])",
-      [
-        tenant.company.id,
-        [
-          `invoice.issued:${sale.body.id}`,
-          `invoice.paid:${sale.body.id}`,
-          `payment.received:${sale.body.payment.id}`,
-        ],
-      ]
+      [tenant.company.id, eventKeys]
     );
-    expect(signals.map(({ user_id }) => user_id)).toEqual(Array(3).fill(colleague.user.id));
+    expect(signals).toHaveLength(eventKeys.length);
+    expect([...signals].sort((a, b) => a.event_key.localeCompare(b.event_key))).toEqual(
+      eventKeys
+        .map((event_key) => ({ user_id: colleague.user.id, event_key }))
+        .sort((a, b) => a.event_key.localeCompare(b.event_key))
+    );
 
     const invoice = `/api/invoices/${sale.body.id}`;
     const validation = await tenant.as.get(`${invoice}/einvoice/validate`);

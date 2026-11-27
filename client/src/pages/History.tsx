@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { ActivityFeedRow } from "@/components/ui/activity-feed-row";
 import {
   activityActionLabel,
   activityDescription,
@@ -260,87 +261,77 @@ export default function History() {
               const changes = metadataChanges(log.metadata);
               const created = log.createdAt ? new Date(log.createdAt) : null;
               return (
-                <li
+                <ActivityFeedRow
                   key={log.id}
-                  className="flex items-start gap-3 px-4 py-3 sm:px-5"
-                  data-testid={`row-history-${log.id}`}
-                >
-                  <span
-                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface-sunken text-muted-foreground"
-                    aria-hidden
-                  >
-                    {getEntityIcon(log.entityType)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-body text-foreground">
-                      {sentence || activityActionLabel(t, log.action)}
-                    </p>
-                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-caption text-muted-foreground">
-                      <span>{activityEntityLabel(t, log.entityType)}</span>
-                      <span aria-hidden>·</span>
-                      <span>{activityActionLabel(t, log.action)}</span>
-                      {changes ? (
-                        <>
-                          <span aria-hidden>·</span>
-                          <span className="truncate">{changes}</span>
-                        </>
+                  testId={`row-history-${log.id}`}
+                  icon={getEntityIcon(log.entityType)}
+                  sentence={sentence || activityActionLabel(t, log.action)}
+                  trailing={
+                    <div className="flex shrink-0 items-center gap-1">
+                      {created ? (
+                        <time
+                          dateTime={created.toISOString()}
+                          title={`${formatDate(created, locale)} ${format(created, "HH:mm")}`}
+                          className="whitespace-nowrap text-caption tabular-nums text-muted-foreground"
+                        >
+                          {relativeTime(created, locale)}
+                        </time>
                       ) : null}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {created ? (
-                      <time
-                        dateTime={created.toISOString()}
-                        title={`${formatDate(created, locale)} ${format(created, "HH:mm")}`}
-                        className="whitespace-nowrap text-caption tabular-nums text-muted-foreground"
-                      >
-                        {relativeTime(created, locale)}
-                      </time>
-                    ) : null}
-                    {log.entityId ? (
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground"
-                            aria-label={t["history.details"]}
-                            data-testid={`button-history-details-${log.id}`}
-                          >
-                            <MoreHorizontal className="h-4 w-4" aria-hidden />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent align="end" className="w-72 text-caption">
-                          <dl className="space-y-2">
-                            <div>
-                              <dt className="text-muted-foreground">{t["history.details"]}</dt>
-                              <dd className="mt-0.5 text-foreground">
-                                {withDisplayDates(activityDescription(t, log, locale), locale)}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="text-muted-foreground">{t["history.reference"]}</dt>
-                              <dd className="mt-0.5 break-all font-mono text-foreground">
-                                {log.entityId}
-                              </dd>
-                            </div>
-                            {created ? (
+                      {log.entityId ? (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground"
+                              aria-label={t["history.details"]}
+                              data-testid={`button-history-details-${log.id}`}
+                            >
+                              <MoreHorizontal className="h-4 w-4" aria-hidden />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent align="end" className="w-72 text-caption">
+                            <dl className="space-y-2">
                               <div>
-                                <dt className="text-muted-foreground">
-                                  <T k="pages.dateTime" />
-                                </dt>
-                                <dd className="mt-0.5 tabular-nums text-foreground">
-                                  {formatDate(created, locale)} {format(created, "HH:mm")}
+                                <dt className="text-muted-foreground">{t["history.details"]}</dt>
+                                <dd className="mt-0.5 text-foreground">
+                                  {withDisplayDates(activityDescription(t, log, locale), locale)}
                                 </dd>
                               </div>
-                            ) : null}
-                          </dl>
-                        </PopoverContent>
-                      </Popover>
-                    ) : null}
-                  </div>
-                </li>
+                              <div>
+                                <dt className="text-muted-foreground">{t["history.reference"]}</dt>
+                                <dd className="mt-0.5 break-all font-mono text-foreground">
+                                  {log.entityId}
+                                </dd>
+                              </div>
+                              {created ? (
+                                <div>
+                                  <dt className="text-muted-foreground">
+                                    <T k="pages.dateTime" />
+                                  </dt>
+                                  <dd className="mt-0.5 tabular-nums text-foreground">
+                                    {formatDate(created, locale)} {format(created, "HH:mm")}
+                                  </dd>
+                                </div>
+                              ) : null}
+                            </dl>
+                          </PopoverContent>
+                        </Popover>
+                      ) : null}
+                    </div>
+                  }
+                >
+                  <span>{activityEntityLabel(t, log.entityType)}</span>
+                  <span aria-hidden>·</span>
+                  <span>{activityActionLabel(t, log.action)}</span>
+                  {changes ? (
+                    <>
+                      <span aria-hidden>·</span>
+                      <span className="truncate">{changes}</span>
+                    </>
+                  ) : null}
+                </ActivityFeedRow>
               );
             })}
           </ul>

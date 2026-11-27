@@ -29,9 +29,15 @@ function readRepoFileWithCatalog(path: string): string {
   ].join("\n");
 }
 
+// The homepage sections live one per file under phase/home/ (Hero.tsx, Faq.tsx, ...).
+const homeSectionFiles = readdirSync(join(repoRoot, "client/src/components/marketing/phase/home"))
+  .filter((name) => /\.tsx?$/.test(name))
+  .map((name) => `client/src/components/marketing/phase/home/${name}`);
+
 const publicLaunchFiles = [
   "client/index.html",
   "client/src/components/marketing/phase/PhaseSite.tsx",
+  ...homeSectionFiles,
   "client/src/components/marketing/phase/content.ts",
   "client/src/components/marketing/phase/Forms.tsx",
   "client/src/components/marketing/phase/editorial/pages.ts",
@@ -145,7 +151,12 @@ describe("Public SaaS launch surface", () => {
       const banking = JSON.parse(readRepoFile(`client/src/locales/${locale}/banking.json`));
       const toasts = JSON.parse(readRepoFile(`client/src/locales/${locale}/toasts.json`));
       expect(banking).not.toHaveProperty(["banking.rulesDescription"]);
-      expect(banking["banking.rulesCreateDesc"]).toContain("CSV");
+      // The rules screen loads its copy lazily from its own catalog.
+      const rules = JSON.parse(
+        readRepoFile(`client/src/locales/${locale}/reconciliationRules.json`)
+      );
+      expect(rules, locale).not.toHaveProperty(["banking.rulesDescription"]);
+      expect(rules["banking.rulesCreateDesc"], locale).toContain("CSV");
       expect(toasts).not.toHaveProperty(["toasts.newsletterFeatureWillBeAvailableSoonConfigure"]);
     }
     expect(readRepoFile("server/services/email-intake.ts")).not.toMatch(/\bbank\s+feeds?\b/i);
@@ -256,7 +267,9 @@ describe("Public SaaS launch surface", () => {
     ];
     const files = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
       .split("\0")
-      .filter((file) => /\.(?:md|tsx?|json|mjs|cjs|js|html|txt|ya?ml|sql)$/i.test(file));
+      .filter((file) => /\.(?:md|tsx?|json|mjs|cjs|js|html|txt|ya?ml|sql)$/i.test(file))
+      // The rebuild brief and audit quote the banned phrases in order to forbid them.
+      .filter((file) => !file.startsWith("docs/site-rebuild/"));
     const matches = files.flatMap((file) => {
       const source = readRepoFile(file);
       const rules = [...claims];
@@ -363,10 +376,12 @@ describe("Public SaaS launch surface", () => {
     );
     expect(ar["marketing.trustOperatorBody"]).toContain("نجمة الرائدة للمحاسبة ومسك الدفاتر");
     expect(JSON.stringify(en)).not.toContain("Accounting LLC");
+    // The residency line is flag-gated (default off); when on it may say no more than this.
     expect(en["marketing.trustResidencyBody"]).toContain(
-      "Customer data is hosted in the United Arab Emirates."
+      "Production runs on Vercel, with the database hosted in the UAE."
     );
-    expect(ar["marketing.trustResidencyBody"]).toContain("الإمارات العربية المتحدة");
+    expect(ar["marketing.trustResidencyBody"]).toContain("Vercel");
+    expect(ar["marketing.trustResidencyBody"]).toContain("دولة الإمارات");
     expect(en["marketing.trustSupportContact"]).toContain("Sara, customer support");
     expect(ar["marketing.trustSupportContact"]).toContain("سارة");
     expect(en["marketing.svcFact1"]).toContain("Licensed since 2017");
@@ -451,6 +466,26 @@ describe("Public SaaS launch surface", () => {
     ]) {
       expect(demoSource).toContain(expectedDemoSignal);
     }
+  });
+
+  it("keeps pricing at AED 59 / 119 / 229 (monthly) and e-invoicing on every plan", () => {
+    // Prices are canonical in shared/plans.ts (read by Pricing and Subscription pages).
+    const plansSource = readRepoFile("shared/plans.ts");
+
+    // Monthly prices must match owner-approved schedule.
+    expect(plansSource).toContain("starter: 59");
+    expect(plansSource).toContain("professional: 119");
+    expect(plansSource).toContain("enterprise: 229");
+
+    // E-invoicing must be on every plan (EVERY_PLAN in marketing plans catalog).
+    const marketingPlansSource = readRepoFile("client/src/components/marketing/plans.ts");
+    expect(marketingPlansSource).toContain('"einvoice"');
+    expect(marketingPlansSource).toContain("EVERY_PLAN");
+
+    // Trial is 14 days (TRIAL_DAYS in shared/trial.ts); read-only after.
+    const trialSource = readRepoFile("shared/trial.ts");
+    expect(trialSource).toContain("TRIAL_DAYS = 14");
+    expect(plansSource).toContain("read-only");
   });
 
   const words = (...parts: string[]) => parts.join(" ");
@@ -573,7 +608,7 @@ describe("Public SaaS launch surface", () => {
     const csv = BANK_RECONCILIATION_COPY[locale];
     const faq =
       locale === "en" ? "How do I reconcile my bank statement?" : "كيف أطابق كشف حسابي البنكي؟";
-    const phase = readRepoFile("client/src/components/marketing/phase/PhaseSite.tsx");
+    const phase = readRepoFile("client/src/components/marketing/phase/home/Faq.tsx");
     const gallery = readRepoFile("client/src/dev/UiGallery.tsx");
 
     expect(marketing["marketing.faq3Q"]).toBe(faq);

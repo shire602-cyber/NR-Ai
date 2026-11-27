@@ -9,6 +9,9 @@ import { useTranslation } from "@/lib/i18n";
 export function LoadErrorState({
   error,
   onRetry,
+  retrying,
+  disabled,
+  scope = "firm",
   title,
   description,
   compact,
@@ -17,6 +20,9 @@ export function LoadErrorState({
 }: {
   error: unknown;
   onRetry?: () => void;
+  retrying?: boolean;
+  disabled?: boolean;
+  scope?: "firm" | "portal";
   /** Overrides the title for the "server" and "offline" causes. */
   title?: string;
   description?: string;
@@ -28,17 +34,19 @@ export function LoadErrorState({
   const kind = classifyLoadError(error);
   const retriable = kind === "offline" || kind === "server";
   const copy = {
-    offline: { title: t["firm.loadFailedTitle"], body: t["firm.loadOfflineBody"] },
-    server: { title: t["firm.loadFailedTitle"], body: t["firm.loadFailedBody"] },
-    forbidden: { title: t["firm.loadForbiddenTitle"], body: t["firm.loadForbiddenBody"] },
-    notFound: { title: t["firm.loadNotFoundTitle"], body: t["firm.loadNotFoundBody"] },
+    offline: { title: t[`${scope}.loadFailedTitle`], body: t[`${scope}.loadOfflineBody`] },
+    server: { title: t[`${scope}.loadFailedTitle`], body: t[`${scope}.loadFailedBody`] },
+    forbidden: { title: t[`${scope}.loadForbiddenTitle`], body: t[`${scope}.loadForbiddenBody`] },
+    notFound: { title: t[`${scope}.loadNotFoundTitle`], body: t[`${scope}.loadNotFoundBody`] },
   }[kind];
   return (
     <ErrorState
       title={retriable && title ? title : copy.title}
       description={retriable && description ? description : copy.body}
       onRetry={retriable ? onRetry : undefined}
-      retryLabel={t["firm.retry"]}
+      retryLabel={t[`${scope}.retry`]}
+      retrying={retrying}
+      disabled={disabled}
       compact={compact}
       className={className}
       testId={testId ?? `load-error-${kind}`}

@@ -1,4 +1,8 @@
-import { activeVatReturnFilter } from "../../tax/vat-filing-filter";
+import {
+  activeVatReturnFilter,
+  effectiveVatFilingStatus,
+  vatFilingVersionOrder,
+} from "../../tax/vat-filing-filter";
 // Shared firm route helpers: client access/stats, health and bookkeeper scoring, service plans and request schemas.
 // Split from firm.routes.ts (R20-09); shared by its route handler modules.
 import { ASSIGNMENT_ROLES } from "../../services/firm/staff.service";
@@ -157,14 +161,18 @@ export async function getClientStatsBatch(companyIds: string[]): Promise<Map<str
     db
       .selectDistinctOn([vatReturns.companyId], {
         companyId: vatReturns.companyId,
-        status: vatReturns.status,
+        status: effectiveVatFilingStatus,
         reference: vatReturns.ftaReferenceNumber,
         dueDate: vatReturns.dueDate,
         periodEnd: vatReturns.periodEnd,
       })
       .from(vatReturns)
       .where(and(inArray(vatReturns.companyId, companyIds), activeVatReturnFilter))
-      .orderBy(vatReturns.companyId, desc(vatReturns.periodEnd)) as Promise<
+      .orderBy(
+        vatReturns.companyId,
+        desc(vatReturns.periodEnd),
+        ...vatFilingVersionOrder
+      ) as Promise<
       {
         companyId: string;
         status: string;

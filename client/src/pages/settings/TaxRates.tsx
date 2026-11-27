@@ -8,7 +8,10 @@ import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { CardListSkeleton } from "@/components/ui/loading-skeletons";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import {
   Table,
   TableBody,
@@ -90,6 +93,16 @@ export function TaxRatesView({ data }: { data: VatBoxMapResponse }) {
   const emirateLabel = data.emirate
     ? (tr[`pageLabels.companySettings.emirate.${data.emirate}`] ?? data.emirate)
     : null;
+  if (!data.rows.length) {
+    return (
+      <EmptyState
+        size="md"
+        title={t["settingsPages.taxRates.empty"]}
+        description={t["settingsPages.taxRates.emptyHint"]}
+        testId="tax-rates-empty"
+      />
+    );
+  }
   return (
     <div className="space-y-6">
       {(["sales", "purchases"] as const).map((side) => (
@@ -131,7 +144,8 @@ export function TaxRatesView({ data }: { data: VatBoxMapResponse }) {
                     data-testid={`tax-rate-${side}-${r.treatment}`}
                   >
                     <TableCell className="font-medium">
-                      {tr[TREATMENT_KEY[r.treatment] ?? ""] ?? r.treatment}
+                      {tr[TREATMENT_KEY[r.treatment] ?? ""] ??
+                        t["settingsPages.taxRates.otherTreatment"]}
                       <span
                         className="mt-1.5 block font-normal md:hidden"
                         data-testid="boxes-stacked"
@@ -162,13 +176,86 @@ export function TaxRatesView({ data }: { data: VatBoxMapResponse }) {
   );
 }
 
+/** Neutral state while a first load is paused (offline, or the tab is not in focus). */
+function WaitingState() {
+  const { t } = useTranslation();
+  return (
+    <div role="status" data-testid="tax-rates-waiting">
+      <EmptyState
+        size="md"
+        title={t["settingsPages.taxRates.waiting"]}
+        description={t["settingsPages.taxRates.waitingHint"]}
+      />
+    </div>
+  );
+}
+
 export default function TaxRates() {
   const { t } = useTranslation();
-  const { companyId } = useDefaultCompany();
-  const { data, isLoading, isError } = useQuery<VatBoxMapResponse>({
-    queryKey: ["/api/companies", companyId, "tax-rates"],
-    enabled: !!companyId,
-  });
+  const {
+    companyId,
+    isLoading: companyLoading,
+    isPaused: companyPaused,
+    error: companyError,
+    hasNoCompanies,
+    refetch: refetchCompany,
+  } = useDefaultCompany();
+  const { data, isLoadingError, isRefetchError, fetchStatus, error, refetch } =
+    useQuery<VatBoxMapResponse>({
+      queryKey: ["/api/companies", companyId, "tax-rates"],
+      enabled: !!companyId,
+    });
+  const ratesPaused = !!companyId && !data && fetchStatus === "paused";
+  const retry = () => void refetch();
+  let body;
+  if (companyLoading) {
+    body = <CardListSkeleton count={2} />;
+  } else if (companyPaused) {
+    body = <WaitingState />;
+  } else if (!companyId && hasNoCompanies) {
+    body = (
+      <EmptyState
+        size="md"
+        title={t["settingsPages.taxRates.noCompany"]}
+        testId="tax-rates-no-company"
+      />
+    );
+  } else if (data) {
+    // Cached rows stay on screen when a refresh fails; the failure is shown inline.
+    body = (
+      <div className="space-y-4">
+        {isRefetchError && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-small"
+            data-testid="tax-rates-refresh-error"
+          >
+            <span>{t["settingsPages.taxRates.refreshFailed"]}</span>
+            <Button type="button" variant="outline" size="sm" onClick={retry}>
+              {t["firm.retry"]}
+            </Button>
+          </div>
+        )}
+        <TaxRatesView data={data} />
+      </div>
+    );
+  } else if (ratesPaused) {
+    body = <WaitingState />;
+  } else if (isLoadingError || (!companyId && !!companyError)) {
+    // A rates failure retries the rates query; a company-list failure retries the company query
+    // (the rates query is disabled until a company id exists).
+    body = (
+      <LoadErrorState
+        error={companyId ? error : companyError}
+        onRetry={companyId ? retry : refetchCompany}
+        title={t["settingsPages.taxRates.loadFailed"]}
+        testId="tax-rates-load-error"
+      />
+    );
+  } else {
+    // First rates load in flight (or the company id is about to resolve).
+    body = <CardListSkeleton count={2} />;
+  }
   return (
     <SettingsLayout>
       <div className="max-w-narrow space-y-6" data-testid="page-tax-rates">
@@ -177,15 +264,7 @@ export default function TaxRates() {
           description={t["settingsPages.taxRates.description"]}
         />
         <p className="text-small text-muted-foreground">{t["settingsPages.taxRates.readOnly"]}</p>
-        {isLoading ? (
-          <CardListSkeleton count={2} />
-        ) : isError || !data ? (
-          <p className="text-small text-danger" role="alert">
-            {t["settingsPages.taxRates.loadFailed"]}
-          </p>
-        ) : (
-          <TaxRatesView data={data} />
-        )}
+        {body}
       </div>
     </SettingsLayout>
   );

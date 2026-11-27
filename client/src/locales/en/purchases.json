@@ -58,6 +58,9 @@
   "purchases.claimPayrollEmployee": "Employee",
   "purchases.claimPayrollEmployeeHint": "Choose the employee whose next payroll run reimburses this claim.",
   "purchases.claimPayrollEmployeeMatch": "Match the submitter by email",
+  "purchases.poSearch": "Search by number, vendor or status",
+  "purchases.poNoMatch": "No matching purchase orders",
+  "purchases.poNoMatchBody": "Try a different keyword or clear the search.",
   "purchases.poLineProduct": "Line {n} product",
   "purchases.poNoProduct": "No product (not stocked)",
   "purchases.poReceivedNoStock": "Received, but stock was not updated",
@@ -203,5 +206,11 @@
   "purchases.claimReceipt.attached": "Receipt attached",
   "purchases.claimReceipt.view": "View",
   "purchases.claimReceipt.failed": "The receipt could not be uploaded",
-  "purchases.supplier.linked": "Linked to the supplier record"
+  "purchases.supplier.linked": "Linked to the supplier record",
+  "purchases.debitNote.void": "Void",
+  "purchases.debitNote.voidTitle": "Void this debit note?",
+  "purchases.debitNote.voidDesc": "The posting is reversed: A/P goes back up, the input VAT it reversed is restored and returned stock comes back. This cannot be undone.",
+  "purchases.debitNote.voidReason": "Reason for voiding",
+  "purchases.debitNote.voidConfirm": "Void debit note",
+  "purchases.debitNote.voided": "Debit note voided"
 }

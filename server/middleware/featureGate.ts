@@ -33,7 +33,7 @@ const log = createLogger("feature-gate");
 // gates. A company's entitlement (shared/plans.ts resolveEntitlement) is one of:
 //   trial   — no paid plan, inside the 14-day trial: the top plan's features (TRIAL_LIMITS caps);
 //   active  — a paid plan: its features and limits;
-//   expired — trial over without a paid plan: workspace access is locked by trialAccessPolicy.
+//   expired — trial over without a paid plan: the workspace is read-only (writes refused by trialAccessPolicy).
 // Feature gates refuse writes to modules outside an active plan.
 
 /** Plan id stored for a company with no paid plan (legacy name; it is not a plan). */

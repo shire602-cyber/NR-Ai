@@ -1,6 +1,7 @@
 import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/ui/empty-state";
-import { PiggyBank } from "lucide-react";
+import { PiggyBank, Search } from "lucide-react";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { T } from "@/components/layout/T";
 import { monthName } from "@/pages/payroll/shared";
 import {
@@ -12,7 +13,7 @@ import {
   formSpanFull,
   lineLabelClass,
 } from "@/components/ui/form-layout";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -30,8 +31,6 @@ import {
   ArrowLeft,
   Copy,
   Download,
-  TrendingUp,
-  TrendingDown,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -83,11 +82,18 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslation, translateNow } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { budgetCategoryLabel } from "@/lib/budget-categories";
+import { budgetScopeChange, type BudgetScopeChange } from "@/lib/budget-scope";
+import { BudgetScopeChangeDialog } from "@/components/budgets/BudgetScopeChangeDialog";
+import type { VarianceData } from "@/components/budgets/BudgetVarianceResults";
+import { OnDemandDialogStatus } from "@/components/team/onDemandDialog";
+import { useOnDemandDialog } from "@/components/team/useOnDemandDialog";
+import { freshChunkUrl } from "@/lib/dialogChunk";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useIsOnline } from "@/hooks/useIsOnline";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import { Money } from "@/components/ui/money";
@@ -95,7 +101,6 @@ import {
   budgetAccountOptions,
   planMonths,
   signedLineTotals,
-  summariseBudget,
   type PlanMonth,
 } from "@/lib/budget-summary";
 import { isControlAccount } from "@shared/control-accounts";
@@ -150,42 +155,6 @@ interface LedgerAccount {
   type: string;
   isActive?: boolean | null;
   isVatAccount?: boolean | null;
-}
-
-interface VarianceMonth {
-  budget: number;
-  actual: number;
-  variance: number;
-  variancePercent: number;
-}
-
-interface VarianceLine {
-  id: string;
-  category: string;
-  description: string | null;
-  accountId: string | null;
-  accountType: string | null;
-  months: Record<string, VarianceMonth>;
-  totals: {
-    budget: number;
-    actual: number;
-    variance: number;
-    variancePercent: number;
-  };
-}
-
-interface VarianceData {
-  budget: {
-    id: string;
-    name: string;
-    fiscalYear: number;
-    startDate: string;
-    endDate: string;
-    status: string;
-  };
-  /** Year-months the plan covers; `months` of each line holds only these columns. */
-  periods?: string[];
-  varianceLines: VarianceLine[];
 }
 
 // ─── Schemas ─────────────────────────────────────────────
@@ -279,14 +248,123 @@ function isoDay(v: string | null | undefined): string {
   return calendarDayKey(v) || String(v).slice(0, 10);
 }
 
+/** Stable empty values: a missing read never gets a fresh `[]` on every render. */
+const NO_PLANS: BudgetPlan[] = [];
+const NO_LINES: BudgetLine[] = [];
+
+const loadVarianceResults = (
+  retry: string | null
+): Promise<typeof import("@/components/budgets/BudgetVarianceResults")> => {
+  if (retry === null) return import("@/components/budgets/BudgetVarianceResults");
+
+  const path = import.meta.env.DEV
+    ? "../components/budgets/BudgetVarianceResults.tsx"
+    : "__MUHASIB_DIALOG_CHUNK__BudgetVarianceResults__";
+  return import(/* @vite-ignore */ freshChunkUrl(new URL(path, import.meta.url), retry));
+};
+
+type ReadView = "loading" | "paused" | "error" | "ready";
+
+/** A paused read replaces the empty state, while cached rows can stay visible. */
+function readView(
+  q: { data: unknown; isLoadingError: boolean; fetchStatus: string },
+  hasRows: boolean
+): ReadView {
+  if (q.fetchStatus === "paused" && !hasRows) return "paused";
+  if (q.data !== undefined) return "ready";
+  if (q.isLoadingError) return "error";
+  return "loading";
+}
+
+/** Shows the read status above cached rows or in place of the empty state. */
+function ReadStatus({
+  view,
+  errorText,
+  error,
+  onRetry,
+  testId,
+  refresh,
+}: {
+  view: ReadView;
+  refresh?: { fetchStatus: string; isRefetchError: boolean };
+  errorText: string;
+  error?: Error | null;
+  onRetry: () => void;
+  testId: string;
+}) {
+  const { t } = useTranslation();
+  const online = useIsOnline();
+  const waitingText = t[online ? "budgets.loadWaiting" : "budgets.readPaused"];
+  if (view === "ready") {
+    const paused = refresh?.fetchStatus === "paused";
+    return paused || refresh?.isRefetchError ? (
+      <RefreshNotice paused={paused} waitingText={waitingText} onRetry={onRetry} />
+    ) : null;
+  }
+  if (view === "error") {
+    if (error) {
+      return <LoadErrorState error={error} title={errorText} onRetry={onRetry} testId={testId} />;
+    }
+    return (
+      <div
+        className="flex flex-col items-center gap-3 py-8 text-center"
+        role="alert"
+        data-testid={testId}
+      >
+        <p className="text-sm text-muted-foreground">{errorText}</p>
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          {t.tryAgain}
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="py-8 text-center text-muted-foreground"
+      role="status"
+      data-testid={`${testId}-${view}`}
+    >
+      {view === "paused" ? waitingText : t.loading}
+    </div>
+  );
+}
+
+/** Shown above cached rows while a refresh is paused or has failed. */
+function RefreshNotice({
+  paused,
+  waitingText,
+  onRetry,
+}: {
+  paused: boolean;
+  waitingText: string;
+  onRetry: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted px-3 py-2 text-sm text-foreground"
+      role="status"
+      data-testid={paused ? "budgets-refresh-paused" : "budgets-refresh-failed"}
+    >
+      <span>{paused ? waitingText : t["budgets.refreshFailed"]}</span>
+      {!paused && (
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          {t.tryAgain}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function Budgets() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { company, companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { company, companyId, companyListState, retryCompanyList } = useDefaultCompany();
   const fyStartMonth = (company as { fiscalYearStartMonth?: number } | null | undefined)
     ?.fiscalYearStartMonth;
 
   const [activeTab, setActiveTab] = useState("budgets");
+  const [budgetSearch, setBudgetSearch] = useState("");
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<BudgetPlan | null>(null);
   const [selectedBudget, setSelectedBudget] = useState<BudgetPlan | null>(null);
@@ -294,25 +372,45 @@ export default function Budgets() {
   const [editingLine, setEditingLine] = useState<BudgetLine | null>(null);
   const [budgetToDelete, setBudgetToDelete] = useState<string | null>(null);
   const [lineToDelete, setLineToDelete] = useState<string | null>(null);
+  const [scopeChange, setScopeChange] = useState<BudgetScopeChange | null>(null);
   // E2 (J4-r2): a viewer is not offered writes the server refuses (403).
   const { gate } = useCompanyPermission();
 
   // ─── Queries ────────────────────────────────────────────
 
-  const { data: budgetPlans = [], isLoading: isLoadingBudgets } = useQuery<BudgetPlan[]>({
-    queryKey: [`/api/companies/${companyId}/budget-plans`],
+  // The default query function forwards react-query's AbortSignal to fetch. `data` is kept
+  // undefined until a response arrives so "not loaded" is never read as "no rows".
+  const budgetPlansKey = [`/api/companies/${companyId}/budget-plans`];
+  const budgetsQuery = useQuery<BudgetPlan[]>({
+    queryKey: budgetPlansKey,
     enabled: !!companyId,
   });
+  const budgetPlans = budgetsQuery.data ?? NO_PLANS;
+  const budgetsView = readView(budgetsQuery, budgetPlans.length > 0);
+  const refetchBudgets = budgetsQuery.refetch;
 
-  const { data: budgetLines = [], isLoading: isLoadingLines } = useQuery<BudgetLine[]>({
+  const linesQuery = useQuery<BudgetLine[]>({
     queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
     enabled: !!selectedBudget?.id,
   });
+  const budgetLines = linesQuery.data ?? NO_LINES;
+  const linesView = readView(linesQuery, budgetLines.length > 0);
 
-  const { data: varianceData, isLoading: isLoadingVariance } = useQuery<VarianceData>({
+  const varianceQuery = useQuery<VarianceData>({
     queryKey: [`/api/budget-plans/${selectedBudget?.id}/variance`],
     enabled: !!selectedBudget?.id && activeTab === "variance",
   });
+  const varianceData = varianceQuery.data;
+  const hasVarianceRows = (varianceData?.varianceLines.length ?? 0) > 0;
+  const varianceView = readView(varianceQuery, hasVarianceRows);
+  const {
+    Component: VarianceResults,
+    status: varianceResultsStatus,
+    request: requestVarianceResults,
+  } = useOnDemandDialog(loadVarianceResults, "BudgetVarianceResults");
+  useEffect(() => {
+    if (activeTab === "variance" && hasVarianceRows) requestVarianceResults();
+  }, [activeTab, hasVarianceRows, requestVarianceResults]);
 
   // E2 (J3-r2): every line budgets one P&L account (not a control account), so actuals come
   // from the ledger and income is never added to expenses.
@@ -376,11 +474,18 @@ export default function Budgets() {
 
   // ─── Mutations ──────────────────────────────────────────
 
+  const refreshBudgets = () => refreshAfterWrite(budgetPlansKey);
+  const refreshAfterLineWrite = (planId: string) => {
+    refreshAfterWrite([`/api/budget-plans/${planId}/lines`]);
+    refreshAfterWrite([`/api/budget-plans/${planId}/variance`]);
+    refreshBudgets();
+  };
+
   const createBudgetMutation = useMutation({
     mutationFn: (data: BudgetFormData) =>
       apiRequest("POST", `/api/companies/${companyId}/budget-plans`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshBudgets();
       toast({
         title: translateNow("toasts.budgetCreated"),
         description: translateNow("toasts.theBudgetPlanHasBeenCreatedSuccessfully"),
@@ -400,8 +505,9 @@ export default function Budgets() {
   const updateBudgetMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<BudgetFormData> }) =>
       apiRequest("PATCH", `/api/budget-plans/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+    onSuccess: (_, { id }) => {
+      refreshBudgets();
+      refreshAfterWrite([`/api/budget-plans/${id}/variance`]);
       toast({
         title: translateNow("toasts.budgetUpdated"),
         description: translateNow("toasts.theBudgetPlanHasBeenUpdated"),
@@ -422,7 +528,7 @@ export default function Budgets() {
   const deleteBudgetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/budget-plans/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshBudgets();
       toast({
         title: translateNow("toasts.budgetDeleted"),
         description: translateNow("toasts.theBudgetPlanHasBeenDeleted"),
@@ -441,7 +547,7 @@ export default function Budgets() {
   const approveBudgetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/approve`, {}),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshBudgets();
       toast({
         title: translateNow("toasts.budgetApproved"),
         description: translateNow("toasts.theBudgetHasBeenApproved"),
@@ -456,21 +562,41 @@ export default function Budgets() {
     },
   });
 
-  const refreshBudgets = () =>
-    queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+  const toastNewVersionCreated = () =>
+    toast({
+      title: tr(locale, "New draft version created", "تم إنشاء نسخة مسودة جديدة"),
+      description: tr(
+        locale,
+        "Edit the draft, then have a different approver approve it.",
+        "عدّل المسودة ثم اطلب اعتمادها من معتمد آخر."
+      ),
+    });
+
+  const toastBudgetCopied = () =>
+    toast({
+      title: tr(locale, "Budget copied", "تم نسخ الموازنة"),
+      description: tr(
+        locale,
+        "A draft for the next year was created.",
+        "تم إنشاء مسودة للسنة التالية."
+      ),
+    });
+
+  /** Success is held back until the user acknowledges a changed cost-centre scope. */
+  const acknowledgeScopeChange = () => {
+    const action = scopeChange?.action;
+    setScopeChange(null);
+    if (action === "copy") toastBudgetCopied();
+    else if (action === "newVersion") toastNewVersionCreated();
+  };
 
   const newVersionMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/new-version`, {}),
-    onSuccess: () => {
+    onSuccess: (result: unknown) => {
       refreshBudgets();
-      toast({
-        title: tr(locale, "New draft version created", "تم إنشاء نسخة مسودة جديدة"),
-        description: tr(
-          locale,
-          "Edit the draft, then have a different approver approve it.",
-          "عدّل المسودة ثم اطلب اعتمادها من معتمد آخر."
-        ),
-      });
+      const change = budgetScopeChange("newVersion", result);
+      if (change) setScopeChange(change);
+      else toastNewVersionCreated();
     },
     onError: (error: Error) => {
       toast({
@@ -484,16 +610,11 @@ export default function Budgets() {
   const copyBudgetMutation = useMutation({
     mutationFn: ({ id, fiscalYear }: { id: string; fiscalYear: number }) =>
       apiRequest("POST", `/api/budget-plans/${id}/copy`, { fiscalYear }),
-    onSuccess: () => {
+    onSuccess: (result: unknown) => {
       refreshBudgets();
-      toast({
-        title: tr(locale, "Budget copied", "تم نسخ الموازنة"),
-        description: tr(
-          locale,
-          "A draft for the next year was created.",
-          "تم إنشاء مسودة للسنة التالية."
-        ),
-      });
+      const change = budgetScopeChange("copy", result);
+      if (change) setScopeChange(change);
+      else toastBudgetCopied();
     },
     onError: (error: Error) => {
       toast({
@@ -507,11 +628,8 @@ export default function Budgets() {
   const importLinesMutation = useMutation({
     mutationFn: ({ id, csv }: { id: string; csv: string }) =>
       apiRequest("POST", `/api/budget-plans/${id}/import`, { csv }),
-    onSuccess: (result: { imported: number }) => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
-      });
-      refreshBudgets();
+    onSuccess: (result: { imported: number }, { id }) => {
+      refreshAfterLineWrite(id);
       toast({
         title: tr(locale, "Import complete", "اكتمل الاستيراد"),
         description: `${result.imported} ${tr(locale, "lines imported", "سطر تم استيراده")}`,
@@ -534,7 +652,11 @@ export default function Budgets() {
           headers: getAuthHeaders(),
         }
       );
-      if (!response.ok) throw new Error((await response.json())?.message || "Export failed");
+      if (!response.ok)
+        throw new Error(
+          (await response.json().catch(() => null))?.message ||
+            tr(locale, "Export failed", "تعذر التصدير")
+        );
       const url = URL.createObjectURL(await response.blob());
       const a = document.createElement("a");
       a.href = url;
@@ -558,13 +680,10 @@ export default function Budgets() {
   };
 
   const addLineMutation = useMutation({
-    mutationFn: (data: BudgetLineFormData) =>
-      apiRequest("POST", `/api/budget-plans/${selectedBudget?.id}/lines`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
-      });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+    mutationFn: ({ planId, data }: { planId: string; data: BudgetLineFormData }) =>
+      apiRequest("POST", `/api/budget-plans/${planId}/lines`, data),
+    onSuccess: (_, { planId }) => {
+      refreshAfterLineWrite(planId);
       toast({
         title: translateNow("toasts.lineAdded"),
         description: translateNow("toasts.budgetLineHasBeenAdded"),
@@ -583,13 +702,10 @@ export default function Budgets() {
   });
 
   const updateLineMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<BudgetLineFormData> }) =>
+    mutationFn: ({ id, data }: { id: string; planId: string; data: Partial<BudgetLineFormData> }) =>
       apiRequest("PATCH", `/api/budget-lines/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
-      });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+    onSuccess: (_, { planId }) => {
+      refreshAfterLineWrite(planId);
       toast({
         title: translateNow("toasts.lineUpdated"),
         description: translateNow("toasts.budgetLineHasBeenUpdated"),
@@ -608,12 +724,10 @@ export default function Budgets() {
   });
 
   const deleteLineMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/budget-lines/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
-      });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+    mutationFn: ({ id }: { id: string; planId: string }) =>
+      apiRequest("DELETE", `/api/budget-lines/${id}`),
+    onSuccess: (_, { planId }) => {
+      refreshAfterLineWrite(planId);
       toast({
         title: translateNow("toasts.lineDeleted"),
         description: translateNow("toasts.budgetLineHasBeenRemoved"),
@@ -721,10 +835,12 @@ export default function Budgets() {
   };
 
   const handleLineSubmit = (data: BudgetLineFormData) => {
+    if (!selectedBudget) return;
+    const planId = selectedBudget.id;
     if (editingLine) {
-      updateLineMutation.mutate({ id: editingLine.id, data });
+      updateLineMutation.mutate({ id: editingLine.id, planId, data });
     } else {
-      addLineMutation.mutate(data);
+      addLineMutation.mutate({ planId, data });
     }
   };
 
@@ -776,12 +892,6 @@ export default function Budgets() {
     }
   };
 
-  const getVarianceColor = (variance: number) => {
-    if (variance > 0) return "text-success";
-    if (variance < 0) return "text-destructive";
-    return "";
-  };
-
   // E2 (J3-r2): income and expenses are totalled separately; net = income - expenses.
   const lineTotals = useCallback(
     () => signedLineTotals(budgetLines, lineAccountType),
@@ -791,25 +901,50 @@ export default function Budgets() {
 
   // ─── Loading State ─────────────────────────────────────
 
-  if (isLoadingCompany) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">{t.loading || "Loading..."}</div>
-      </div>
-    );
-  }
+  const budgetQuery = budgetSearch.trim().toLowerCase();
+  const visibleBudgets = budgetQuery
+    ? budgetPlans.filter((b) =>
+        [b.name, String(b.fiscal_year ?? ""), statusLabel(b.status)]
+          .join(" ")
+          .toLowerCase()
+          .includes(budgetQuery)
+      )
+    : budgetPlans;
 
+  // Only a successful empty company list may ask the user to create a company; a pending,
+  // paused or failed read says so instead.
   if (!companyId) {
+    if (companyListState === "empty") {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-muted-foreground">
+            <T k="pages.pleaseCreateACompanyFirst" />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">
-          <T k="pages.pleaseCreateACompanyFirst" />
-        </div>
+        <ReadStatus
+          view={
+            companyListState === "error"
+              ? "error"
+              : companyListState === "waiting"
+                ? "paused"
+                : "loading"
+          }
+          errorText={t["budgets.companyLoadError"]}
+          onRetry={retryCompanyList}
+          testId="budgets-company-state"
+        />
       </div>
     );
   }
 
   // ─── Render ─────────────────────────────────────────────
+
+  // One copy / new-version at a time: a second click would create a second draft.
+  const copyOrVersionPending = copyBudgetMutation.isPending || newVersionMutation.isPending;
 
   /** Row actions shared by the table and the phone cards. */
   const budgetActions = (budget: BudgetPlan) => (
@@ -818,7 +953,10 @@ export default function Budgets() {
         <>
           {budget.status !== "draft" && (
             <DropdownMenuItem
-              onSelect={() => newVersionMutation.mutate(budget.id)}
+              disabled={copyOrVersionPending}
+              onSelect={() => {
+                if (!copyOrVersionPending) newVersionMutation.mutate(budget.id);
+              }}
               data-testid={`button-new-version-${budget.id}`}
             >
               <Plus aria-hidden />
@@ -826,12 +964,14 @@ export default function Budgets() {
             </DropdownMenuItem>
           )}
           <DropdownMenuItem
-            onSelect={() =>
-              copyBudgetMutation.mutate({
-                id: budget.id,
-                fiscalYear: budget.fiscal_year + 1,
-              })
-            }
+            disabled={copyOrVersionPending}
+            onSelect={() => {
+              if (!copyOrVersionPending)
+                copyBudgetMutation.mutate({
+                  id: budget.id,
+                  fiscalYear: budget.fiscal_year + 1,
+                });
+            }}
           >
             <Copy aria-hidden />
             {tr(locale, "Copy to next year", "نسخ إلى السنة التالية")}
@@ -881,6 +1021,11 @@ export default function Budgets() {
 
   return (
     <div className="space-y-6">
+      <BudgetScopeChangeDialog
+        change={scopeChange}
+        locale={locale}
+        onAcknowledge={acknowledgeScopeChange}
+      />
       {selectedBudget && (
         <Button
           variant="ghost"
@@ -941,29 +1086,61 @@ export default function Budgets() {
               <CardTitle>
                 <T k="pages.budgetPlans" />
               </CardTitle>
-              <CardDescription>
-                {budgetPlans.length}{" "}
-                {budgetPlans.length === 1
-                  ? tr(locale, "budget plan", "خطة موازنة")
-                  : tr(locale, "budget plans", "خطط موازنة")}
-              </CardDescription>
+              {/* The count is shown only once it is known (never "0" while loading or failed). */}
+              {budgetsView === "ready" && (
+                <CardDescription data-testid="budgets-count">
+                  {formatMessage(t["budgets.planCount"], { count: budgetPlans.length })}
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent>
-              {isLoadingBudgets ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {t.loading || "Loading..."}
+              <ReadStatus
+                view={budgetsView}
+                refresh={budgetsQuery}
+                errorText={t["budgets.listLoadError"]}
+                error={budgetsQuery.error}
+                onRetry={() => void refetchBudgets()}
+                testId="budgets-load-error"
+              />
+              {budgetPlans.length > 0 && (
+                <div className="relative mb-4 max-w-sm">
+                  <Search
+                    className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <Input
+                    type="search"
+                    value={budgetSearch}
+                    onChange={(e) => setBudgetSearch(e.target.value)}
+                    placeholder={t["budgets.searchBudgets"]}
+                    aria-label={t["budgets.searchBudgets"]}
+                    className="ps-9"
+                    data-testid="input-search-budgets"
+                  />
                 </div>
-              ) : budgetPlans.length === 0 ? (
+              )}
+              {budgetsView === "ready" && budgetPlans.length > 0 && (
+                <div role="status">
+                  {visibleBudgets.length === 0 && (
+                    <EmptyState
+                      icon={Search}
+                      title={t["budgets.noSearchMatches"]}
+                      testId="budgets-no-match"
+                    />
+                  )}
+                </div>
+              )}
+              {budgetsView !== "ready" ? null : budgetPlans.length === 0 ? (
                 <EmptyState
                   icon={PiggyBank}
                   title={t["pages.noBudgetPlansYetCreateYourFirstBudgetToGetStarte"]}
                   testId="budgets-empty"
                 />
-              ) : (
+              ) : visibleBudgets.length > 0 ? (
                 <>
                   {/* Below 768px: stacked row-cards (line 1 name + total, line 2 year/period + status, actions). */}
                   <ul className="divide-hairline md:hidden" data-testid="mobile-budget-list">
-                    {budgetPlans.map((budget) => (
+                    {visibleBudgets.map((budget) => (
                       <li
                         key={budget.id}
                         className="flex cursor-pointer items-start gap-2 py-3 first:pt-0 last:pb-0"
@@ -1028,7 +1205,7 @@ export default function Budgets() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {budgetPlans.map((budget) => (
+                        {visibleBudgets.map((budget) => (
                           <TableRow
                             key={budget.id}
                             className="cursor-pointer hover:bg-muted/50"
@@ -1071,7 +1248,7 @@ export default function Budgets() {
                     </Table>
                   </div>
                 </>
-              )}
+              ) : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1083,7 +1260,9 @@ export default function Budgets() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Budget Lines - {selectedBudget.name}</CardTitle>
+                    <CardTitle>
+                      {formatMessage(t["budgets.detailHeading"], { name: selectedBudget.name })}
+                    </CardTitle>
                     <CardDescription>
                       <T k="pages.monthlyBudgetAllocationByCategoryClickARowToEdit" />
                     </CardDescription>
@@ -1125,11 +1304,15 @@ export default function Budgets() {
                 </div>
               </CardHeader>
               <CardContent>
-                {isLoadingLines ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    {t.loading || "Loading..."}
-                  </div>
-                ) : budgetLines.length === 0 ? (
+                <ReadStatus
+                  view={linesView}
+                  refresh={linesQuery}
+                  errorText={t["budgets.linesLoadError"]}
+                  error={linesQuery.error}
+                  onRetry={() => void linesQuery.refetch()}
+                  testId="budget-lines-load-error"
+                />
+                {linesView !== "ready" ? null : budgetLines.length === 0 ? (
                   <EmptyState
                     size="sm"
                     title={t["pages.noBudgetLinesYetAddCategoriesAndMonthlyAllocatio"]}
@@ -1249,172 +1432,39 @@ export default function Budgets() {
           <TabsContent value="variance">
             <Card>
               <CardHeader>
-                <CardTitle>Budget vs Actual Variance - {selectedBudget.name}</CardTitle>
+                <CardTitle>
+                  {formatMessage(t["budgets.varianceHeading"], { name: selectedBudget.name })}
+                </CardTitle>
                 <CardDescription>
-                  Comparing budgeted amounts against actual journal entries. Green = under budget,
-                  Red = over budget.
+                  <T k="budgets.varianceDescription" />
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {isLoadingVariance ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    {t.loading || "Loading..."}
-                  </div>
-                ) : !varianceData || varianceData.varianceLines.length === 0 ? (
+                <ReadStatus
+                  view={varianceView}
+                  refresh={varianceQuery}
+                  errorText={t["budgets.varianceLoadError"]}
+                  error={varianceQuery.error}
+                  onRetry={() => void varianceQuery.refetch()}
+                  testId="budget-variance-load-error"
+                />
+                {varianceView !== "ready" ? null : !varianceData ||
+                  varianceData.varianceLines.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     {t["budgets.noVarianceDataAvailableAdd"]}
                   </div>
+                ) : VarianceResults ? (
+                  <VarianceResults
+                    varianceLines={varianceData.varianceLines}
+                    varianceMonths={varianceMonths}
+                    planMonthLabel={planMonthLabel}
+                  />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="sticky start-0 bg-background z-10 min-w-[160px]">
-                            <T k="pages.category" />
-                          </TableHead>
-                          {varianceMonths.map((pm) => (
-                            <TableHead key={pm.key} className="text-center min-w-[200px]">
-                              <div>{planMonthLabel(pm)}</div>
-                              <div className="flex text-xs text-muted-foreground mt-1">
-                                <span className="flex-1 text-end pe-1">
-                                  <T k="pages.budget" />
-                                </span>
-                                <span className="flex-1 text-end pe-1">
-                                  <T k="pages.actual" />
-                                </span>
-                                <span className="flex-1 text-end">
-                                  <T k="pages.varShort" />
-                                </span>
-                              </div>
-                            </TableHead>
-                          ))}
-                          <TableHead className="text-center min-w-[200px]">
-                            <div>
-                              <T k="pages.annual" />
-                            </div>
-                            <div className="flex text-xs text-muted-foreground mt-1">
-                              <span className="flex-1 text-end pe-1">
-                                <T k="pages.budget" />
-                              </span>
-                              <span className="flex-1 text-end pe-1">
-                                <T k="pages.actual" />
-                              </span>
-                              <span className="flex-1 text-end">Var %</span>
-                            </div>
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {varianceData.varianceLines.map((line) => (
-                          <TableRow key={line.id}>
-                            <TableCell className="sticky start-0 bg-background z-10 font-medium">
-                              <div>
-                                {budgetCategoryLabel(t, line.category)}
-                                {line.description && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {line.description}
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                            {varianceMonths.map(({ key, column }) => {
-                              // E2 (J3-r2): the report holds only the plan's months.
-                              const m = line.months[column] ?? {
-                                budget: 0,
-                                actual: 0,
-                                variance: 0,
-                                variancePercent: 0,
-                              };
-                              return (
-                                <TableCell data-numeric key={key}>
-                                  <div className="flex text-xs tabular-nums">
-                                    <span className="flex-1 text-end pe-1">
-                                      {m.budget.toFixed(0)}
-                                    </span>
-                                    <span className="flex-1 text-end pe-1">
-                                      {m.actual.toFixed(0)}
-                                    </span>
-                                    <span
-                                      className={`flex-1 text-end font-semibold ${getVarianceColor(m.variance)}`}
-                                    >
-                                      {m.variance >= 0 ? "+" : ""}
-                                      {m.variance.toFixed(0)}
-                                    </span>
-                                  </div>
-                                </TableCell>
-                              );
-                            })}
-                            <TableCell data-numeric>
-                              <div className="flex text-xs tabular-nums">
-                                <span className="flex-1 text-end pe-1">
-                                  {line.totals.budget.toFixed(0)}
-                                </span>
-                                <span className="flex-1 text-end pe-1">
-                                  {line.totals.actual.toFixed(0)}
-                                </span>
-                                <span
-                                  className={`flex-1 text-end font-bold ${getVarianceColor(line.totals.variance)}`}
-                                >
-                                  {line.totals.variancePercent >= 0 ? "+" : ""}
-                                  {line.totals.variancePercent.toFixed(1)}%
-                                </span>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-
-                {/* Variance Summary (X4/J3): income, expense and net are totalled separately */}
-                {varianceData && varianceData.varianceLines.length > 0 && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                    {(() => {
-                      const summary = summariseBudget(varianceData.varianceLines);
-                      const groups = [
-                        { key: "income", title: t["budgets.summaryIncome"], g: summary.income },
-                        { key: "expense", title: t["budgets.summaryExpense"], g: summary.expense },
-                        { key: "net", title: t["budgets.summaryNet"], g: summary.net },
-                      ];
-                      return groups.map(({ key, title, g }) => (
-                        <Card key={key} data-testid={`budget-summary-${key}`}>
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-sm font-medium">{title}</CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-1 text-sm">
-                            <div className="flex justify-between gap-2">
-                              <span className="text-muted-foreground">
-                                <T k="pages.budget" />
-                              </span>
-                              <Money amount={g.budget} currency={"AED"} />
-                            </div>
-                            <div className="flex justify-between gap-2">
-                              <span className="text-muted-foreground">
-                                <T k="pages.actual" />
-                              </span>
-                              <Money amount={g.actual} currency={"AED"} />
-                            </div>
-                            <div
-                              className={`flex items-center justify-between gap-2 font-semibold ${getVarianceColor(g.variance)}`}
-                            >
-                              <span className="flex items-center gap-1">
-                                {g.variance >= 0 ? (
-                                  <TrendingUp className="w-4 h-4" aria-hidden />
-                                ) : (
-                                  <TrendingDown className="w-4 h-4" aria-hidden />
-                                )}
-                                {g.variance >= 0
-                                  ? t["budgets.favourable"]
-                                  : t["budgets.unfavourable"]}
-                              </span>
-                              <Money amount={Math.abs(g.variance)} currency={"AED"} />
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ));
-                    })()}
-                  </div>
+                  <OnDemandDialogStatus
+                    status={varianceResultsStatus === "idle" ? "loading" : varianceResultsStatus}
+                    onRetry={requestVarianceResults}
+                    testId="budget-variance-results"
+                  />
                 )}
               </CardContent>
             </Card>
@@ -1773,8 +1823,8 @@ export default function Budgets() {
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (lineToDelete) {
-                  deleteLineMutation.mutate(lineToDelete);
+                if (lineToDelete && selectedBudget) {
+                  deleteLineMutation.mutate({ id: lineToDelete, planId: selectedBudget.id });
                   setLineToDelete(null);
                 }
               }}
