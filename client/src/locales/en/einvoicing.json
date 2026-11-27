@@ -206,6 +206,7 @@
   "einvoicing.err_ACUBE_WITHDRAWN": "The e-invoice was withdrawn.",
   "einvoicing.err_ACUBE_UNKNOWN_STATUS": "A-Cube reported a status Muhasib does not recognise; it is shown as failed until checked.",
   "einvoicing.err_ACUBE_NO_DOCUMENT_ID": "A-Cube accepted the request but returned no document to track. It will be retried.",
+  "einvoicing.err_ACUBE_DOCUMENT_ID_MISMATCH": "A-Cube returned a document that does not match the one we asked for. Nothing was changed; it will be checked again.",
   "einvoicing.err_TRANSPORT_ERROR": "The connection to the provider dropped. It is retried automatically and never sent twice.",
   "einvoicing.err_EINVOICE_VALIDATION": "The e-invoicing provider found a problem in the e-invoice and did not send it.",
   "einvoicing.err_EINVOICE_DELIVERY_FAILED": "The e-invoice could not be delivered to the customer. Check the customer's e-invoicing address.",

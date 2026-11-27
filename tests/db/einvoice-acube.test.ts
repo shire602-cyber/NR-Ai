@@ -1900,3 +1900,74 @@ describe("Legacy A-Cube environment verification", () => {
     expect(fake.posts).toBe(1);
   });
 });
+
+describe("E1 outbound webhooks: only authenticated events are stored", () => {
+  const stored = async (t: Tenant) =>
+    h.sql<{ event_type: string; status: string }>(
+      `SELECT event_type, status FROM einvoice_provider_events
+        WHERE company_id = $1 AND event_type <> 'legal_entity.synchronized'`,
+      [t.company.id]
+    );
+
+  it("refuses a bad signature and a missing or wrong token without storing, then accepts and deduplicates a good one", async () => {
+    const t = await linkedTenant();
+    const webhookToken = crypto.randomUUID();
+    await useAcube(t, webhookToken);
+    const invoice = await issuedInvoice(t);
+    expect((await t.as.post(`/api/invoices/${invoice.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const providerDocumentId = (await statusOf(t, invoice.id)).transmission
+      .providerDocumentId as string;
+    fake.docs.get(providerDocumentId)!.status = "delivered";
+    const payload = {
+      eventId: crypto.randomUUID(),
+      eventType: "invoice.outbound",
+      status: "delivered",
+      invoiceUuid: providerDocumentId,
+    };
+
+    const wrongKey = crypto.generateKeyPairSync("ed25519").privateKey;
+    const badSignature = await webhook(t, payload, { token: webhookToken, key: wrongKey });
+    expect(badSignature.status).toBe(401);
+    expect(badSignature.body.code).toBe("EINVOICE_WEBHOOK_BAD_SIGNATURE");
+    const missingToken = await webhook(t, payload);
+    expect(missingToken.status).toBe(401);
+    const wrongToken = await webhook(t, payload, { token: "not-the-token" });
+    expect(wrongToken.status).toBe(401);
+    expect(wrongToken.body.code).toBe("EINVOICE_WEBHOOK_BAD_TOKEN");
+    expect(await stored(t)).toEqual([]);
+
+    const good = await webhook(t, payload, { token: webhookToken });
+    expect(good.status, good.text).toBe(200);
+    expect(good.body).toEqual({ received: true, duplicate: false });
+    const replay = await webhook(t, payload, { token: webhookToken });
+    expect(replay.status).toBe(200);
+    expect(replay.body).toEqual({ received: true, duplicate: true });
+    expect(await stored(t)).toHaveLength(1);
+    await runProviderEvents();
+    expect((await statusOf(t, invoice.id)).tracks.delivery.status).toBe("delivered");
+  });
+
+  it("sends a credit note to /credit-notes with a reference to the original invoice", async () => {
+    const t = await linkedTenant();
+    const invoice = await issuedInvoice(t);
+    const note = await t.as.post(
+      `/api/companies/${t.company.id}/invoices/${invoice.id}/credit-note`,
+      { reason: "Service credit" }
+    );
+    expect(note.status, note.text).toBe(201);
+    expect((await t.as.post(`/api/invoices/${note.body.id}/einvoice/submit`, {})).status).toBe(202);
+    await runEInvoiceRetries();
+    const providerDocumentId = (await statusOf(t, note.body.id)).transmission
+      .providerDocumentId as string;
+    const document = fake.docs.get(providerDocumentId)!;
+    expect(document.kind).toBe("credit-notes");
+    expect(document.xml).toContain("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>");
+    expect(document.xml).toMatch(
+      new RegExp(
+        String.raw`<cac:BillingReference>\s*<cac:InvoiceDocumentReference>\s*<cbc:ID>${invoice.number}</cbc:ID>`
+      )
+    );
+    expect(fake.posts).toBe(1);
+  });
+});
