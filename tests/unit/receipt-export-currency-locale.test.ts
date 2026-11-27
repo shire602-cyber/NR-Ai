@@ -92,3 +92,52 @@ describe("receipt export: locale", () => {
     expect(sheet.getRow(3).getCell(3).value).toBe("الإجمالي");
   });
 });
+
+describe("receipt export: cached totals equal the SUM of the cells", () => {
+  const r = (amount: number, currency: string, vat: number | null = null): OcrExportRow => ({
+    date: "2026-04-01",
+    vendor: "V",
+    invoiceNumber: "1",
+    amount,
+    vat,
+    currency,
+  });
+
+  it("KWD 3-decimal values: total 15.625 and a 3-decimal format on rows and total", async () => {
+    const sheet = await load(await buildOcrReceiptsWorkbook([r(10.125, "KWD"), r(5.5, "KWD")]));
+    const total: any = sheet.getRow(4);
+    expect(total.getCell(4).value.formula).toBe("SUM(D2:D3)");
+    expect(total.getCell(4).value.result).toBe(15.625);
+    expect(sheet.getRow(2).getCell(4).value).toBe(10.125);
+    expect(sheet.getRow(2).getCell(4).numFmt).toContain("#,##0.000");
+    expect(total.getCell(4).numFmt).toContain("#,##0.000");
+  });
+
+  it("float-noise value: 0.30000000000000004 + 100 caches 100.3", async () => {
+    const sheet = await load(
+      await buildOcrReceiptsWorkbook([r(0.30000000000000004, "AED"), r(100, "AED")])
+    );
+    const total: any = sheet.getRow(4);
+    expect(total.getCell(4).value.result).toBe(100.3);
+    expect(total.getCell(4).numFmt).toContain("#,##0.00");
+    expect(total.getCell(4).numFmt).not.toContain("#,##0.000");
+  });
+
+  it("0-decimal currency (JPY) uses no decimals and sums exactly", async () => {
+    const sheet = await load(
+      await buildOcrReceiptsWorkbook([r(1000, "JPY", 100), r(250, "JPY", 25)])
+    );
+    const total: any = sheet.getRow(4);
+    expect(total.getCell(4).value.result).toBe(1250);
+    expect(total.getCell(5).value.result).toBe(125);
+    expect(total.getCell(4).numFmt).toContain('"JPY" #,##0;');
+    expect(sheet.getRow(2).getCell(4).numFmt).not.toContain(".0");
+  });
+
+  it("leaves the cached result unset when a value cannot be summed safely", async () => {
+    const sheet = await load(await buildOcrReceiptsWorkbook([r(1e12, "AED"), r(1, "AED")]));
+    const total: any = sheet.getRow(4);
+    expect(total.getCell(4).value.formula).toBe("SUM(D2:D3)");
+    expect(total.getCell(4).value.result).toBeUndefined();
+  });
+});

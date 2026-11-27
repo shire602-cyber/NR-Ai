@@ -1,6 +1,5 @@
 import { todayDubai } from "@shared/accounting-date";
 import ExcelJS from "exceljs";
-import { fromFils, tryToFils } from "@shared/money";
 
 // One row in the OCR / receipt Excel export. Field names match the column
 // labels required by the spec: Date, Vendor, Invoice No., Amount, VAT.
@@ -72,14 +71,56 @@ function rowCurrency(row: OcrExportRow): string {
   return (row.currency || "AED").toUpperCase();
 }
 
-/** Exact sum of the given values in integer fils (blank values are skipped). */
-function sumFilsAsNumber(values: Array<number | null>): number {
-  let total = 0;
+const SUM_SCALE = 6; // decimals kept when summing (covers every ISO currency)
+const SUM_MAX_ABS = 1e9;
+
+/**
+ * Cached result for a SUM() over the given cell values. It must equal what
+ * Excel computes over those cells, so values are NOT rounded to the currency's
+ * precision (KWD 10.125 + 5.5 = 15.625). They are summed in exact integer
+ * micro-units, which removes binary float noise (0.30000000000000004 -> 0.3).
+ * Returns undefined (leave the cached result unset; Excel recalculates) if a
+ * value cannot be represented safely.
+ */
+function exactSumResult(values: Array<number | null>): number | undefined {
+  let total = 0n;
   for (const v of values) {
-    const f = v === null ? null : tryToFils(v);
-    if (f !== null) total += f;
+    if (v === null) continue;
+    if (!Number.isFinite(v) || Math.abs(v) >= SUM_MAX_ABS) return undefined;
+    const fixed = Math.abs(v).toFixed(SUM_SCALE).replace(".", "");
+    const micro = BigInt(fixed);
+    total += v < 0 ? -micro : micro;
   }
-  return Number(fromFils(total));
+  const neg = total < 0n;
+  const digits = (neg ? -total : total).toString().padStart(SUM_SCALE + 1, "0");
+  const text = `${neg ? "-" : ""}${digits.slice(0, -SUM_SCALE)}.${digits.slice(-SUM_SCALE)}`;
+  return Number(text);
+}
+
+const ZERO_DECIMAL_CURRENCIES = new Set([
+  "JPY",
+  "KRW",
+  "VND",
+  "CLP",
+  "ISK",
+  "UGX",
+  "PYG",
+  "RWF",
+  "XAF",
+  "XOF",
+  "XPF",
+  "KMF",
+  "GNF",
+  "DJF",
+  "VUV",
+]);
+const THREE_DECIMAL_CURRENCIES = new Set(["KWD", "BHD", "OMR", "JOD", "IQD", "LYD", "TND"]);
+
+/** Display decimals for a currency (display only; stored values are unchanged). */
+function currencyDecimals(currency: string): number {
+  if (THREE_DECIMAL_CURRENCIES.has(currency)) return 3;
+  if (ZERO_DECIMAL_CURRENCIES.has(currency)) return 0;
+  return 2;
 }
 
 function toNumber(value: number | string | null | undefined): number | null {
@@ -103,7 +144,9 @@ function buildCurrencyFormat(currency: string): string {
   // ExcelJS treats numFmt as the raw Excel format code. Quoting the currency
   // literal lets us support AED/USD/EUR alike without breaking on locales.
   const safe = currency.replace(/"/g, "");
-  return `"${safe}" #,##0.00;[Red]-"${safe}" #,##0.00`;
+  const d = currencyDecimals(safe.toUpperCase());
+  const num = d > 0 ? `#,##0.${"0".repeat(d)}` : "#,##0";
+  return `"${safe}" ${num};[Red]-"${safe}" ${num}`;
 }
 
 export async function buildOcrReceiptsWorkbook(
@@ -215,14 +258,14 @@ export async function buildOcrReceiptsWorkbook(
     const first = indices[0] + 2;
     const last = indices[indices.length - 1] + 2;
     const group = indices.map((i) => rows[i]);
-    const amountSum = sumFilsAsNumber(group.map((r) => toNumber(r.amount)));
-    const vatSum = sumFilsAsNumber(group.map((r) => toNumber(r.vat)));
+    const amountSum = exactSumResult(group.map((r) => toNumber(r.amount)));
+    const vatSum = exactSumResult(group.map((r) => toNumber(r.vat)));
     const totalRow = sheet.addRow({
       date: "",
       vendor: "",
       invoiceNumber: multiCurrency ? `${labels.total} (${currency})` : labels.total,
-      amount: { formula: `SUM(D${first}:D${last})`, result: amountSum },
-      vat: { formula: `SUM(E${first}:E${last})`, result: vatSum },
+      amount: { formula: `SUM(D${first}:D${last})`, result: amountSum } as ExcelJS.CellFormulaValue,
+      vat: { formula: `SUM(E${first}:E${last})`, result: vatSum } as ExcelJS.CellFormulaValue,
     });
     const currencyFmt = buildCurrencyFormat(currency);
     totalRow.eachCell((cell, colNumber) => {
