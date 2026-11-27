@@ -206,7 +206,7 @@ export function EInvoicingPartnerCard({ companyId }: { companyId: string }) {
         {state === "awaiting_emaratax" && acceptanceRevision && (
           <section className="space-y-3">
             <h3 className="font-medium">Step 2: Appoint {partner.displayName} in EmaraTax</h3>
-            <ol className="list-decimal pl-5 space-y-1 text-muted-foreground">
+            <ol className="list-decimal ps-5 space-y-1 text-muted-foreground">
               {/* i18n-ignore: UI copy awaiting AR sweep */}
               <li>Sign in to EmaraTax with your company's account.</li>
               <li>Open the e-invoicing service and choose to appoint a service provider.</li>

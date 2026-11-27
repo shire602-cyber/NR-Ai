@@ -71,7 +71,7 @@ export function ShortcutsHelp({ open, onOpenChange }: ShortcutsHelpProps) {
                     className="flex items-center justify-between py-1.5 text-sm"
                   >
                     <span className="text-foreground/90">{t[item.label]}</span>
-                    <kbd className="ml-auto px-2 py-1 text-[11px] font-mono bg-muted rounded border border-border/70 text-muted-foreground">
+                    <kbd className="ms-auto px-2 py-1 text-[11px] font-mono bg-muted rounded border border-border/70 text-muted-foreground">
                       {item.combo
                         .split(" ")
                         .map((c) => formatCombo(c))

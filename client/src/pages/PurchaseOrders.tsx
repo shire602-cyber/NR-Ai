@@ -76,7 +76,7 @@ import {
   FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { DataTableCard } from "@/components/ui/data-table";
+import { ListQueryTable } from "@/components/ui/list-query-table";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { parseCalendarDate } from "@/lib/format-date";
@@ -180,21 +180,11 @@ export default function PurchaseOrders() {
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const {
-    data: purchaseOrders,
-    isLoading,
-    isError,
-    isPaused,
-    isSuccess,
-    refetch,
-  } = useQuery<PurchaseOrder[]>({
+  const ordersQuery = useQuery<PurchaseOrder[]>({
     queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
     enabled: !!selectedCompanyId,
   });
-  // Cached rows stay on screen through a failed or paused background refresh. A failure with no
-  // rows to keep (nothing loaded, or a cached empty list) shows the error and Retry instead.
-  const loadPaused = purchaseOrders === undefined && isPaused;
-  const loadFailed = (purchaseOrders?.length ?? 0) === 0 && isError;
+  const { data: purchaseOrders, isLoading } = ordersQuery;
   const { data: products = [] } = useQuery<
     Array<{
       id: string;
@@ -215,7 +205,6 @@ export default function PurchaseOrders() {
     searchQuery.trim() !== "" &&
     (purchaseOrders?.length ?? 0) > 0 &&
     visibleOrders.length === 0;
-  const showEmpty = hasSearchNoMatches || (isSuccess && purchaseOrders?.length === 0);
   const stockProducts = products.filter((p) => p.isActive !== false);
 
   const form = useForm<PurchaseOrderFormData>({
@@ -922,23 +911,12 @@ export default function PurchaseOrders() {
         {hasSearchNoMatches ? t["purchases.poNoMatch"] : ""}
       </div>
 
-      <DataTableCard
-        status={
-          loadPaused || loadFailed
-            ? "error"
-            : purchaseOrders === undefined
-              ? "loading"
-              : showEmpty
-                ? "empty"
-                : "ready"
-        }
+      <ListQueryTable
+        query={ordersQuery}
+        rowCount={visibleOrders.length}
+        loadErrorTestId="error-purchase-orders"
         columnLabels={[t["pages.vendor"], t.date, t.total, t.status]}
         testId="purchase-orders-table"
-        error={{
-          title: loadPaused ? t["components.offlineLabel"] : undefined,
-          onRetry: () => void refetch(),
-          testId: loadPaused ? "offline-purchase-orders" : "error-purchase-orders",
-        }}
         empty={
           hasSearchNoMatches
             ? {
@@ -1113,7 +1091,7 @@ export default function PurchaseOrders() {
             ))}
           </TableBody>
         </Table>
-      </DataTableCard>
+      </ListQueryTable>
     </div>
   );
 }

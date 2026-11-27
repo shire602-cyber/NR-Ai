@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
-import { DataTableCard } from "@/components/ui/data-table";
+import { ListQueryTable } from "@/components/ui/list-query-table";
 import { Money, MoneyCell } from "@/components/ui/money";
+import { CashBalanceCell } from "@/components/ui/cash-balance";
+import { isCashOrBankAccount } from "@/lib/cash-balance";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
   Table,
@@ -145,15 +147,11 @@ export default function ChartOfAccounts() {
   const [drawerKey, setDrawerKey] = useState(0);
   const [level, setLevel] = useState<Level>("all");
 
-  const {
-    data: accountsWithBalances,
-    isPending,
-    isLoadingError,
-    refetch,
-  } = useQuery<AccountWithBalance[]>({
+  const accountsQuery = useQuery<AccountWithBalance[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
     enabled: !!selectedCompanyId,
   });
+  const accountsWithBalances = accountsQuery.data;
 
   const groupedAccounts = useMemo(() => {
     if (!accountsWithBalances) return {};
@@ -348,22 +346,10 @@ export default function ChartOfAccounts() {
         </div>
       </div>
 
-      <DataTableCard
-        status={
-          isPending
-            ? "loading"
-            : isLoadingError
-              ? "error"
-              : accountsWithBalances && Object.keys(groupedAccounts).length === 0
-                ? "empty"
-                : "ready"
-        }
-        error={{
-          title: t["common.loadFailedTitle"],
-          description: t["common.loadFailedBody"],
-          onRetry: () => void refetch(),
-          testId: "coa-load-error",
-        }}
+      <ListQueryTable
+        query={accountsQuery}
+        rowCount={Object.keys(groupedAccounts).length}
+        loadErrorTestId="coa-load-error"
         columnLabels={[t["screens.code"], t["screens.account"], t["screens.balance"]]}
         empty={{
           icon: BookOpen,
@@ -479,14 +465,23 @@ export default function ChartOfAccounts() {
                             showCurrency={false}
                             className="text-muted-foreground"
                           />
-                          <MoneyCell
-                            amount={Math.abs(figures.balance)}
-                            className={cn(
-                              isHeader ? "font-semibold" : "font-medium",
-                              figures.balance < 0 && "text-negative"
-                            )}
-                            data-cell="amount"
-                          />
+                          {isCashOrBankAccount(item.account) ? (
+                            // P2: an overdrawn cash or bank account keeps its sign and says so.
+                            <CashBalanceCell
+                              amount={figures.balance}
+                              className={isHeader ? "font-semibold" : "font-medium"}
+                              data-cell="amount"
+                            />
+                          ) : (
+                            <MoneyCell
+                              amount={Math.abs(figures.balance)}
+                              className={cn(
+                                isHeader ? "font-semibold" : "font-medium",
+                                figures.balance < 0 && "text-negative"
+                              )}
+                              data-cell="amount"
+                            />
+                          )}
                           <TableCell data-cell="actions" className="w-px">
                             <RowActions>
                               <RowActionButton
@@ -524,7 +519,7 @@ export default function ChartOfAccounts() {
             );
           })}
         </Table>
-      </DataTableCard>
+      </ListQueryTable>
 
       <AccountDrawer
         key={drawerKey}

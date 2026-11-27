@@ -21,9 +21,14 @@ const zero = (price: number) => ({
   vatSupplyType: "zero_rated",
 });
 
-async function issueUsd(t: Tenant, lines: Record<string, unknown>[]): Promise<string> {
+async function issueUsd(
+  t: Tenant,
+  lines: Record<string, unknown>[],
+  contactId?: string
+): Promise<string> {
   const draft = await t.as.post(`${base(t)}/invoices`, {
     customerName: "Acme",
+    contactId,
     date,
     placeOfSupplyEmirate: "dubai",
     currency: "USD",
@@ -226,41 +231,1024 @@ it("B: foreign receipts realise FX; overpayment credit refunds at its booked AED
   expect(closed).toEqual({ status: "void", remaining: 0 });
 });
 
-it("C: trial balance shows the issued USD receivable and clears it after both credits", async () => {
-  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
-  const id = await issueUsd(t, [std(700), zero(300)]);
+async function generateVat201(t: Tenant) {
+  const vat = await t.as.post(`${base(t)}/vat-returns/generate`, {
+    periodStart: "2026-01-01",
+    periodEnd: "2026-03-31",
+  });
+  expect(vat.status, vat.text).toBe(201);
+  return vat;
+}
 
-  const expectTrialBalanceAr = async (debitBalance: number) => {
-    const tb = await t.as.get(`${base(t)}/reports/trial-balance?to=${date}`);
-    expect(tb.status, tb.text).toBe(200);
-    const arRow = (tb.body.rows as Array<{ accountCode: string }>).find(
-      (row) => row.accountCode === "1040"
-    );
-    expect(arRow, "AR row (1040) in trial balance").toMatchObject({
-      debitBalance,
-      creditBalance: 0,
-    });
-  };
-
-  // Revenue AED 2,570.75 + AED 1,101.75 and VAT AED 128.54.
-  await expectTrialBalanceAr(3801.04);
-
-  // Partial CN: standard revenue USD 350 reversed at the original rate.
+async function issueCaseC() {
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000003",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const contact = await t.as.post(`${base(t)}/customer-contacts`, { name: "Acme" });
+  expect(contact.status, contact.text).toBeLessThan(300);
+  const id = await issueUsd(t, [std(700), zero(300)], contact.body.id);
   const url = `${base(t)}/invoices/${id}/credit-note`;
-  const partial = await t.as.post(url, { date, lines: [std(350)] });
-  expect(partial.status, partial.text).toBe(201);
 
-  // Final CN: clears all remaining AR, revenue and VAT legs.
-  const final = await t.as.post(url, { date });
-  expect(final.status, final.text).toBe(201);
+  async function creditPartial() {
+    const partial = await t.as.post(url, { date, lines: [std(350)] });
+    expect(partial.status, partial.text).toBe(201);
+  }
 
-  // GL legs all net to zero to the fil.
-  for (const code of ["1040", "4020", "4060", "2020"]) expect(await glNet(t, code)).toBe(0);
+  async function creditFinal() {
+    const final = await t.as.post(url, { date });
+    expect(final.status, final.text).toBe(201);
+  }
 
-  // The settlement open balance (AED fils via the settlement rule) must also be 0
-  // and must tie to GL 1040 — this is the same assertion as expectSettlementTiesToGl
-  // but made explicit for the register evidence trail.
-  await expectSettlementTiesToGl(t);
+  return { t, contactId: contact.body.id, creditPartial, creditFinal };
+}
 
-  await expectTrialBalanceAr(0);
+it("C: trial balance, customer statement and aged A/R agree with the GL after USD credits", async () => {
+  const { t, contactId, creditPartial, creditFinal } = await issueCaseC();
+  const codes = ["1040", "4020", "4060", "2020"];
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+
+  async function checkReaders(expected: Record<string, number>, usdClosing: number) {
+    // GL (SQL) equals the hand-calculated values.
+    for (const code of codes) expect(await glNet(t, code), `GL ${code}`).toBe(expected[code]);
+
+    // Trial balance route: debitBalance - creditBalance per account equals the GL net.
+    const tb = await t.as.get(
+      `${base(t)}/reports/trial-balance?from=2026-01-01&to=2026-01-31&format=json`
+    );
+    expect(tb.status, tb.text).toBe(200);
+    const rows = tb.body.rows as {
+      accountCode: string;
+      debitBalance: number;
+      creditBalance: number;
+    }[];
+    for (const code of codes) {
+      const row = rows.find((r) => r.accountCode === code);
+      const net = row ? r2(Number(row.debitBalance) - Number(row.creditBalance)) : 0;
+      expect(net, `TB ${code}`).toBe(expected[code]);
+    }
+    expect(tb.body.isBalanced).toBe(true);
+    expect(r2(tb.body.totals.sumDebits)).toBe(r2(tb.body.totals.sumCredits));
+
+    // Customer statement (document currency USD): closing x original rate = GL 1040.
+    const st = await t.as.get(`${base(t)}/customer-statements/${contactId}?asOf=2026-01-31`);
+    expect(st.status, st.text).toBe(200);
+    expect(st.body.sections).toHaveLength(1);
+    expect(st.body.sections[0].currency).toBe("USD");
+    expect(st.body.sections[0].closingBalance).toBe(usdClosing);
+    expect(r2(usdClosing * 3.6725)).toBe(expected["1040"]);
+
+    // Aged receivables (AED): aging total ties to GL 1040.
+    const ar = await t.as.get(`${base(t)}/reports/aged-receivables?asOf=2026-01-31`);
+    expect(ar.status, ar.text).toBe(200);
+    expect(Number(ar.body.reconciliation.glBalance)).toBe(expected["1040"]);
+    expect(Number(ar.body.reconciliation.agingTotal)).toBe(expected["1040"]);
+    expect(Number(ar.body.reconciliation.difference)).toBe(0);
+    await expectSettlementTiesToGl(t);
+  }
+
+  // Checkpoint 0: issuance only — AR 3,801.04 appears on the trial balance before any credit.
+  {
+    const tb = await t.as.get(
+      `${base(t)}/reports/trial-balance?from=2026-01-01&to=2026-01-31&format=json`
+    );
+    expect(tb.status, tb.text).toBe(200);
+    const arRow = (tb.body.rows as Array<{ accountCode: string; debitBalance: number }>).find(
+      (r) => r.accountCode === "1040"
+    );
+    expect(Number(arRow?.debitBalance), "AR 1040 at issuance").toBe(3801.04);
+  }
+
+  const partialBalances = { "1040": 2451.39, "4020": -1285.37, "4060": -1101.75, "2020": -64.27 };
+  const finalBalances = { "1040": 0, "4020": 0, "4060": 0, "2020": 0 };
+
+  await creditPartial();
+  await checkReaders(partialBalances, 667.5);
+  const partialVat = await generateVat201(t);
+  expect(Number(partialVat.body.box1bDubaiVat), "Box 1 VAT").toBe(-partialBalances["2020"]);
+  expect(Number(partialVat.body.box1bDubaiAmount), "Box 1 amount").toBe(-partialBalances["4020"]);
+  expect(Number(partialVat.body.box4ZeroRatedAmount), "Box 4 amount").toBe(
+    -partialBalances["4060"]
+  );
+
+  await creditFinal();
+  await checkReaders(finalBalances, 0);
+  const finalVat = await generateVat201(t);
+  expect(Number(finalVat.body.box1bDubaiVat), "Box 1 VAT").toBe(0);
+  expect(Number(finalVat.body.box4ZeroRatedAmount), "Box 4 amount").toBe(0);
+});
+
+// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
+it.skip("C: VAT 201 Box 1 amount clears after partial and final USD credits", async () => {
+  const { t, creditPartial, creditFinal } = await issueCaseC();
+  await creditPartial();
+  await creditFinal();
+
+  const vat = await generateVat201(t);
+  expect(Number(vat.body.box1bDubaiAmount), "Box 1 amount").toBe(0);
+});
+
+it("D: foreign reverse-charge credit — Box 1 is not inflated by the posted revenue remainder", async () => {
+  // A domestic reverse-charge credit note is in `foreignCreditIds` when issued in USD.
+  // Before the fix, `POSTED_ROLE_FAMILY` mapped the posted revenue account (4020) to `standard`,
+  // which added a second Box 1 contribution on top of the reverse_charge family from the lines.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000003",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+
+  // USD 1,000 reverse-charge invoice at 3.6725. Box 1b Dubai Amount = 3,672.50 (no VAT on
+  // the supplier side; the recipient self-assesses). Revenue is posted to account 4020.
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Overseas LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    reverseCharge: true,
+    lines: [{ description: "RC Services", quantity: 1, unitPrice: 1000, vatRate: 5 }],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  // Full credit note clears the reverse-charge amount.
+  const cn = await t.as.post(`${base(t)}/invoices/${draft.body.id}/credit-note`, { date });
+  expect(cn.status, cn.text).toBe(201);
+
+  // VAT 201: invoice + full credit net to 0 in Box 1 (reverse_charge maps to Box 1 Amount,
+  // no VAT). Without the fix the posted remainder adds a second standard-family Box 1
+  // contribution, leaving Box 1 Amount = -(3,672.50) instead of 0.
+  const vat = await t.as.post(`${base(t)}/vat-returns/generate`, {
+    periodStart: "2026-01-01",
+    periodEnd: "2026-03-31",
+  });
+  expect(vat.status, vat.text).toBe(201);
+  expect(Number(vat.body.box1bDubaiAmount), "Box 1 amount must net to 0").toBe(0);
+  expect(Number(vat.body.box1bDubaiVat), "Box 1 VAT must be 0").toBe(0);
+});
+
+async function issueCaseE() {
+  // USD 700 reverse-charge invoice at 3.6725. Two credits of USD 350 each.
+  // toBaseFils(35000, 3.6725) = 128538 fils for each half; the posted GL clears 128537 on
+  // the final credit (257075 − 128538). The remap standard→reverse_charge in postedNet lets
+  // the final credit use the GL remainder instead of re-converting USD 350, so Box 1 = 0.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000004",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Overseas LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    reverseCharge: true,
+    lines: [{ description: "RC Services", quantity: 1, unitPrice: 700, vatRate: 5 }],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  const url = `${base(t)}/invoices/${draft.body.id}/credit-note`;
+
+  async function creditFirst() {
+    // Partial credit: USD 350. The RC header is inherited; vatRate:5 matches the original line.
+    const cn1 = await t.as.post(url, {
+      date,
+      lines: [{ description: "RC Services", quantity: 1, unitPrice: 350, vatRate: 5 }],
+    });
+    expect(cn1.status, cn1.text).toBe(201);
+  }
+
+  async function creditFinal() {
+    const cn2 = await t.as.post(url, { date });
+    expect(cn2.status, cn2.text).toBe(201);
+  }
+
+  return { t, creditFirst, creditFinal };
+}
+
+it("E: reverse-charge header invoice issues and accepts partial and final credits", async () => {
+  const { t, creditFirst, creditFinal } = await issueCaseE();
+
+  await creditFirst();
+
+  await creditFinal();
+
+  const vat = await generateVat201(t);
+  expect(Number(vat.body.box1bDubaiVat), "Box 1 VAT is 0").toBe(0);
+});
+
+// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
+it.skip("E: reverse-charge header flag — split credits tie Box 1 to the fil", async () => {
+  const { t, creditFirst, creditFinal } = await issueCaseE();
+
+  await creditFirst();
+
+  await creditFinal();
+
+  const vat = await generateVat201(t);
+  expect(Number(vat.body.box1bDubaiAmount), "Box 1 amount ties to 0 — no -0.01 drift").toBe(0);
+});
+
+it("F: explicit reverse_charge supply type (no header flag) — Box 1 not inflated", async () => {
+  // vatSupplyType:'reverse_charge' on a line with no reverseCharge header.
+  // Before the fix, hasRcLines was false (checked only inv.reverseCharge), so the posted
+  // standard-sales remainder was applied and added a second Box 1 Amount contribution.
+  // After the fix, classifySupply per line detects the reverse_charge family; the standard
+  // entry is remapped to reverse_charge instead of being applied as a separate standard family.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000005",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Overseas LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      {
+        description: "RC Services",
+        quantity: 1,
+        unitPrice: 1000,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  const cn = await t.as.post(`${base(t)}/invoices/${draft.body.id}/credit-note`, { date });
+  expect(cn.status, cn.text).toBe(201);
+
+  const vat = await t.as.post(`${base(t)}/vat-returns/generate`, {
+    periodStart: "2026-01-01",
+    periodEnd: "2026-03-31",
+  });
+  expect(vat.status, vat.text).toBe(201);
+  expect(Number(vat.body.box1bDubaiAmount), "Box 1 amount nets to 0").toBe(0);
+  expect(Number(vat.body.box1bDubaiVat), "Box 1 VAT is 0 (supplier charges no VAT)").toBe(0);
+});
+
+async function issueCaseG() {
+  // USD margin line (unitPrice:105, cost:84 → VAT-exclusive margin USD 20 = AED 73.45)
+  // + zero-rated line (USD 700 = AED 2,570.75) at rate 3.6725.
+  // Credit 1: zero-rated USD 350 only. Credit 2: full remainder (margin + zero-rated USD 350).
+  // The old code (strip all postedNet when hasMarginScheme) left Box 4 at −AED 0.01 on credit 2
+  // because toBaseFils(35000, 3.6725)=128538 while the GL cleared 128537 for the final portion.
+  // The new code strips only the standard entry, keeping zero_rated for rounding correction.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000006",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Margin Co LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      {
+        description: "Margin goods",
+        quantity: 1,
+        unitPrice: 105,
+        vatRate: 5,
+        marginScheme: true,
+        marginPurchaseCost: 84,
+      },
+      zero(700),
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  const url = `${base(t)}/invoices/${draft.body.id}/credit-note`;
+
+  async function creditFirst() {
+    // Partial credit: zero-rated line USD 350 only. Margin untouched.
+    const cn1 = await t.as.post(url, { date, lines: [zero(350)] });
+    expect(cn1.status, cn1.text).toBe(201);
+  }
+
+  async function creditFinal() {
+    // Full remainder: margin USD 105 + zero-rated USD 350. hasMarginScheme=true for this
+    // credit; zero_rated remainder must still use the GL amount (128537) so Box 4 nets to 0.
+    const cn2 = await t.as.post(url, { date });
+    expect(cn2.status, cn2.text).toBe(201);
+  }
+
+  return { t, creditFirst, creditFinal };
+}
+
+it("G: mixed margin-scheme invoice issues and accepts partial and final credits", async () => {
+  const { t, creditFirst, creditFinal } = await issueCaseG();
+
+  const vatDraft = await generateVat201(t);
+  expect(Number(vatDraft.body.box1bDubaiAmount), "Box 1b = margin only").toBe(73.45);
+  expect(Number(vatDraft.body.box1bDubaiVat), "Box 1b VAT = margin VAT").toBe(3.67);
+  expect(Number(vatDraft.body.box4ZeroRatedAmount), "Box 4 = zero-rated amount").toBe(2570.75);
+
+  await creditFirst();
+
+  const vatMid = await generateVat201(t);
+  expect(Number(vatMid.body.box1bDubaiAmount), "Box 1b after partial — margin untouched").toBe(
+    73.45
+  );
+  expect(Number(vatMid.body.box1bDubaiVat), "Box 1b VAT after partial — margin VAT unchanged").toBe(
+    3.67
+  );
+  expect(Number(vatMid.body.box4ZeroRatedAmount), "Box 4 after partial credit").toBe(1285.37);
+
+  await creditFinal();
+
+  const vatFinal = await generateVat201(t);
+  expect(Number(vatFinal.body.box1bDubaiAmount), "Box 1 = 0 after full credit").toBe(0);
+  expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
+});
+
+// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
+it.skip("G: foreign margin-scheme mixed invoice — Box 1 margin/VAT and Box 4 through partial and final credits", async () => {
+  const { t, creditFirst, creditFinal } = await issueCaseG();
+
+  await creditFirst();
+
+  await creditFinal();
+
+  const vatFinal = await generateVat201(t);
+  expect(
+    Number(vatFinal.body.box4ZeroRatedAmount),
+    "Box 4 = 0 — GL remainder used, not re-converted"
+  ).toBe(0);
+});
+
+it("H: mixed standard + explicit RC lines — full credit ties Box 1 amount and VAT", async () => {
+  // USD 100 standard (5%) + USD 100 reverse_charge (0%, no reverseCharge header) at 3.6725.
+  // Both lines post to 4020 (standard_sales). rawPostedNet["standard"] bundles both families.
+  //
+  // Before the fix: unconditional standard→reverse_charge remap used the combined GL value
+  //   (AED 734.50) for RC Box 1 while standard doc fils (AED 367.25) added again → net = -AED 367.25.
+  // After the fix: rawPostedNet["standard"] is split proportionally by per-CN doc base;
+  //   postedRemainderVat is applied to the standard portion for fil-exact VAT tracking.
+  //
+  // Initial:  std 36725 + rc 36725 = 73450 fils = AED 734.50; VAT 1836 fils = AED 18.36
+  // Full CN:  GL = toBaseFils(20000, 3.6725) = 73450; rcGL = 36725, stdGL = 36725 (exact split)
+  // Net:      Box 1 = 0, VAT = 0
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000007",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const vatPeriod = { periodStart: "2026-01-01", periodEnd: "2026-03-31" };
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Mixed LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      { description: "Standard services", quantity: 1, unitPrice: 100, vatRate: 5 },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 100,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  // Initial state: standard AED 367.25 + RC AED 367.25 = Box 1 AED 734.50; VAT AED 18.36.
+  {
+    const vatInit = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatInit.status, vatInit.text).toBe(201);
+    expect(Number(vatInit.body.box1bDubaiAmount), "Box 1 initial").toBe(734.5);
+    expect(Number(vatInit.body.box1bDubaiVat), "Box 1 VAT initial").toBe(18.36);
+  }
+
+  const cn = await t.as.post(`${base(t)}/invoices/${draft.body.id}/credit-note`, { date });
+  expect(cn.status, cn.text).toBe(201);
+
+  // After full credit: Box 1 amount = 0, Box 1 VAT = 0.
+  {
+    const vatFinal = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatFinal.status, vatFinal.text).toBe(201);
+    expect(Number(vatFinal.body.box1bDubaiAmount), "Box 1 = 0 after full credit").toBe(0);
+    expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
+  }
+});
+
+async function issueCaseI() {
+  // Sol review 6088011118 repro: USD 200 standard (5%) + USD 700 reverse_charge (0%) at 3.6725.
+  // Both lines post to 4020. rawPostedNet["standard"] bundles AED (200+700)×3.6725 = AED 3,305.25.
+  //
+  // Without the proportional split, discarding rawPostedNet["standard"] forces both families to
+  // fall back to doc fils. The final credit's doc fils sum to AED 1,652.63 (36725+128538) but the
+  // GL cleared only AED 1,652.62 — leaving Box 1 at -AED 0.01. VAT is also off by AED 0.01
+  // because two equal USD 5 payments round to AED 18.36 each (total 36.72) but the invoice was
+  // AED 36.73.
+  //
+  // With proportional split:
+  //   CN1 (USD 100 std + USD 350 RC): GL = toBaseFils(45000, 3.6725) = 165263 (exact at .5)
+  //     rcGL = round(165263×128538/165263) = 128538; stdGL = 36725. Sum = 165263 ✓
+  //   CN2 (remainder):                GL remaining = 330525 − 165263 = 165262
+  //     rcGL = round(165262×128538/165263) = 128537; stdGL = 36725. Sum = 165262 ✓
+  //   Net: (73450+257075) − (36725+128538) − (36725+128537) = 330525−165263−165262 = 0 ✓
+  //   VAT: postedRemainderVat for CN1 = 1836 fils; CN2 = 3673−1836 = 1837 fils. Net = 0 ✓
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000008",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Mixed Split LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      { description: "Standard services", quantity: 1, unitPrice: 200, vatRate: 5 },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 700,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  const url = `${base(t)}/invoices/${draft.body.id}/credit-note`;
+
+  async function creditFirst() {
+    // Partial credit: USD 100 standard + USD 350 RC.
+    const cn1 = await t.as.post(url, {
+      date,
+      lines: [
+        { description: "Standard services", quantity: 1, unitPrice: 100, vatRate: 5 },
+        {
+          description: "RC services",
+          quantity: 1,
+          unitPrice: 350,
+          vatRate: 0,
+          vatSupplyType: "reverse_charge",
+        },
+      ],
+    });
+    expect(cn1.status, cn1.text).toBe(201);
+  }
+
+  async function creditFinal() {
+    // Final credit: remainder (USD 100 standard + USD 350 RC).
+    const cn2 = await t.as.post(url, { date });
+    expect(cn2.status, cn2.text).toBe(201);
+  }
+
+  return { t, creditFirst, creditFinal };
+}
+
+it("I: mixed standard and reverse-charge invoice issues and accepts split credits", async () => {
+  const { t, creditFirst, creditFinal } = await issueCaseI();
+
+  const vatInit = await generateVat201(t);
+  expect(Number(vatInit.body.box1bDubaiAmount), "Box 1 initial").toBe(3305.25);
+  expect(Number(vatInit.body.box1bDubaiVat), "Box 1 VAT initial").toBe(36.73);
+
+  await creditFirst();
+
+  const vatMid = await generateVat201(t);
+  expect(Number(vatMid.body.box1bDubaiAmount), "Box 1 after CN1").toBe(1652.62);
+  expect(Number(vatMid.body.box1bDubaiVat), "Box 1 VAT after CN1").toBe(18.37);
+
+  await creditFinal();
+
+  const vatFinal = await generateVat201(t);
+  expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after final credit").toBe(0);
+});
+
+// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
+it.skip("I: mixed standard + explicit RC — split credits tie Box 1 amount and VAT to the fil", async () => {
+  const { t, creditFirst, creditFinal } = await issueCaseI();
+
+  await creditFirst();
+
+  await creditFinal();
+
+  const vatFinal = await generateVat201(t);
+  expect(Number(vatFinal.body.box1bDubaiAmount), "Box 1 = 0 after final credit").toBe(0);
+});
+
+async function issueCaseJ() {
+  // Sol review 6088308905 exact repro: USD 200 standard (5%) + USD 700 reverse_charge (0%) at 3.6725.
+  // Per-family toBaseFils would drift per CN (sum 88148 vs GL 88147 for CN1), leaving Box 1
+  // at -AED 0.01 after the final credit. The invoice combined-rounding fix and proportional CN
+  // split ensure Box 1 == GL remaining to the fil at every checkpoint.
+  //
+  // GL: invoice = toBase(90000, 3.6725) = 330525 fils = AED 3,305.25
+  // CN1 (40.01+200.01): rawPostedNet = toBase(24002) = 88147; rcGL=73453, stdGL=14694; net=242378
+  // CN2 (30+200):       rawPostedNet = toBase(23000) = 84468; rcGL=73450, stdGL=11018; net=157910
+  // CN3 (remainder):    rawPostedNet = 157910; net=0
+  // VAT: invoice 3673 fils; CN1 735 fils (AED 7.35×5 on 200 fils); CN2 551; CN3 2387. Net=0.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000009",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Odd Cent LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      { description: "Standard services", quantity: 1, unitPrice: 200, vatRate: 5 },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 700,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  const url = `${base(t)}/invoices/${draft.body.id}/credit-note`;
+
+  async function creditFirst() {
+    // CN1: USD 40.01 standard + USD 200.01 RC. Per-family fils sum = 88148 but GL = 88147.
+    const cn1 = await t.as.post(url, {
+      date,
+      lines: [
+        { description: "Standard services", quantity: 1, unitPrice: 40.01, vatRate: 5 },
+        {
+          description: "RC services",
+          quantity: 1,
+          unitPrice: 200.01,
+          vatRate: 0,
+          vatSupplyType: "reverse_charge",
+        },
+      ],
+    });
+    expect(cn1.status, cn1.text).toBe(201);
+  }
+
+  async function creditSecond() {
+    // CN2: USD 30 standard + USD 200 RC.
+    const cn2 = await t.as.post(url, {
+      date,
+      lines: [
+        { description: "Standard services", quantity: 1, unitPrice: 30, vatRate: 5 },
+        {
+          description: "RC services",
+          quantity: 1,
+          unitPrice: 200,
+          vatRate: 0,
+          vatSupplyType: "reverse_charge",
+        },
+      ],
+    });
+    expect(cn2.status, cn2.text).toBe(201);
+  }
+
+  async function creditFinal() {
+    // CN3: remainder.
+    const cn3 = await t.as.post(url, { date });
+    expect(cn3.status, cn3.text).toBe(201);
+  }
+
+  return { t, creditFirst, creditSecond, creditFinal };
+}
+
+it("J: mixed standard and reverse-charge invoice accepts odd-cent split credits", async () => {
+  const { t, creditFirst, creditSecond, creditFinal } = await issueCaseJ();
+
+  const vatInit = await generateVat201(t);
+  expect(Number(vatInit.body.box1bDubaiAmount), "Box 1 initial").toBe(3305.25);
+  expect(Number(vatInit.body.box1bDubaiVat), "Box 1 VAT initial").toBe(36.73);
+
+  await creditFirst();
+
+  const vatMid1 = await generateVat201(t);
+  expect(Number(vatMid1.body.box1bDubaiVat), "Box 1 VAT after CN1").toBe(29.38);
+
+  await creditSecond();
+
+  const vatMid2 = await generateVat201(t);
+  expect(Number(vatMid2.body.box1bDubaiVat), "Box 1 VAT after CN2").toBe(23.87);
+
+  await creditFinal();
+
+  const vatFinal = await generateVat201(t);
+  expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after final credit").toBe(0);
+});
+
+// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
+it.skip("J: mixed standard + explicit RC — odd-cent split credits tie Box 1 to the fil (Sol repro)", async () => {
+  const { t, creditFirst, creditSecond, creditFinal } = await issueCaseJ();
+
+  await creditFirst();
+
+  const vatMid1 = await generateVat201(t);
+  expect(Number(vatMid1.body.box1bDubaiAmount), "Box 1 after CN1").toBe(2423.78);
+
+  await creditSecond();
+
+  const vatMid2 = await generateVat201(t);
+  expect(Number(vatMid2.body.box1bDubaiAmount), "Box 1 after CN2").toBe(1579.1);
+
+  await creditFinal();
+
+  const vatFinal = await generateVat201(t);
+  expect(Number(vatFinal.body.box1bDubaiAmount), "Box 1 = 0 after final credit").toBe(0);
+});
+
+async function issueCaseK() {
+  // USD 100.01 standard (5%) + USD 100.01 reverse_charge (0%) at 3.6725.
+  // Per-family: toBaseFils(10001)+toBaseFils(10001) = 36729+36729 = 73458 fils.
+  // Combined GL: toBase(20002, 3.6725) = Decimal(73457.345).toDP(0, ROUND_HALF_UP) = 73457 fils.
+  // Without the invoice combined-rounding fix, the 1-fil gap leaves Box 1 at +AED 0.01 after
+  // the full credit. With the fix, invoice Box 1 = 73457 and the full CN clears 73457 → net 0.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000010",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Odd Cent Full LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      { description: "Standard services", quantity: 1, unitPrice: 100.01, vatRate: 5 },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 100.01,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  async function creditFinal() {
+    // Full credit note (remaining).
+    const cn = await t.as.post(`${base(t)}/invoices/${draft.body.id}/credit-note`, { date });
+    expect(cn.status, cn.text).toBe(201);
+  }
+
+  return { t, creditFinal };
+}
+
+it("K: odd-cent mixed standard and reverse-charge invoice issues and accepts a full credit", async () => {
+  const { t, creditFinal } = await issueCaseK();
+
+  const vatInit = await generateVat201(t);
+  expect(Number(vatInit.body.box1bDubaiVat), "Box 1 VAT initial").toBe(18.36);
+
+  await creditFinal();
+
+  const vatFinal = await generateVat201(t);
+  expect(Number(vatFinal.body.box1bDubaiAmount), "Box 1 = 0 after full credit").toBe(0);
+  expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
+});
+
+// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
+it.skip("K: mixed standard + explicit RC at 3.6725 — per-family rounding diverges from GL, full credit leaves 0", async () => {
+  const { t } = await issueCaseK();
+
+  const vatInit = await generateVat201(t);
+  expect(Number(vatInit.body.box1bDubaiAmount), "Box 1 initial").toBe(734.57);
+});
+
+it("L: separate revenue accounts (std 4010, RC 4020) — GL-query approach gives AED 734.58, full credit nets to 0 (Sol review 6088896030)", async () => {
+  // USD 100.01 standard on account 4010 + USD 100.01 RC on account 4020 at 3.6725.
+  // Per-bucket GL: toBase(10001) + toBase(10001) = 36729 + 36729 = 73458 fils.
+  // Combined-rounding (old): toBase(20002) = 73457 → leaves +AED 0.01 after full CN.
+  // GL-query fix: engine reads invoice GL = 73458, CN clears 73458, net = 0 exactly.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000011",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const vatPeriod = { periodStart: "2026-01-01", periodEnd: "2026-03-31" };
+  const acc4010 = (await accountByCode(t, "4010")).id;
+  const acc4020 = (await accountByCode(t, "4020")).id;
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Separate Accounts LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      {
+        description: "Standard services",
+        quantity: 1,
+        unitPrice: 100.01,
+        vatRate: 5,
+        revenueAccountId: acc4010,
+      },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 100.01,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+        revenueAccountId: acc4020,
+      },
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  // Initial: separate-bucket GL = 36729 + 36729 = 73458 fils = AED 734.58 (not 734.57).
+  {
+    const vatInit = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatInit.status, vatInit.text).toBe(201);
+    expect(Number(vatInit.body.box1bDubaiAmount), "Box 1 initial — separate buckets").toBe(734.58);
+    expect(Number(vatInit.body.box1bDubaiVat), "Box 1 VAT initial").toBe(18.36);
+  }
+
+  const cn = await t.as.post(`${base(t)}/invoices/${draft.body.id}/credit-note`, { date });
+  expect(cn.status, cn.text).toBe(201);
+
+  // After full credit: 0/0 — no residual fil.
+  {
+    const vatFinal = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatFinal.status, vatFinal.text).toBe(201);
+    expect(Number(vatFinal.body.box1bDubaiAmount), "Box 1 = 0 after full credit").toBe(0);
+    expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
+  }
+});
+
+async function issueCaseM() {
+  // USD 100.01 standard (5%) + USD 100.01 reverse_charge (0%) at 3.6725. Both lines go to the
+  // same bucket (4020). Combined GL = toBase(20002, 3.6725) = 73457 fils = AED 734.57.
+  // After nulling the memo_key the engine must still find the JEs via OR je.memo_key IS NULL.
+  // The source/source_id/entry_kind/reversed_by guards prevent contamination.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000012",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Legacy LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      { description: "Standard services", quantity: 1, unitPrice: 100.01, vatRate: 5 },
+      {
+        description: "RC services",
+        quantity: 1,
+        unitPrice: 100.01,
+        vatRate: 0,
+        vatSupplyType: "reverse_charge",
+      },
+    ],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  async function clearMemoKey() {
+    // Null-out the memo_key to simulate a pre-migration-0131 posting.
+    await h.sql(
+      "UPDATE journal_entries SET memo_key = NULL WHERE source = 'invoice' AND source_id = $1 AND entry_kind <> 'reversal'",
+      [draft.body.id]
+    );
+  }
+
+  async function creditFinal() {
+    // Full credit note (remainder).
+    const cnM = await t.as.post(`${base(t)}/invoices/${draft.body.id}/credit-note`, { date });
+    expect(cnM.status, cnM.text).toBe(201);
+  }
+
+  return { t, clearMemoKey, creditFinal };
+}
+
+it("M: legacy invoice with NULL memo_key issues and accepts a full credit", async () => {
+  const { t, clearMemoKey, creditFinal } = await issueCaseM();
+
+  await clearMemoKey();
+
+  await creditFinal();
+
+  const vatFinalM = await generateVat201(t);
+  expect(Number(vatFinalM.body.box1bDubaiAmount), "Box 1 = 0 after full credit").toBe(0);
+  expect(Number(vatFinalM.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
+});
+
+// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
+it.skip("M: NULL memo_key invoice (legacy pre-0131) — NULL extension finds GL, full credit nets to 0", async () => {
+  const { t, clearMemoKey } = await issueCaseM();
+
+  await clearMemoKey();
+
+  const vatInitM = await generateVat201(t);
+  expect(Number(vatInitM.body.box1bDubaiAmount), "Box 1 after NULL").toBe(734.57);
+});
+
+async function issueCaseN() {
+  // USD 100.01, vatRate=5, revenueAccountId=4060 at 3.6725.
+  // classifySupply → "standard" family; GL posts to 4060 (zero_rated_sales) → "zero_rated".
+  // GL-classification cleanup removes "standard" from netByFamily (not in postedNet).
+  // Box 1b Amount = 0 (no double-count), Box 4 = AED 367.29 (the GL amount).
+  // Box 8 = Box 4 = 367.29.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000013",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const acc4060N = (await accountByCode(t, "4060")).id;
+  const draftN = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Override LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      {
+        description: "Standard services on zero-rated account",
+        quantity: 1,
+        unitPrice: 100.01,
+        vatRate: 5,
+        revenueAccountId: acc4060N,
+      },
+    ],
+  });
+  expect(draftN.status, draftN.text).toBe(200);
+  const issuedN = await t.as.patch(`/api/invoices/${draftN.body.id}/status`, { status: "sent" });
+  expect(issuedN.status, issuedN.text).toBe(200);
+
+  async function creditFinal() {
+    // Full credit note: 4060 debited by CN, Box 4 nets to 0.
+    const cnN = await t.as.post(`${base(t)}/invoices/${draftN.body.id}/credit-note`, { date });
+    expect(cnN.status, cnN.text).toBe(201);
+  }
+
+  return { t, creditFinal };
+}
+
+it("N: standard-rated invoice on account 4060 issues and accepts a full credit", async () => {
+  const { t, creditFinal } = await issueCaseN();
+
+  const vatInitN = await generateVat201(t);
+  expect(Number(vatInitN.body.box8TotalAmount), "Box 8 = Box 4 only").toBe(367.29);
+
+  await creditFinal();
+
+  const vatFinalN = await generateVat201(t);
+  expect(Number(vatFinalN.body.box4ZeroRatedAmount), "Box 4 = 0 after CN").toBe(0);
+});
+
+// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
+it.skip("N: standard-rated line on zero_rated account (4060) — GL-classification wins, Box 1 = 0, Box 4 = AED 367.29", async () => {
+  const { t } = await issueCaseN();
+
+  const vatInitN = await generateVat201(t);
+  expect(Number(vatInitN.body.box1bDubaiAmount), "Box 1b = 0 (not double-counted)").toBe(0);
+  expect(Number(vatInitN.body.box4ZeroRatedAmount), "Box 4 = GL amount").toBe(367.29);
+});
+
+it("O: three-account invoice (std 4020, zero_rated 4060, exempt 4070) — Box 8 = Box 1 + Box 4 + Box 5 (no double-count)", async () => {
+  // USD 100 std on 4020 + USD 100 on 4060 (zero_rated) + USD 100 on 4070 (exempt) at 3.6725.
+  // toBase(10000, 3.6725) = 36725 fils = AED 367.25 each.
+  // GL-classification: each line's account maps to a distinct VAT 201 family.
+  // Box 1b = 367.25, Box 4 = 367.25, Box 5 = 367.25; Box 8 = 1101.75 (no double-count).
+  // Full CN nets all boxes to 0.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000014",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+  const vatPeriod = { periodStart: "2026-01-01", periodEnd: "2026-03-31" };
+  const acc4020O = (await accountByCode(t, "4020")).id;
+  const acc4060O = (await accountByCode(t, "4060")).id;
+  const acc4070O = (await accountByCode(t, "4070")).id;
+  const draftO = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Multi-Account LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines: [
+      {
+        description: "Standard services",
+        quantity: 1,
+        unitPrice: 100,
+        vatRate: 5,
+        revenueAccountId: acc4020O,
+      },
+      {
+        description: "Zero-rated exports",
+        quantity: 1,
+        unitPrice: 100,
+        vatRate: 0,
+        vatSupplyType: "zero_rated",
+        revenueAccountId: acc4060O,
+      },
+      {
+        description: "Exempt supply",
+        quantity: 1,
+        unitPrice: 100,
+        vatRate: 0,
+        vatSupplyType: "exempt",
+        revenueAccountId: acc4070O,
+      },
+    ],
+  });
+  expect(draftO.status, draftO.text).toBe(200);
+  const issuedO = await t.as.patch(`/api/invoices/${draftO.body.id}/status`, { status: "sent" });
+  expect(issuedO.status, issuedO.text).toBe(200);
+
+  // Each line: toBase(10000, 3.6725) = 36725 fils = AED 367.25.
+  // Box 8 = 36725 + 36725 + 36725 = 110175 fils = AED 1101.75 (sum of supply boxes).
+  {
+    const vatInitO = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatInitO.status, vatInitO.text).toBe(201);
+    expect(Number(vatInitO.body.box1bDubaiAmount), "Box 1b = AED 367.25").toBe(367.25);
+    expect(Number(vatInitO.body.box4ZeroRatedAmount), "Box 4 = AED 367.25").toBe(367.25);
+    expect(Number(vatInitO.body.box5ExemptAmount), "Box 5 = AED 367.25").toBe(367.25);
+    expect(
+      Number(vatInitO.body.box8TotalAmount),
+      "Box 8 = Box 1 + Box 4 + Box 5 (no double-count)"
+    ).toBe(1101.75);
+  }
+
+  // Full credit note: all boxes net to 0.
+  const cnO = await t.as.post(`${base(t)}/invoices/${draftO.body.id}/credit-note`, { date });
+  expect(cnO.status, cnO.text).toBe(201);
+
+  {
+    const vatFinalO = await t.as.post(`${base(t)}/vat-returns/generate`, vatPeriod);
+    expect(vatFinalO.status, vatFinalO.text).toBe(201);
+    expect(Number(vatFinalO.body.box1bDubaiAmount), "Box 1b = 0 after CN").toBe(0);
+    expect(Number(vatFinalO.body.box4ZeroRatedAmount), "Box 4 = 0 after CN").toBe(0);
+    expect(Number(vatFinalO.body.box5ExemptAmount), "Box 5 = 0 after CN").toBe(0);
+    expect(Number(vatFinalO.body.box8TotalAmount), "Box 8 = 0 after CN").toBe(0);
+  }
 });

@@ -1,17 +1,7 @@
-import type { UseQueryResult } from "@tanstack/react-query";
-import { DataTableCard, type DataTableCardProps } from "@/components/ui/data-table";
 import { EmptyState, type EmptyStateProps } from "@/components/ui/empty-state";
-import { StaleDataNotice } from "@/components/ui/stale-data-notice";
-import { useTranslation } from "@/lib/i18n";
+import { ListQueryTable, type ListQueryTableProps } from "@/components/ui/list-query-table";
 
-interface DocumentListTableProps extends Omit<
-  DataTableCardProps,
-  "status" | "statusMessage" | "error"
-> {
-  query: Pick<
-    UseQueryResult<unknown[]>,
-    "data" | "fetchStatus" | "isPending" | "isLoadingError" | "isRefetchError" | "refetch"
-  >;
+interface DocumentListTableProps extends Omit<ListQueryTableProps, "rowCount" | "statusMessage"> {
   matchCount: number;
   noMatch?: EmptyStateProps;
 }
@@ -21,46 +11,17 @@ export function DocumentListTable({
   matchCount,
   noMatch,
   children,
-  ...cardProps
+  ...card
 }: DocumentListTableProps) {
-  const { t } = useTranslation();
-  const paused = query.data === undefined && query.fetchStatus === "paused";
-  const retry = () => void query.refetch();
-  const hasMatches = matchCount > 0;
-  const status = paused
-    ? "ready"
-    : query.isPending
-      ? "loading"
-      : query.isLoadingError
-        ? "error"
-        : hasMatches || query.data?.length
-          ? "ready"
-          : "empty";
+  const hasNoMatches = matchCount === 0 && !!query.data?.length;
   return (
-    <>
-      {query.isRefetchError && <StaleDataNotice onRetry={retry} />}
-      <DataTableCard
-        {...cardProps}
-        status={status}
-        statusMessage={
-          paused || !noMatch
-            ? undefined
-            : status === "ready" && !hasMatches && <EmptyState compact {...noMatch} />
-        }
-        error={{
-          title: t["common.loadFailedTitle"],
-          description: t["common.loadFailedBody"],
-          onRetry: retry,
-        }}
-      >
-        {paused ? (
-          <p role="status" className="px-4 py-6 text-small text-muted-foreground">
-            {t["common.loadPaused"]}
-          </p>
-        ) : (
-          hasMatches && children
-        )}
-      </DataTableCard>
-    </>
+    <ListQueryTable
+      {...card}
+      query={query}
+      rowCount={query.data?.length ?? 0}
+      statusMessage={noMatch ? hasNoMatches && <EmptyState compact {...noMatch} /> : undefined}
+    >
+      {matchCount > 0 && children}
+    </ListQueryTable>
   );
 }

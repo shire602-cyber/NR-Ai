@@ -26,6 +26,14 @@ describe("S5 locale catalogs are code-split", () => {
     expect(typeof useI18n.getState().setLocale).toBe("function");
   });
 
+  // CI runs this after `npm run build` with REQUIRE_BUILD_OUTPUT=1: a missing build must fail there.
+  it.runIf(process.env.REQUIRE_BUILD_OUTPUT === "1")("build output is present (CI)", () => {
+    expect(
+      existsSync(join(root, "dist/public/assets")),
+      "run `npm run build` first: dist/public/assets missing"
+    ).toBe(true);
+  });
+
   it.skipIf(!existsSync(join(root, "dist/public/assets")))(
     "the built main bundle carries no namespace catalog copy",
     () => {

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Money } from "@/components/ui/money";
+import { CashBalance } from "@/components/ui/cash-balance";
 import { formatMessage } from "@/lib/i18n";
 import { Link } from "wouter";
 import { KpiCard } from "./KpiCard";
@@ -175,7 +176,9 @@ export function DashboardOverview({ m }: { m: DashboardModel }) {
         >
           <KpiCard
             label={tt["dashboard.kpiCash"]}
-            value={<Money amount={stats?.cashPosition ?? 0} tone="auto" />}
+            value={
+              <CashBalance amount={stats?.cashPosition ?? 0} data-testid="text-cash-position" />
+            }
             hint={
               stats?.cashRunway == null
                 ? tt["dashboard.cashFromLedger"]

@@ -62,7 +62,7 @@ export function PWAInstallPrompt() {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 100, opacity: 0 }}
           transition={{ type: "spring", damping: 25, stiffness: 300 }}
-          className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-md md:left-auto md:right-4 md:mx-0"
+          className="fixed bottom-4 start-4 end-4 z-50 mx-auto max-w-md md:start-auto md:end-4 md:mx-0"
         >
           <div className="rounded-xl border bg-card p-4 shadow-lg">
             <div className="flex items-start gap-3">

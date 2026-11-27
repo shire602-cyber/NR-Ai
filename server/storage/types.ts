@@ -449,7 +449,8 @@ export interface IStorage {
   updateReceiptIfUnposted(
     id: string,
     companyId: string,
-    data: Partial<InsertReceipt>
+    data: Partial<InsertReceipt>,
+    tx?: typeof db
   ): Promise<Receipt>;
   postReceiptAtomic(
     args: PostReceiptAtomicArgs,
@@ -459,9 +460,9 @@ export interface IStorage {
     args: ReviseReceiptAtomicArgs,
     tx?: typeof db
   ): Promise<{ receipt: Receipt; entry: JournalEntry; reversal: JournalEntry }>;
-  splitReceiptAtomic(args: SplitReceiptAtomicArgs): Promise<Receipt[]>;
+  splitReceiptAtomic(args: SplitReceiptAtomicArgs, tx?: typeof db): Promise<Receipt[]>;
   isReceiptImageReferenced(companyId: string, imagePath: string): Promise<boolean>;
-  deleteReceipt(id: string, companyId: string): Promise<void>;
+  deleteReceipt(id: string, companyId: string, tx?: typeof db): Promise<boolean>;
 
   // Customer Contacts
   getCustomerContact(id: string): Promise<CustomerContact | undefined>;

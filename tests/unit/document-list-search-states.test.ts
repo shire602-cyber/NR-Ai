@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement } from "react";
+import { act, createElement, type ComponentType } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,12 +8,16 @@ import { queryClient } from "@/lib/queryClient";
 import Quotes from "@/pages/Quotes";
 import CreditNotes from "@/pages/CreditNotes";
 import DebitNotes from "@/pages/DebitNotes";
+import ChartOfAccounts from "@/pages/ChartOfAccounts";
+import FixedAssets from "@/pages/FixedAssets";
+import PurchaseOrders from "@/pages/PurchaseOrders";
+import RecurringInvoices from "@/pages/RecurringInvoices";
 
 vi.mock("@/hooks/useDefaultCompany", () => ({
   useDefaultCompany: () => ({ companyId: "c-1", isLoading: false }),
 }));
 vi.mock("@/hooks/useCompanyPermission", () => ({
-  useCompanyPermission: () => ({ can: () => true, gate: () => ({}) }),
+  useCompanyPermission: () => ({ can: () => true, gate: () => ({}), gateApproval: () => ({}) }),
 }));
 vi.mock("@/hooks/useSubscription", () => ({
   useSubscription: () => ({ canAccess: () => true, isLoading: false }),
@@ -72,7 +76,8 @@ const pages = [
 ];
 const copy = {
   en: {
-    error: "Could not load this data",
+    error: "We couldn't load this page",
+    loadRetry: "Try again",
     paused: "Loading is paused. It will resume automatically when possible.",
     refreshFailed: "Couldn't refresh. Showing the last loaded data.",
     retry: "Retry",
@@ -81,7 +86,8 @@ const copy = {
     billsError: "Could not load bill numbers",
   },
   ar: {
-    error: "تعذّر تحميل هذه البيانات",
+    error: "تعذّر تحميل هذه الصفحة",
+    loadRetry: "أعد المحاولة",
     paused: "توقف التحميل مؤقتًا. سيُستأنف تلقائيًا عندما يصبح ذلك ممكنًا.",
     refreshFailed: "تعذّر التحديث. تُعرض آخر بيانات تم تحميلها.",
     retry: "إعادة المحاولة",
@@ -125,13 +131,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mount(page: (typeof pages)[number], locale: keyof typeof copy) {
+async function mount(page: { name: string; Page: ComponentType }, locale: keyof typeof copy) {
   window.history.replaceState({}, "", `/${page.name}`);
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith(`/c-1/${page.name}`)) return listResponse();
+      if (url.endsWith("/fixed-assets/summary")) return json(null);
       if (url.endsWith("/c-1/bills")) return billsResponse();
       return json([]);
     })
@@ -215,7 +222,7 @@ describe.each(["en", "ar"] as const)("document lists (%s)", (locale) => {
       expect(table(page.name).textContent).not.toContain(page.empty[locale]);
 
       listResponse = () => json(page.rows);
-      await retry(messages.retry);
+      await retry(messages.loadRetry);
       await waitFor(() => expect(renderedParties(page.name)).toEqual([parties[0]]));
     });
 
@@ -343,5 +350,114 @@ describe.each(["en", "ar"] as const)("document lists (%s)", (locale) => {
     await retry(messages.retry);
     await waitFor(() => expect(renderedParties(page.name)).toEqual([parties[1]]));
     expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+});
+
+const otherLists = [
+  {
+    name: "accounts-with-balances",
+    Page: ChartOfAccounts,
+    row: {
+      account: {
+        id: "cash",
+        code: "1000",
+        name: "Cash reserve",
+        nameEn: "Cash reserve",
+        nameAr: "الاحتياطي النقدي",
+        type: "asset",
+        isActive: true,
+      },
+      balance: 0,
+      debitTotal: 0,
+      creditTotal: 0,
+    },
+    text: { en: "Cash reserve", ar: "الاحتياطي النقدي" },
+  },
+  {
+    name: "fixed-assets",
+    Page: FixedAssets,
+    row: {
+      id: "van",
+      asset_name: "Delivery van",
+      category: "Vehicles",
+      purchase_cost: "1000",
+      status: "active",
+    },
+    text: { en: "Delivery van", ar: "Delivery van" },
+  },
+  {
+    name: "purchase-orders",
+    Page: PurchaseOrders,
+    row: {
+      id: "po",
+      number: "PO-001",
+      vendorName: "Oasis Trading",
+      date: "2026-03-01",
+      currency: "AED",
+      total: "100.00",
+      status: "draft",
+    },
+    text: { en: "Oasis Trading", ar: "Oasis Trading" },
+  },
+  {
+    name: "recurring-invoices",
+    Page: RecurringInvoices,
+    row: {
+      id: "schedule",
+      customerName: "Oasis Trading",
+      currency: "AED",
+      frequency: "monthly",
+      nextRunDate: "2026-12-01",
+      linesJson: "[]",
+      totalGenerated: 0,
+      isActive: true,
+    },
+    text: { en: "Oasis Trading", ar: "Oasis Trading" },
+  },
+];
+
+describe.each(["en", "ar"] as const)("other list query states (%s)", (locale) => {
+  describe.each(otherLists)("$name", (page) => {
+    const waiting = () => container.querySelector('[data-testid="list-query-waiting"]');
+    const rows = () => container.querySelector("tbody")?.textContent;
+
+    it("announces a paused first load and shows rows after reconnecting", async () => {
+      onlineManager.setOnline(false);
+      listResponse = vi.fn(() => json([page.row]));
+      await mount(page, locale);
+
+      expect(waiting()?.getAttribute("role")).toBe("status");
+      expect(waiting()?.textContent).toBe(copy[locale].paused);
+      expect(listResponse).not.toHaveBeenCalled();
+      expect(rows()).toBeUndefined();
+      expect(container.querySelector('[data-testid="table-skeleton"]')).toBeNull();
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+
+      await act(async () => onlineManager.setOnline(true));
+      await waitFor(() => expect(rows()).toContain(page.text[locale]));
+      expect(waiting()).toBeNull();
+    });
+
+    it("keeps cached rows and offers a localized Retry after a failed refresh", async () => {
+      listResponse = () => json([page.row]);
+      await mount(page, locale);
+      await waitFor(() => expect(rows()).toContain(page.text[locale]));
+
+      const queryKey =
+        page.name === "fixed-assets" ? ["/api/companies/c-1/fixed-assets"] : readKey(page.name);
+      listResponse = failed;
+      await act(async () => client.invalidateQueries({ queryKey, exact: true }));
+      await waitFor(() =>
+        expect(refreshNotice()?.textContent).toContain(copy[locale].refreshFailed)
+      );
+      expect(refreshNotice()?.getAttribute("role")).toBe("alert");
+      expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
+      expect(rows()).toContain(page.text[locale]);
+
+      listResponse = () => json([page.row]);
+      await retry(copy[locale].retry);
+      await waitFor(() => expect(refreshNotice()).toBeNull());
+      expect(rows()).toContain(page.text[locale]);
+    });
   });
 });
