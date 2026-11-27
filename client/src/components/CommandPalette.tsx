@@ -119,6 +119,7 @@ const PALETTE_ITEM_KEYS: Record<string, string> = {
   "nav-payroll": "shell.cmdPayroll",
   "nav-inventory": "shell.cmdInventory",
   "nav-vat": "shell.cmdVatFiling",
+  "nav-vat-bad-debt-relief": "shell.cmdBadDebtRelief",
   "nav-corp-tax": "shell.cmdCorporateTax",
   "nav-aichat": "shell.cmdAiChat",
   "create-invoice": "shell.cmdNewInvoice",

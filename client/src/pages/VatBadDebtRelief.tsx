@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
 import { Clock, Plus, ReceiptText } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -47,7 +46,14 @@ import { classifyLoadError } from "@/lib/loadError";
 import { localizeApiError } from "@/lib/validation-messages";
 import { formatDate } from "@/lib/format-date";
 import { formatCurrency } from "@/lib/format";
-import { vatPeriodContaining } from "@/lib/vat-claim-period";
+import { uaeToday } from "@shared/uae-date";
+
+interface ReturnPeriod {
+  from: string;
+  to: string;
+  status: string;
+  source: "company" | "group";
+}
 
 interface ReliefClaim {
   id: string;
@@ -58,22 +64,24 @@ interface ReliefClaim {
   status: "claimed" | "reversed" | string;
   reversedAt: string | null;
   reversalReason: string | null;
+  invoiceNumber: string | null;
+  customerName: string | null;
+  remainingRelief: number | string | null;
+  claimReturnPeriod: ReturnPeriod | null;
+  reversalReturnPeriod: ReturnPeriod | null;
 }
 
-interface InvoiceRow {
+interface EligibleInvoice {
   id: string;
   number: string;
-  customerName: string;
-  status: string;
-  invoiceType?: string | null;
+  customerName: string | null;
+  date: string;
 }
 
-interface PeriodSettings {
-  vatFilingFrequency?: string | null;
-  vatPeriodStartMonth?: number | null;
-}
+const today = () => uaeToday();
 
-const today = () => format(new Date(), "yyyy-MM-dd");
+/** The server's fixed English closure reason, mapped to catalog copy for display. */
+const PAYMENT_CLOSURE_REASON = "Payment received after bad-debt relief was claimed";
 
 /** Catalog copy for the server code; else the (already localized) message the API client built. */
 function errorText(error: unknown, fallback: string): string {
@@ -85,12 +93,7 @@ export default function VatBadDebtRelief() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const {
-    company,
-    companyId,
-    error: companyError,
-    isLoading: isLoadingCompany,
-  } = useDefaultCompany();
+  const { companyId, error: companyError, isLoading: isLoadingCompany } = useDefaultCompany();
   const { gate } = useCompanyPermission();
   const [createOpen, setCreateOpen] = useState(false);
   const [reversing, setReversing] = useState<ReliefClaim | null>(null);
@@ -101,31 +104,19 @@ export default function VatBadDebtRelief() {
     queryFn: getQueryFn<ReliefClaim[]>({ on401: "throw" }),
     enabled: !!companyId,
   });
-  const invoicesQuery = useQuery<InvoiceRow[]>({
-    queryKey: ["/api/companies", companyId, "invoices", "all"],
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/invoices?all=true`),
-    enabled: !!companyId,
-  });
+  const periodLabel = (period: ReturnPeriod | null, date: string) =>
+    period
+      ? formatMessage(t["vatBadDebtRelief.periodRange"], {
+          from: formatDate(period.from, locale),
+          to: formatDate(period.to, locale),
+        })
+      : formatMessage(t["vatBadDebtRelief.periodForecast"], { date: formatDate(date, locale) });
 
-  const settings = (company ?? {}) as PeriodSettings;
-  const periodLabel = (date: string) => {
-    const p = vatPeriodContaining(date, settings.vatFilingFrequency, settings.vatPeriodStartMonth);
-    return formatMessage(t["vatBadDebtRelief.periodRange"], {
-      from: formatDate(p.from, locale),
-      to: formatDate(p.to, locale),
-    });
-  };
-
-  const invoiceList = useMemo(
-    () => (Array.isArray(invoicesQuery.data) ? invoicesQuery.data : []),
-    [invoicesQuery.data]
-  );
-  const invoiceById = useMemo(() => new Map(invoiceList.map((i) => [i.id, i])), [invoiceList]);
   const claims = Array.isArray(claimsQuery.data) ? claimsQuery.data : undefined;
 
   const refresh = async () => {
     await queryClient.cancelQueries({ queryKey: claimsKey, exact: true });
-    void queryClient.invalidateQueries({ queryKey: claimsKey, exact: true });
+    void queryClient.invalidateQueries({ queryKey: claimsKey });
   };
 
   // Offline and server failures are transient, so cached rows stay usable; denied access or a
@@ -240,7 +231,6 @@ export default function VatBadDebtRelief() {
                 </TableHeader>
                 <TableBody>
                   {claims.map((claim) => {
-                    const invoice = invoiceById.get(claim.invoiceId);
                     const claimed = claim.status === "claimed";
                     return (
                       <TableRow key={claim.id} data-testid={`relief-row-${claim.id}`}>
@@ -249,22 +239,22 @@ export default function VatBadDebtRelief() {
                             href={`/invoices/${claim.invoiceId}`}
                             className="text-primary underline"
                             aria-label={
-                              invoice
+                              claim.invoiceNumber
                                 ? formatMessage(t["vatBadDebtRelief.openInvoice"], {
-                                    invoice: invoice.number,
+                                    invoice: claim.invoiceNumber,
                                   })
                                 : undefined
                             }
                           >
-                            {invoice ? (
-                              <bdi>{invoice.number}</bdi>
+                            {claim.invoiceNumber ? (
+                              <bdi>{claim.invoiceNumber}</bdi>
                             ) : (
                               t["vatBadDebtRelief.unknownInvoice"]
                             )}
                           </Link>
                         </TableCell>
                         <TableCell>
-                          <bdi>{invoice?.customerName ?? "—"}</bdi>
+                          <bdi>{claim.customerName ?? "—"}</bdi>
                         </TableCell>
                         <TableCell data-numeric>
                           <Money amount={Number(claim.outstandingAmount)} />
@@ -273,7 +263,9 @@ export default function VatBadDebtRelief() {
                           <Money amount={Number(claim.vatAmount)} />
                         </TableCell>
                         <TableCell>{formatDate(claim.claimDate, locale)}</TableCell>
-                        <TableCell>{periodLabel(claim.claimDate)}</TableCell>
+                        <TableCell data-testid={`relief-period-${claim.id}`}>
+                          {periodLabel(claim.claimReturnPeriod, claim.claimDate)}
+                        </TableCell>
                         <TableCell>
                           <Badge variant={claimed ? "default" : "secondary"}>
                             {claimed
@@ -289,10 +281,18 @@ export default function VatBadDebtRelief() {
                                   date: formatDate(claim.reversedAt, locale),
                                 })}
                               </p>
+                              <p className="text-muted-foreground">
+                                {formatMessage(t["vatBadDebtRelief.reversalPeriod"], {
+                                  period: periodLabel(claim.reversalReturnPeriod, claim.reversedAt),
+                                })}
+                              </p>
                               {claim.reversalReason ? (
                                 <p className="text-muted-foreground">
                                   {formatMessage(t["vatBadDebtRelief.reversalReason"], {
-                                    reason: claim.reversalReason,
+                                    reason:
+                                      claim.reversalReason === PAYMENT_CLOSURE_REASON
+                                        ? t["vatBadDebtRelief.reasonPayment"]
+                                        : claim.reversalReason,
                                   })}
                                 </p>
                               ) : null}
@@ -327,10 +327,6 @@ export default function VatBadDebtRelief() {
       {companyId && createOpen ? (
         <CreateClaimDialog
           companyId={companyId}
-          invoices={invoiceList}
-          claimedInvoiceIds={
-            new Set((claims ?? []).filter((c) => c.status === "claimed").map((c) => c.invoiceId))
-          }
           onClose={() => setCreateOpen(false)}
           onDone={() => {
             setCreateOpen(false);
@@ -351,7 +347,6 @@ export default function VatBadDebtRelief() {
         <ReverseClaimDialog
           companyId={companyId}
           claim={reversing}
-          invoiceNumber={invoiceById.get(reversing.invoiceId)?.number ?? ""}
           periodLabel={periodLabel}
           onClose={() => setReversing(null)}
           onDone={() => {
@@ -377,7 +372,6 @@ export default function VatBadDebtRelief() {
 function ReverseClaimDialog({
   companyId,
   claim,
-  invoiceNumber,
   periodLabel,
   onClose,
   onDone,
@@ -385,8 +379,7 @@ function ReverseClaimDialog({
 }: {
   companyId: string;
   claim: ReliefClaim;
-  invoiceNumber: string;
-  periodLabel: (date: string) => string;
+  periodLabel: (period: ReturnPeriod | null, date: string) => string;
   onClose: () => void;
   onDone: () => void;
   onError: (e: unknown) => void;
@@ -406,18 +399,30 @@ function ReverseClaimDialog({
   });
   // The server never dates a reversal before the claim.
   const effectiveDate = date < String(claim.claimDate) ? String(claim.claimDate) : date;
+  const remaining = Number(claim.remainingRelief ?? 0);
+  // The return carrying the reversal is known only when the reversal date falls inside the claim's
+  // own return; otherwise it is the return for the period containing the date (a forecast).
+  const claimPeriod = claim.claimReturnPeriod;
+  const inClaimPeriod =
+    !!claimPeriod && effectiveDate >= claimPeriod.from && effectiveDate <= claimPeriod.to;
+  const period = periodLabel(inClaimPeriod ? claimPeriod : null, effectiveDate);
+  const invoice = claim.invoiceNumber || t["vatBadDebtRelief.unknownInvoice"];
+  // Mirrors reverseBadDebtReliefClaim: only relief not yet recovered through customer payments
+  // is added back; with nothing left the claim just closes.
+  const effect =
+    remaining > 0
+      ? formatMessage(t["vatBadDebtRelief.reverseBody"], {
+          invoice,
+          amount: formatCurrency(remaining, "AED", locale),
+          period,
+        })
+      : formatMessage(t["vatBadDebtRelief.reverseBodyNothing"], { invoice });
   return (
     <Dialog open onOpenChange={(open) => (!open && !mutation.isPending ? onClose() : undefined)}>
       <DialogContent data-testid="reverse-dialog">
         <DialogHeader>
           <DialogTitle>{t["vatBadDebtRelief.reverseTitle"]}</DialogTitle>
-          <DialogDescription data-testid="reverse-effect">
-            {formatMessage(t["vatBadDebtRelief.reverseBody"], {
-              invoice: invoiceNumber || t["vatBadDebtRelief.unknownInvoice"],
-              amount: formatCurrency(Number(claim.vatAmount), "AED", locale),
-              period: date ? periodLabel(effectiveDate) : "—",
-            })}
-          </DialogDescription>
+          <DialogDescription data-testid="reverse-effect">{effect}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
@@ -462,15 +467,11 @@ function ReverseClaimDialog({
 
 function CreateClaimDialog({
   companyId,
-  invoices,
-  claimedInvoiceIds,
   onClose,
   onDone,
   onError,
 }: {
   companyId: string;
-  invoices: InvoiceRow[];
-  claimedInvoiceIds: Set<string>;
   onClose: () => void;
   onDone: () => void;
   onError: (e: unknown) => void;
@@ -482,14 +483,13 @@ function CreateClaimDialog({
   const [customerNotified, setCustomerNotified] = useState(false);
   const [notifiedAt, setNotifiedAt] = useState("");
   const [notes, setNotes] = useState("");
-  // The server decides eligibility (six months from supply, write-off, VAT on the invoice);
-  // this only drops documents that can never qualify.
-  const choices = invoices.filter(
-    (i) =>
-      i.invoiceType !== "credit_note" &&
-      !["draft", "void", "cancelled"].includes(i.status) &&
-      !claimedInvoiceIds.has(i.id)
-  );
+  // Written-off invoices without an active claim; the server decides the rest (six months from
+  // supply, VAT on the invoice).
+  const eligibleQuery = useQuery<EligibleInvoice[]>({
+    queryKey: ["/api/companies", companyId, "vat", "bad-debt-relief", "eligible-invoices"],
+    queryFn: getQueryFn<EligibleInvoice[]>({ on401: "throw" }),
+  });
+  const choices = Array.isArray(eligibleQuery.data) ? eligibleQuery.data : [];
   const mutation = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/vat/bad-debt-relief`, {
@@ -525,7 +525,7 @@ function CreateClaimDialog({
                 ) : (
                   choices.map((i) => (
                     <SelectItem key={i.id} value={i.id}>
-                      {i.number} · {i.customerName}
+                      {i.number} · {i.customerName ?? "—"}
                     </SelectItem>
                   ))
                 )}

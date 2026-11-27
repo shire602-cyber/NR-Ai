@@ -138,6 +138,7 @@
   "shell.cmdPayroll": "الرواتب",
   "shell.cmdInventory": "المخزون",
   "shell.cmdVatFiling": "إقرار ضريبة القيمة المضافة",
+  "shell.cmdBadDebtRelief": "إعفاء الديون المعدومة",
   "shell.cmdCorporateTax": "ضريبة الشركات",
   "shell.cmdAiChat": "محادثة الذكاء الاصطناعي",
   "shell.cmdNewInvoice": "فاتورة جديدة",

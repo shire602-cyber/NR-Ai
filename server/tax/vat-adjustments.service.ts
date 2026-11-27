@@ -440,6 +440,160 @@ export async function listBadDebtReliefClaims(companyId: string) {
     .orderBy(sql`${badDebtReliefClaims.claimDate} DESC`);
 }
 
+export interface BadDebtClaimReturnPeriod {
+  from: string;
+  to: string;
+  status: string;
+  /** "group" when the VAT group representative's return carries the date. */
+  source: "company" | "group";
+}
+
+const RETURN_STATUS_RANK: Record<string, number> = { filed: 0, submitted: 1, amended: 2 };
+
+/**
+ * Claims for the screen: the claim row plus invoice number, customer name, the relief still to be
+ * added back on reversal (relief not yet recovered through customer part-payments, the same
+ * figure `reverseBadDebtReliefClaim` posts), and the VAT return period each date actually falls in.
+ * Periods come from the company's own VAT returns and, for a VAT group member, the
+ * representative's group returns (the period the engine files the member under). Amendments are
+ * skipped: they keep the original's period. `null` means no return exists yet for that date.
+ * Read-only; three tenant-scoped queries, none per claim.
+ */
+export async function listBadDebtReliefClaimsDetailed(companyId: string) {
+  const claimsQ = await pool.query(
+    `SELECT c.id, c.company_id, c.invoice_id, c.claim_date::text AS claim_date, c.emirate,
+            c.outstanding_amount, c.taxable_amount, c.vat_amount, c.written_off,
+            c.customer_notified, c.customer_notified_at::text AS customer_notified_at, c.status,
+            c.journal_entry_id, c.reversal_entry_id, c.reversed_at::text AS reversed_at,
+            c.reversal_reason, c.notes, c.created_by, c.created_at, c.updated_at,
+            i.number AS invoice_number, i.customer_name
+       FROM bad_debt_relief_claims c
+       LEFT JOIN invoices i ON i.id = c.invoice_id AND i.company_id = c.company_id
+      WHERE c.company_id = $1
+      ORDER BY c.claim_date DESC, c.created_at DESC`,
+    [companyId]
+  );
+  if (!claimsQ.rows.length) return [];
+
+  const restoredQ = await pool.query(
+    `SELECT je.source_id::text AS claim_id,
+            COALESCE(SUM(ROUND((jl.credit - jl.debit) * 100)), 0)::bigint AS restored
+       FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id
+      WHERE je.company_id = $1 AND je.source = $2 AND je.status = 'posted'
+        AND je.reversed_by_entry_id IS NULL AND jl.system_vat
+        AND split_part(je.idempotency_key, ':', 3) = 'recover'
+        AND split_part(je.idempotency_key, ':', 4) <> 'legacy-undo'
+      GROUP BY je.source_id`,
+    [companyId, BAD_DEBT_SOURCE]
+  );
+  const restored = new Map<string, number>(
+    restoredQ.rows.map((r) => [r.claim_id as string, Number(r.restored)])
+  );
+
+  const returnsQ = await pool.query(
+    `SELECT r.company_id, r.status, r.period_start::date::text AS ps, r.period_end::date::text AS pe,
+            r.created_at
+       FROM vat_returns r
+      WHERE r.amends_return_id IS NULL
+        AND (r.company_id = $1
+          OR EXISTS (
+            SELECT 1 FROM vat_group_members m JOIN vat_groups g ON g.id = m.group_id
+             WHERE m.company_id = $1 AND g.representative_company_id = r.company_id
+               AND r.vat_group_id = g.id))`,
+    [companyId]
+  );
+  const returns = returnsQ.rows as Array<{
+    company_id: string;
+    status: string;
+    ps: string;
+    pe: string;
+    created_at: Date;
+  }>;
+  const periodFor = (date: string | null): BadDebtClaimReturnPeriod | null => {
+    if (!date) return null;
+    const hits = returns.filter((r) => r.ps <= date && date <= r.pe);
+    if (!hits.length) return null;
+    hits.sort(
+      (a, b) =>
+        (RETURN_STATUS_RANK[a.status] ?? 9) - (RETURN_STATUS_RANK[b.status] ?? 9) ||
+        Number(b.company_id !== companyId) - Number(a.company_id !== companyId) ||
+        b.created_at.getTime() - a.created_at.getTime()
+    );
+    const r = hits[0];
+    return {
+      from: r.ps,
+      to: r.pe,
+      status: r.status,
+      source: r.company_id === companyId ? "company" : "group",
+    };
+  };
+
+  return claimsQ.rows.map((c) => {
+    const remainingFils =
+      c.status === "claimed"
+        ? Math.max(toFils(Number(c.vat_amount)) - (restored.get(c.id) ?? 0), 0)
+        : null;
+    return {
+      id: c.id,
+      companyId: c.company_id,
+      invoiceId: c.invoice_id,
+      claimDate: c.claim_date,
+      emirate: c.emirate,
+      outstandingAmount: Number(c.outstanding_amount),
+      taxableAmount: Number(c.taxable_amount),
+      vatAmount: Number(c.vat_amount),
+      writtenOff: c.written_off,
+      customerNotified: c.customer_notified,
+      customerNotifiedAt: c.customer_notified_at,
+      status: c.status,
+      journalEntryId: c.journal_entry_id,
+      reversalEntryId: c.reversal_entry_id,
+      reversedAt: c.reversed_at,
+      reversalReason: c.reversal_reason,
+      notes: c.notes,
+      createdBy: c.created_by,
+      createdAt: c.created_at,
+      updatedAt: c.updated_at,
+      invoiceNumber: c.invoice_number ?? null,
+      customerName: c.customer_name ?? null,
+      remainingRelief: remainingFils === null ? null : remainingFils / 100,
+      claimReturnPeriod: periodFor(c.claim_date),
+      reversalReturnPeriod: periodFor(c.reversed_at),
+    };
+  });
+}
+
+/**
+ * Invoices the relief picker may offer: issued invoices with an effective write-off in the accounts
+ * (Art. 64(1)(b): the write-off settles the invoice, so a balance filter would hide them) and no
+ * active claim. The service still decides eligibility (six months, VAT on the invoice).
+ * Read-only, tenant-scoped, one query.
+ */
+export async function listReliefEligibleInvoices(companyId: string) {
+  const { rows } = await pool.query(
+    `SELECT i.id, i.number, i.customer_name, (i.date + interval '4 hours')::date::text AS date
+       FROM invoices i
+      WHERE i.company_id = $1
+        AND i.invoice_type <> 'credit_note'
+        AND i.status NOT IN ('draft', 'void', 'cancelled')
+        AND COALESCE((SELECT SUM(ROUND(p.amount * 100)) FROM invoice_payments p
+                       WHERE p.company_id = i.company_id AND p.invoice_id = i.id
+                         AND p.method IN ($2, $3)), 0) > 0
+        AND NOT EXISTS (SELECT 1 FROM bad_debt_relief_claims c
+                         WHERE c.company_id = i.company_id AND c.invoice_id = i.id
+                           AND c.status = 'claimed')
+      ORDER BY i.date DESC, i.number DESC
+      LIMIT 500`,
+    [companyId, "write_off", "write_off_reinstatement"]
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    number: r.number as string,
+    customerName: (r.customer_name as string | null) ?? null,
+    date: r.date as string,
+  }));
+}
+
 const PAYMENT_RECOVERY_REASON = "Payment received after bad-debt relief was claimed";
 
 async function lockRecoveryPeriods(tx: LedgerTx, companyId: string) {

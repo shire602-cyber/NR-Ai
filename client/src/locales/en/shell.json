@@ -138,6 +138,7 @@
   "shell.cmdPayroll": "Payroll",
   "shell.cmdInventory": "Inventory",
   "shell.cmdVatFiling": "VAT filing",
+  "shell.cmdBadDebtRelief": "Bad-debt relief",
   "shell.cmdCorporateTax": "Corporate tax",
   "shell.cmdAiChat": "AI chat",
   "shell.cmdNewInvoice": "New invoice",
