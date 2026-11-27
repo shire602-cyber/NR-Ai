@@ -23,7 +23,9 @@ import {
   ChartCard,
   ControlsRow,
   ExportMenu,
+  InsightsLoadError,
   InsightsSkeleton,
+  InsightsStaleNotice,
   InsightsTooltip,
   SeriesKey,
   SmallEmpty,
@@ -64,6 +66,8 @@ export default function AgeingView({ companyId }: { companyId: string }) {
   const payables = useQuery<AgingReport>({
     queryKey: [agedReportUrl(companyId, "payables", asOf)],
   });
+  const queries = [receivables, payables];
+  const failed = queries.some((q) => q.isLoadingError);
   if (receivables.isLoading && payables.isLoading) return <InsightsSkeleton />;
 
   const bucketLabel: Record<Bucket, string> = {
@@ -130,7 +134,10 @@ export default function AgeingView({ companyId }: { companyId: string }) {
         }
       />
 
-      {!hasBalances && !receivables.isLoading && !payables.isLoading ? (
+      <InsightsStaleNotice queries={queries} />
+      {failed ? (
+        <InsightsLoadError queries={queries} />
+      ) : !hasBalances && !receivables.isLoading && !payables.isLoading ? (
         <div className="rounded-xl border border-border bg-card">
           <EmptyState
             icon={Scale}
