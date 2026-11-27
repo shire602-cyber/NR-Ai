@@ -130,4 +130,33 @@ describe("manual reinstatement is blocked by an active VAT bad-debt relief claim
       ["bank", 300],
     ]);
   });
+
+  it("(e) reversing a write_off row through invoices.reversePayment is blocked the same way", async () => {
+    const { t, invoiceId } = await setup("RB-reversePayment");
+    const c = await claim(t, invoiceId);
+    const [row] = await h.sql<{ id: string }>(
+      `SELECT id FROM invoice_payments WHERE invoice_id = $1 AND method = 'write_off'`,
+      [invoiceId]
+    );
+    const { reverseInvoicePayment } = await import("../../server/services/invoice-payment.service");
+    const input = {
+      companyId: t.company.id,
+      paymentId: row.id,
+      actorId: t.user.id,
+      reason: "undo",
+      date: REINSTATED,
+    };
+    const before = await state(t, invoiceId);
+    await expect(reverseInvoicePayment(input)).rejects.toMatchObject({
+      code: "REINSTATE_BLOCKED_VAT_RELIEF_CLAIMED",
+      statusCode: 409,
+    });
+    expect(await state(t, invoiceId)).toEqual(before);
+    const rev = await t.as.post(
+      `/api/companies/${t.company.id}/vat/bad-debt-relief/${c.id}/reverse`,
+      { date: "2026-08-25", reason: "Reinstating the debt" }
+    );
+    expect(rev.status, rev.text).toBe(200);
+    await expect(reverseInvoicePayment(input)).resolves.toMatchObject({ reversed: true });
+  });
 });
