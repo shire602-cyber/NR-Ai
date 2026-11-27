@@ -5,6 +5,7 @@ import type { Company, CreditNoteLine, Invoice, InvoiceLine } from "../../shared
 import { fromFils, mulRate, sumFils, toFils } from "../../shared/money";
 import { baseCurrencyOf, isForeignCurrency } from "../ledger";
 import { storage } from "../storage";
+import { SALES_CODES } from "./invoice-posting.service";
 import {
   generateCreditNotePDF,
   type CreditNotePdfAdjustment,
@@ -43,6 +44,7 @@ async function postedVatBase(creditNote: Invoice): Promise<number> {
         eq(journalEntries.entryKind, "standard"),
         eq(accounts.companyId, creditNote.companyId),
         eq(accounts.isVatAccount, true),
+        eq(accounts.code, SALES_CODES.VAT_OUTPUT),
         sql`${journalEntries.reversedEntryId} IS NULL`
       )
     );
@@ -51,8 +53,17 @@ async function postedVatBase(creditNote: Invoice): Promise<number> {
   return Number(fromFils(mulRate(vatFils, String(creditNote.exchangeRate))));
 }
 
-/** Ledger legs that are never part of the supply value: receivable, customer credit/advance. */
-const NON_SUPPLY_CODES = ["1040", "2055", "2050"];
+/**
+ * Ledger legs that are never part of the supply value: receivable, customer credit/advance and the
+ * output VAT tax leg. Zero-rated (4060) and exempt (4070) sales are flagged isVatAccount in the
+ * chart but are revenue, so the VAT leg is identified by its code, as invoice posting does.
+ */
+const NON_SUPPLY_CODES = [
+  SALES_CODES.AR,
+  SALES_CODES.CUSTOMER_CREDITS,
+  SALES_CODES.CUSTOMER_ADVANCES,
+  SALES_CODES.VAT_OUTPUT,
+];
 
 /**
  * Art. 60(2)(e) base-currency net of posted document entries, AS POSTED: per source document,
@@ -87,7 +98,6 @@ async function postedNetBase(
         sql`${journalEntries.reversedEntryId} IS NULL`,
         sql`${journalEntries.reversedByEntryId} IS NULL`,
         eq(accounts.companyId, companyId),
-        eq(accounts.isVatAccount, false),
         notInArray(accounts.code, NON_SUPPLY_CODES)
       )
     );

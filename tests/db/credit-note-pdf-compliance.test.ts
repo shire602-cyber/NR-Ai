@@ -74,7 +74,7 @@ it("USD credit note PDF prints the reference, the posted rate and the posted AED
   expect(cn.status, cn.text).toBe(201);
   const [vat] = await h.sql<{ aed: string }>(
     `SELECT SUM(jl.debit)::text AS aed FROM journal_lines jl
-       JOIN accounts a ON a.id = jl.account_id WHERE jl.entry_id = $1 AND a.is_vat_account`,
+       JOIN accounts a ON a.id = jl.account_id WHERE jl.entry_id = $1 AND a.code = '2020'`,
     [cn.body.journalEntryId]
   );
   expect(Number(vat.aed)).toBe(64.27);
@@ -141,7 +141,7 @@ async function postedRevenueAed(entryId: string): Promise<number> {
   const [row] = await h.sql<{ aed: string }>(
     `SELECT COALESCE(SUM(jl.debit - jl.credit), 0)::text AS aed FROM journal_lines jl
        JOIN accounts a ON a.id = jl.account_id
-      WHERE jl.entry_id = $1 AND NOT a.is_vat_account AND a.code NOT IN ('1040', '2055', '2050')`,
+      WHERE jl.entry_id = $1 AND a.code NOT IN ('1040', '2055', '2050', '2020')`,
     [entryId]
   );
   return Number(row.aed);
@@ -205,8 +205,7 @@ it("a USD invoice split over two cost centres prints the posted per-bucket AED, 
     `SELECT COALESCE(SUM(jl.credit - jl.debit), 0)::text AS aed FROM journal_lines jl
        JOIN journal_entries je ON je.id = jl.entry_id
        JOIN accounts a ON a.id = jl.account_id
-      WHERE je.source = 'invoice' AND je.source_id = $1 AND NOT a.is_vat_account
-        AND a.code NOT IN ('1040', '2055', '2050')`,
+      WHERE je.source = 'invoice' AND je.source_id = $1 AND a.code NOT IN ('1040', '2055', '2050', '2020')`,
     [draft.body.id]
   );
   // Each bucket converts on its own: 0.50 x 3.67 = 1.835 -> 1.84, twice = 3.68 (one conversion
@@ -224,4 +223,99 @@ it("a USD invoice split over two cost centres prints the posted per-bucket AED, 
   expect(pdf.text).toContain("USD 1.00 (AED 3.68)");
   expect(pdf.text).toContain(`USD 0.50 (AED ${aed(credited)})`);
   expect(pdf.text).not.toContain("(AED 3.67)");
+});
+
+// Zero-rated (4060) and exempt (4070) sales are flagged is_vat_account in the chart but are
+// revenue: they must stay in the posted AED figures, while only the 2020 tax leg is VAT.
+const zero = (price: number) => ({
+  description: "Export",
+  quantity: 1,
+  unitPrice: price,
+  vatRate: 0,
+  vatSupplyType: "zero_rated",
+});
+const exempt = (price: number) => ({
+  description: "Rent",
+  quantity: 1,
+  unitPrice: price,
+  vatRate: 0,
+  vatSupplyType: "exempt",
+});
+
+async function issueUsd(t: Tenant, lines: unknown[]): Promise<{ id: string; number: string }> {
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Acme",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    lines,
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+  return { id: draft.body.id, number: draft.body.number };
+}
+
+async function vatLegAed(entryId: string): Promise<number> {
+  const [row] = await h.sql<{ aed: string }>(
+    `SELECT COALESCE(SUM(jl.debit + jl.credit), 0)::text AS aed FROM journal_lines jl
+       JOIN accounts a ON a.id = jl.account_id WHERE jl.entry_id = $1 AND a.code = '2020'`,
+    [entryId]
+  );
+  return Number(row.aed);
+}
+
+it("zero-rated-only USD export invoice: posted AED original, credited and corrected figures keep the 4060 revenue", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const inv = await issueUsd(t, [zero(1000)]);
+  const cn = await t.as.post(`${base(t)}/invoices/${inv.id}/credit-note`, {
+    date,
+    lines: [zero(400)],
+  });
+  expect(cn.status, cn.text).toBe(201);
+  // 1,000 x 3.6725 = 3,672.50; 400 x 3.6725 = 1,469.00; corrected 2,203.50; no VAT at all.
+  expect(await postedRevenueAed(cn.body.journalEntryId)).toBe(1469);
+  expect(await vatLegAed(cn.body.journalEntryId)).toBe(0);
+  const pdf = await pdfText(t.token, `/api/credit-notes/${cn.body.id}/pdf`);
+  expect(pdf.text).toContain("USD 1,000.00 (AED 3,672.50)");
+  expect(pdf.text).toContain("USD 400.00 (AED 1,469.00)");
+  expect(pdf.text).toContain("USD 600.00 (AED 2,203.50)");
+});
+
+it("mixed USD 1,000 standard + 1,000 zero-rated invoice with a partial credit note", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const inv = await issueUsd(t, [std(1000), zero(1000)]);
+  const cn = await t.as.post(`${base(t)}/invoices/${inv.id}/credit-note`, {
+    date,
+    lines: [std(200), zero(300)],
+  });
+  expect(cn.status, cn.text).toBe(201);
+  // Original 2,000 = AED 7,345.00 (not 3,672.50); credited 500 = 734.50 + 1,101.75 = 1,836.25
+  // (hand-calculated); corrected 1,500 = AED 5,508.75. VAT row is only the 2020 leg:
+  // 5% x 200 = USD 10 = AED 36.73 (36.725 half up).
+  expect(await postedRevenueAed(cn.body.journalEntryId)).toBe(1836.25);
+  expect(await vatLegAed(cn.body.journalEntryId)).toBe(36.73);
+  const pdf = await pdfText(t.token, `/api/credit-notes/${cn.body.id}/pdf`);
+  expect(pdf.text).toContain("USD 2,000.00 (AED 7,345.00)");
+  expect(pdf.text).toContain("USD 500.00 (AED 1,836.25)");
+  expect(pdf.text).toContain("USD 1,500.00 (AED 5,508.75)");
+  expect(pdf.text).toContain("AED 36.73");
+  expect(pdf.text).not.toContain("AED 3,672.50");
+});
+
+it("exempt USD invoice keeps the 4070 revenue in the posted AED figures", async () => {
+  const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
+  const inv = await issueUsd(t, [exempt(1000)]);
+  const cn = await t.as.post(`${base(t)}/invoices/${inv.id}/credit-note`, {
+    date,
+    lines: [exempt(400)],
+  });
+  expect(cn.status, cn.text).toBe(201);
+  expect(await postedRevenueAed(cn.body.journalEntryId)).toBe(1469);
+  expect(await vatLegAed(cn.body.journalEntryId)).toBe(0);
+  const pdf = await pdfText(t.token, `/api/credit-notes/${cn.body.id}/pdf`);
+  expect(pdf.text).toContain("USD 1,000.00 (AED 3,672.50)");
+  expect(pdf.text).toContain("USD 400.00 (AED 1,469.00)");
+  expect(pdf.text).toContain("USD 600.00 (AED 2,203.50)");
 });
