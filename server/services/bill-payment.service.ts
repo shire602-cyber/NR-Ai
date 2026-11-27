@@ -396,20 +396,33 @@ async function prepareBill(
         `SELECT * FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
         [existing.id]
       );
-      src = (r.rows as Array<Record<string, string | null>>).map((l) => ({
-        description: String(l.description ?? ""),
-        quantity: Number(l.quantity) || 1,
-        unitPriceFils: filsOf(l.unit_price),
-        vatRate: Number(l.vat_rate) === 0 ? 0 : 5,
-        supplyType:
-          l.vat_supply_type === "reverse_charge" && !reverseCharge && !isImport
-            ? "standard_rated"
-            : (l.vat_supply_type ?? null),
-        accountId: l.account_id ?? null,
-        productId: l.product_id ?? null,
-        poLineId: l.purchase_order_line_id ?? null,
-        costCenterId: l.cost_center_id ?? null,
-      }));
+      // Turning off a bill-wide treatment keeps the existing conversion to domestic VAT.
+      // Mixed bills keep their individual line treatments on edits that omit the lines.
+      const clearBillReverseCharge =
+        (existing.reverse_charge || existing.is_import) && !reverseCharge && !isImport;
+      src = r.rows.map((l) => {
+        const storedSupplyType = l.vat_supply_type ?? null;
+        // Older lines could record reverse charge only in the boolean column.
+        const supplyType =
+          l.reverse_charge === true &&
+          (storedSupplyType === null || storedSupplyType === "standard_rated")
+            ? "reverse_charge"
+            : storedSupplyType;
+        return {
+          description: String(l.description ?? ""),
+          quantity: Number(l.quantity) || 1,
+          unitPriceFils: filsOf(l.unit_price),
+          vatRate: Number(l.vat_rate) === 0 ? 0 : 5,
+          supplyType:
+            clearBillReverseCharge && supplyType === "reverse_charge"
+              ? "standard_rated"
+              : supplyType,
+          accountId: l.account_id ?? null,
+          productId: l.product_id ?? null,
+          poLineId: l.purchase_order_line_id ?? null,
+          costCenterId: l.cost_center_id ?? null,
+        };
+      });
     }
     if (src) {
       await assertCostCenters(
@@ -439,17 +452,16 @@ async function prepareBill(
         { tx }
       );
     }
+    const declaredImportVat =
+      input.import_vat_amount === undefined
+        ? filsOf(existing?.import_vat_amount)
+        : (input.import_vat_amount ?? 0);
+    const importVatFils = isImport ? declaredImportVat : 0;
     const totals = computeBillTotals({
       lines: src ?? [],
       reverseCharge,
       isImport,
-      importVatFils:
-        (get(
-          "import_vat_amount",
-          existing
-            ? filsOf((existing as unknown as { import_vat_amount?: string }).import_vat_amount)
-            : 0
-        ) as number) ?? 0,
+      importVatFils,
       withholdingFils:
         (get("withholding_amount", existing ? filsOf(existing.withholding_amount) : 0) as number) ??
         0,
@@ -458,9 +470,7 @@ async function prepareBill(
     header.vat_amount = fromFils(totals.vatFils);
     header.total_amount = fromFils(totals.totalFils);
     header.withholding_amount = fromFils(totals.withholdingFils);
-    header.import_vat_amount = fromFils(
-      isImport ? ((get("import_vat_amount", 0) as number | null) ?? 0) : 0
-    );
+    header.import_vat_amount = fromFils(importVatFils);
     if (src) {
       lines = src.map((l, i) => ({
         description: l.description,

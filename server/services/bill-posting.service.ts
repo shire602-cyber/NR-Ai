@@ -373,6 +373,7 @@ export interface BillRow {
   amount_paid?: string | number | null;
   reverse_charge: boolean;
   is_import?: boolean | null;
+  import_vat_amount?: string | number | null;
   exchange_rate?: string | number | null;
   recoverable_vat_percent?: string | number | null;
   withholding_amount?: string | number | null;
