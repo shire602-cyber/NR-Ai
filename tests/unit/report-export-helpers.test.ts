@@ -220,6 +220,22 @@ describe("report export helpers", () => {
       name: "muhasib-ocr-receipts.xlsx",
     },
     {
+      label: "an Arabic receipts export",
+      run: () => downloadReceiptsExcel("company", { ids: ["receipt"], locale: "ar" }),
+      path: "/api/companies/company/receipts/export-excel",
+      body: { ids: ["receipt"], locale: "ar" },
+      disposition: null,
+      name: "muhasib-receipts.xlsx",
+    },
+    {
+      label: "an Arabic OCR export",
+      run: () => downloadOcrExcel([], { locale: "ar" }),
+      path: "/api/ocr/export-excel",
+      body: { rows: [], locale: "ar" },
+      disposition: null,
+      name: "muhasib-ocr-receipts.xlsx",
+    },
+    {
       label: "a standard workbook",
       run: () => exportToExcel([{ columns: [{ header: "Value", key: "value" }], rows: [] }], "ledger"),
       path: "/api/export/excel",
