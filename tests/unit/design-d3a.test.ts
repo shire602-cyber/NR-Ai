@@ -132,11 +132,12 @@ describe("D3a design pass", () => {
       "CustomerContacts",
     ];
     // Source-level on purpose: this guards how each page is written, across all its data states.
-    // Vendors and CustomerContacts get the frame through QueryTableCard, so that wrapper is checked
-    // as well. The trailing \s keeps the `<DataTableCardProps>` type argument from counting as a
-    // render.
-    const wrapper = read("client/src/components/contacts/query-state.tsx");
-    expect(wrapper.split("export function QueryTableCard")[1]).toMatch(/<DataTableCard\s/);
+    // Check both shared wrappers. The trailing \s keeps the `<DataTableCardProps>` type argument
+    // from counting as a render.
+    const queryTable = read("client/src/components/contacts/query-state.tsx");
+    expect(queryTable.split("export function QueryTableCard")[1]).toMatch(/<DataTableCard\s/);
+    const documentTable = read("client/src/components/documents/DocumentListTable.tsx");
+    expect(documentTable.split("export function DocumentListTable")[1]).toMatch(/<DataTableCard\s/);
     for (const name of screens) {
       const src = read(`client/src/pages/${name}.tsx`);
       if (name === "Vendors" || name === "CustomerContacts") {
@@ -144,6 +145,11 @@ describe("D3a design pass", () => {
           /import \{[^}]*\bQueryTableCard\b[^}]*\} from "@\/components\/contacts\/query-state"/
         );
         expect(src, name).toMatch(/<QueryTableCard\s/);
+      } else if (name === "Quotes" || name === "CreditNotes") {
+        expect(src, name).toMatch(
+          /import \{[^}]*\bDocumentListTable\b[^}]*\} from "@\/components\/documents\/DocumentListTable"/
+        );
+        expect(src, name).toMatch(/<DocumentListTable\s/);
       } else {
         expect(src, name).toContain("<DataTableCard");
       }
