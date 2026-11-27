@@ -16,7 +16,7 @@ const PREFIX: Record<InvoiceDocType, string> = {
   invoice: "INV",
   // CASH-SERIES (owner decision 2026-11-18): cash sales are tax invoices with their own
   // gap-free series (own prefix and counter per company), never shared with "invoice".
-  // Migration 0130 gives "CSL" to a company where another type already uses "CS".
+  // The cash-sale migrations assign an alternative where "CS" is already occupied.
   cash_sale: "CS",
   credit_note: "CN",
   // W3-A: debit notes (additional charges on an issued invoice) are tax
@@ -55,6 +55,18 @@ function sequenceYear(s: NumberingSettings, date: Date): number {
 export function formatDocumentNumber(s: NumberingSettings, year: number, n: number): string {
   const digits = String(n).padStart(s.padding, "0");
   return s.yearlyReset ? `${s.prefix}-${year}-${digits}` : `${s.prefix}-${digits}`;
+}
+
+function numberingSeriesOverlap(first: NumberingSettings, second: NumberingSettings): boolean {
+  if (first.prefix === second.prefix) return true;
+  if (first.yearlyReset === second.yearlyReset) return false;
+  const [yearly, continuous] = first.yearlyReset ? [first, second] : [second, first];
+  const stem = `${yearly.prefix}-`;
+  // Padding is a minimum width. Counters eventually have enough digits to overlap.
+  return (
+    continuous.prefix.startsWith(stem) &&
+    /^(0|[1-9][0-9]{0,3})$/.test(continuous.prefix.slice(stem.length))
+  );
 }
 
 /** Default format (INV-2026-00001); kept for callers and tests that format without settings. */
@@ -110,6 +122,9 @@ export async function allocateInvoiceNumber(
   // Take the same company key-share lock as the invoice FK before writing the
   // sequence, so a clone can't wait on a sequence row held by a blocked writer.
   await executor.execute(sql`SELECT id FROM companies WHERE id = ${companyId} FOR KEY SHARE`);
+  await executor.execute(sql`
+    SELECT pg_advisory_xact_lock_shared(hashtextextended('document-numbering:' || ${companyId}, 0))
+  `);
   const settings = await getNumberingSettings(companyId, docType, executor);
   const year = sequenceYear(settings, date);
   const result = await executor.execute(sql`
@@ -120,8 +135,64 @@ export async function allocateInvoiceNumber(
                     updated_at = now()
     RETURNING last_value
   `);
-  const allocated = Number(rowsOf<{ last_value: string | number }>(result)[0]?.last_value);
-  return formatDocumentNumber(settings, date.getUTCFullYear(), allocated);
+  let allocated = Number(rowsOf<{ last_value: string | number }>(result)[0]?.last_value);
+  // Defence: documents created outside the allocator (imports, legacy rows) may already hold
+  // this number. Skip past them inside the caller's tx (the upsert holds the sequence row lock),
+  // so a number is never issued twice and nothing below an issued number is left open.
+  for (let i = 0; i < MAX_COLLISION_SKIPS; i++) {
+    const candidate = formatDocumentNumber(settings, date.getUTCFullYear(), allocated);
+    if (!(await numberExists(companyId, docType, candidate, executor))) return candidate;
+    const bumped = await executor.execute(sql`
+      UPDATE invoice_number_sequences SET last_value = last_value + 1, updated_at = now()
+       WHERE company_id = ${companyId} AND doc_type = ${docType} AND year = ${year}
+      RETURNING last_value
+    `);
+    allocated = Number(rowsOf<{ last_value: string | number }>(bumped)[0]?.last_value);
+  }
+  throw new DomainError(
+    "NUMBERING_COLLISION",
+    409,
+    { docType },
+    "Could not find a free document number; check the numbering settings"
+  );
+}
+
+const MAX_COLLISION_SKIPS = 1000;
+
+async function numberExists(
+  companyId: string,
+  docType: InvoiceDocType,
+  number: string,
+  executor: Executor
+): Promise<boolean> {
+  const table =
+    docType === "credit_note"
+      ? sql`credit_notes`
+      : docType === "quote"
+        ? sql`quotes`
+        : sql`invoices`;
+  const result = await executor.execute(
+    sql`SELECT 1 AS hit FROM ${table} WHERE company_id = ${companyId} AND number = ${number} LIMIT 1`
+  );
+  return rowsOf<unknown>(result).length > 0;
+}
+
+/**
+ * Move the sequence for `docType` past every number already printed in the company's current
+ * format (imported or legacy documents). Run inside the writer's tx after inserting documents
+ * outside the allocator; takes the exclusive numbering lock so in-flight allocations finish first.
+ */
+export async function reserveIssuedNumbers(
+  companyId: string,
+  docType: InvoiceDocType,
+  executor: Executor = db
+): Promise<void> {
+  await executor.execute(sql`SELECT id FROM companies WHERE id = ${companyId} FOR KEY SHARE`);
+  await executor.execute(sql`
+    SELECT pg_advisory_xact_lock(hashtextextended('document-numbering:' || ${companyId}, 0))
+  `);
+  const settings = await getNumberingSettings(companyId, docType, executor);
+  await reservePrintedNumbers(companyId, settings, executor);
 }
 
 /** Last number issued in the sequence the settings point at for `date` (0 = none yet). */
@@ -175,30 +246,35 @@ export async function numberingView(
 }
 
 /**
- * Highest counter value already written in the format `settings` produce for `year` (0 = none),
- * across every numbered document table. Used when a prefix or the yearly reset changes, so the
- * new format starts above any number already printed in it (imported documents, an earlier
- * prefix that is reused) and the next number can never collide with an existing one.
+ * Reserve numbers already printed in the new format, including in years that can still
+ * receive backdated documents.
  */
-async function highestExistingInFormat(
+async function reservePrintedNumbers(
   companyId: string,
   settings: NumberingSettings,
-  year: number,
   executor: Executor
-): Promise<number> {
-  // Prefixes are letters, digits, "-" and "/" only (validator), all literal in a POSIX regex.
+): Promise<void> {
+  // The prefix validator allows only letters, digits, "-" and "/".
   const pattern = settings.yearlyReset
-    ? `^${settings.prefix}-${year}-([0-9]+)$`
+    ? `^${settings.prefix}-([0-9]{4})-([0-9]+)$`
     : `^${settings.prefix}-([0-9]+)$`;
-  const result = await executor.execute(sql`
-    SELECT COALESCE(MAX(substring(number from ${pattern})::bigint), 0) AS n FROM (
+  await executor.execute(sql`
+    WITH docs AS (
       SELECT number FROM invoices WHERE company_id = ${companyId}
       UNION ALL SELECT number FROM credit_notes WHERE company_id = ${companyId}
       UNION ALL SELECT number FROM quotes WHERE company_id = ${companyId}
-    ) docs
-    WHERE number ~ ${pattern}
+    ), hits AS (
+      SELECT regexp_match(number, ${pattern}) AS parts FROM docs WHERE number ~ ${pattern}
+    )
+    INSERT INTO invoice_number_sequences (company_id, doc_type, year, last_value, updated_at)
+    SELECT ${companyId}, ${settings.docType},
+           ${settings.yearlyReset ? sql`parts[1]::int` : sql`0`} AS year,
+           MAX(${settings.yearlyReset ? sql`parts[2]::bigint` : sql`parts[1]::bigint`}), now()
+      FROM hits GROUP BY 3
+    ON CONFLICT (company_id, doc_type, year)
+      DO UPDATE SET last_value = EXCLUDED.last_value, updated_at = now()
+      WHERE invoice_number_sequences.last_value < EXCLUDED.last_value
   `);
-  return Number(rowsOf<{ n: string | number }>(result)[0]?.n ?? 0);
 }
 
 /**
@@ -217,6 +293,10 @@ export async function saveNumberingSettings(
   date: Date = new Date()
 ): Promise<NumberingView> {
   await db.transaction(async (tx: Executor) => {
+    await tx.execute(sql`SELECT id FROM companies WHERE id = ${companyId} FOR KEY SHARE`);
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(hashtextextended('document-numbering:' || ${companyId}, 0))
+    `);
     const before = await getNumberingSettings(companyId, docType, tx);
     const settings: NumberingSettings = {
       docType,
@@ -224,15 +304,23 @@ export async function saveNumberingSettings(
       padding: input.padding,
       yearlyReset: input.yearlyReset,
     };
+    for (const other of NUMBERED_DOC_TYPES) {
+      if (other === docType) continue;
+      if (numberingSeriesOverlap(settings, await getNumberingSettings(companyId, other, tx))) {
+        throw new DomainError(
+          "NUMBERING_PREFIX_IN_USE",
+          409,
+          { prefix: settings.prefix, docType: other },
+          "This prefix overlaps with another document numbering series"
+        );
+      }
+    }
     const year = sequenceYear(settings, date);
-    // Make sure the target sequence row exists, then lock it.
     if (before.yearlyReset !== settings.yearlyReset || before.prefix !== settings.prefix) {
-      const prevLast = Math.max(
-        before.yearlyReset !== settings.yearlyReset
-          ? await lastIssued(companyId, docType, sequenceYear(before, date), tx)
-          : 0,
-        await highestExistingInFormat(companyId, settings, date.getUTCFullYear(), tx)
-      );
+      await reservePrintedNumbers(companyId, settings, tx);
+    }
+    if (before.yearlyReset !== settings.yearlyReset) {
+      const prevLast = await lastIssued(companyId, docType, sequenceYear(before, date), tx);
       await tx.execute(sql`
         INSERT INTO invoice_number_sequences (company_id, doc_type, year, last_value, updated_at)
           VALUES (${companyId}, ${docType}, ${year}, ${prevLast}, now())

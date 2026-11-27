@@ -1,0 +1,10 @@
+{
+  "yearEndClose.title": "Year-end close",
+  "yearEndClose.body": "Records the fiscal-year close and locks the year. A closing entry to retained earnings is posted only if enabled in close settings; statements are correct either way.",
+  "yearEndClose.fiscalYearEnd": "Fiscal year end",
+  "yearEndClose.hardClose": "Hard close (only the firm or an administrator can reopen)",
+  "yearEndClose.closeYear": "Close fiscal year",
+  "yearEndClose.closed": "Fiscal year closed",
+  "yearEndClose.postClosingEntry": "Post a year-end closing entry to retained earnings",
+  "yearEndClose.askPeriod": "FY ending {date}"
+}

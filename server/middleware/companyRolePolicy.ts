@@ -145,6 +145,8 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("POST", "companies/*/einvoicing/complyance/connect", "settings.company"),
   r("POST", "companies/*/einvoicing/complyance/sync", "settings.company"),
   r("MUT", "companies/*/einvoicing/partner/**", "settings.company"),
+  // Appointment flow uses the /einvoice/ prefix (without the extra 'i').
+  r("MUT", "companies/*/einvoice/partner/**", "settings.company"),
   r("*", "companies/*/einvoicing/approver-links/**", "settings.company"),
   r("POST", "companies/*/einvoicing/tax-ready/shown", "documents.write"),
   // WQ7: automation switches, document numbering, approval rules and the setup wizard's
@@ -221,6 +223,7 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   // A4 (M1): a customer deposit posts Dr bank / Cr 2050 / Cr 2020 VAT on receipt.
   r("POST", "companies/*/customer-deposits", "ledger.post"),
   r("POST", "companies/*/debit-notes/*/apply", "ledger.post"),
+  r("POST", "companies/*/debit-notes/*/void", "ledger.post"),
   r("POST", "companies/*/fx-revaluations/*/undo", "ledger.post"),
   r("POST", "receipts/*/post", "ledger.post"),
   r("POST", "companies/*/bills/backfill-gl", "ledger.post"),
@@ -669,8 +672,13 @@ export async function companyRolePolicy(
       return next();
     }
     log.info({ requestId: req.id, method: req.method, permissions, role }, "RBAC denied");
-    if (!role && resolved.source === "row") {
-      // Another tenant's row id: answer like a missing row (tenant-scoped 404).
+    if (
+      !role &&
+      (resolved.source === "row" ||
+        (req.method === "POST" &&
+          matchSegments(["companies", "*", "einvoice", "partner", "**"], splitPath(req.path))))
+    ) {
+      // Keep tenant-scoped resources and appointment writes behind the same 404 boundary.
       throw new DomainError("NOT_FOUND", 404, undefined, "Not found");
     }
     deny(res, role ? "PERMISSION_DENIED" : "COMPANY_ACCESS_DENIED", details);
@@ -725,6 +733,43 @@ export function requirePermission(...permissions: [Permission, ...Permission[]])
 }
 
 type ScopedCompanyActor = Pick<Express.User, "id" | "isAdmin" | "userType" | "firmRole">;
+
+/** Binding a customer requires independent company authority. */
+export async function assertDirectCompanyPermission(
+  user: ScopedCompanyActor,
+  companyId: string,
+  permission: Permission
+): Promise<void> {
+  if (!zUuid.safeParse(companyId).success) throw new DomainError("INVALID_ID", 400);
+  if (user.userType === "client_portal") throw new DomainError("PORTAL_USER_APP_DENIED", 403);
+  const [membership] = await db
+    .select({
+      role: companyUsers.role,
+      generated: exists(
+        db
+          .select({ id: firmCompanyGrants.id })
+          .from(firmCompanyGrants)
+          .where(
+            and(
+              eq(firmCompanyGrants.companyId, companyId),
+              eq(firmCompanyGrants.userId, user.id),
+              recordedFirmOrigin()
+            )
+          )
+      ).mapWith(Boolean),
+    })
+    .from(companyUsers)
+    .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, user.id)));
+  const rawRole = membership?.generated
+    ? await historicDirectCompanyRole(companyId, user.id)
+    : membership?.role;
+  const role = rawRole ? normalizeCompanyRole(rawRole) : null;
+  if (role && roleHasAnyPermission(role, [permission])) return;
+  if (!membership && !(await storage.hasCompanyAccess(user.id, companyId, user.firmRole))) {
+    throw new DomainError("NOT_FOUND", 404, undefined, "Company not found");
+  }
+  throw new DomainError("PERMISSION_DENIED", 403, { companyId, permission, role });
+}
 
 type ScopedPermissionFailure =
   | { code: "PORTAL_USER_APP_DENIED" }

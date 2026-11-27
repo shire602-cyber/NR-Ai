@@ -8,6 +8,7 @@ import { todayIso } from "../ledger/normalize";
 import { rowsOf } from "../ledger/tx";
 import { lockVatReturns } from "../ledger/vat-lock";
 import type { LedgerTx } from "../ledger/types";
+import { toAccountingDate, type AccountingDate } from "../../shared/accounting-date";
 
 /**
  * Period lock policy (W2-B: R08-05, R02-11, R02-19).
@@ -43,6 +44,8 @@ export const CLOSE_ROLES = new Set(["owner", "admin", "accountant", "cfo"]);
 
 interface LockRequestContext {
   req: Request;
+  /** Soft-lock overrides already audited in this request (route guard + ledger kernel). */
+  auditedOverrides?: Set<string>;
 }
 const lockContext = new AsyncLocalStorage<LockRequestContext>();
 
@@ -61,7 +64,7 @@ export function withPeriodLockRequest<T>(req: Request, fn: () => Promise<T>): Pr
 function toIsoDate(date: Date | string): string | null {
   const d = date instanceof Date ? date : new Date(date);
   if (isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  return todayIso(d);
 }
 
 /** The strongest lock covering `isoDate` (hard beats soft), or null. */
@@ -83,9 +86,9 @@ export async function getEffectiveLock(
                  AND ${isoDate}::date <= period_end::date)
            )
         UNION ALL
-        SELECT fiscal_year_end, 'hard', 'through'
+        SELECT fiscal_year_end, CASE WHEN hard_closed THEN 'hard' ELSE 'soft' END, 'through'
           FROM fiscal_year_closes
-         WHERE company_id = ${companyId} AND status = 'closed' AND hard_closed = true
+         WHERE company_id = ${companyId} AND status = 'closed'
            AND ${isoDate}::date <= fiscal_year_end
       ) AS locks
      ORDER BY CASE WHEN lock_type = 'hard' THEN 0 ELSE 1 END, locks.period_end DESC,
@@ -145,7 +148,7 @@ export async function getLockThroughDate(companyId: string): Promise<string | nu
         WHERE company_id = $1 AND status = 'locked' AND lock_scope = 'through'
        UNION ALL
        SELECT fiscal_year_end FROM fiscal_year_closes
-        WHERE company_id = $1 AND status = 'closed' AND hard_closed = true
+        WHERE company_id = $1 AND status = 'closed'
      ) AS locks`,
     [companyId]
   );
@@ -183,6 +186,40 @@ export function canManageClose(actor: CloseActor): boolean {
   return isFirmOrAdmin(actor) || CLOSE_ROLES.has(actor.companyRole ?? "");
 }
 
+/**
+ * Audit a soft-lock override once per request: a route guard and the ledger kernel both run
+ * assertPeriodNotLocked for the same posting, which recorded the same override twice.
+ */
+async function auditSoftLockOverride(args: {
+  userId: string;
+  companyId: string;
+  periodEnd: string;
+  postingDate: string;
+  reason: string;
+  req: Request | undefined;
+  tx: LedgerTx | undefined;
+}): Promise<void> {
+  const ctx = lockContext.getStore();
+  const key = `${args.companyId.toLowerCase()}|${args.periodEnd}|${args.postingDate}`;
+  if (ctx) {
+    ctx.auditedOverrides ??= new Set();
+    if (ctx.auditedOverrides.has(key)) return;
+    ctx.auditedOverrides.add(key);
+  }
+  const { recordAudit } = await import("./audit.service");
+  await recordAudit({
+    userId: args.userId,
+    companyId: args.companyId,
+    action: "period.soft_lock_override",
+    entityType: "period",
+    entityId: args.periodEnd,
+    before: null,
+    after: { postingDate: args.postingDate, lockedThrough: args.periodEnd, reason: args.reason },
+    req: args.req,
+    tx: args.tx,
+  });
+}
+
 // ─── Guard ──────────────────────────────────────────────────────────────────
 
 /**
@@ -196,8 +233,84 @@ export function canManageClose(actor: CloseActor): boolean {
 export async function assertPeriodNotLocked(
   companyId: string,
   date: Date | string | null | undefined,
+  opts: { storesBusinessDate: true }
+): Promise<AccountingDate | null>;
+export async function assertPeriodNotLocked(
+  companyId: string,
+  date: Date | string | null | undefined,
   tx?: LedgerTx
-): Promise<void> {
+): Promise<void>;
+export async function assertPeriodNotLocked(
+  companyId: string,
+  date: Date | string | null | undefined,
+  optsOrTx?: { storesBusinessDate?: boolean } | LedgerTx
+): Promise<AccountingDate | null | void> {
+  const storesBizDate =
+    optsOrTx != null && "storesBusinessDate" in optsOrTx && optsOrTx.storesBusinessDate === true;
+  const tx: LedgerTx | undefined =
+    optsOrTx == null || "storesBusinessDate" in optsOrTx ? undefined : (optsOrTx as LedgerTx);
+
+  if (storesBizDate) {
+    const accountingDate = toAccountingDate(date);
+    // A non-empty string that toAccountingDate rejects is an invalid date (e.g. "2025-02-30"):
+    // return 422 INVALID_DATE immediately instead of falling back to new Date() roll-over.
+    if (typeof date === "string" && date !== "" && !accountingDate) {
+      throw new DomainError("INVALID_DATE", 422, undefined, "Date is not a valid calendar date");
+    }
+    if (!companyId || !accountingDate) return accountingDate ?? null;
+    const isoDate = accountingDate.businessDate;
+    const lock = await getEffectiveLock(companyId, isoDate, tx);
+    if (!lock) return accountingDate;
+    const label = `${isoDate.slice(5, 7)}/${isoDate.slice(0, 4)}`;
+    if (lock.lockType === "hard") {
+      throw new AppError({
+        message: `Cannot post to locked period (${label}). Unlock the period first.`,
+        statusCode: 403,
+        code: "PERIOD_LOCKED",
+        details: {
+          lockedThrough: lock.periodEnd,
+          lockType: lock.lockType,
+          lockScope: lock.lockScope,
+        },
+      });
+    }
+    // Soft lock: evaluate the same override path as the non-storesBusinessDate branch so that
+    // owners/close-managers can still post with a reason (R02-19 / X5-J1-D3).
+    const ctx = lockContext.getStore();
+    const req = ctx?.req;
+    const rawReason = req?.header?.(PERIOD_LOCK_REASON_HEADER);
+    const reason = decodeLockReason(rawReason);
+    const user = req?.user;
+    const actor = user ? await resolveCloseActor(companyId, user, tx) : null;
+    const canOverride = !!actor && canManageClose(actor);
+    if (user && reason.length >= 3 && canOverride) {
+      await auditSoftLockOverride({
+        userId: user.id,
+        companyId,
+        periodEnd: lock.periodEnd,
+        postingDate: isoDate,
+        reason,
+        req,
+        tx,
+      });
+      return accountingDate;
+    }
+    throw new AppError({
+      message: canOverride
+        ? `Period ${label} is closed (soft lock). You can still post this by giving a reason, which is kept in the audit trail.`
+        : `Period ${label} is closed (soft lock). Ask the owner or your accountant to post it, or to reopen the period.`,
+      statusCode: 403,
+      code: "PERIOD_SOFT_LOCKED",
+      details: {
+        lockedThrough: lock.periodEnd,
+        lockType: lock.lockType,
+        lockScope: lock.lockScope,
+        canOverride,
+        reasonRequired: canOverride,
+      },
+    });
+  }
+
   if (!companyId) return;
   if (!date) return;
   const isoDate = toIsoDate(date);
@@ -231,15 +344,12 @@ export async function assertPeriodNotLocked(
   const canOverride = !!actor && canManageClose(actor);
   if (user && reason.length >= 3) {
     if (canOverride) {
-      const { recordAudit } = await import("./audit.service");
-      await recordAudit({
+      await auditSoftLockOverride({
         userId: user.id,
         companyId,
-        action: "period.soft_lock_override",
-        entityType: "period",
-        entityId: lock.periodEnd,
-        before: null,
-        after: { postingDate: isoDate, lockedThrough: lock.periodEnd, reason },
+        periodEnd: lock.periodEnd,
+        postingDate: isoDate,
+        reason,
         req,
         tx,
       });

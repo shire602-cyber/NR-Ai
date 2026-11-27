@@ -4,12 +4,12 @@ import { MARKETING_BRAND } from "./marketing-brand";
 // plan, no card required. The trial start is the company's subscription row creation time
 // (existing companies count from when their row was created); an NR admin may extend it
 // (subscriptions.trial_ends_at). When it ends without an active paid plan, workspace access is
-// locked and all data is kept. Checkout or an NR admin can activate the selected plan.
+// read-only (reads and exports work, writes answer 402 PLAN_REQUIRED) and all data is kept. Checkout or an NR admin can activate the selected plan.
 
 /** Length of the free trial in days. The one place the public claim and the app read. */
 export const TRIAL_DAYS = 14;
 
-/** What happens when the trial ends: the workspace is locked until a paid plan is active. */
+/** What happens when the trial ends: the workspace is read-only until a paid plan is active. */
 export const TRIAL_END_BEHAVIOUR = "locked" as const;
 
 /** Where "Contact us" goes while online checkout is not configured. */

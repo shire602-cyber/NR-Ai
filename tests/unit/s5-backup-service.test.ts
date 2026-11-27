@@ -19,6 +19,7 @@ const schema = {
     "invoice_lines",
     "payment_links",
     "link_events",
+    "webhook_endpoints",
     "backups",
     "audit_logs",
     "notes",
@@ -36,6 +37,7 @@ const schema = {
     ["payment_links", "company_id"],
     ["link_events", "id"],
     ["link_events", "link_id"],
+    ["webhook_endpoints", "company_id"],
     ["backups", "id"],
     ["backups", "company_id"],
     ["audit_logs", "id"],
@@ -88,6 +90,7 @@ const snapshotTables: Record<string, unknown[]> = {
   invoice_lines: [{ id: LINE, invoice_id: INV, amount: 10, memo: `see ${INV}` }],
   payment_links: [{ id: LINK, company_id: CO }],
   link_events: [{ id: "66666666-6666-4666-8666-666666666666", link_id: LINK }],
+  webhook_endpoints: [{ company_id: CO }],
   notes: [{ company_id: CO, body: "no pk" }],
 };
 
@@ -119,8 +122,17 @@ function answer(text: string, params: unknown[] = []) {
     );
   if (sql.includes("constraint_type = 'PRIMARY KEY'"))
     return out(schema.pks.map(([t, c]) => ({ table_name: t, column_name: c })));
-  if (sql.includes("FROM pg_constraint")) return out(schema.fks);
-  const agg = sql.match(/json_agg\(to_jsonb\(t\)\), '\[\]'::json\) AS data FROM "([^"]+)"/);
+  if (sql.includes("FROM pg_constraint"))
+    return out(
+      schema.fks.map((f) => ({
+        ...f,
+        columns: [f.column_name],
+        ref_columns: [f.ref_column],
+      }))
+    );
+  const agg = sql.match(
+    /json_agg\(to_jsonb\(t\) - \$2::text\[\]\), '\[\]'::json\) AS data FROM "([^"]+)"/
+  );
   if (agg) return out([{ data: snapshotTables[agg[1]] ?? [] }]);
   if (sql.startsWith("INSERT INTO backups"))
     return out([{ id: "bk-new", company_id: params[0], name: params[1], status: "in_progress" }]);
@@ -130,14 +142,12 @@ function answer(text: string, params: unknown[] = []) {
   }
   if (sql.startsWith("SELECT id, company_id, status, data_snapshot, checksum, name FROM backups"))
     return out(backupRow ? [backupRow] : []);
-  if (sql.includes("FROM companies WHERE id = ANY"))
-    return out([
-      { id: CO, base_currency: "AED" },
-      { id: TARGET, base_currency: "AED" },
-    ]);
-  if (/^SELECT count\(\*\) AS n FROM "[^"]+" WHERE company_id = \$1$/.test(sql))
-    return out([{ n: String(targetActivity) }]);
-  if (sql.startsWith("SELECT count(*) AS n FROM")) return out([{ n: "2" }]);
+  if (sql.includes("FROM companies WHERE id = $1 AND deleted_at IS NULL"))
+    return out([{ base_currency: "AED" }]);
+  if (sql.includes("AS clone_rows"))
+    return out(targetActivity ? [{ idx: 0, n: String(targetActivity) }] : []);
+  if (sql.startsWith('INSERT INTO "invoices"') && sql.includes("RETURNING"))
+    return out([{ id: INV }]);
   if (sql.includes("AS snapshot_rows"))
     return out([{ snapshot_rows: "1", current_rows: "1", ins: "1", upd: "1", del: "1" }]);
   if (sql.includes("(SELECT count(*) FROM json_populate_recordset"))
@@ -157,6 +167,9 @@ vi.mock("../../server/db", () => ({
   },
   db: {},
 }));
+
+// The SQL transaction path must write the audit row through the fake pg client.
+vi.mock("../../server/storage", () => ({ storage: {} }));
 
 beforeEach(() => {
   log.length = 0;
@@ -194,8 +207,10 @@ describe("S5 backup manifest + snapshot (unit)", () => {
     const m = await s.buildBackupManifest();
     const names = m.tables.map((t) => t.name);
     expect(names).toEqual(
-      expect.arrayContaining(["invoices", "invoice_lines", "payment_links", "link_events", "notes"])
+      expect.arrayContaining(["invoices", "invoice_lines", "webhook_endpoints", "notes"])
     );
+    expect(names).not.toContain("payment_links");
+    expect(names).not.toContain("link_events");
     expect(names).not.toContain("backups");
     expect(names).not.toContain("audit_logs");
     expect(s.exclusionReason("audit_logs")).toMatch(/audit/);
@@ -213,6 +228,7 @@ describe("S5 backup manifest + snapshot (unit)", () => {
     const s = await svc();
     const snap = await s.captureSnapshot(CO);
     expect(snap.tables.invoices).toHaveLength(1);
+    expect(snap.tables).not.toHaveProperty("payment_links");
     const sealed = s.sealSnapshot(snap);
     expect(sealed.sealed).toMatch(/^enc:v1:/);
     expect(sealed.counts.invoices).toBe(1);
@@ -263,12 +279,12 @@ describe("S5 clone remapping (unit)", () => {
   it("skips provider-bound tables and children reached only through them", async () => {
     const s = await svc();
     const skip = s.cloneSkipReasons([
-      { name: "payment_links", scope: "company", predicate: "t.company_id = $1" },
+      { name: "ecommerce_integrations", scope: "company", predicate: "t.company_id = $1" },
       {
-        name: "link_events",
+        name: "integration_events",
         scope: "child",
         predicate:
-          '(t."link_id" IN (SELECT p."id" FROM "payment_links" p WHERE p.company_id = $1))',
+          '(t."integration_id" IN (SELECT p."id" FROM "ecommerce_integrations" p WHERE p.company_id = $1))',
       },
       {
         name: "invoice_lines",
@@ -276,8 +292,8 @@ describe("S5 clone remapping (unit)", () => {
         predicate: '(t."invoice_id" IN (SELECT p."id" FROM "invoices" p WHERE p.company_id = $1))',
       },
     ]);
-    expect([...skip.keys()].sort()).toEqual(["link_events", "payment_links"]);
-    expect(skip.get("link_events")).toMatch(/payment_links/);
+    expect([...skip.keys()].sort()).toEqual(["ecommerce_integrations", "integration_events"]);
+    expect(skip.get("integration_events")).toMatch(/ecommerce_integrations/);
   });
 });
 
@@ -314,6 +330,9 @@ describe("S5 restore + clone orchestration (fake pool)", () => {
     });
     expect(rep.preRestoreBackupId).toBe("bk-new");
     expect(rep.totals.delete).toBeGreaterThan(0);
+    const audit = log.findIndex((q) => q.startsWith("INSERT INTO audit_logs"));
+    expect(audit).toBeGreaterThan(-1);
+    expect(log.indexOf("COMMIT")).toBeGreaterThan(audit);
     expect(log.some((q) => q.startsWith('DELETE FROM "invoices"'))).toBe(true);
     expect(
       log.some((q) => q.startsWith('UPDATE "invoices" t SET "credit_of" = s."credit_of"'))
@@ -359,7 +378,7 @@ describe("S5 restore + clone orchestration (fake pool)", () => {
       userId: "u",
       dryRun: true,
     });
-    expect(dry.skippedTables.map((t) => t.table).sort()).toEqual(["link_events", "payment_links"]);
+    expect(dry.skippedTables.map((t) => t.table)).toEqual(["webhook_endpoints"]);
     expect(dry.tables.find((t) => t.table === "invoices")).toEqual({ table: "invoices", rows: 1 });
     expect(dry.preRestoreBackupId).toBeNull();
     await sealedBackup();

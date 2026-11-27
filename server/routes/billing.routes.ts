@@ -161,7 +161,7 @@ export function registerBillingRoutes(app: Express) {
   );
 
   // NR admin: set a company's plan while online checkout is not configured (the "contact us"
-  // path), or remove it ("none": trial if it has not ended, else locked). Audited.
+  // path), or remove it ("none": trial if it has not ended, else read-only). Audited.
   app.put(
     "/api/admin/companies/:companyId/plan",
     authMiddleware,

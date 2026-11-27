@@ -7,6 +7,7 @@ import { google, sheets_v4 } from "googleapis";
 import type { JWT, OAuth2Client } from "google-auth-library";
 import { createLogger } from "../config/logger";
 import { errorMessage } from "../errors";
+import { todayDubai } from "@shared/accounting-date";
 
 const logger = createLogger("google-sheets");
 
@@ -471,7 +472,7 @@ export async function importInvoicesFromSheet(spreadsheetId: string) {
       customerEmail: cellText(row[2]) || "",
       customerTrn: cellText(row[3]) || "",
       issueDate: cellText(row[4]),
-      dueDate: cellText(row[5]) || new Date().toISOString().split("T")[0],
+      dueDate: cellText(row[5]) || todayDubai(),
       subtotal: parseFloat(row[6] as string) || 0,
       vatAmount: parseFloat(row[7] as string) || 0,
       total: parseFloat(row[8] as string) || 0,

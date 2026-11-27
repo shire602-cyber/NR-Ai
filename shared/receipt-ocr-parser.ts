@@ -1,5 +1,7 @@
 import { normalizeForLabelMatching } from "./arabic-text";
 
+export const UNKNOWN_RECEIPT_MERCHANT = "Unknown Merchant";
+
 export type ParsedReceiptLineItem = {
   description: string;
   quantity: number;
@@ -247,7 +249,7 @@ function extractMerchant(lines: string[]): string {
     .filter((line) => !SKIP_MERCHANT_LINE_AR.test(line))
     .filter((line) => !/^\W*\d/.test(line));
 
-  return (candidates[0] || lines[0] || "Unknown Merchant").slice(0, 200);
+  return (candidates[0] || lines[0] || UNKNOWN_RECEIPT_MERCHANT).slice(0, 200);
 }
 
 function extractSupplierTrn(text: string): { trn: string | null; issue: string | null } {

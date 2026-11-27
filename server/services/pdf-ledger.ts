@@ -797,7 +797,7 @@ export function companyDetails(
   ledger: Ledger,
   c: {
     trn?: string | null;
-    address?: string | null;
+    address?: string | string[] | null;
     phone?: string | null;
     email?: string | null;
   }
@@ -806,7 +806,34 @@ export function companyDetails(
     .filter(Boolean)
     .map((v) => ltr(v))
     .join("  ·  ");
-  return [trnLine(ledger, c.trn) ?? "", c.address ?? "", contact].filter(Boolean);
+  const addresses = Array.isArray(c.address) ? c.address : [c.address ?? ""];
+  return [trnLine(ledger, c.trn) ?? "", ...addresses, contact].filter(Boolean);
+}
+
+/**
+ * Seller names and addresses in document-language order: the Arabic legal name / address first on
+ * an Arabic document, the English one first otherwise, de-duplicated, so an Arabic document never
+ * opens with English-only company chrome when an Arabic name is on file.
+ */
+export function sellerIdentity(
+  c: {
+    name: string;
+    legalName?: string | null;
+    legalNameAr?: string | null;
+    businessAddress?: string | null;
+    addressAr?: string | null;
+  },
+  locale: PdfLocale
+): { name: string; otherNames: string[]; addresses: string[] } {
+  const en = c.legalName?.trim() || c.name;
+  const ar = c.legalNameAr?.trim();
+  const names = [...new Set((locale === "ar" ? [ar, en] : [en, ar]).filter(Boolean) as string[])];
+  const addrEn = c.businessAddress?.trim();
+  const addrAr = c.addressAr?.trim();
+  const addresses = [
+    ...new Set((locale === "ar" ? [addrAr, addrEn] : [addrEn, addrAr]).filter(Boolean) as string[]),
+  ];
+  return { name: names[0], otherNames: names.slice(1), addresses };
 }
 
 /** "TRN ⁦100…⁩" / "الرقم الضريبي ⁦100…⁩" (document language) for a header or party block. */
@@ -822,6 +849,8 @@ export interface SimpleDocument {
   company: {
     name: string;
     legalName?: string | null;
+    legalNameAr?: string | null;
+    addressAr?: string | null;
     trn?: string | null;
     address?: string | null;
     phone?: string | null;
@@ -851,18 +880,19 @@ export interface SimpleDocument {
 export function renderSimpleDocument(d: SimpleDocument): Promise<Buffer> {
   const ledger = new Ledger({ locale: d.locale, accent: d.accent, info: d.info });
   const c = d.company;
+  const seller = sellerIdentity({ ...c, businessAddress: c.address }, d.locale);
   ledger.header({
-    companyName: c.name,
+    companyName: seller.name,
     logo: d.logo,
-    details: companyDetails(ledger, c),
+    details: [...seller.otherNames, ...companyDetails(ledger, { ...c, address: seller.addresses })],
     title: d.title,
   });
   ledger.meta([...d.meta, { label: bi("Currency", "العملة"), value: d.currency }]);
   ledger.parties([
     {
       label: bi("From", "من"),
-      name: c.legalName || c.name,
-      lines: [trnLine(ledger, c.trn), c.address],
+      name: seller.name,
+      lines: [...seller.otherNames, trnLine(ledger, c.trn), ...seller.addresses],
     },
     {
       label: d.party.label,

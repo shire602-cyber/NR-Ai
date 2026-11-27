@@ -329,3 +329,38 @@ export const einvoiceApproverLinks = pgTable(
   })
 );
 export type EInvoiceApproverLink = typeof einvoiceApproverLinks.$inferSelect;
+
+/**
+ * 0090: per-company e-invoicing partner appointment. The app resells e-invoicing
+ * through an MoF-accredited ASP; each client must accept the partner terms and
+ * appoint the partner in EmaraTax before invoices are submitted.
+ * One row per company + provider; unique on (company_id, provider).
+ */
+export const einvoiceAspAppointments = pgTable(
+  "einvoice_asp_appointments",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    termsVersion: text("terms_version").notNull(),
+    termsAcceptedAt: timestamp("terms_accepted_at").notNull(),
+    termsAcceptedBy: uuid("terms_accepted_by"),
+    emarataxConfirmedAt: timestamp("emaratax_confirmed_at"),
+    emarataxConfirmedBy: uuid("emaratax_confirmed_by"),
+    revokedAt: timestamp("revoked_at"),
+    revokedBy: uuid("revoked_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyProviderUnique: unique("einvoice_asp_appointments_company_provider_unique").on(
+      table.companyId,
+      table.provider
+    ),
+  })
+);
+export type EInvoiceAspAppointment = typeof einvoiceAspAppointments.$inferSelect;

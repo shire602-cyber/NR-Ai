@@ -15,6 +15,9 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 let container: HTMLDivElement;
 let root: Root;
 const calls: Array<{ method: string; url: string; body: unknown }> = [];
+// What GET /api/companies answers. Saving step 1 invalidates the list and refetches it, so the
+// answer must be the list the page was seeded with (an empty object is not a company list).
+let companiesReply: unknown[] = [];
 
 const company = (over: Record<string, unknown>) => ({
   id: "c-a",
@@ -35,6 +38,9 @@ beforeAll(async () => {
 beforeEach(() => {
   calls.length = 0;
   window.localStorage.clear();
+  // A signed-in session. Without the hint the list refetch after saving step 1 answers "Not signed
+  // in" (401), which is access lost: the cache drops the seeded companies and the wizard unmounts.
+  window.localStorage.setItem("muhasib_auth_hint", "1");
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -44,6 +50,12 @@ beforeEach(() => {
         url,
         body: init?.body ? JSON.parse(String(init.body)) : undefined,
       });
+      if (/\/api\/companies$/.test(url) && (init?.method ?? "GET") === "GET") {
+        return new Response(JSON.stringify(companiesReply), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
       if (url.includes("csrf-token")) {
         return new Response(JSON.stringify({ csrfToken: "t" }), {
           status: 200,
@@ -75,6 +87,7 @@ async function renderOnboarding(companies: unknown[], activeId: string | null) {
   const { default: Onboarding } = await import("../../client/src/pages/Onboarding");
   const { setActiveCompanyIdRaw } = await import("../../client/src/lib/activeCompany");
   queryClient.clear();
+  companiesReply = companies;
   setActiveCompanyIdRaw(activeId);
   queryClient.setQueryData(["/api/companies"], companies);
   queryClient.setQueryData(currentUserQueryKey, {

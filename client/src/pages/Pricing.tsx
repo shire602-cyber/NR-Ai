@@ -39,6 +39,7 @@ import {
 } from "@/components/marketing/plans";
 import { formatAmountDigits, formatMoneyText } from "@/lib/format-money";
 import { planContactHref } from "@/lib/planContact";
+import { TRIAL_LIMITS } from "@shared/plans";
 
 /*
  * /pricing (WP-B, spec 3.1): the same header, section heading, card and closing band as the
@@ -239,6 +240,12 @@ const FAQ = [
   ["marketing.faq7Q", "marketing.faq7A"],
 ] as const;
 
+const trialCaps = {
+  companies: TRIAL_LIMITS.maxCompanies,
+  credits: TRIAL_LIMITS.aiCreditsPerMonth,
+  storageGb: TRIAL_LIMITS.maxStorageMb / 1024,
+};
+
 export default function Pricing() {
   const { t } = useTranslation();
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
@@ -257,7 +264,7 @@ export default function Pricing() {
             <h1 id="mk-pricing-h1" className="mk-h2 mk-prhead__title">
               {t["marketing.prTitle"]}
             </h1>
-            <p className="mk-lead">{t["marketing.prBodyTrial"]}</p>
+            <p className="mk-lead">{formatMessage(t["marketing.prBodyTrial"], trialCaps)}</p>
           </div>
           <div className="mk-prhead__billing">
             <Segmented
@@ -354,7 +361,7 @@ export default function Pricing() {
         id="mk-pfaq-title"
         eyebrow={t["marketing.faqEyebrow"]}
         title={t["marketing.prFaqTitle"]}
-        items={FAQ.map(([q, a]) => ({ q: t[q], a: t[a] }))}
+        items={FAQ.map(([q, a]) => ({ q: t[q], a: formatMessage(t[a], trialCaps) }))}
       />
 
       {/* 7 · Closing CTA (the landing's) */}

@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useSubscription } from "@/hooks/useSubscription";
+import { TRIAL_LIMITS } from "@shared/plans";
 import type { Company } from "@shared/schema";
 import {
   Field,
@@ -153,8 +154,9 @@ function Wizard({
   progress: OnboardingProgress | null;
 }) {
   const { t, locale } = useTranslation();
-  // STEP4: the plan chosen at sign-up, named under the first heading (hidden when none).
-  const { chosenPlan } = useSubscription();
+  // STEP4: the plan chosen at sign-up, named under the first heading (hidden when none, and
+  // outside the trial: a paid plan keeps the recorded choice but not the trial's caps).
+  const { chosenPlan, planState } = useSubscription();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [step, setStepState] = useState<1 | 2 | 3>(() => stepFromProgress(progress));
@@ -360,13 +362,16 @@ function Wizard({
           }
           lead={t["onboarding.v3CompanyLead"]}
         />
-        {chosenPlan ? (
+        {planState === "trial" && chosenPlan ? (
           <p
             className="-mt-4 mb-6 text-caption text-muted-foreground"
             data-testid="onboarding-trial-note"
           >
             {formatMessage(t["onboarding.trialStartedNote"], {
               days: TRIAL_DAYS,
+              companies: TRIAL_LIMITS.maxCompanies,
+              credits: TRIAL_LIMITS.aiCreditsPerMonth,
+              storageGb: TRIAL_LIMITS.maxStorageMb / 1024,
               plan: t[planPhraseKey(chosenPlan.planId)],
               billing: t["components.ui.settingsNav.billing"],
             })}
