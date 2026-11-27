@@ -923,7 +923,13 @@ async function collectBills(
       )
     ) {
       // Legacy bill with no line-level VAT: the whole subtotal carries the bill VAT.
-      const kind = purchaseKindFor({ vatFils: vatDoc, designatedZone: b.designated_zone });
+      const kind = purchaseKindFor({
+        vatFils: vatDoc,
+        reverseCharge: billLines.some(
+          (line) => line.reverse_charge || line.vat_supply_type === "reverse_charge"
+        ),
+        designatedZone: b.designated_zone,
+      });
       push({ ...base, boxes: purchaseDelta(kind, subtotalBase, vatBase, recoverableTotal) });
       continue;
     }

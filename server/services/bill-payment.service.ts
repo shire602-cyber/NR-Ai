@@ -413,12 +413,7 @@ async function prepareBill(
       const savedQuantity = Number(saved?.quantity ?? 1);
       const quantity = l.quantity ?? savedQuantity;
       if (quantity === 0 && (!saved || savedQuantity !== 0)) {
-        throw new DomainError(
-          "INVALID_BILL_QUANTITY",
-          400,
-          { line: i },
-          "Quantity must be positive"
-        );
+        throw new DomainError("INVALID_BILL_QUANTITY", 400, { line: i });
       }
       const previousSupply = saved ? billLineSupplyType(saved) : null;
       const supplyType = l.vat_supply_type ?? previousSupply;

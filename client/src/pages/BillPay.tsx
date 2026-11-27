@@ -1061,11 +1061,12 @@ export default function BillPay() {
   const vatAmount =
     importVat ||
     (preserveHeaderVat ? headerVat : valuedLines.reduce((sum, line) => sum + lineVat(line), 0));
-  const payableVat = watchReverseCharge
-    ? 0
-    : preserveHeaderVat
-      ? headerVat
-      : valuedLines.reduce((sum, line) => sum + (line.reverseCharge ? 0 : lineVat(line)), 0);
+  const payableVat =
+    watchReverseCharge || (preserveHeaderVat && valuedLines.some((line) => line.reverseCharge))
+      ? 0
+      : preserveHeaderVat
+        ? headerVat
+        : valuedLines.reduce((sum, line) => sum + (line.reverseCharge ? 0 : lineVat(line)), 0);
   const totalAmount = subtotal + payableVat - Number(editingBill?.withholding_amount ?? 0);
   const cashAccounts = postablePaymentAccounts(accounts);
 
