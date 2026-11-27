@@ -23,6 +23,7 @@ import { DomainError } from "../errors";
 import { ACCOUNT_CODES } from "../constants";
 import { recordAudit } from "../services/audit.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { todayDubai } from "@shared/accounting-date";
 import { loadRecoveryRules, resolveRecovery } from "../tax/vat-recovery";
 import {
   buildExpenseClaimApprovalLines,
@@ -842,7 +843,7 @@ export function registerExpenseClaimRoutes(app: Express) {
         );
       }
       const body = parsedBody<ExpenseClaimMarkPaidInput>(req);
-      const paymentDate = body.payment_date ?? new Date().toISOString().slice(0, 10);
+      const paymentDate = body.payment_date ?? todayDubai();
       await assertPeriodNotLocked(claim.company_id, paymentDate);
       const cash = await resolvePaymentAccount(claim.company_id, body.payment_account_id ?? null);
       const accounts = await storage.getAccountsByCompanyId(claim.company_id);

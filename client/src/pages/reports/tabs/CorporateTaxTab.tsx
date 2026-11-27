@@ -18,6 +18,7 @@ import { Money } from "@/components/ui/money";
 import { formatMessage } from "@/lib/i18n";
 import { reportDateRange } from "../shared";
 import { useReportsPageContext } from "../context";
+import { SecondaryQueryError } from "../ReportQueryNotice";
 
 export default function CorporateTaxTab() {
   const {
@@ -26,10 +27,12 @@ export default function CorporateTaxTab() {
     corporateTaxLoading,
     corporateTaxPeriodLabel,
     corporateTaxStatus,
+    secondaryLoadErrors,
     t,
   } = useReportsPageContext();
   return (
     <>
+      <SecondaryQueryError error={secondaryLoadErrors.corporateTaxEstimate} testId="corporate-tax-tab-estimate-error" />
       <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">

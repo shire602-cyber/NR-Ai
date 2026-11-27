@@ -1,6 +1,8 @@
 // @ts-expect-error - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
+import Decimal from "decimal.js";
 import { loadCompanyLogo } from "./pdf-logo";
+import { toFils } from "../../shared/money";
 import { calendarParts } from "../../shared/uae-date";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { renderInvoiceShareQrPng } from "./einvoice-qr.service";
@@ -25,10 +27,16 @@ import {
   lineVatRate,
   ltr,
   MM,
+  sellerIdentity,
   money,
   trnLine,
   type Bi,
 } from "./pdf-ledger";
+import {
+  computeSalesDocument,
+  readStoredInvoiceLineAmounts,
+  storedLineToTotalsInput,
+} from "./document-totals.service";
 
 const PAGE_WIDTH = 595.28;
 const NR_GREEN = "#6F9E3A";
@@ -174,6 +182,50 @@ export function computeInvoicePdfTotals(
   };
 }
 
+type PdfLineAmount = { net: number; vat: number; total: number; rate: number };
+
+function computePdfLineAmounts(invoice: Invoice, lines: InvoiceLine[]): PdfLineAmount[] {
+  const { discountType, discountValue, reverseCharge } = invoice;
+  const storedAmounts = readStoredInvoiceLineAmounts(invoice, lines);
+
+  // Legacy lines without a stored net need the sales engine. Keep all lines in
+  // the allocation, using the posted line discount where available.
+  const computed = storedAmounts.some((amount) => amount === null)
+    ? computeSalesDocument(
+        lines.map((line, i) => {
+          const quantity = Math.abs(Number(line.quantity));
+          const unitPrice = Math.abs(Number(line.unitPrice));
+          const stored = storedAmounts[i];
+          if (!stored) return storedLineToTotalsInput({ ...line, quantity, unitPrice });
+
+          const storedPriceFils = stored.netFils + (line.marginScheme ? stored.vatFils : 0);
+          const afterLineDiscount =
+            discountType && discountValue
+              ? toFils(new Decimal(quantity).times(unitPrice).toFixed(), { rounding: "halfUp" }) -
+                Math.abs(toFils(line.discountAmount ?? 0))
+              : storedPriceFils;
+          return {
+            quantity: 1,
+            unitPriceFils: Math.max(storedPriceFils, afterLineDiscount),
+            vatRate: line.vatRate,
+            vatSupplyType: line.vatSupplyType,
+          };
+        }),
+        { discountType, discountValue, reverseCharge }
+      ).lines
+    : [];
+
+  return storedAmounts.map((stored, i) => {
+    const { netFils, vatFils, vatRate } = stored ?? computed[i];
+    return {
+      net: netFils / 100,
+      vat: vatFils / 100,
+      total: (netFils + vatFils) / 100,
+      rate: vatRate,
+    };
+  });
+}
+
 async function generateStandardInvoicePDF(
   invoice: Invoice,
   lines: InvoiceLine[],
@@ -285,6 +337,7 @@ async function generateStandardInvoicePDF(
     },
   ]);
 
+  const lineAmounts = computePdfLineAmounts(invoice, lines);
   ledger.table(
     [
       { key: "desc", label: bi("Description", "الوصف"), weight: 2.7 },
@@ -296,18 +349,10 @@ async function generateStandardInvoicePDF(
       { key: "vat", label: bi("VAT amount", "قيمة الضريبة"), weight: 1.35, align: "end" },
       { key: "total", label: bi("Total", "الإجمالي"), weight: 1.35, align: "end" },
     ],
-    lines.map((line) => {
+    lines.map((line, i) => {
       const treatment = vatTreatmentForLine(line, !!invoice.reverseCharge);
       const label = TREATMENT_LABELS[treatment];
-      // Net after line + allocated document discount (W3-A); legacy rows
-      // without net_amount fall back to quantity × unit price.
-      const storedNet = (line as InvoiceLine & { netAmount?: number | null }).netAmount;
-      const net =
-        storedNet !== null && storedNet !== undefined
-          ? Math.abs(Number(storedNet))
-          : line.quantity * line.unitPrice;
-      const rate = lineVatRate(line);
-      const vat = net * rate;
+      const { net, vat, total, rate } = lineAmounts[i];
       const [primary, secondary] = ledger.pair(label);
       return {
         cells: {
@@ -318,7 +363,7 @@ async function generateStandardInvoicePDF(
           type: { text: `${primary}\n${secondary}`, size: 7, color: LEDGER_COLORS.muted },
           rate: `${(rate * 100).toFixed(0)}%`,
           vat: amount(vat),
-          total: amount(net + vat),
+          total: amount(total),
         },
       };
     }),
@@ -326,7 +371,7 @@ async function generateStandardInvoicePDF(
   );
 
   // VAT breakdown by treatment and rate
-  const buckets = aggregateVatBuckets(lines, !!invoice.reverseCharge);
+  const buckets = aggregateVatBuckets(lines, !!invoice.reverseCharge, lineAmounts);
   if (buckets.length > 1 || (buckets[0] && buckets[0].treatment !== "standard_rated")) {
     ledger.section(bi("VAT breakdown", "تفاصيل ضريبة القيمة المضافة"));
     ledger.table(
@@ -716,17 +761,18 @@ function drawNraTotalBox(doc: PdfDoc, invoice: Invoice) {
 
 type VatBucket = { treatment: VatTreatment; rate: number; taxable: number; vat: number };
 
-function aggregateVatBuckets(lines: InvoiceLine[], reverseCharge: boolean): VatBucket[] {
+function aggregateVatBuckets(
+  lines: InvoiceLine[],
+  reverseCharge: boolean,
+  lineAmounts: PdfLineAmount[]
+): VatBucket[] {
   const buckets = new Map<string, VatBucket>();
-  for (const line of lines) {
-    const rate = lineVatRate(line);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const rate = lineAmounts[i].rate;
     const treatment = vatTreatmentForLine(line, reverseCharge);
-    const storedNet = (line as InvoiceLine & { netAmount?: number | null }).netAmount;
-    const taxable =
-      storedNet !== null && storedNet !== undefined
-        ? Math.abs(Number(storedNet))
-        : line.quantity * line.unitPrice;
-    const vat = taxable * rate;
+    const taxable = lineAmounts[i].net;
+    const vat = lineAmounts[i].vat;
     const key = `${treatment}:${rate}`;
     const existing = buckets.get(key);
     if (existing) {
@@ -864,18 +910,23 @@ export async function generateDeliveryNotePDF(
   company: Company,
   options: { locale?: PdfLocale } = {}
 ): Promise<Buffer> {
+  const locale = options.locale ?? pdfLocale(company);
   const ledger = new Ledger({
-    locale: options.locale ?? pdfLocale(company),
+    locale,
     info: { Title: `Delivery Note ${invoice.number}`, Author: company.name },
   });
+  const seller = sellerIdentity(company, locale);
   ledger.header({
-    companyName: company.legalName || company.name,
-    details: companyDetails(ledger, {
-      trn: company.trnVatNumber,
-      address: company.businessAddress,
-      phone: company.contactPhone,
-      email: company.contactEmail,
-    }),
+    companyName: seller.name,
+    details: [
+      ...seller.otherNames,
+      ...companyDetails(ledger, {
+        trn: company.trnVatNumber,
+        address: seller.addresses,
+        phone: company.contactPhone,
+        email: company.contactEmail,
+      }),
+    ],
     title: bi("Delivery note", "إشعار تسليم"),
   });
   ledger.meta([

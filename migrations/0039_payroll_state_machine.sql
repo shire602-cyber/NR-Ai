@@ -24,15 +24,18 @@ BEGIN
     WHERE constraint_name = 'payroll_runs_company_period_unique'
       AND table_name = 'payroll_runs'
   ) THEN
-    -- Collapse pre-existing duplicates: keep the oldest row, drop later ones.
-    -- Items cascade via FK; in practice we do not expect duplicates because the
-    -- pre-existing handler guarded with a SELECT, but be safe.
-    DELETE FROM payroll_runs a
-    USING payroll_runs b
-    WHERE a.id > b.id
-      AND a.company_id   = b.company_id
-      AND a.period_month = b.period_month
-      AND a.period_year  = b.period_year;
+    -- Fail closed on pre-existing duplicates. Never delete payroll runs (a
+    -- delete would cascade to payslips and could remove a paid run); the
+    -- duplicates must be reconciled by hand, then the migration re-run.
+    IF EXISTS (
+      SELECT 1 FROM payroll_runs
+      GROUP BY company_id, period_month, period_year
+      HAVING COUNT(*) > 1
+    ) THEN
+      RAISE EXCEPTION
+        'payroll_runs has duplicate (company_id, period_month, period_year) rows; reconcile or merge the duplicate payroll runs manually (no rows were deleted), then re-run this migration'
+        USING ERRCODE = 'unique_violation';
+    END IF;
 
     ALTER TABLE payroll_runs
       ADD CONSTRAINT payroll_runs_company_period_unique

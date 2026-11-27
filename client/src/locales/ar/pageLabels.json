@@ -1,4 +1,5 @@
 {
+  "pageLabels.notificationActionOffline": "أنت غير متصل بالإنترنت. سيتم تطبيق هذا التغيير عند عودة الاتصال.",
   "pageLabels.receiptAmountsInvalid": "أدخل إجمالي إيصال أكبر من الضريبة وتحقق من المبلغ قبل الضريبة وقيمتها.",
   "pageLabels.receiptDraftCompanyChanged": "تنتمي هذه المسودة إلى شركة أخرى. عد إلى تلك الشركة لحفظها.",
   "pageLabels.receiptVatCurrency": "مبلغ ضريبة القيمة المضافة ({currency})",
@@ -1037,5 +1038,11 @@
   "pageLabels.backupColType": "النوع",
   "pageLabels.backupColSize": "الحجم",
   "pageLabels.investingActivitiesHint": "النقد من شراء الأصول طويلة الأجل أو بيعها",
-  "pageLabels.bankCsvStatementImport": "استيراد كشوف الحساب بصيغة CSV"
+  "pageLabels.bankCsvStatementImport": "استيراد كشوف الحساب بصيغة CSV",
+  "pageLabels.notificationActionFailed": "تعذّر تحديث الإشعار. يُرجى المحاولة مرة أخرى.",
+  "pageLabels.newsCategoryVat": "ضريبة القيمة المضافة",
+  "pageLabels.newsCategoryCorporateTax": "ضريبة الشركات",
+  "pageLabels.newsCategoryCustoms": "الجمارك",
+  "pageLabels.newsCategoryLabor": "العمل",
+  "pageLabels.newsCategoryGeneral": "عام"
 }

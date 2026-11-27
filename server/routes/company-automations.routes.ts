@@ -31,7 +31,6 @@ import {
 } from "../platform/company-automations";
 import {
   NUMBERED_DOC_TYPES,
-  getNumberingSettings,
   numberingView,
   saveNumberingSettings,
   type InvoiceDocType,
@@ -113,25 +112,8 @@ export function registerCompanyAutomationRoutes(app: Express) {
         throw new DomainError("DOC_TYPE_NOT_FOUND", 404, { docType }, "Unknown document type");
       }
       const body = parsedBody<NumberingSettingsBody>(req);
-      const prefix = body.prefix.trim().toUpperCase();
-      // Two document types sharing a prefix could write the same number twice.
-      for (const other of NUMBERED_DOC_TYPES.filter((d) => d !== docType)) {
-        if ((await getNumberingSettings(companyId, other)).prefix === prefix) {
-          throw new DomainError(
-            "NUMBERING_PREFIX_IN_USE",
-            409,
-            { prefix, docType: other },
-            "Another document type already uses this prefix"
-          );
-        }
-      }
       const before = await numberingView(companyId, docType);
-      const after = await saveNumberingSettings(
-        companyId,
-        docType,
-        { ...body, prefix },
-        req.user!.id
-      );
+      const after = await saveNumberingSettings(companyId, docType, body, req.user!.id);
       await recordAudit({
         userId: req.user!.id,
         companyId,

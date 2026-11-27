@@ -15,6 +15,7 @@ import { matchesAccountQuery } from "../../client/src/lib/account-search";
 import { canCreateCompany } from "../../client/src/lib/company-create";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.setConfig({ testTimeout: 10000, hookTimeout: 10000 });
 
 // The switcher and the receive-payment page read the active company and user from providers that
 // need a full session; the hooks are replaced with fixed values so the components render alone.
@@ -233,10 +234,17 @@ describe("F11 item 11: invitations form validates in the app, not the browser", 
     await act(async () =>
       (document.querySelector('[data-testid="button-send-invite"]') as HTMLElement).click()
     );
-    await flush();
-    await act(async () =>
-      (document.querySelector('[data-testid="button-submit-invite"]') as HTMLElement).click()
+    // The dialog is lazy and portaled: poll until its submit button is mounted.
+    const submit = await vi.waitFor(
+      async () => {
+        await act(async () => {});
+        const el = document.querySelector('[data-testid="button-submit-invite"]');
+        expect(el, "submit button").not.toBeNull();
+        return el as HTMLElement;
+      },
+      { timeout: 10000, interval: 25 }
     );
+    await act(async () => submit.click());
     await flush();
     const error = document.querySelector("#invite-email-error");
     expect(error, "inline validation message").not.toBeNull();

@@ -20,7 +20,10 @@ export function CommandPaletteProvider() {
   useEffect(() => {
     if (!everOpened) return;
     let live = true;
-    void loadLocale(locale).then(() => live && setCatalogsReady(true));
+    // A rejected catalog chunk keeps the palette closed; it must not go unhandled.
+    loadLocale(locale)
+      .then(() => live && setCatalogsReady(true))
+      .catch(() => undefined);
     return () => {
       live = false;
     };

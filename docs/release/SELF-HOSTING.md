@@ -51,6 +51,8 @@ AUTH_PUBLIC_URL=https://app.example.ae
 RBAC_ENFORCE=enforce
 UPSTASH_REDIS_REST_URL=https://<redis-rest-host>
 UPSTASH_REDIS_REST_TOKEN=<writable-redis-rest-token>
+# Or, for a TCP Redis such as Railway Redis:
+# REDIS_URL=redis://<host>:6379
 
 # Private VAT evidence storage. Uncomment one backend and fill in its settings.
 # BLOB_READ_WRITE_TOKEN=<private-blob-store-token>
@@ -66,9 +68,10 @@ Compose sets `NODE_ENV=production`, `DATABASE_URL` (internal `db` host), `AUTO_M
 `TRUST_PROXY_HOPS=1` and `UPLOADS_PERSISTENT=true` for you. Add the other runbook variables (section 3 of
 DEPLOY-RUNBOOK) as needed; feature variables (`EINVOICE_PROVIDER`, `ACUBE_*`, Stripe, email provider) stay unset until proven. Losing `TOKEN_ENCRYPTION_KEY` makes stored secrets unreadable.
 
-**Shared request throttling.** Both Redis variables are required in production. Use the HTTPS REST URL
-and writable token for this environment's Redis database. Missing configuration blocks startup. A Redis
-outage causes throttled requests to fail closed. Memory fallback is available only in development and test.
+**Shared request throttling.** Production requires either the HTTPS REST URL and writable token
+(`UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`) or a TCP Redis URL (`REDIS_URL`, `redis://` or
+`rediss://`). Missing configuration blocks startup. A Redis outage causes throttled requests to fail
+closed. Memory fallback is available only in development and test.
 
 **File storage.** The bind mount at `/srv/muhasib/uploads` provides durable disk storage for file flows that
 support it and is covered by the backups below. Firm VAT evidence requires a private object store. Set

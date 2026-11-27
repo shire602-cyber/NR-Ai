@@ -2,6 +2,7 @@
  * Inventory reports (W4-B: R10-15): valuation reconciled to the GL, stock ageing from cost layers,
  * movement summary and reorder list. Ledger figures come from server/reporting.
  */
+import { todayDubai } from "@shared/accounting-date";
 import { pool } from "../../db";
 import { accountTotals, naturalBalance, loadAccounts } from "../../reporting";
 import { fromFils, toFils } from "../../../shared/money";
@@ -79,7 +80,7 @@ export async function inventoryValuation(companyId: string) {
     glAccounts.push({ accountId: a.id, code: a.code, name: a.nameEn, balance: fromFils(bal) });
   }
   return {
-    asOf: new Date().toISOString().slice(0, 10),
+    asOf: todayDubai(),
     rows: out,
     totalValue: fromFils(totalFils),
     glBalance: fromFils(glFils),
@@ -90,7 +91,7 @@ export async function inventoryValuation(companyId: string) {
 }
 
 export async function inventoryAgeing(companyId: string, asOf?: string) {
-  const date = asOf ?? new Date().toISOString().slice(0, 10);
+  const date = asOf ?? todayDubai();
   const rows = await rowsOf<{
     id: string;
     name: string;

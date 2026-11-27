@@ -8,6 +8,8 @@ import {
   products,
   purchaseOrderLines,
   purchaseOrders,
+  stocktakeLines,
+  stocktakes,
   type CostCenter,
   type InsertCostCenter,
   type InsertProduct,
@@ -19,7 +21,8 @@ import {
   type PurchaseOrderLine,
 } from "@shared/schema";
 import { db } from "../db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import { DomainError } from "../errors";
 import { BankingStorage } from "./banking";
 
 export class OperationsStorage extends BankingStorage {
@@ -141,7 +144,38 @@ export class OperationsStorage extends BankingStorage {
   }
 
   async deleteProduct(id: string): Promise<void> {
-    await db.delete(products).where(eq(products.id, id));
+    await db.transaction(async (tx) => {
+      // Lock the product first so a concurrent postStocktake (which locks every line's product)
+      // serializes with this delete. stocktake_lines.product_id cascades, so a posted stocktake
+      // line (including a zero-variance one with no stock movement) must block the delete.
+      const [product] = await tx
+        .select({ id: products.id, companyId: products.companyId })
+        .from(products)
+        .where(eq(products.id, id))
+        .for("update");
+      if (!product) return;
+      const [posted] = await tx
+        .select({ id: stocktakeLines.id })
+        .from(stocktakeLines)
+        .innerJoin(stocktakes, eq(stocktakes.id, stocktakeLines.stocktakeId))
+        .where(
+          and(
+            eq(stocktakeLines.productId, product.id),
+            eq(stocktakes.companyId, product.companyId),
+            eq(stocktakes.status, "posted")
+          )
+        )
+        .limit(1);
+      if (posted) {
+        throw new DomainError(
+          "PRODUCT_HAS_POSTED_STOCKTAKE",
+          409,
+          { productId: product.id },
+          "This product is on a posted stocktake. Deactivate it instead of deleting it."
+        );
+      }
+      await tx.delete(products).where(eq(products.id, product.id));
+    });
   }
 
   // Inventory Movements

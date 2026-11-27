@@ -8,6 +8,13 @@ import { formatMessage } from "@/lib/i18n";
 
 type Translations = Record<string, string>;
 
+export function formatActivityCount(template: string, count: number, locale: string): string {
+  return formatMessage(template.replaceAll("#", "{formattedCount}"), {
+    count,
+    formattedCount: count.toLocaleString(locale === "ar" ? "ar-u-nu-arab" : locale),
+  });
+}
+
 export interface ActivityLogLike {
   action: string;
   entityType?: string | null;

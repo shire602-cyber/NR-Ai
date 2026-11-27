@@ -1,0 +1,14 @@
+{
+  "corporateTaxScreen.returnsPaused": "Loading corporate tax returns is paused.",
+  "corporateTaxScreen.returnsLoadError": "Could not load your corporate tax returns.",
+  "corporateTaxScreen.returnsRefreshError": "Could not refresh your corporate tax returns. What you see is from the last successful load.",
+  "corporateTaxScreen.yearEndLoadError": "Some year-end data could not be loaded. The lists below may be incomplete.",
+  "corporateTaxScreen.yearEndRefreshError": "Could not refresh some year-end data. What you see is from the last successful load.",
+  "corporateTaxScreen.yearEndPaused": "Loading year-end data is paused.",
+  "corporateTaxScreen.emptyPeriod": "No posted journal entries were found for this period, so the figures below are zero because there is nothing to calculate, not because the tax due is nil. Check the period dates or enter the workpaper lines manually.",
+  "corporateTaxScreen.taxableAmountAboveThreshold": "Taxable Amount (above threshold)",
+  "corporateTaxScreen.basedOnEntries": "Based on {count} posted journal entries in the selected period.",
+  "corporateTaxScreen.basedOnManual": "Based on the manual corporate tax workpaper rows above.",
+  "corporateTaxScreen.notesOptional": "Notes (optional)",
+  "corporateTaxScreen.saveAsDraft": "Save as Draft"
+}

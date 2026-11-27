@@ -1,5 +1,12 @@
 import { T } from "@/components/layout/T";
 import {
+  buildDraftBody,
+  isEmptyCalculation,
+  loadFailure,
+  returnsListState,
+} from "@/pages/corporateTax/screenState";
+import { useCtCalculation } from "@/pages/corporateTax/useCtCalculation";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -39,7 +46,7 @@ import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, refreshAfterWrite } from "@/lib/queryClient";
 import { fiscalYearContaining } from "@/lib/fiscal-year";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
@@ -293,9 +300,7 @@ export default function CorporateTax() {
     mutationFn: (id: string) =>
       apiRequest("POST", `/api/corporate-tax/returns/${id}/pull-from-books`),
     onSuccess: (result: any) => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/companies/${companyId}/corporate-tax/returns`],
-      });
+      refreshReturns();
       toast({
         title: formatMessage(translateNow("toasts.workpaperRowsPulledFromBooks"), {
           rows: result?.rows ?? 0,
@@ -340,7 +345,39 @@ export default function CorporateTax() {
     setFiledOn(todayIso);
   };
   const [deductions, setDeductions] = useState(0);
-  const [calculation, setCalculation] = useState<CalculationResult | null>(null);
+  const {
+    calculation,
+    calculate,
+    reset: resetCalculation,
+    isPending: isCalculating,
+  } = useCtCalculation<CalculationResult>({
+    companyId,
+    periodStart,
+    periodEnd,
+    request: (requested, signal) =>
+      apiRequest(
+        "GET",
+        `/api/companies/${requested.companyId}/corporate-tax/calculate?periodStart=${requested.periodStart}&periodEnd=${requested.periodEnd}`,
+        undefined,
+        undefined,
+        { signal }
+      ),
+    onSuccess: (data) => {
+      toast({
+        title: translateNow("toasts.calculationComplete"),
+        description: formatMessage(translateNow("toasts.processedJournalEntries"), {
+          journalEntriesProcessed: data.journalEntriesProcessed,
+        }),
+      });
+    },
+    onError: (error) => {
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.calculationFailed"),
+        description: error?.message || translateNow("toasts.failedToCalculateCorporateTax"),
+      });
+    },
+  });
   const [notes, setNotes] = useState("");
   const [openNotes, setOpenNotes] = useState<Set<string>>(() => new Set());
   const [workpaperRows, setWorkpaperRows] = useState<CorporateTaxWorkpaperRow[]>(() =>
@@ -352,10 +389,15 @@ export default function CorporateTax() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
 
   // Fetch existing returns
-  const { data: taxReturns, isLoading: isLoadingReturns } = useQuery<CorporateTaxReturn[]>({
-    queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
+  const returnsKey = ["/api/companies", companyId, "corporate-tax", "returns"];
+  const refreshReturns = () => refreshAfterWrite(returnsKey);
+  const returnsQuery = useQuery<CorporateTaxReturn[]>({
+    queryKey: returnsKey,
     enabled: !!companyId,
   });
+  const returnsState = returnsListState(returnsQuery);
+  const returnsFailure = loadFailure(returnsQuery);
+  const taxReturns = returnsQuery.data ?? [];
 
   const workpaperTotals = useMemo(() => {
     const totalRevenue = workpaperRows
@@ -403,64 +445,17 @@ export default function CorporateTax() {
     };
   })();
 
-  // Calculate mutation
-  const calculateMutation = useMutation({
-    mutationFn: () =>
-      apiRequest(
-        "GET",
-        `/api/companies/${companyId}/corporate-tax/calculate?periodStart=${periodStart}&periodEnd=${periodEnd}`
-      ),
-    onSuccess: (data: CalculationResult) => {
-      setCalculation(data);
-      toast({
-        title: translateNow("toasts.calculationComplete"),
-        description: formatMessage(translateNow("toasts.processedJournalEntries"), {
-          journalEntriesProcessed: data.journalEntriesProcessed,
-        }),
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: translateNow("toasts.calculationFailed"),
-        description: error?.message || translateNow("toasts.failedToCalculateCorporateTax"),
-      });
-    },
-  });
-
   // Save as draft mutation
   const saveDraftMutation = useMutation({
-    mutationFn: () => {
-      if (!adjustedCalculation) throw new Error("No corporate tax workpaper to save");
-      const workpaper: CorporateTaxWorkpaper = {
-        source: hasManualWorkpaper ? "manual_workpaper" : "journal_calculation",
-        rows: workpaperRows.filter((row) => row.amount > 0 || row.notes?.trim()),
-        totalRevenue: adjustedCalculation.totalRevenue,
-        totalExpenses: adjustedCalculation.totalExpenses,
-        profitOrLoss: adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses,
-        preparedAt: new Date().toISOString(),
-      };
-
-      // R08-09: the server computes taxable income, rate and liability.
-      return apiRequest("POST", `/api/companies/${companyId}/corporate-tax/returns`, {
-        taxPeriodStart: periodStart,
-        taxPeriodEnd: periodEnd,
-        totalRevenue: adjustedCalculation.totalRevenue,
-        totalExpenses: adjustedCalculation.totalExpenses,
-        totalDeductions: deductions,
-        workpaper: { source: workpaper.source, rows: workpaper.rows },
-        ...(notes ? { notes } : {}),
-      });
-    },
+    mutationFn: (body: NonNullable<ReturnType<typeof buildDraftBody>>) =>
+      apiRequest("POST", `/api/companies/${companyId}/corporate-tax/returns`, body),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
-      });
+      refreshReturns();
       toast({
         title: translateNow("toasts.draftSaved"),
         description: translateNow("toasts.corporateTaxReturnSavedAsDraft"),
       });
-      setCalculation(null);
+      resetCalculation();
       setNotes("");
       setDeductions(0);
       setWorkpaperRows(defaultWorkpaperRows(locale));
@@ -474,11 +469,22 @@ export default function CorporateTax() {
     },
   });
 
-  // Lifecycle transitions (R08-04): computed -> reviewed -> filed -> paid; void; amend.
-  const invalidateReturns = () =>
-    queryClient.invalidateQueries({
-      queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
+  // Eligibility is re-checked here, not only by whether the button is on screen.
+  const saveDraft = () => {
+    if (saveDraftMutation.isPending) return;
+    const body = buildDraftBody({
+      periodStart,
+      periodEnd,
+      calculation,
+      manual: hasManualWorkpaper ? workpaperTotals : null,
+      deductions,
+      rows: workpaperRows,
+      notes,
     });
+    if (body) saveDraftMutation.mutate(body);
+  };
+
+  // Lifecycle transitions (R08-04): computed -> reviewed -> filed -> paid; void; amend.
   const transitionMutation = useMutation({
     mutationFn: ({
       id,
@@ -502,7 +508,7 @@ export default function CorporateTax() {
         ...(filedDate ? { filedOn: filedDate } : {}),
       }),
     onSuccess: () => {
-      invalidateReturns();
+      refreshReturns();
       setFileTarget(null);
       toast({ title: t["corporateTax.statusUpdated"] });
     },
@@ -520,7 +526,7 @@ export default function CorporateTax() {
         reason: t["corporateTax.amendDefaultReason"],
       }),
     onSuccess: () => {
-      invalidateReturns();
+      refreshReturns();
       toast({ title: t["corporateTax.amendmentCreated"] });
     },
     onError: (error: Error) =>
@@ -535,7 +541,7 @@ export default function CorporateTax() {
   const accrueMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/corporate-tax/returns/${id}/accrue`, {}),
     onSuccess: (data: { accrual?: { changed?: boolean } }) => {
-      invalidateReturns();
+      refreshReturns();
       toast({
         title: data?.accrual?.changed
           ? t["corporateTax.accrued"]
@@ -553,7 +559,7 @@ export default function CorporateTax() {
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       apiRequest("POST", `/api/corporate-tax/returns/${id}/unfile`, { reason }),
     onSuccess: () => {
-      invalidateReturns();
+      refreshReturns();
       setUnfileTarget(null);
       setUnfileReason("");
       toast({ title: t["corporateTax.markedNotFiled"] });
@@ -986,11 +992,11 @@ export default function CorporateTax() {
               />
             </div>
             <Button
-              onClick={() => calculateMutation.mutate()}
-              disabled={calculateMutation.isPending || !periodStart || !periodEnd}
+              onClick={calculate}
+              disabled={isCalculating || !periodStart || !periodEnd}
               className="w-full md:w-auto md:justify-self-end"
             >
-              {calculateMutation.isPending ? (
+              {isCalculating ? (
                 <>
                   <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   <T k="pageLabels.calculating" />
@@ -1007,6 +1013,15 @@ export default function CorporateTax() {
           {/* Calculation Results */}
           {adjustedCalculation && (
             <div className="space-y-4">
+              {isEmptyCalculation(calculation, hasManualWorkpaper) && (
+                <div
+                  role="status"
+                  data-testid="ct-empty-period"
+                  className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+                >
+                  <T k="corporateTaxScreen.emptyPeriod" />
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="rounded-lg border p-4 space-y-3">
                   <h3 className="font-semibold text-sm text-muted-foreground">
@@ -1077,7 +1092,9 @@ export default function CorporateTax() {
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Taxable Amount (above threshold)</span>
+                    <span>
+                      <T k="corporateTaxScreen.taxableAmountAboveThreshold" />
+                    </span>
                     <span className="font-medium">
                       <Money amount={adjustedCalculation.taxableAmount} currency={"AED"} />
                     </span>
@@ -1104,14 +1121,18 @@ export default function CorporateTax() {
 
               <div className="text-xs text-muted-foreground">
                 {calculation
-                  ? `Based on ${adjustedCalculation.journalEntriesProcessed} posted journal entries in the selected period.`
-                  : "Based on the manual corporate tax workpaper rows above."}
+                  ? formatMessage(t["corporateTaxScreen.basedOnEntries"], {
+                      count: adjustedCalculation.journalEntriesProcessed,
+                    })
+                  : t["corporateTaxScreen.basedOnManual"]}
               </div>
 
               {/* Notes and Save */}
               <div className="space-y-3 pt-2 border-t">
                 <div className="space-y-2">
-                  <Label htmlFor="notes">Notes (optional)</Label>
+                  <Label htmlFor="notes">
+                    <T k="corporateTaxScreen.notesOptional" />
+                  </Label>
                   <Textarea
                     id="notes"
                     placeholder={t["corporateTax.addAnyNotesForThis"]}
@@ -1121,7 +1142,7 @@ export default function CorporateTax() {
                   />
                 </div>
                 <Button
-                  onClick={() => saveDraftMutation.mutate()}
+                  onClick={saveDraft}
                   disabled={saveDraftMutation.isPending}
                   {...gate("documents.write")}
                 >
@@ -1131,7 +1152,7 @@ export default function CorporateTax() {
                       <T k="pageLabels.saving" />
                     </>
                   ) : (
-                    "Save as Draft"
+                    <T k="corporateTaxScreen.saveAsDraft" />
                   )}
                 </Button>
               </div>
@@ -1161,13 +1182,56 @@ export default function CorporateTax() {
               {t["corporateTax.postProvisionOnFiling"]}
             </label>
           </div>
-          {isLoadingReturns ? (
+          {returnsQuery.fetchStatus === "paused" && (
+            <p role="status" className="py-3 text-center text-muted-foreground">
+              <T k="corporateTaxScreen.returnsPaused" />
+            </p>
+          )}
+          {returnsFailure === "refresh" && (
+            <div
+              role="status"
+              data-testid="ct-returns-refresh-error"
+              className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+            >
+              <span>
+                <T k="corporateTaxScreen.returnsRefreshError" />
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void returnsQuery.refetch()}
+                disabled={returnsQuery.fetchStatus === "fetching"}
+              >
+                <T k="components.errorTryAgain" />
+              </Button>
+            </div>
+          )}
+          {returnsState === "loading" ? (
             <div className="space-y-3">
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
-          ) : !taxReturns || taxReturns.length === 0 ? (
+          ) : returnsState === "error" ? (
+            <div
+              role="alert"
+              className="text-center py-12 text-muted-foreground"
+              data-testid="ct-returns-error"
+            >
+              <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-warning" />
+              <p>
+                <T k="corporateTaxScreen.returnsLoadError" />
+              </p>
+              <Button
+                variant="outline"
+                className="mt-3"
+                onClick={() => void returnsQuery.refetch()}
+              >
+                <T k="components.errorTryAgain" />
+              </Button>
+            </div>
+          ) : returnsState === "empty" ? (
             <div className="text-center py-12 text-muted-foreground">
               <FileCheck className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p>
@@ -1177,7 +1241,7 @@ export default function CorporateTax() {
                 <T k="pageLabels.useTheCalculatorAboveToGenerateYourFirstReturn" />
               </p>
             </div>
-          ) : (
+          ) : returnsState === "ready" ? (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -1413,7 +1477,7 @@ export default function CorporateTax() {
                 </TableBody>
               </Table>
             </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 

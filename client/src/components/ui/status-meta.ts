@@ -101,6 +101,16 @@ export function statusLabelKey(status: string): string | undefined {
   return STATUS_MAP[(status || "").toLowerCase() as StatusKind]?.label;
 }
 
+/** The localized text a StatusBadge shows for a status (shared with list search so they cannot drift). */
+export function statusBadgeText(status: string, t: Record<string, string | undefined>): string {
+  const key = statusLabelKey(status);
+  return key ? (t[key] ?? status) : status;
+}
+
+export function getStatusLabel(status: string, t: Readonly<Record<string, string>>): string {
+  return statusBadgeText(status, t);
+}
+
 /** Dot colour inside a document-status badge. */
 export function statusDotClass(variant: string | null | undefined): string {
   return cn(

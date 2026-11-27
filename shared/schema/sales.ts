@@ -216,6 +216,7 @@ export const invoiceLines = pgTable(
     discountType: text("discount_type"), // amount | percent | null
     discountValue: rate("discount_value"),
     discountAmount: money("discount_amount").notNull().default(0), // line discount only
+    documentDiscountAmount: money("document_discount_amount"), // allocated document discount
     netAmount: money("net_amount"), // after line + allocated document discount
     productId: uuid("product_id").references((): AnyPgColumn => products.id, {
       onDelete: "set null",

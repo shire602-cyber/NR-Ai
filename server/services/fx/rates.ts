@@ -1,3 +1,4 @@
+import { todayDubai } from "@shared/accounting-date";
 import type { LedgerTx } from "../../ledger/types";
 /**
  * FX rates — the single rate convention and tenant-scoped lookup (W2-E).
@@ -112,7 +113,7 @@ export function parseRate(input: unknown, field = "rate"): Decimal {
 /** Canonical "YYYY-MM-DD" from a Date or date string; throws INVALID_DATE. */
 export function toIsoDate(value: Date | string | undefined | null, field = "date"): string {
   if (value === undefined || value === null || value === "") {
-    return new Date().toISOString().slice(0, 10);
+    return todayDubai();
   }
   const iso = parseIsoDate(value);
   if (!iso) {
@@ -445,7 +446,7 @@ export function validateRateInput(
   }
   const rate = parseRate(input.rate);
   const date = toIsoDate(input.effectiveDate, "effectiveDate");
-  if (date > new Date().toISOString().slice(0, 10)) {
+  if (date > todayDubai()) {
     throw new DomainError(
       "FUTURE_RATE_DATE",
       400,

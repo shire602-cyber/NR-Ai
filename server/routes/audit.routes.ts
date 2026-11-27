@@ -12,6 +12,7 @@
  * Company routes need `settings.company` (owners and admins). The central policy table
  * already refuses non-members (403) before these handlers run.
  */
+import { todayDubai } from "@shared/accounting-date";
 import type { Express, Request, Response } from "express";
 import { Router } from "express";
 import { z } from "zod";
@@ -199,7 +200,7 @@ export function registerAuditRoutes(app: Express): void {
           rows: rows.length,
         },
       });
-      const stamp = new Date().toISOString().slice(0, 10);
+      const stamp = todayDubai();
       if (parsed.data.format === "json") {
         res.setHeader(
           "Content-Disposition",

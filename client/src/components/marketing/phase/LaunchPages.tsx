@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { MARKETING_BRAND } from "@shared/marketing-brand";
-import { features, tools, type Bilingual } from "./content";
-import { launchPages, type LaunchPagePath } from "./editorial/pages";
+import { features, type Bilingual } from "./content";
+import type { LaunchPagePath } from "./editorial/pages";
 import { featurePath } from "./route-content";
 
 const invoiceSample = "/samples/muhasib-sample-invoice.pdf";
@@ -16,20 +16,18 @@ export function LaunchPages({
   base: string;
   tr: Translate;
 }) {
-  if (path === "/product" || path === "/tools") {
-    const items =
-      path === "/product"
-        ? features.map((feature) => ({ path: featurePath(feature.slug), ...feature }))
-        : [
-            ...tools.map((tool) => ({ path: `/tools/${tool.slug}`, ...tool })),
-            { path: "/tools/invoice-template", ...launchPages["/tools/invoice-template"] },
-          ];
+  // /tools is rendered by pages/ToolsIndex (lazy), not here.
+  if (path === "/product") {
     return (
       <div className="phase-feature-grid">
-        {items.map((item) => (
-          <Link className="phase-card phase-feature-card" key={item.path} href={base + item.path}>
-            <h2>{tr(item.title)}</h2>
-            {"lead" in item && <p>{tr(item.lead)}</p>}
+        {features.map((feature) => (
+          <Link
+            className="phase-card phase-feature-card"
+            key={feature.slug}
+            href={base + featurePath(feature.slug)}
+          >
+            <h2>{tr(feature.title)}</h2>
+            <p>{tr(feature.lead)}</p>
           </Link>
         ))}
       </div>

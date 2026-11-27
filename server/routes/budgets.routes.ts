@@ -45,6 +45,7 @@ const log = createLogger("budgets");
 const db: Queryable = pool as unknown as Queryable;
 
 type LineMonths = Record<(typeof BUDGET_MONTHS)[number], number>;
+type BudgetLineRow = Record<string, unknown> & { id: string };
 
 function toMonths(
   input: Partial<Record<(typeof BUDGET_MONTHS)[number], string | null | undefined>>,
@@ -91,9 +92,13 @@ function assertDraft(plan: BudgetPlanRow): void {
  * The account a budget line budgets: in this company, an income or expense account (actuals are
  * read per P&L account) and not a control account (its balance belongs to a sub-ledger).
  */
-async function assertAccountInCompany(companyId: string, accountId: string | null | undefined) {
+async function assertAccountInCompany(
+  companyId: string,
+  accountId: string | null | undefined,
+  executor: Queryable = db
+) {
   if (!accountId) return;
-  const { rows } = await db.query(
+  const { rows } = await executor.query(
     `SELECT code, type, is_vat_account FROM accounts WHERE id = $1 AND company_id = $2`,
     [accountId, companyId]
   );
@@ -119,13 +124,78 @@ async function assertAccountInCompany(companyId: string, accountId: string | nul
   }
 }
 
-async function assertCostCenterInCompany(companyId: string, id: string | null | undefined) {
-  if (!id) return;
-  const { rows } = await db.query(`SELECT 1 FROM cost_centers WHERE id = $1 AND company_id = $2`, [
-    id,
-    companyId,
-  ]);
-  if (!rows[0]) {
+/*
+ * Every budget write runs in one transaction. Lock order, to rule out deadlocks: plan rows first
+ * (in id order), then cost centres (in id order). Cost-centre delete takes only its own row.
+ */
+async function withTx<T>(fn: (tx: Queryable) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client as unknown as Queryable);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Lock a plan and return it as it is now; its status may have changed since the access check. */
+async function lockPlan(tx: Queryable, plan: { id: string; company_id: string }) {
+  const { rows } = await tx.query(
+    `SELECT * FROM budget_plans WHERE id = $1 AND company_id = $2 FOR UPDATE`,
+    [plan.id, plan.company_id]
+  );
+  if (!rows[0]) throw new DomainError("BUDGET_NOT_FOUND", 404, undefined, "Budget not found");
+  return rows[0] as BudgetPlanRow;
+}
+
+/** Lock a plan and the other versions of its family; returns the requested plan. */
+async function lockPlanFamily(tx: Queryable, plan: BudgetPlanRow) {
+  const { rows } = await tx.query(
+    `SELECT * FROM budget_plans
+      WHERE company_id = $1 AND (id = $2 OR id = $3 OR parent_budget_id = $3)
+      ORDER BY id FOR UPDATE`,
+    [plan.company_id, plan.id, plan.parent_budget_id ?? plan.id]
+  );
+  const current = rows.find((r) => r.id === plan.id);
+  if (!current) throw new DomainError("BUDGET_NOT_FOUND", 404, undefined, "Budget not found");
+  return current as BudgetPlanRow;
+}
+
+/**
+ * Lock the referenced cost centres (in id order) so none can be deleted before this write
+ * commits. Returns the ids that are not cost centres of this company.
+ */
+async function lockExistingCostCenters(
+  tx: Queryable,
+  companyId: string,
+  ids: Array<string | null | undefined>
+): Promise<Set<string>> {
+  const sorted = [...new Set(ids.filter((id): id is string => !!id).map((id) => id.toLowerCase()))];
+  sorted.sort();
+  const missing = new Set<string>();
+  for (const id of sorted) {
+    const { rows } = await tx.query(
+      `SELECT 1 FROM cost_centers WHERE id = $1 AND company_id = $2 FOR UPDATE`,
+      [id, companyId]
+    );
+    if (!rows[0]) missing.add(id);
+  }
+  return missing;
+}
+
+/** As above, but a write that names a missing cost centre is refused. */
+async function lockCostCenters(
+  tx: Queryable,
+  companyId: string,
+  ids: Array<string | null | undefined>
+) {
+  const [id] = await lockExistingCostCenters(tx, companyId, ids);
+  if (id) {
     throw new DomainError(
       "COST_CENTER_NOT_FOUND",
       400,
@@ -135,28 +205,66 @@ async function assertCostCenterInCompany(companyId: string, id: string | null | 
   }
 }
 
-async function copyLines(fromId: string, toId: string, factor = 1): Promise<number> {
-  const { rows } = await db.query(`SELECT * FROM budget_lines WHERE budget_id = $1`, [fromId]);
+/**
+ * Insert a new plan with `insertPlan` and copy a locked plan's lines into it, after locking the
+ * cost centres of the plan and of its lines. A historical reference to a cost centre that no
+ * longer exists is cleared on the new draft (the source is left as it is) and reported.
+ */
+async function copyLines<TCreated extends { id: string }>(
+  tx: Queryable,
+  from: BudgetPlanRow,
+  insertPlan: (costCenterId: string | null) => Promise<TCreated>,
+  factor = 1
+) {
+  const { rows } = await tx.query(`SELECT * FROM budget_lines WHERE budget_id = $1`, [from.id]);
+  const lineCenters = rows.map((l) => l.cost_center_id as string | null);
+  const missing = await lockExistingCostCenters(tx, from.company_id, [
+    from.cost_center_id,
+    ...lineCenters,
+  ]);
+  // Not a type predicate: that would narrow a kept id to null in `keep`.
+  const isMissing = (id: string | null | undefined) => !!id && missing.has(id.toLowerCase());
+  const keep = (id: string | null | undefined) => (isMissing(id) ? null : (id ?? null));
+  const created = await insertPlan(keep(from.cost_center_id));
   for (const l of rows) {
     const months = {} as LineMonths;
     for (const m of BUDGET_MONTHS) months[m] = Math.round(Number(l[m] ?? 0) * factor * 100) / 100;
-    await db.query(
+    await tx.query(
       `INSERT INTO budget_lines (budget_id, account_id, category, description, cost_center_id, is_contra,
          jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec, annual_total)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
       [
-        toId,
+        created.id,
         l.account_id,
         l.category,
         l.description,
-        l.cost_center_id,
+        keep(l.cost_center_id as string | null),
         l.is_contra === true,
         ...BUDGET_MONTHS.map((m) => months[m]),
         annualOf(months),
       ]
     );
   }
-  return rows.length;
+  const cleared = {
+    clearedPlanCostCenterIds: isMissing(from.cost_center_id) ? [from.cost_center_id] : [],
+    clearedLineCostCenterIds: [...new Set(lineCenters.filter(isMissing))].sort(),
+    // Which lines change actuals scope, so the screen can name them. A line's effective centre is
+    // its own, else the plan's (as in computeBudgetVariance). If that one is missing, the draft
+    // falls back to the plan's centre when it still exists, else to all centres.
+    clearedLines: rows.flatMap((l) => {
+      const effective = (l.cost_center_id as string | null) ?? from.cost_center_id ?? null;
+      if (!isMissing(effective)) return [];
+      return [
+        {
+          category: String(l.category ?? ""),
+          description: (l.description as string | null) ?? null,
+          costCenterId: effective as string,
+          fallback: keep(from.cost_center_id) ? ("plan" as const) : ("all" as const),
+        },
+      ];
+    }),
+  };
+  return { created, lines: rows.length, cleared };
 }
 
 /** Variance alert scan for one approved plan: records new breaches and emits a domain event. */
@@ -264,26 +372,28 @@ export function registerBudgetRoutes(app: Express) {
         throw new DomainError("ACCESS_DENIED", 403, undefined, "Access denied");
       }
       const b = parsedBody<BudgetPlanCreate>(req);
-      await assertCostCenterInCompany(companyId, b.costCenterId);
-      const result = await db.query(
-        `INSERT INTO budget_plans
-           (company_id, name, fiscal_year, start_date, end_date, notes, created_by,
-            cost_center_id, class_tag, alert_threshold_pct)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10, 10))
-         RETURNING *`,
-        [
-          companyId,
-          b.name,
-          b.fiscalYear,
-          b.startDate,
-          b.endDate,
-          b.notes ?? null,
-          userId,
-          b.costCenterId ?? null,
-          b.classTag ?? null,
-          b.alertThresholdPct ?? null,
-        ]
-      );
+      const result = await withTx(async (tx) => {
+        await lockCostCenters(tx, companyId, [b.costCenterId]);
+        return tx.query(
+          `INSERT INTO budget_plans
+             (company_id, name, fiscal_year, start_date, end_date, notes, created_by,
+              cost_center_id, class_tag, alert_threshold_pct)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10, 10))
+           RETURNING *`,
+          [
+            companyId,
+            b.name,
+            b.fiscalYear,
+            b.startDate,
+            b.endDate,
+            b.notes ?? null,
+            userId,
+            b.costCenterId ?? null,
+            b.classTag ?? null,
+            b.alertThresholdPct ?? null,
+          ]
+        );
+      });
       log.info({ budgetId: result.rows[0].id, companyId }, "Budget plan created");
       res.status(201).json(result.rows[0]);
     })
@@ -295,52 +405,58 @@ export function registerBudgetRoutes(app: Express) {
     requireCustomer,
     strictBody(budgetPlanUpdateBody, { allowServerOwned: ["status"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const plan = await accessiblePlan(req, req.params.id);
+      const accessible = await accessiblePlan(req, req.params.id);
       const b = parsedBody<BudgetPlanUpdate>(req);
-      const onlyClosing =
-        plan.status === "approved" &&
-        b.status === "closed" &&
-        Object.keys(b).every((k) => k === "status");
-      if (!onlyClosing) assertDraft(plan);
-      await assertCostCenterInCompany(plan.company_id, b.costCenterId);
-      // Re-check the merged date window (a partial update can break end >= start).
-      const start = b.startDate ?? String(plan.start_date).slice(0, 10);
-      const end = b.endDate ?? String(plan.end_date).slice(0, 10);
-      const merged = budgetPlanCreateBody.safeParse({
-        name: b.name ?? plan.name,
-        fiscalYear: b.fiscalYear ?? plan.fiscal_year,
-        startDate: start,
-        endDate: end,
-      });
-      if (!merged.success && (b.startDate || b.endDate)) {
-        throw new DomainError(
-          "VALIDATION_ERROR",
-          400,
-          { fields: { endDate: merged.error.issues.map((i) => i.message) } },
-          "End date must be on or after the start date and within 12 months"
+      const result = await withTx(async (tx) => {
+        const plan = await lockPlan(tx, accessible);
+        const onlyClosing =
+          plan.status === "approved" &&
+          b.status === "closed" &&
+          Object.keys(b).every((k) => k === "status");
+        if (!onlyClosing) assertDraft(plan);
+        await lockCostCenters(tx, plan.company_id, [b.costCenterId]);
+        // Re-check the merged date window (a partial update can break end >= start).
+        const start = b.startDate ?? String(plan.start_date).slice(0, 10);
+        const end = b.endDate ?? String(plan.end_date).slice(0, 10);
+        const merged = budgetPlanCreateBody.safeParse({
+          name: b.name ?? plan.name,
+          fiscalYear: b.fiscalYear ?? plan.fiscal_year,
+          startDate: start,
+          endDate: end,
+        });
+        if (!merged.success && (b.startDate || b.endDate)) {
+          throw new DomainError(
+            "VALIDATION_ERROR",
+            400,
+            { fields: { endDate: merged.error.issues.map((i) => i.message) } },
+            "End date must be on or after the start date and within 12 months"
+          );
+        }
+        return tx.query(
+          `UPDATE budget_plans SET
+             name = COALESCE($1, name), fiscal_year = COALESCE($2, fiscal_year),
+             start_date = COALESCE($3, start_date), end_date = COALESCE($4, end_date),
+             notes = COALESCE($5, notes), status = COALESCE($6, status),
+             cost_center_id = CASE WHEN $11::boolean THEN $7::uuid ELSE cost_center_id END,
+             class_tag = COALESCE($8, class_tag),
+             alert_threshold_pct = COALESCE($9, alert_threshold_pct), updated_at = now()
+           WHERE id = $10 RETURNING *`,
+          [
+            b.name ?? null,
+            b.fiscalYear ?? null,
+            b.startDate ?? null,
+            b.endDate ?? null,
+            b.notes ?? null,
+            b.status ?? null,
+            b.costCenterId ?? null,
+            b.classTag ?? null,
+            b.alertThresholdPct ?? null,
+            plan.id,
+            // An explicit null clears the cost centre; an absent key leaves it untouched.
+            b.costCenterId !== undefined,
+          ]
         );
-      }
-      const result = await db.query(
-        `UPDATE budget_plans SET
-           name = COALESCE($1, name), fiscal_year = COALESCE($2, fiscal_year),
-           start_date = COALESCE($3, start_date), end_date = COALESCE($4, end_date),
-           notes = COALESCE($5, notes), status = COALESCE($6, status),
-           cost_center_id = COALESCE($7, cost_center_id), class_tag = COALESCE($8, class_tag),
-           alert_threshold_pct = COALESCE($9, alert_threshold_pct), updated_at = now()
-         WHERE id = $10 RETURNING *`,
-        [
-          b.name ?? null,
-          b.fiscalYear ?? null,
-          b.startDate ?? null,
-          b.endDate ?? null,
-          b.notes ?? null,
-          b.status ?? null,
-          b.costCenterId ?? null,
-          b.classTag ?? null,
-          b.alertThresholdPct ?? null,
-          plan.id,
-        ]
-      );
+      });
       res.json(result.rows[0]);
     })
   );
@@ -351,8 +467,10 @@ export function registerBudgetRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const plan = await accessiblePlan(req, req.params.id);
-      assertDraft(plan);
-      await db.query(`DELETE FROM budget_plans WHERE id = $1`, [plan.id]);
+      await withTx(async (tx) => {
+        assertDraft(await lockPlan(tx, plan));
+        await tx.query(`DELETE FROM budget_plans WHERE id = $1`, [plan.id]);
+      });
       res.json({ message: "Budget plan deleted successfully" });
     })
   );
@@ -382,27 +500,29 @@ export function registerBudgetRoutes(app: Express) {
     strictBody(budgetLineCreateBody),
     asyncHandler(async (req: Request, res: Response) => {
       const plan = await accessiblePlan(req, req.params.id);
-      assertDraft(plan);
       const b = parsedBody<BudgetLineCreate>(req);
-      await assertAccountInCompany(plan.company_id, b.accountId);
-      await assertCostCenterInCompany(plan.company_id, b.costCenterId);
-      const months = toMonths(b);
-      const result = await db.query(
-        `INSERT INTO budget_lines (budget_id, account_id, category, description, cost_center_id, is_contra,
-           jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec, annual_total)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-         RETURNING *`,
-        [
-          plan.id,
-          b.accountId ?? null,
-          b.category,
-          b.description ?? null,
-          b.costCenterId ?? null,
-          b.isContra === true,
-          ...BUDGET_MONTHS.map((m) => months[m]),
-          annualOf(months),
-        ]
-      );
+      const result = await withTx(async (tx) => {
+        assertDraft(await lockPlan(tx, plan));
+        await assertAccountInCompany(plan.company_id, b.accountId, tx);
+        await lockCostCenters(tx, plan.company_id, [b.costCenterId]);
+        const months = toMonths(b);
+        return tx.query(
+          `INSERT INTO budget_lines (budget_id, account_id, category, description, cost_center_id, is_contra,
+             jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec, annual_total)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+           RETURNING *`,
+          [
+            plan.id,
+            b.accountId ?? null,
+            b.category,
+            b.description ?? null,
+            b.costCenterId ?? null,
+            b.isContra === true,
+            ...BUDGET_MONTHS.map((m) => months[m]),
+            annualOf(months),
+          ]
+        );
+      });
       res.status(201).json(result.rows[0]);
     })
   );
@@ -415,19 +535,45 @@ export function registerBudgetRoutes(app: Express) {
          FROM budget_lines bl JOIN budget_plans bp ON bl.budget_id = bp.id WHERE bl.id = $1`,
       [id]
     );
-    const line = rows[0];
-    if (!line || !(await storage.hasCompanyAccess(userId, line.company_id as string))) {
+    const line = rows[0] as
+      | (Pick<BudgetPlanRow, "id" | "company_id"> & {
+          plan_id: string;
+          plan_status: BudgetPlanRow["status"];
+        })
+      | undefined;
+    if (!line || !(await storage.hasCompanyAccess(userId, line.company_id))) {
       throw new DomainError("BUDGET_LINE_NOT_FOUND", 404, undefined, "Budget line not found");
     }
-    if (line.plan_status !== "draft" && line.plan_status !== null) {
+    assertLinePlanDraft(line.plan_status, line.plan_id);
+    return line;
+  }
+
+  function assertLinePlanDraft(status: unknown, planId: string): void {
+    if (status !== "draft" && status !== null) {
       throw new DomainError(
         "BUDGET_FROZEN",
         409,
-        { newVersion: `/api/budget-plans/${line.plan_id}/new-version` },
+        { newVersion: `/api/budget-plans/${planId}/new-version` },
         "An approved or closed budget cannot be edited. Create a new version instead."
       );
     }
-    return line;
+  }
+
+  /** Lock the line's plan, re-check it is a draft and re-read the line. */
+  async function lockLine(
+    tx: Queryable,
+    line: { id: string; plan_id: string; company_id: string }
+  ): Promise<BudgetLineRow> {
+    const plan = await lockPlan(tx, { id: line.plan_id, company_id: line.company_id });
+    assertLinePlanDraft(plan.status, plan.id);
+    const { rows } = await tx.query(`SELECT * FROM budget_lines WHERE id = $1 AND budget_id = $2`, [
+      line.id,
+      plan.id,
+    ]);
+    if (!rows[0]) {
+      throw new DomainError("BUDGET_LINE_NOT_FOUND", 404, undefined, "Budget line not found");
+    }
+    return rows[0] as BudgetLineRow;
   }
 
   app.patch(
@@ -436,48 +582,54 @@ export function registerBudgetRoutes(app: Express) {
     requireCustomer,
     strictBody(budgetLineUpdateBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const line = await accessibleLine(req, req.params.id);
+      const accessible = await accessibleLine(req, req.params.id);
       const b = parsedBody<BudgetLineUpdate>(req);
-      await assertAccountInCompany(line.company_id, b.accountId);
-      await assertCostCenterInCompany(line.company_id, b.costCenterId);
-      const isContra = b.isContra ?? line.is_contra === true;
-      const months = toMonths(b, line);
-      // The merged line must still respect the sign rule (a partial update can flip a contra line).
-      const negative = negativeBudgetMonths({
-        ...Object.fromEntries(BUDGET_MONTHS.map((m) => [m, String(months[m])])),
-        isContra,
-      });
-      if (negative.length) {
-        throw new DomainError(
-          "VALIDATION_ERROR",
-          400,
-          {
-            fields: Object.fromEntries(
-              negative.map((m) => [m, ["Negative amount on a non-contra line"]])
-            ),
-          },
-          "Budget amounts cannot be negative unless the line is marked as a contra line"
-        );
-      }
-      const result = await db.query(
-        `UPDATE budget_lines SET
-           account_id = COALESCE($1, account_id), category = COALESCE($2, category),
-           description = COALESCE($3, description), cost_center_id = COALESCE($4, cost_center_id),
-           is_contra = $5,
-           jan = $6, feb = $7, mar = $8, apr = $9, may = $10, jun = $11,
-           jul = $12, aug = $13, sep = $14, oct = $15, nov = $16, dec = $17, annual_total = $18
-         WHERE id = $19 RETURNING *`,
-        [
-          b.accountId ?? null,
-          b.category ?? null,
-          b.description ?? null,
-          b.costCenterId ?? null,
+      const result = await withTx(async (tx) => {
+        const line = await lockLine(tx, accessible);
+        await assertAccountInCompany(accessible.company_id, b.accountId, tx);
+        await lockCostCenters(tx, accessible.company_id, [b.costCenterId]);
+        const isContra = b.isContra ?? line.is_contra === true;
+        const months = toMonths(b, line);
+        // The merged line must still respect the sign rule (a partial update can flip a contra line).
+        const negative = negativeBudgetMonths({
+          ...Object.fromEntries(BUDGET_MONTHS.map((m) => [m, String(months[m])])),
           isContra,
-          ...BUDGET_MONTHS.map((m) => months[m]),
-          annualOf(months),
-          line.id,
-        ]
-      );
+        });
+        if (negative.length) {
+          throw new DomainError(
+            "VALIDATION_ERROR",
+            400,
+            {
+              fields: Object.fromEntries(
+                negative.map((m) => [m, ["Negative amount on a non-contra line"]])
+              ),
+            },
+            "Budget amounts cannot be negative unless the line is marked as a contra line"
+          );
+        }
+        return tx.query(
+          `UPDATE budget_lines SET
+             account_id = COALESCE($1, account_id), category = COALESCE($2, category),
+             description = COALESCE($3, description),
+             cost_center_id = CASE WHEN $20::boolean THEN $4::uuid ELSE cost_center_id END,
+             is_contra = $5,
+             jan = $6, feb = $7, mar = $8, apr = $9, may = $10, jun = $11,
+             jul = $12, aug = $13, sep = $14, oct = $15, nov = $16, dec = $17, annual_total = $18
+           WHERE id = $19 RETURNING *`,
+          [
+            b.accountId ?? null,
+            b.category ?? null,
+            b.description ?? null,
+            b.costCenterId ?? null,
+            isContra,
+            ...BUDGET_MONTHS.map((m) => months[m]),
+            annualOf(months),
+            line.id,
+            // An explicit null clears the cost centre; an absent key leaves it untouched.
+            b.costCenterId !== undefined,
+          ]
+        );
+      });
       res.json(result.rows[0]);
     })
   );
@@ -487,8 +639,11 @@ export function registerBudgetRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const line = await accessibleLine(req, req.params.id);
-      await db.query(`DELETE FROM budget_lines WHERE id = $1`, [line.id]);
+      const accessible = await accessibleLine(req, req.params.id);
+      await withTx(async (tx) => {
+        const line = await lockLine(tx, accessible);
+        await tx.query(`DELETE FROM budget_lines WHERE id = $1`, [line.id]);
+      });
       res.json({ message: "Budget line deleted successfully" });
     })
   );
@@ -559,50 +714,53 @@ export function registerBudgetRoutes(app: Express) {
           "Your role in this company does not allow approving budgets"
         );
       }
-      if (plan.status === "approved") {
-        throw new DomainError(
-          "BUDGET_ALREADY_APPROVED",
-          400,
-          undefined,
-          "Budget is already approved"
+      const allowSingleOwner = await companyHasSingleMember(plan.company_id);
+      // Status and lines are read under the lock every line writer (CSV replace included) takes.
+      const result = await withTx(async (tx) => {
+        const current = await lockPlanFamily(tx, plan);
+        if (current.status === "approved") {
+          throw new DomainError(
+            "BUDGET_ALREADY_APPROVED",
+            400,
+            undefined,
+            "Budget is already approved"
+          );
+        }
+        if (current.status !== "draft" && current.status !== null) {
+          throw new DomainError(
+            "BUDGET_NOT_DRAFT",
+            409,
+            { status: current.status },
+            "Only a draft budget can be approved"
+          );
+        }
+        assertDifferentActor(current.created_by, userId, { allowSingleOwner });
+        const lines = await tx.query(
+          `SELECT COUNT(*)::int AS n FROM budget_lines WHERE budget_id = $1`,
+          [current.id]
         );
-      }
-      if (plan.status !== "draft" && plan.status !== null) {
-        throw new DomainError(
-          "BUDGET_NOT_DRAFT",
-          409,
-          { status: plan.status },
-          "Only a draft budget can be approved"
+        if (!lines.rows[0].n) {
+          throw new DomainError(
+            "BUDGET_EMPTY",
+            409,
+            undefined,
+            "Add at least one line before approving"
+          );
+        }
+        const rootId = current.parent_budget_id ?? current.id;
+        // A newly approved version supersedes earlier approved versions of the same family.
+        await tx.query(
+          `UPDATE budget_plans SET status = 'closed', updated_at = now()
+            WHERE company_id = $1 AND status = 'approved' AND id <> $2
+              AND (id = $3 OR parent_budget_id = $3)`,
+          [current.company_id, current.id, rootId]
         );
-      }
-      assertDifferentActor(plan.created_by, userId, {
-        allowSingleOwner: await companyHasSingleMember(plan.company_id),
+        return tx.query(
+          `UPDATE budget_plans SET status = 'approved', approved_by = $2, approved_at = now(), updated_at = now()
+            WHERE id = $1 RETURNING *`,
+          [current.id, userId]
+        );
       });
-      const lines = await db.query(
-        `SELECT COUNT(*)::int AS n FROM budget_lines WHERE budget_id = $1`,
-        [plan.id]
-      );
-      if (!lines.rows[0].n) {
-        throw new DomainError(
-          "BUDGET_EMPTY",
-          409,
-          undefined,
-          "Add at least one line before approving"
-        );
-      }
-      const rootId = plan.parent_budget_id ?? plan.id;
-      // A newly approved version supersedes earlier approved versions of the same family.
-      await db.query(
-        `UPDATE budget_plans SET status = 'closed', updated_at = now()
-          WHERE company_id = $1 AND status = 'approved' AND id <> $2
-            AND (id = $3 OR parent_budget_id = $3)`,
-        [plan.company_id, plan.id, rootId]
-      );
-      const result = await db.query(
-        `UPDATE budget_plans SET status = 'approved', approved_by = $2, approved_at = now(), updated_at = now()
-          WHERE id = $1 RETURNING *`,
-        [plan.id, userId]
-      );
       log.info({ budgetId: plan.id }, "Budget approved");
       res.json(result.rows[0]);
     })
@@ -616,21 +774,26 @@ export function registerBudgetRoutes(app: Express) {
       const plan = await accessiblePlan(req, req.params.id);
       const userId = req.user!.id as string;
       const rootId = plan.parent_budget_id ?? plan.id;
-      const next = await db.query(
-        `SELECT COALESCE(MAX(version), 0) + 1 AS v FROM budget_plans WHERE id = $1 OR parent_budget_id = $1`,
-        [rootId]
-      );
-      const created = await db.query(
-        `INSERT INTO budget_plans
-           (company_id, name, fiscal_year, start_date, end_date, notes, created_by, version,
-            parent_budget_id, cost_center_id, class_tag, alert_threshold_pct)
-         SELECT company_id, name, fiscal_year, start_date, end_date, notes, $2, $3, $4,
-                cost_center_id, class_tag, alert_threshold_pct
-           FROM budget_plans WHERE id = $1 RETURNING *`,
-        [plan.id, userId, Number(next.rows[0].v), rootId]
-      );
-      await copyLines(plan.id, created.rows[0].id);
-      res.status(201).json(created.rows[0]);
+      const { created, cleared } = await withTx(async (tx) => {
+        const source = await lockPlanFamily(tx, plan);
+        return copyLines(tx, source, async (costCenterId) => {
+          const next = await tx.query(
+            `SELECT COALESCE(MAX(version), 0) + 1 AS v FROM budget_plans WHERE id = $1 OR parent_budget_id = $1`,
+            [rootId]
+          );
+          const inserted = await tx.query(
+            `INSERT INTO budget_plans
+               (company_id, name, fiscal_year, start_date, end_date, notes, created_by, version,
+                parent_budget_id, cost_center_id, class_tag, alert_threshold_pct)
+             SELECT company_id, name, fiscal_year, start_date, end_date, notes, $2, $3, $4,
+                    $5::uuid, class_tag, alert_threshold_pct
+               FROM budget_plans WHERE id = $1 RETURNING *`,
+            [source.id, userId, Number(next.rows[0].v), rootId, costCenterId]
+          );
+          return inserted.rows[0] as BudgetPlanRow;
+        });
+      });
+      res.status(201).json({ ...created, ...cleared });
     })
   );
 
@@ -661,25 +824,36 @@ export function registerBudgetRoutes(app: Express) {
       const plan = await accessiblePlan(req, req.params.id);
       const userId = req.user!.id as string;
       const b = parsedBody<z.output<typeof budgetCopyBody>>(req);
-      const shiftMonths = (b.fiscalYear - plan.fiscal_year) * 12;
       const iso = (v: Date | string) => new Date(v).toISOString().slice(0, 10);
-      const created = await db.query(
-        `INSERT INTO budget_plans
-           (company_id, name, fiscal_year, start_date, end_date, notes, created_by,
-            cost_center_id, class_tag, alert_threshold_pct)
-         SELECT company_id, $2, $3, $4::date, $5::date, notes, $6, cost_center_id, class_tag, alert_threshold_pct
-           FROM budget_plans WHERE id = $1 RETURNING *`,
-        [
-          plan.id,
-          b.name ?? `${plan.name} (FY${b.fiscalYear})`,
-          b.fiscalYear,
-          addMonths(iso(plan.start_date), shiftMonths),
-          addMonths(iso(plan.end_date), shiftMonths),
-          userId,
-        ]
-      );
-      const lines = await copyLines(plan.id, created.rows[0].id, 1 + (b.adjustPct ?? 0) / 100);
-      res.status(201).json({ ...created.rows[0], copiedLines: lines });
+      const { created, lines, cleared } = await withTx(async (tx) => {
+        const source = await lockPlan(tx, plan);
+        const shiftMonths = (b.fiscalYear - source.fiscal_year) * 12;
+        return copyLines(
+          tx,
+          source,
+          async (costCenterId) => {
+            const inserted = await tx.query(
+              `INSERT INTO budget_plans
+                 (company_id, name, fiscal_year, start_date, end_date, notes, created_by,
+                  cost_center_id, class_tag, alert_threshold_pct)
+               SELECT company_id, $2, $3, $4::date, $5::date, notes, $6, $7::uuid, class_tag, alert_threshold_pct
+                 FROM budget_plans WHERE id = $1 RETURNING *`,
+              [
+                source.id,
+                b.name ?? `${source.name} (FY${b.fiscalYear})`,
+                b.fiscalYear,
+                addMonths(iso(source.start_date), shiftMonths),
+                addMonths(iso(source.end_date), shiftMonths),
+                userId,
+                costCenterId,
+              ]
+            );
+            return inserted.rows[0] as BudgetPlanRow;
+          },
+          1 + (b.adjustPct ?? 0) / 100
+        );
+      });
+      res.status(201).json({ ...created, copiedLines: lines, ...cleared });
     })
   );
 
@@ -801,23 +975,35 @@ export function registerBudgetRoutes(app: Express) {
           "The file has invalid rows; nothing was imported"
         );
       }
-      if (b.replace) await db.query(`DELETE FROM budget_lines WHERE budget_id = $1`, [plan.id]);
-      for (const p of prepared) {
-        await db.query(
-          `INSERT INTO budget_lines (budget_id, account_id, category, cost_center_id, is_contra,
-             jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec, annual_total)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
-          [
-            plan.id,
-            p.accountId,
-            p.category,
-            p.costCenterId,
-            p.isContra,
-            ...BUDGET_MONTHS.map((m) => p.months[m]),
-            annualOf(p.months),
-          ]
+      // One transaction: a failed insert (for example an amount overflow) rolls back the delete.
+      await withTx(async (tx) => {
+        // Lock the plan row so concurrent imports run one at a time, then re-check it is a draft.
+        assertDraft(await lockPlan(tx, plan));
+        await lockCostCenters(
+          tx,
+          plan.company_id,
+          prepared.map((p) => p.costCenterId)
         );
-      }
+        if (b.replace) {
+          await tx.query(`DELETE FROM budget_lines WHERE budget_id = $1`, [plan.id]);
+        }
+        for (const p of prepared) {
+          await tx.query(
+            `INSERT INTO budget_lines (budget_id, account_id, category, cost_center_id, is_contra,
+               jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec, annual_total)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+            [
+              plan.id,
+              p.accountId,
+              p.category,
+              p.costCenterId,
+              p.isContra,
+              ...BUDGET_MONTHS.map((m) => p.months[m]),
+              annualOf(p.months),
+            ]
+          );
+        }
+      });
       res.json({ imported: prepared.length, replaced: b.replace === true });
     })
   );

@@ -4,7 +4,13 @@ import { apiUrl } from "./api";
 import { getAuthHeaders } from "./auth";
 import { withCsrfHeader } from "./csrf";
 import { failedResponseMessage } from "./validation-messages";
-import { formatDate, formatDateRange, formatEmbeddedDates, parseCalendarDate } from "./format-date";
+import {
+  formatDate,
+  formatDateRange,
+  formatDateTimePlain,
+  formatEmbeddedDates,
+  parseCalendarDate,
+} from "./format-date";
 import { t as catalogs, translateNow } from "./i18n";
 import { currentExportLocale, localizeExportSheets } from "./export-localize";
 import { localizeServerText } from "@shared/server-copy";
@@ -12,6 +18,7 @@ import { EXCEL_EXPORT_LIMITS, supportsExcelWorkbookSize } from "@shared/excel-ex
 import { budgetCategoryLabel } from "./budget-categories";
 import { activityActionLabel, activityEntityLabel, activitySentence } from "./activity-log-labels";
 import { localizeJournalLine } from "./journal-memo";
+import type { ActivityLog, User } from "@shared/schema";
 
 // Shape of one row in the OCR-format Excel export. Matches the server-side
 // schema in `server/services/excel-export.service.ts` so the request body and
@@ -1385,6 +1392,37 @@ function auditLabel(
     return labelFor(catalogs.ar, code);
   }
   return english || fallback;
+}
+
+export function exportActivityLogs(
+  logs: ActivityLog[],
+  users: Pick<User, "id" | "email">[],
+  t: Record<string, string>,
+  locale: string
+) {
+  return exportToExcel(
+    [
+      {
+        sheetName: t["activityLog.export.sheet"],
+        rtl: locale === "ar",
+        columns: [
+          { header: t["activityLog.export.date"], key: "date", width: 20 },
+          { header: t["activityLog.export.user"], key: "user", width: 28 },
+          { header: t["activityLog.export.action"], key: "action", width: 28 },
+          { header: t["activityLog.export.entity"], key: "entity", width: 22 },
+          { header: t["activityLog.export.description"], key: "description", width: 60 },
+        ],
+        rows: logs.map((log) => ({
+          date: formatDateTimePlain(log.createdAt, locale),
+          user: users.find((user) => user.id === log.userId)?.email ?? "",
+          action: activityActionLabel(t, log.action),
+          entity: activityEntityLabel(t, log.entityType ?? ""),
+          description: activitySentence(t, log, locale),
+        })),
+      },
+    ],
+    "activity-log"
+  );
 }
 
 export function prepareAuditTrailForExport(report: any): ExportData[] {

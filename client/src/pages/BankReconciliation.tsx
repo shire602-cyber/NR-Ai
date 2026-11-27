@@ -2,8 +2,8 @@ import { MAX_UPLOAD_BYTES } from "@shared/upload-limits";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { accountDisplayName } from "@/lib/account-name";
 import { localizeServerWarning } from "@/lib/validation-messages";
-import { useMemo, useRef, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useQuery, useMutation, useMutationState, onlineManager } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FileDrop } from "@/components/ui/file-drop";
@@ -15,6 +15,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { MatchSuggestions } from "./AutoReconcile";
+import { translateMatchReasons } from "./auto-reconcile-match-reasons";
+import { bankRowWriteKey, hasBankRowWriteInFlight } from "./bank-row-writes";
 import { ReconciliationRulesPanel } from "./ReconciliationRules";
 import {
   Select,
@@ -46,6 +48,7 @@ import { formatMessage, useI18n, useTranslation, translateNow } from "@/lib/i18n
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
+import { ErrorState } from "@/components/ui/error-state";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActionButton } from "@/components/ui/row-actions";
 import { useToast } from "@/hooks/use-toast";
@@ -147,25 +150,21 @@ interface ReportData {
 const matchTypeConfig = {
   journal_entry: {
     icon: BookOpen,
-    label: "Journal entry",
     color: "text-muted-foreground",
     bg: "bg-muted",
   },
   invoice: {
     icon: FileText,
-    label: "Invoice",
     color: "text-muted-foreground",
     bg: "bg-muted",
   },
   receipt: {
     icon: Receipt,
-    label: "Receipt",
     color: "text-success",
     bg: "bg-success-subtle",
   },
   bill: {
     icon: FileText,
-    label: "Bill",
     color: "text-muted-foreground",
     bg: "bg-muted",
   },
@@ -178,27 +177,23 @@ const SAMPLE_BANK_CSV = `Date,Description,Debit,Credit,Balance,Reference
 `;
 
 function confidenceLabel(score: number): {
-  label: string;
   labelKey: string;
   color: string;
   bg: string;
 } {
   if (score >= 80)
     return {
-      label: "High",
       labelKey: "screens.confidenceHigh",
       color: "text-success",
       bg: "bg-success-subtle",
     };
   if (score >= 60)
     return {
-      label: "Medium",
       labelKey: "screens.confidenceMedium",
       color: "text-warning",
       bg: "bg-warning-subtle",
     };
   return {
-    label: "Low",
     labelKey: "screens.confidenceLow",
     color: "text-destructive",
     bg: "bg-danger-subtle",
@@ -296,6 +291,14 @@ function downloadSampleBankCsv() {
   URL.revokeObjectURL(url);
 }
 
+// A paused query is not proof of being offline (an unfocused retry pauses too), so offline copy
+// follows React Query's connectivity state only.
+const subscribeConnectivity = (notify: () => void) => onlineManager.subscribe(notify);
+const isKnownOffline = () => !onlineManager.isOnline();
+
+// Match/unmatch writes outstanding per company; the last one to settle refreshes the list.
+const rowWritesInFlight = new Map<string, number>();
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function BankReconciliation() {
@@ -307,6 +310,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
   const { t, locale } = useTranslation();
   const { gate } = useCompanyPermission();
   const { toast } = useToast();
+  const knownOffline = useSyncExternalStore(subscribeConnectivity, isKnownOffline);
   const { companyId, companies, isLoading: isLoadingCompany } = company;
   const isActive = () => !!companyId && effectiveCompanyId(companies, companyId) === companyId;
 
@@ -356,30 +360,51 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     reviewedStatement?.file === importFile && reviewedStatement.companyId === companyId
       ? reviewedStatement.preview
       : null;
-  const firstInvalidDateRow =
-    !previewLoading && statementPreview?.validRows === 0
-      ? statementPreview.firstInvalidDateRow
-      : null;
+  // The server rejects the whole file when any row has a missing/invalid date, so the preview
+  // must say so even when other rows are valid (otherwise it looks importable).
+  const firstInvalidDateRow = !previewLoading
+    ? (statementPreview?.firstInvalidDateRow ?? null)
+    : null;
+  // During a re-preview the previous rows stay on screen but are stale: only the latest finished
+  // response (a failed one clears it) may be called recognized.
+  const statementRecognized = Boolean(
+    statementPreview &&
+    !previewLoading &&
+    statementPreview.validRows > 0 &&
+    statementPreview.firstInvalidDateRow == null
+  );
   const canConfirmImport = Boolean(
     statementPreview &&
     bankAccounts?.some((account) => account.id === selectedBankAccount) &&
     !isImporting &&
     !previewLoading &&
     statementPreview.validRows > 0 &&
+    statementPreview.firstInvalidDateRow == null &&
     (!statementPreview.requiresChoice || acknowledgeAmbiguity)
   );
 
+  const transactionsKey = ["/api/companies", companyId, "bank-statements", "transactions"];
   const {
     data: transactions,
     isLoading: isLoadingTransactions,
     error: transactionsError,
+    isSuccess: transactionsSuccess,
+    fetchStatus: transactionsFetchStatus,
     refetch: refetchTransactions,
   } = useQuery<BankTransaction[]>({
-    queryKey: ["/api/companies", companyId, "bank-statements", "transactions"],
+    queryKey: transactionsKey,
     enabled: !!companyId,
   });
+  const transactionsPaused = transactionsFetchStatus === "paused";
 
-  const { data: matchSuggestions, isLoading: isLoadingMatches } = useQuery<MatchSuggestion[]>({
+  const {
+    data: matchSuggestions,
+    isLoading: isLoadingMatches,
+    error: matchesError,
+    isSuccess: matchesSuccess,
+    fetchStatus: matchesFetchStatus,
+    refetch: refetchMatches,
+  } = useQuery<MatchSuggestion[]>({
     queryKey: [
       "/api/companies",
       companyId,
@@ -389,8 +414,15 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     ],
     enabled: !!selectedTransaction?.id && matchDialogOpen,
   });
+  const matchesPaused = matchesFetchStatus === "paused";
+  const hasMatches = !!matchSuggestions && matchSuggestions.length > 0;
 
-  const { data: reportData, isLoading: isLoadingReport } = useQuery<ReportData>({
+  const {
+    data: reportData,
+    error: reportError,
+    fetchStatus: reportFetchStatus,
+    refetch: refetchReport,
+  } = useQuery<ReportData>({
     queryKey: [
       "/api/companies",
       companyId,
@@ -399,36 +431,51 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
       selectedBankAccount || "all",
     ],
     enabled: !!companyId && reportDialogOpen,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams();
       if (selectedBankAccount) params.set("bankAccountId", selectedBankAccount);
-      return apiRequest("GET", `/api/companies/${companyId}/bank-statements/report?${params}`);
+      const url = `/api/companies/${companyId}/bank-statements/report?${params}`;
+      return apiRequest("GET", url, undefined, undefined, { signal });
     },
   });
+  const reportPaused = reportFetchStatus === "paused";
 
   // ─── Derived state ────────────────────────────────────────────────────────
 
-  const filteredTransactions = useMemo(() => {
+  // Paused with nothing cached while disconnected: say offline, never an empty import.
+  const transactionsOffline =
+    knownOffline && transactionsPaused && !transactions && !transactionsError;
+
+  // One normalized query drives both the row filter and the search-empty state.
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  // Rows visible for the selected account and reconciled toggle, before the search.
+  const viewTransactions = useMemo(() => {
     if (!transactions) return [];
     return transactions.filter((tx) => {
       if (!showReconciled && tx.isReconciled) return false;
       if (selectedBankAccount && tx.bankStatementAccountId !== selectedBankAccount) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        return (
-          tx.description.toLowerCase().includes(q) ||
-          tx.reference?.toLowerCase().includes(q) ||
-          String(Math.abs(tx.amount)).includes(q)
-        );
-      }
       return true;
     });
-  }, [transactions, showReconciled, selectedBankAccount, searchQuery]);
+  }, [transactions, showReconciled, selectedBankAccount]);
+
+  const filteredTransactions = useMemo(() => {
+    if (!normalizedSearch) return viewTransactions;
+    return viewTransactions.filter(
+      (tx) =>
+        tx.description.toLowerCase().includes(normalizedSearch) ||
+        tx.reference?.toLowerCase().includes(normalizedSearch) ||
+        String(Math.abs(tx.amount)).includes(normalizedSearch)
+    );
+  }, [viewTransactions, normalizedSearch]);
+
+  // The search (not the data) emptied a view that otherwise had visible rows.
+  const searchEmptiedView =
+    normalizedSearch !== "" && viewTransactions.length > 0 && filteredTransactions.length === 0;
 
   const allReconciledHidden =
     !showReconciled &&
-    !searchQuery &&
-    filteredTransactions.length === 0 &&
+    viewTransactions.length === 0 &&
     (transactions ?? []).some(
       (tx) =>
         tx.isReconciled &&
@@ -465,7 +512,11 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
       acknowledgeAmbiguity: boolean;
     }) => {
       if (!isActive()) throw new Error(t["banking.import.companyChanged"]);
-      return apiRequest("POST", `/api/companies/${reviewedCompanyId}/bank-statements/import`, payload);
+      return apiRequest(
+        "POST",
+        `/api/companies/${reviewedCompanyId}/bank-statements/import`,
+        payload
+      );
     },
     onSuccess: (data: any, { companyId: reviewedCompanyId }) => {
       queryClient.invalidateQueries({
@@ -499,7 +550,88 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
     },
   });
 
+  // Match and unmatch share one key so the last outstanding write refreshes the list, and so a
+  // row with a write in flight rejects the opposite write (other rows may still overlap).
+  const rowWriteKey = bankRowWriteKey(companyId);
+  const pendingRowIds = useMutationState({
+    filters: { mutationKey: rowWriteKey, status: "pending" },
+    select: (m) => {
+      const v = m.state.variables as string | { transactionId: string } | undefined;
+      return typeof v === "string" ? v : v?.transactionId;
+    },
+  });
+  const isRowBusy = (id: string) => pendingRowIds.includes(id);
+  // A new write needs no write in flight on the row and the row's current cached state (never a
+  // copy a dialog captured earlier) to fit: Match/dialog actions need an unreconciled line,
+  // Unmatch a reconciled one. With no cached list there is no state to contradict the request.
+  const canWriteRow = (id: string, reconciled: boolean) => {
+    if (hasBankRowWriteInFlight(companyId, id)) return false;
+    const rows = queryClient.getQueryData<BankTransaction[]>(transactionsKey);
+    if (!rows) return true;
+    const row = rows.find((x) => x.id === id);
+    return !!row && !!row.isReconciled === reconciled;
+  };
+  const startUnmatch = (id: string) => {
+    if (!canWriteRow(id, true)) return;
+    // A dialog left open on this line must not come back to life with the optimistic row.
+    if (selectedTransaction?.id === id) {
+      setMatchDialogOpen(false);
+      setSelectedTransaction(null);
+    }
+    unmatchMutation.mutate(id);
+  };
+  const startMatch = (vars: { transactionId: string; matchedId: string; matchedType: string }) => {
+    if (!canWriteRow(vars.transactionId, false)) return;
+    matchMutation.mutate(vars);
+  };
+  const refreshAfterLastRowWrite = () => {
+    // The tally is kept by us, not read from the mutation cache: two writes settling together
+    // would each still see the other as pending. Runs after any rollback in onError.
+    const key = companyId ?? "";
+    const remaining = (rowWritesInFlight.get(key) ?? 0) - 1;
+    if (remaining > 0) {
+      rowWritesInFlight.set(key, remaining);
+      return;
+    }
+    rowWritesInFlight.delete(key);
+    queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
+  };
+
+  // Optimistic write to one row of the list; the returned context restores only that row.
+  const patchTransactionRow = async (transactionId: string, patch: Partial<BankTransaction>) => {
+    // Count the write synchronously, before the first await, so overlapping writes always see
+    // each other; every call is paired with one onSettled (it runs even if this throws).
+    const key = companyId ?? "";
+    rowWritesInFlight.set(key, (rowWritesInFlight.get(key) ?? 0) + 1);
+    // Stop in-flight reads (prefix), then write the list's own key.
+    await queryClient.cancelQueries({
+      queryKey: ["/api/companies", companyId, "bank-statements"],
+    });
+    const queryKey = transactionsKey;
+    const previousRow = queryClient
+      .getQueryData<BankTransaction[]>(queryKey)
+      ?.find((tx) => tx.id === transactionId);
+    // An absent list stays absent: returning undefined creates no cache entry.
+    queryClient.setQueryData<BankTransaction[]>(queryKey, (old) =>
+      old?.map((tx) => (tx.id === transactionId ? { ...tx, ...patch } : tx))
+    );
+    return { queryKey, previousRow };
+  };
+  const restoreTransactionRow = async (
+    context: Awaited<ReturnType<typeof patchTransactionRow>> | undefined
+  ) => {
+    const previousRow = context?.previousRow;
+    if (!context || !previousRow) return;
+    // A read started during the write must not land on top of the rollback. The final refresh
+    // may be deferred by another pending write, so nothing else would correct it for a while.
+    await queryClient.cancelQueries({ queryKey: context.queryKey, exact: true });
+    queryClient.setQueryData<BankTransaction[]>(context.queryKey, (old) =>
+      old?.map((tx) => (tx.id === previousRow.id ? previousRow : tx))
+    );
+  };
+
   const matchMutation = useMutation({
+    mutationKey: rowWriteKey,
     mutationFn: ({
       transactionId,
       matchedId,
@@ -513,25 +645,18 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
         matchedType: matchedType === "journal_entry" ? "journal" : matchedType,
         matchedId,
       }),
-    onMutate: async ({ transactionId, matchedId, matchedType }) => {
-      const queryKey = ["/api/companies", companyId, "bank-statements"] as const;
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(
-        queryKey,
-        (old) =>
-          old?.map((tx: any) =>
-            tx.id === transactionId
-              ? {
-                  ...tx,
-                  matchedId,
-                  matchedType: matchedType === "journal_entry" ? "journal" : matchedType,
-                  status: "matched",
-                }
-              : tx
-          ) ?? []
-      );
-      return { previous, queryKey };
+    onMutate: ({ transactionId, matchedId, matchedType }) => {
+      const type = matchedType === "journal_entry" ? "journal" : matchedType;
+      // Only the reference the request names is known here; the refetch fills in the rest.
+      return patchTransactionRow(transactionId, {
+        matchStatus: "matched",
+        isReconciled: true,
+        matchedType: type,
+        matchedJournalEntryId: type === "journal" ? matchedId : null,
+        matchedReceiptId: type === "receipt" ? matchedId : null,
+        matchedInvoiceId: type === "invoice" ? matchedId : null,
+        matchConfidence: 1,
+      });
     },
     onSuccess: () => {
       toast({
@@ -541,58 +666,46 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
       setMatchDialogOpen(false);
       setSelectedTransaction(null);
     },
-    onError: (error: any, _vars, context: any) => {
-      if (context?.previous && context?.queryKey) {
-        queryClient.setQueryData(context.queryKey, context.previous);
-      }
+    onError: async (error: any, _vars, context) => {
+      await restoreTransactionRow(context);
       toast({
         variant: "destructive",
         title: translateNow("toasts.reconciliationFailed"),
         description: error?.message,
       });
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
-    },
+    onSettled: refreshAfterLastRowWrite,
   });
 
   const unmatchMutation = useMutation({
+    mutationKey: rowWriteKey,
     mutationFn: (transactionId: string) =>
       apiRequest("DELETE", `/api/companies/${companyId}/bank-statements/${transactionId}/match`),
-    onMutate: async (transactionId: string) => {
-      const queryKey = ["/api/companies", companyId, "bank-statements"] as const;
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(
-        queryKey,
-        (old) =>
-          old?.map((tx: any) =>
-            tx.id === transactionId
-              ? { ...tx, matchedId: null, matchedType: null, status: "unmatched" }
-              : tx
-          ) ?? []
-      );
-      return { previous, queryKey };
-    },
+    onMutate: (transactionId: string) =>
+      patchTransactionRow(transactionId, {
+        matchStatus: "unmatched",
+        isReconciled: false,
+        matchedType: null,
+        matchedJournalEntryId: null,
+        matchedReceiptId: null,
+        matchedInvoiceId: null,
+        matchConfidence: null,
+      }),
     onSuccess: () => {
       toast({
         title: translateNow("toasts.matchRemoved"),
         description: translateNow("toasts.transactionResetToUnmatched"),
       });
     },
-    onError: (error: any, _id, context: any) => {
-      if (context?.previous && context?.queryKey) {
-        queryClient.setQueryData(context.queryKey, context.previous);
-      }
+    onError: async (error: any, _id, context) => {
+      await restoreTransactionRow(context);
       toast({
         variant: "destructive",
         title: translateNow("toasts.error"),
         description: error?.message,
       });
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
-    },
+    onSettled: refreshAfterLastRowWrite,
   });
 
   const confirmDraftMutation = useMutation({
@@ -764,7 +877,16 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
 
   // ─── Render helpers ───────────────────────────────────────────────────────
 
+  // The dialog's line is read from the current list, not the row captured when it opened, so a
+  // rolled-back or optimistic row is never resurrected from a stale copy.
+  const dialogLine = selectedTransaction
+    ? (transactions?.find((x) => x.id === selectedTransaction.id) ?? null)
+    : null;
+
   const handleOpenMatch = (transaction: BankTransaction) => {
+    // Checked against the current list: a line with a write in flight (e.g. an optimistic Unmatch),
+    // or one rolled back to reconciled since this handler rendered, does not open.
+    if (!canWriteRow(transaction.id, false)) return;
     setSelectedTransaction(transaction);
     setMatchDialogOpen(true);
   };
@@ -782,7 +904,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
       : tx.matchedInvoiceId
         ? "invoice"
         : "receipt";
-    matchMutation.mutate({ transactionId: tx.id, matchedId, matchedType });
+    startMatch({ transactionId: tx.id, matchedId, matchedType });
   };
 
   if (isLoadingCompany || isLoadingBankAccounts) {
@@ -957,48 +1079,99 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                   if (transactionsError) void refetchTransactions();
                 },
               }}
+              // A paused or failed load is never "empty"; cached rows stay with a notice.
               status={
-                (accountsError && !bankAccounts) || (transactionsError && !transactions)
+                accountsError && !bankAccounts
                   ? "error"
                   : isLoadingTransactions
                     ? "loading"
-                    : filteredTransactions.length === 0
-                      ? "empty"
-                      : "ready"
+                    : filteredTransactions.length > 0 || transactionsPaused
+                      ? "ready"
+                      : transactionsError
+                        ? "error"
+                        : transactionsSuccess
+                          ? "empty"
+                          : "loading"
               }
               columnLabels={[t.date, t.description, t.amount, t.status]}
               empty={
                 // X5 (J1 L6): lines exist but every one is reconciled (and hidden) — say so.
-                allReconciledHidden
+                searchEmptiedView
                   ? {
-                      icon: Check,
-                      title: t["banking.allReconciledTitle"],
-                      description: t["banking.allReconciledDescription"],
+                      icon: Search,
+                      title: t["banking.noSearchMatchTitle"],
+                      description: t["banking.noSearchMatchDescription"],
                       action: {
-                        label: t["pageLabels.showReconciled"],
-                        icon: Eye,
+                        label: t["banking.clearSearch"],
                         variant: "outline",
-                        onClick: () => setShowReconciled(true),
+                        onClick: () => setSearchQuery(""),
                       },
-                      testId: "empty-state-all-reconciled",
+                      testId: "empty-state-bank-search",
                     }
-                  : {
-                      icon: Building2,
-                      title: t["banking.emptyTransactionsTitle"],
-                      description: t["pageLabels.bankCsvWorkflow"],
-                      action: {
-                        label: t["banking.importStatementAction"],
-                        permission: "documents.write",
-                        icon: Upload,
-                        variant: "outline",
-                        onClick: () => setImportDialogOpen(true),
-                      },
-                      testId: "empty-state-bank-transactions",
-                    }
+                  : allReconciledHidden
+                    ? {
+                        icon: Check,
+                        title: t["banking.allReconciledTitle"],
+                        description: t["banking.allReconciledDescription"],
+                        action: {
+                          label: t["pageLabels.showReconciled"],
+                          icon: Eye,
+                          variant: "outline",
+                          onClick: () => setShowReconciled(true),
+                        },
+                        testId: "empty-state-all-reconciled",
+                      }
+                    : {
+                        icon: Building2,
+                        title: t["banking.emptyTransactionsTitle"],
+                        description: t["pageLabels.bankCsvWorkflow"],
+                        action: {
+                          label: t["banking.importStatementAction"],
+                          permission: "documents.write",
+                          icon: Upload,
+                          variant: "outline",
+                          onClick: () => setImportDialogOpen(true),
+                        },
+                        testId: "empty-state-bank-transactions",
+                      }
               }
             >
+              {transactionsPaused ? (
+                <>
+                  <p
+                    role="status"
+                    className="px-4 py-3 text-center text-small text-muted-foreground"
+                    data-testid="status-transactions-paused"
+                  >
+                    {filteredTransactions.length > 0
+                      ? t["banking.query.pausedCached"]
+                      : t["banking.query.paused"]}
+                  </p>
+                  {transactionsOffline && (
+                    <p
+                      role="status"
+                      className="px-4 py-3 text-center text-small text-muted-foreground"
+                      data-testid="bank-transactions-offline"
+                    >
+                      {t["common.errorHeading.offline"]}
+                    </p>
+                  )}
+                </>
+              ) : transactionsError ? (
+                <ErrorState
+                  compact
+                  testId="error-transactions-refresh"
+                  onRetry={() => void refetchTransactions()}
+                />
+              ) : null}
               {/* Phones: one two-line row per bank line, the next step as a single button. */}
-              <div className="divide-hairline md:hidden" data-testid="mobile-bank-transaction-list">
+              <div
+                className={cn(
+                  "divide-hairline md:hidden",
+                  filteredTransactions.length === 0 && "hidden"
+                )}
+                data-testid="mobile-bank-transaction-list"
+              >
                 {filteredTransactions.map((tx) => {
                   const conf =
                     tx.matchConfidence != null ? Math.round(tx.matchConfidence * 100) : null;
@@ -1049,21 +1222,26 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => unmatchMutation.mutate(tx.id)}
-                            disabled={unmatchMutation.isPending}
+                            onClick={() => startUnmatch(tx.id)}
+                            disabled={isRowBusy(tx.id)}
                           >
                             <Unlink aria-hidden />
                             <T k="pageLabels.unmatch" />
                           </Button>
                         ) : tx.matchStatus === "suggested" ? (
                           <div className="flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => handleOpenMatch(tx)}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenMatch(tx)}
+                              disabled={isRowBusy(tx.id)}
+                            >
                               <T k="pages.review" />
                             </Button>
                             <Button
                               size="sm"
                               onClick={() => handleAcceptSuggestion(tx)}
-                              disabled={matchMutation.isPending}
+                              disabled={isRowBusy(tx.id)}
                             >
                               <Check aria-hidden />
                               <T k="pages.accept" />
@@ -1074,6 +1252,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                             size="sm"
                             variant="outline"
                             onClick={() => handleOpenMatch(tx)}
+                            disabled={isRowBusy(tx.id)}
                             data-testid={`mobile-button-match-${tx.id}`}
                           >
                             <Link2 aria-hidden />
@@ -1085,7 +1264,10 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                   );
                 })}
               </div>
-              <div className="hidden md:block" data-testid="bank-transaction-table">
+              <div
+                className={cn("hidden", filteredTransactions.length > 0 && "md:block")}
+                data-testid="bank-transaction-table"
+              >
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1155,8 +1337,8 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                                 <RowActionButton
                                   label={t["pageLabels.unmatch"]}
                                   icon={Unlink}
-                                  onClick={() => unmatchMutation.mutate(tx.id)}
-                                  disabled={unmatchMutation.isPending}
+                                  onClick={() => startUnmatch(tx.id)}
+                                  disabled={isRowBusy(tx.id)}
                                 />
                               ) : tx.matchStatus === "suggested" ? (
                                 <>
@@ -1164,12 +1346,13 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                                     label={t["screens.reviewMatch"]}
                                     icon={Eye}
                                     onClick={() => handleOpenMatch(tx)}
+                                    disabled={isRowBusy(tx.id)}
                                   />
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     onClick={() => handleAcceptSuggestion(tx)}
-                                    disabled={matchMutation.isPending}
+                                    disabled={isRowBusy(tx.id)}
                                   >
                                     <Check aria-hidden />
                                     <T k="pages.accept" />
@@ -1180,6 +1363,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                                   size="sm"
                                   variant="outline"
                                   onClick={() => handleOpenMatch(tx)}
+                                  disabled={isRowBusy(tx.id)}
                                   data-testid={`button-match-${tx.id}`}
                                 >
                                   <Link2 aria-hidden />
@@ -1275,7 +1459,9 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                       <T k="pageLabels.direction" />
                     </p>
                     <Badge variant="outline" className="text-xs">
-                      {selectedTransaction.amount >= 0 ? "↑ Credit / Inflow" : "↓ Debit / outflow"}
+                      {selectedTransaction.amount >= 0
+                        ? t["banking.line.direction.credit"]
+                        : t["banking.line.direction.debit"]}
                     </Badge>
                   </div>
                 </div>
@@ -1287,13 +1473,41 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               <p className="text-xs font-semibold text-muted-foreground">
                 <T k="pageLabels.suggestedMatches" />
               </p>
+              {matchesPaused ? (
+                <>
+                  <p
+                    role="status"
+                    className="text-center text-small text-muted-foreground"
+                    data-testid="status-matches-paused"
+                  >
+                    {hasMatches ? t["banking.query.pausedCached"] : t["banking.query.paused"]}
+                  </p>
+                  {knownOffline && (
+                    <p
+                      role="status"
+                      className="text-center text-small text-muted-foreground"
+                      data-testid="match-suggestions-offline"
+                    >
+                      {t["common.errorHeading.offline"]}
+                    </p>
+                  )}
+                </>
+              ) : matchesError && !isLoadingMatches ? (
+                <div data-testid="match-suggestions-error">
+                  <ErrorState
+                    compact
+                    testId="error-matches"
+                    onRetry={() => void refetchMatches()}
+                  />
+                </div>
+              ) : null}
               {isLoadingMatches ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map((i) => (
                     <Skeleton key={i} className="h-20" />
                   ))}
                 </div>
-              ) : matchSuggestions && matchSuggestions.length > 0 ? (
+              ) : hasMatches ? (
                 <div className="space-y-2 max-h-[360px] overflow-y-auto pe-1">
                   {matchSuggestions.map((s) => {
                     const typeCfg = matchTypeConfig[s.matchedType];
@@ -1303,13 +1517,15 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                       <div
                         key={`${s.matchedType}-${s.matchedId}`}
                         className="rounded-lg border bg-card p-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
-                        onClick={() =>
-                          matchMutation.mutate({
-                            transactionId: selectedTransaction!.id,
+                        onClick={() => {
+                          const id = selectedTransaction?.id;
+                          if (!id) return;
+                          startMatch({
+                            transactionId: id,
                             matchedId: s.matchedId,
                             matchedType: s.matchedType,
-                          })
-                        }
+                          });
+                        }}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
@@ -1318,7 +1534,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                             </div>
                             <div className="min-w-0">
                               <p className="text-xs font-medium text-muted-foreground">
-                                {typeCfg.label}
+                                {t[`banking.suggest.type.${s.matchedType}`]}
                               </p>
                               <p className="text-sm font-medium truncate">
                                 {s.matchedDescription || s.matchedId.slice(0, 8)}
@@ -1330,14 +1546,14 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                               {s.matchedAmount != null ? formatCurrency(s.matchedAmount) : "—"}
                             </p>
                             <span className={`text-xs font-medium ${confMeta.color}`}>
-                              {s.confidence}% {confMeta.label}
+                              {s.confidence}% {t[confMeta.labelKey]}
                             </span>
                           </div>
                         </div>
                         <div className="mt-2">
                           <Progress
                             value={s.confidence}
-                            aria-label={`${s.confidence}% ${confMeta.label}`}
+                            aria-label={`${s.confidence}% ${t[confMeta.labelKey]}`}
                             className="h-1"
                           />
                         </div>
@@ -1346,9 +1562,9 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                             {formatDate(s.matchedDate)}
                           </p>
                         )}
-                        {s.matchReason && (
+                        {translateMatchReasons(s.matchReason, t) && (
                           <p className="text-xs text-muted-foreground mt-1 italic">
-                            {s.matchReason}
+                            {translateMatchReasons(s.matchReason, t)}
                           </p>
                         )}
                         <div className="mt-2 flex justify-end">
@@ -1360,24 +1576,34 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                     );
                   })}
                 </div>
+              ) : matchesPaused || matchesError ? null : !matchesSuccess ? (
+                <Skeleton className="h-20" />
               ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-40" />
-                  <p className="text-sm">
-                    <T k="pageLabels.noMatchesFound2" />
-                  </p>
-                  <p className="text-xs mt-1">
-                    <T k="pageLabels.tryReconcilingManuallyViaJournalEntries" />
-                  </p>
+                <div
+                  className="text-center py-8 text-muted-foreground"
+                  data-testid="match-suggestions-empty"
+                >
+                  <div data-testid="empty-state-match-suggestions">
+                    <ArrowRightLeft className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                    <p className="text-sm">
+                      <T k="pageLabels.noMatchesFound2" />
+                    </p>
+                    <p className="text-xs mt-1">
+                      <T k="pageLabels.tryReconcilingManuallyViaJournalEntries" />
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
           </div>
 
-          {selectedTransaction && !selectedTransaction.isReconciled && companyId && (
+          {dialogLine && !dialogLine.isReconciled && !isRowBusy(dialogLine.id) && companyId && (
             <BankLineActions
               companyId={companyId}
-              transaction={selectedTransaction}
+              transaction={dialogLine}
+              canSubmit={() => canWriteRow(dialogLine.id, false)}
+              isRowBusy={isRowBusy}
+              canUseCounterpart={(id) => canWriteRow(id, false)}
               bankAccounts={bankAccounts ?? []}
               transactions={transactions ?? []}
               onDone={() => {
@@ -1478,7 +1704,7 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium text-sm">{strings.reviewTitle}</p>
-                  {statementPreview.validRows > 0 && (
+                  {statementRecognized && (
                     <Badge variant="secondary" data-testid="statement-recognized">
                       {strings.recognized}
                     </Badge>
@@ -1742,20 +1968,32 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
               <T k="pageLabels.reconciliationReport" />
             </DialogTitle>
             <DialogDescription>
-              Summary of matched and unmatched transactions
               {selectedBankAccount && bankAccounts?.find((a) => a.id === selectedBankAccount)
-                ? ` for ${bankAccounts.find((a) => a.id === selectedBankAccount)!.nameEn}`
-                : " across all accounts"}
+                ? formatMessage(t["banking.report.descriptionAccount"], {
+                    account: bankAccounts.find((a) => a.id === selectedBankAccount)!.nameEn,
+                  })
+                : t["banking.report.descriptionAll"]}
             </DialogDescription>
           </DialogHeader>
-          {isLoadingReport ? (
-            <div className="space-y-3" aria-busy="true">
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-2 w-full" />
-              <Skeleton className="h-32 w-full" />
-            </div>
-          ) : reportData ? (
+          {reportData ? (
             <div className="space-y-4">
+              {/* A paused or failed refresh keeps the last loaded totals, with a notice. */}
+              {reportPaused ? (
+                <p
+                  role="status"
+                  className="text-center text-small text-muted-foreground"
+                  data-testid="report-refresh-paused"
+                >
+                  {t["banking.query.pausedCached"]}
+                </p>
+              ) : reportError ? (
+                <ErrorState
+                  compact
+                  testId="report-refresh-error"
+                  description={t["banking.common.refreshFailed"]}
+                  onRetry={() => void refetchReport()}
+                />
+              ) : null}
               {/* Status breakdown */}
               <div>
                 <p className="text-xs font-semibold text-muted-foreground mb-2">
@@ -1869,14 +2107,34 @@ function CompanyBankReconciliation({ company }: { company: ReturnType<typeof use
                   <div className="flex items-center gap-2 rounded-lg bg-warning-subtle border border-warning/30 p-3">
                     <Sparkles className="w-4 h-4 text-warning shrink-0" />
                     <p className="text-sm text-foreground">
-                      <strong>{reportData.summary.suggestedCount}</strong> transaction(s) have
-                      suggested matches waiting for your review.
+                      {formatMessage(t["banking.report.suggestedNotice"], {
+                        count: reportData.summary.suggestedCount,
+                      })}
                     </p>
                   </div>
                 </>
               )}
             </div>
-          ) : null}
+          ) : reportPaused ? (
+            <div className="space-y-2 text-center text-small text-muted-foreground">
+              <p role="status" data-testid="report-paused">
+                {t["banking.query.paused"]}
+              </p>
+              {knownOffline && (
+                <p role="status" data-testid="report-offline">
+                  {t["common.errorHeading.offline"]}
+                </p>
+              )}
+            </div>
+          ) : reportError ? (
+            <ErrorState compact testId="report-load-error" onRetry={() => void refetchReport()} />
+          ) : (
+            <div className="space-y-3" aria-busy="true" data-testid="report-loading">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-2 w-full" />
+              <Skeleton className="h-32 w-full" />
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setReportDialogOpen(false)}>
               <T k="banking.common.close" />
@@ -1914,10 +2172,16 @@ function BankLineActions({
   transaction,
   bankAccounts,
   transactions,
+  canSubmit,
+  isRowBusy,
+  canUseCounterpart,
   onDone,
 }: {
   companyId: string;
   transaction: BankTransaction;
+  canSubmit: () => boolean;
+  isRowBusy: (id: string) => boolean;
+  canUseCounterpart: (id: string) => boolean;
   bankAccounts: BankAccount[];
   transactions: BankTransaction[];
   onDone: () => void;
@@ -1961,6 +2225,8 @@ function BankLineActions({
     (x) =>
       x.bankStatementAccountId === otherAccount &&
       !x.isReconciled &&
+      // A pending Unmatch shows its row as unreconciled before the server has agreed.
+      !isRowBusy(x.id) &&
       Math.round(x.amount * 100) === -Math.round(transaction.amount * 100)
   );
 
@@ -2015,6 +2281,12 @@ function BankLineActions({
     onSuccess: () => done(tr("banking.line.excluded")),
     onError,
   });
+
+  // Re-checked at submission against the current list and in-flight writes, not render time.
+  const submit = (m: { mutate: () => void }) => {
+    if (!canSubmit()) return;
+    m.mutate();
+  };
 
   const modes: Array<[LineMode, string]> = [
     ["entry", "banking.line.createEntry"],
@@ -2091,7 +2363,7 @@ function BankLineActions({
           <div className="flex justify-end">
             <Button
               size="sm"
-              onClick={() => entryMutation.mutate()}
+              onClick={() => submit(entryMutation)}
               disabled={!accountId || entryMutation.isPending}
               data-testid="button-create-entry"
             >
@@ -2151,7 +2423,7 @@ function BankLineActions({
           <div className="flex justify-end">
             <Button
               size="sm"
-              onClick={() => splitMutation.mutate()}
+              onClick={() => submit(splitMutation)}
               disabled={allocatedFils !== bankFils || splitMutation.isPending}
             >
               {tr("banking.line.applySplit")}
@@ -2198,7 +2470,11 @@ function BankLineActions({
           <div className="sm:col-span-2 flex justify-end">
             <Button
               size="sm"
-              onClick={() => transferMutation.mutate()}
+              onClick={() => {
+                // The picked counterpart can become busy or reconciled after it was chosen.
+                if (counterpart !== "none" && !canUseCounterpart(counterpart)) return;
+                submit(transferMutation);
+              }}
               disabled={!otherAccount || transferMutation.isPending}
             >
               {tr("banking.line.applyTransfer")}
@@ -2216,7 +2492,7 @@ function BankLineActions({
           <Button
             size="sm"
             variant="destructive"
-            onClick={() => excludeMutation.mutate()}
+            onClick={() => submit(excludeMutation)}
             disabled={reason.trim().length < 3 || excludeMutation.isPending}
           >
             {tr("banking.line.excludeApply")}

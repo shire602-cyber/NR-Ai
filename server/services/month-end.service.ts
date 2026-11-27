@@ -3,7 +3,8 @@ import { sql } from "drizzle-orm";
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { pool } from "../db";
 import { DomainError } from "../errors";
-import { postJournal, type LedgerTx } from "../ledger";
+import type { LedgerTx } from "../ledger";
+import { postFiscalYearCloseJournal } from "../ledger/kernel";
 import { ledgerQueryable, rowsOf, withLedgerTx } from "../ledger/tx";
 import { describeMonthEndText, type CopyDescriptor } from "@shared/server-copy";
 import { detectAnomalies } from "./anomaly-detection.service";
@@ -21,7 +22,6 @@ import { pendingOpeningDocuments } from "./migration-import";
 import { frequencyOf, periodContaining } from "../tax/vat-periods";
 import { isVatRegistered } from "@shared/vat-registration";
 import {
-  YEAR_END_CLOSE_SOURCE,
   accountTotals,
   aed,
   fiscalYearEnd as fiscalYearEndOf,
@@ -83,6 +83,7 @@ export interface ClosingLine {
   accountId: string;
   accountCode: string;
   accountName: string;
+  accountNameAr: string | null;
   debit: number;
   credit: number;
 }
@@ -151,7 +152,8 @@ export async function getCloseChecklist(
      FROM bank_transactions
      WHERE company_id = $1
        AND transaction_date >= $2::date
-       AND transaction_date <= $3::date`,
+       AND transaction_date <= $3::date
+       AND deleted_at IS NULL`,
     [companyId, periodStart, periodEnd]
   );
   const bankTotal = parseInt(bankResult.rows[0]?.total || "0");
@@ -630,6 +632,7 @@ export async function computeCloseSummary(
       accountId: a.id,
       accountCode: a.code,
       accountName: a.nameEn,
+      accountNameAr: a.nameAr,
       debit: aed(debit),
       credit: aed(credit),
     });
@@ -644,6 +647,7 @@ export async function computeCloseSummary(
       accountId: re.id,
       accountCode: re.code,
       accountName: re.nameEn,
+      accountNameAr: re.nameAr,
       debit: aed(debit),
       credit: aed(credit),
     });
@@ -763,22 +767,34 @@ export async function lockPeriod(
   }, outer);
 }
 
-/** Used by the fiscal close after it acquires the exclusive lock and writes its fiscal record. */
+/** The annual close and an existing period lock have independent lifecycles. */
+async function getPeriodLockAt(tx: LedgerTx, companyId: string, end: string) {
+  const result = await tx.execute(sql`
+    SELECT * FROM month_end_close
+     WHERE company_id = ${companyId} AND period_end = ${end}::date
+       AND status = 'locked'
+  `);
+  const [row] = rowsOf<QueryResultRow>(result);
+  return row ? formatCloseRecord(row) : null;
+}
+
 async function writePeriodLock(
   tx: LedgerTx,
   companyId: string,
   end: string,
   userId: string,
-  opts: LockOptions
+  opts: LockOptions,
+  fiscalYearLock = false
 ): Promise<MonthEndCloseRecord> {
   const result = await tx.execute(sql`
      INSERT INTO month_end_close
        (company_id, period_start, period_end, status, closed_by, closed_at, closing_entry_id,
-        lock_type, lock_scope, lock_reason, checklist_override, checklist_snapshot)
+        lock_type, lock_scope, lock_reason, checklist_override, checklist_snapshot, fiscal_year_lock)
      VALUES (${companyId}, date_trunc('month', ${end}::date), ${end}::date, 'locked', ${userId},
              now(), ${opts.closingEntryId || null}, ${opts.lockType ?? "hard"},
              ${opts.lockScope ?? "through"}, ${opts.reason ?? null},
-             ${opts.checklistOverride === true}, ${JSON.stringify(opts.checklistSnapshot) ?? null}::jsonb)
+             ${opts.checklistOverride === true}, ${JSON.stringify(opts.checklistSnapshot) ?? null}::jsonb,
+             ${fiscalYearLock})
      ON CONFLICT (company_id, period_end)
      DO UPDATE SET
        status = 'locked',
@@ -790,6 +806,7 @@ async function writePeriodLock(
        lock_reason = EXCLUDED.lock_reason,
        checklist_override = EXCLUDED.checklist_override,
        checklist_snapshot = EXCLUDED.checklist_snapshot,
+       fiscal_year_lock = EXCLUDED.fiscal_year_lock,
        updated_at = now()
      RETURNING *`);
   return formatCloseRecord(rowsOf<QueryResultRow>(result)[0]);
@@ -811,7 +828,7 @@ export async function isPeriodLocked(companyId: string, date: string): Promise<b
 export async function unlockPeriod(
   companyId: string,
   periodEnd: string,
-  opts: { userId?: string | null; reason?: string | null } = {},
+  opts: { userId?: string | null; reason?: string | null; fiscalYearLockOnly?: boolean } = {},
   outer?: LedgerTx
 ): Promise<MonthEndCloseRecord | null> {
   const end = parseReportDate(periodEnd, "periodEnd");
@@ -822,8 +839,9 @@ export async function unlockPeriod(
     const result = await tx.execute(sql`
       UPDATE month_end_close
          SET status = 'open', updated_at = now(), unlocked_by = ${opts.userId ?? null},
-             unlocked_at = now(), unlock_reason = ${opts.reason ?? null}
+             unlocked_at = now(), unlock_reason = ${opts.reason ?? null}, fiscal_year_lock = false
        WHERE company_id = ${companyId} AND period_end::date = ${end}::date AND status = 'locked'
+         AND (${opts.fiscalYearLockOnly === true} = false OR fiscal_year_lock)
        RETURNING *`);
     const [row] = rowsOf<QueryResultRow>(result);
     return row ? formatCloseRecord(row) : null;
@@ -908,7 +926,7 @@ export async function listFiscalYearCloses(companyId: string): Promise<FiscalYea
 
 /**
  * The seam the close posts through. Default: the server/ledger posting kernel
- * (postJournal) with entry kind `year_end_close`; tests may swap it with
+ * with entry kind `year_end_close`; tests may swap it with
  * setClosePostingPort().
  */
 export interface ClosePostingPort {
@@ -919,7 +937,6 @@ export interface ClosePostingPort {
       memo: string;
       memoKey?: string | null;
       memoParams?: Record<string, string> | null;
-      source: string;
       userId: string;
       /** The entry this one undoes (reopen), recorded as source_id. */
       sourceId?: string | null;
@@ -939,18 +956,15 @@ export interface ClosePostingPort {
 
 export const ledgerClosePostingPort: ClosePostingPort = {
   async post(input, tx) {
-    const { entry } = await postJournal(
+    const { entry } = await postFiscalYearCloseJournal(
       {
         companyId: input.companyId,
         date: input.date,
         memo: input.memo,
         memoKey: input.memoKey ?? null,
         memoParams: input.memoParams ?? null,
-        source: input.source,
         sourceId: input.sourceId ?? null,
         idempotencyKey: input.idempotencyKey ?? null,
-        status: "posted",
-        kind: "year_end_close",
         allowFutureDate: true,
         lines: input.lines
           .filter((l) => l.debit !== 0 || l.credit !== 0)
@@ -1061,7 +1075,6 @@ export async function closeFiscalYear(
           companyId,
           date: fye,
           ...journalMemo("yearEndCloseRange", { from: fys, to: fye }),
-          source: YEAR_END_CLOSE_SOURCE,
           userId,
           lines: summary.lines.map((l) => ({
             accountId: l.accountId,
@@ -1101,14 +1114,23 @@ export async function closeFiscalYear(
     if (!r.rows[0]) {
       throw new DomainError("FISCAL_YEAR_ALREADY_CLOSED", 409, { fiscalYearEnd: fye });
     }
-    const lock = await writePeriodLock(tx, companyId, fye, userId, {
-      lockType: opts.hardClose ? "hard" : "soft",
-      lockScope: "through",
-      reason: opts.reason ?? `Year-end close ${fye}`,
-      checklistOverride: opts.checklistOverride,
-      checklistSnapshot: opts.checklistSnapshot,
-      closingEntryId,
-    });
+    const lock =
+      (await getPeriodLockAt(tx, companyId, fye)) ??
+      (await writePeriodLock(
+        tx,
+        companyId,
+        fye,
+        userId,
+        {
+          lockType: opts.hardClose ? "hard" : "soft",
+          lockScope: "through",
+          reason: opts.reason ?? `Year-end close ${fye}`,
+          checklistOverride: opts.checklistOverride,
+          checklistSnapshot: opts.checklistSnapshot,
+          closingEntryId,
+        },
+        true
+      ));
     return {
       record: formatYearClose(r.rows[0]),
       summary: {
@@ -1153,8 +1175,8 @@ export async function reopenFiscalYear(
     if (row.hard_closed === true && !options.canReopenHardClose) {
       await assertNotInHardClosedYear(companyId, fye, tx, { exactYearEnd: true });
     }
-    // Mark both records reopened inside the exclusive transaction before the ledger reversal.
-    // If the reversal fails, both records are restored by rollback.
+    // Reopen the fiscal record and any lock it created before posting the reversal.
+    // A failed reversal rolls back both updates.
     const r = await q.query(
       `UPDATE fiscal_year_closes
         SET status = 'reopened', reopened_by = $3, reopened_at = now(), reopen_reason = $4,
@@ -1163,7 +1185,7 @@ export async function reopenFiscalYear(
       RETURNING ${YEAR_CLOSE_COLUMNS}`,
       [companyId, fye, userId, reason]
     );
-    await unlockPeriod(companyId, fye, { userId, reason }, tx);
+    await unlockPeriod(companyId, fye, { userId, reason, fiscalYearLockOnly: true }, tx);
     if (row.closing_entry_id) {
       const lines = await q.query(
         `SELECT jl.account_id, ROUND(jl.debit * 100)::bigint AS d, ROUND(jl.credit * 100)::bigint AS c,
@@ -1180,7 +1202,6 @@ export async function reopenFiscalYear(
             companyId,
             date: fye,
             ...journalMemo("yearEndCloseReversalRange", { from: row.fys, to: fye }),
-            source: YEAR_END_CLOSE_SOURCE,
             sourceId: row.closing_entry_id,
             idempotencyKey: `year_end_close:${row.closing_entry_id}:reopen`,
             userId,
