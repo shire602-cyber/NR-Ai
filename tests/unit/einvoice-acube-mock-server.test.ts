@@ -10,6 +10,7 @@
  * prove OUR side (stable UBL id, one POST per document, look up the outgoing collection before
  * any re-POST).
  */
+import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AcubeEInvoiceProvider,
@@ -23,6 +24,9 @@ import {
   violationsBody,
   type AcubeMock,
 } from "../fixtures/pint-ae/asp/acube/mock-server";
+
+// Generated per run so no credential-shaped literal sits in the source (secret scanners).
+const MOCK_PASSWORD = randomUUID();
 
 let mock: AcubeMock;
 beforeEach(async () => {
@@ -39,7 +43,7 @@ const env = (extra: Record<string, string> = {}) =>
     EINVOICE_PROVIDER: "acube",
     ACUBE_ENV: "sandbox",
     ACUBE_EMAIL: "sandbox@example.test",
-    ACUBE_PASSWORD: "pw-for-mock-only",
+    ACUBE_PASSWORD: MOCK_PASSWORD,
     ACUBE_BASE_URL: mock.baseUrl,
     ACUBE_LOGIN_URL: mock.loginUrl,
     ACUBE_TIMEOUT_MS: "5000",
@@ -74,7 +78,7 @@ describe("A-Cube mock server: happy path (invoice)", () => {
     const login = mock.requests.find((r) => r.path === "/login")!;
     expect(JSON.parse(login.body)).toEqual({
       email: "sandbox@example.test",
-      password: "pw-for-mock-only",
+      password: MOCK_PASSWORD,
       environment: "sandbox",
     });
 

@@ -6,6 +6,7 @@
  * document, one queued snapshot, a lease so parallel workers cannot both post, and a search of the
  * outgoing collection by original source XML before anything that might be a re-POST.
  */
+import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AcubeEInvoiceProvider,
@@ -14,6 +15,9 @@ import {
 import { recordTestAppointment } from "./einvoice-appointment-fixture";
 import { startAcubeMock, type AcubeMock } from "../fixtures/pint-ae/asp/acube/mock-server";
 import { useHarness } from "./harness";
+
+// Generated per run so no credential-shaped literal sits in the source (secret scanners).
+const MOCK_PASSWORD = randomUUID();
 
 const h = useHarness();
 
@@ -32,7 +36,7 @@ const provider = (timeoutMs = 5000) =>
     EINVOICE_PROVIDER: "acube",
     ACUBE_ENV: "sandbox",
     ACUBE_EMAIL: "sandbox@example.test",
-    ACUBE_PASSWORD: "pw-for-mock-only",
+    ACUBE_PASSWORD: MOCK_PASSWORD,
     ACUBE_BASE_URL: mock.baseUrl,
     ACUBE_LOGIN_URL: mock.loginUrl,
     ACUBE_TIMEOUT_MS: String(timeoutMs),
