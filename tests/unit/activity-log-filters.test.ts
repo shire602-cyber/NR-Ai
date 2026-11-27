@@ -16,6 +16,25 @@ describe("activity log filters", () => {
     expect(matchesActionFilter("anything", "all")).toBe(true);
   });
 
+  it.each([
+    ["ai_gl_draft_created", "create"],
+    ["einvoice.cash_sale_buyer_updated", "update"],
+    ["corporate_tax.external_return_created", "create"],
+    ["corporate_tax.external_return_updated", "update"],
+    ["corporate_tax.external_return_deleted", "delete"],
+    ["firm_vat_workpaper_row_delete", "delete"],
+    ["company_group.member_add", "create"],
+    ["bank.transaction_edit", "update"],
+    ["invoice.attachment_remove", "delete"],
+  ])("matches %s under %s", (action, filter) => {
+    expect(matchesActionFilter(action, filter)).toBe(true);
+  });
+
+  it("does not match partial words", () => {
+    expect(matchesActionFilter("request_reviewed", "view")).toBe(false);
+    expect(matchesActionFilter("ai_gl_draft_created", "update")).toBe(false);
+  });
+
   it("searches the Arabic sentence in Arabic mode", () => {
     const log = {
       action: "invoice.create",

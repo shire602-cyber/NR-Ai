@@ -44,6 +44,12 @@ export default function ActivityLogs() {
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [entityFilter, setEntityFilter] = useState<string>("all");
   const { t, locale } = useTranslation();
+  const numberLocale = locale === "ar" ? "ar-u-nu-arab" : locale;
+  const formatCount = (template: string, count: number) =>
+    formatMessage(template.replaceAll("#", "{formattedCount}"), {
+      count,
+      formattedCount: count.toLocaleString(numberLocale),
+    });
   // W5-E: verify the account-level ("global") tamper-evident audit chain.
   const [chainStatus, setChainStatus] = useState<{
     ok: boolean;
@@ -52,15 +58,16 @@ export default function ActivityLogs() {
   } | null>(null);
   const [chainState, setChainState] = useState<"idle" | "checking" | "failed">("idle");
   const verifyGlobalChain = async () => {
+    setChainStatus(null);
     setChainState("checking");
     try {
       setChainStatus(await securityFetch("GET", "/api/admin/audit-log/verify"));
       setChainState("idle");
     } catch {
-      setChainStatus(null);
       setChainState("failed");
     }
   };
+  const chainReasonKey = `activityLogs.chainReason.${chainStatus?.firstBroken?.reason}`;
 
   const {
     data: loadedLogs,
@@ -170,7 +177,6 @@ export default function ActivityLogs() {
         eyebrow={t["pages.eyebrowAdmin"]}
         title={t["pageLabels.activityLogs"]}
         testId="text-logs-title"
-        description={t["activityLogs.completeAuditTrailOfAll"]}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -213,10 +219,11 @@ export default function ActivityLogs() {
           data-testid="text-global-chain"
         >
           {chainStatus.ok
-            ? formatMessage(t["security.auditVerified"], { count: chainStatus.checked })
+            ? formatCount(t["activityLogs.chainVerified"], chainStatus.checked)
             : formatMessage(t["security.auditBroken"], {
-                seq: chainStatus.firstBroken?.seq ?? "?",
-                reason: chainStatus.firstBroken?.reason ?? "",
+                seq: chainStatus.firstBroken?.seq.toLocaleString(numberLocale) ?? "?",
+                reason:
+                  chainReasonKey in t ? t[chainReasonKey] : t["activityLogs.chainReason.unknown"],
               })}
         </p>
       )}
@@ -294,17 +301,18 @@ export default function ActivityLogs() {
                   </SelectItem>
                 </SelectContent>
               </Select>
-              {hasLoadedLogs && (
-                <Badge
-                  variant="secondary"
-                  className="whitespace-nowrap"
-                  data-testid="badge-log-count"
-                >
-                  {formatMessage(t["activityLog.entries"], { count: filteredLogs.length })}
-                </Badge>
-              )}
             </div>
           </div>
+          {hasLoadedLogs && (
+            <Badge
+              variant="secondary"
+              className="w-fit whitespace-normal"
+              role="status"
+              data-testid="badge-log-count"
+            >
+              {formatCount(t["activityLogs.resultCount"], filteredLogs.length)}
+            </Badge>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {/* Fable B13: the activity-feed row (History, admin audit tab): one sentence with no

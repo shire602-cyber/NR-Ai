@@ -35,6 +35,7 @@ let en: Record<string, string>;
 let ar: Record<string, string>;
 /** What the activity-log endpoint answers next. */
 let server: { status: number; rows: unknown[] };
+let verifyChain: () => Response | Promise<Response>;
 let logRequests: number;
 let exportRequests: number;
 
@@ -50,12 +51,14 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   server = { status: 200, rows: [LOG] };
+  verifyChain = () => json({ ok: true, checked: 1, firstBroken: null });
   logRequests = 0;
   exportRequests = 0;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.includes("/api/admin/audit-log/verify")) return verifyChain();
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
       if (url.includes("/api/export/excel")) {
         exportRequests += 1;
@@ -138,10 +141,142 @@ async function search(value: string) {
   await flush();
 }
 
+async function selectOption(filter: "action" | "entity", label: string) {
+  const trigger = byId(`select-filter-${filter}`)!;
+  await act(async () => {
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  await flush();
+  const option = Array.from(document.querySelectorAll('[role="option"]')).find(
+    (item) => item.textContent === label
+  );
+  await click(option);
+}
+
 function expectNoEmptyClaim() {
   expect(byId("empty-state")).toBeNull();
   expect(byId("badge-log-count")).toBeNull();
 }
+
+describe("Activity logs filters", () => {
+  it("announces counts and scopes an empty result to the recent window in English", async () => {
+    await mount();
+    const status = byId("badge-log-count")!;
+    expect(status.getAttribute("role")).toBe("status");
+    expect(status.textContent).toBe("1 entry in the latest 100 events");
+
+    await search("no match");
+    expect(byId("badge-log-count")).toBe(status);
+    expect(status.textContent).toBe("0 entries in the latest 100 events");
+    expect(byId("empty-state")?.textContent).toContain(
+      "No logs in the latest 100 events match your filters"
+    );
+  });
+
+  it("filters real actions, searches Arabic action and entity labels, and clears all filters", async () => {
+    const originalScroll = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView ??= () => {};
+    try {
+      const { useI18n } = await import("../../client/src/lib/i18n");
+      await act(async () => useI18n.getState().setLocale("ar"));
+      server.rows = [
+        LOG,
+        { ...LOG, id: "draft", action: "ai_gl_draft_created", entityType: "journal_entry" },
+        { ...LOG, id: "buyer", action: "einvoice.cash_sale_buyer_updated" },
+      ];
+      await mount();
+      const visibleRows = () => byId("activity-log-feed")?.childElementCount;
+      const status = byId("badge-log-count")!;
+      expect(status.textContent).toBe("٣ سجلات ضمن أحدث ١٠٠ حدث");
+
+      await selectOption("action", ar["pages.create"]);
+      expect(visibleRows()).toBe(2);
+      expect(byId("row-log-draft")).not.toBeNull();
+      expect(status.textContent).toBe("سجلان ضمن أحدث ١٠٠ حدث");
+
+      await search(ar["activityLog.action.ai_gl_draft_created"]);
+      expect(visibleRows()).toBe(1);
+      expect(byId("row-log-draft")).not.toBeNull();
+      expect(status.textContent).toBe("سجل واحد ضمن أحدث ١٠٠ حدث");
+
+      await search("");
+      await selectOption("action", ar["pages.update"]);
+      expect(visibleRows()).toBe(1);
+      expect(byId("row-log-buyer")).not.toBeNull();
+
+      // This is the exact Arabic entity label, independent of the action text.
+      await selectOption("action", ar["pages.create"]);
+      await search(ar["activityLog.entity.journal_entry"]);
+      expect(visibleRows()).toBe(1);
+      expect(byId("row-log-draft")).not.toBeNull();
+      await selectOption("entity", ar["pages.invoices"]);
+      expect(status.textContent).toBe("لا سجلات ضمن أحدث ١٠٠ حدث");
+      expect(byId("empty-state")?.textContent).toContain("ضمن أحدث ١٠٠ حدث");
+
+      const clear = byId("empty-state")?.querySelector("button");
+      expect(clear?.textContent).toBe(ar["activityLogs.clearFilters"]);
+      await click(clear);
+      expect((byId("input-search-logs") as HTMLInputElement).value).toBe("");
+      expect(visibleRows()).toBe(3);
+      expect(status.textContent).toBe("٣ سجلات ضمن أحدث ١٠٠ حدث");
+    } finally {
+      if (originalScroll) HTMLElement.prototype.scrollIntoView = originalScroll;
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+    }
+  });
+});
+
+describe("Activity logs integrity check", () => {
+  const verifyButton = () => byId("button-verify-global-chain") as HTMLButtonElement;
+
+  it("shows the intact verdict, clears it during a repeat check, and reports request failure", async () => {
+    await mount();
+    await click(verifyButton());
+    expect(byId("text-global-chain")?.textContent).toBe("Chain intact. 1 entry checked.");
+
+    let respond!: (response: Response) => void;
+    verifyChain = () => new Promise((resolve) => (respond = resolve));
+    await click(verifyButton());
+    expect(verifyButton().disabled).toBe(true);
+    expect(byId("text-global-chain")).toBeNull();
+    expect(byId("text-global-chain-error")).toBeNull();
+    const statuses = Array.from(container.querySelectorAll('[role="status"]'));
+    expect(statuses.map((status) => status.textContent)).toContain(
+      en["activityLogs.chainChecking"]
+    );
+
+    await act(async () => respond(json({ message: "raw server error" }, 500)));
+    expect(verifyButton().disabled).toBe(false);
+    expect(byId("text-global-chain")).toBeNull();
+    const error = byId("text-global-chain-error")!;
+    expect(error.getAttribute("role")).toBe("alert");
+    expect(error.textContent).toBe(en["activityLogs.chainCheckFailed"]);
+  });
+
+  it("localizes the verified count and chain break reasons in Arabic", async () => {
+    const { useI18n } = await import("../../client/src/lib/i18n");
+    await act(async () => useI18n.getState().setLocale("ar"));
+    verifyChain = () => json({ ok: true, checked: 23, firstBroken: null });
+    await mount();
+    await click(verifyButton());
+    expect(byId("text-global-chain")?.textContent).toBe("السلسلة سليمة. تم فحص ٢٣ سجلًا.");
+
+    for (const [reason, label] of [
+      ["hash_mismatch", "بصمة السجل غير مطابقة"],
+      ["prev_hash_mismatch", "بصمة السجل السابق غير مطابقة"],
+      ["sequence_gap", "سجل مفقود في التسلسل"],
+      ["missing_hash", "بصمة تدقيق مفقودة"],
+      ["new_reason", "سبب غير معروف"],
+    ]) {
+      verifyChain = () => json({ ok: false, checked: 7, firstBroken: { seq: 7, reason } });
+      await click(verifyButton());
+      expect(byId("text-global-chain-error")).toBeNull();
+      expect(byId("text-global-chain")?.textContent).toBe(
+        `السلسلة مكسورة عند المدخل رقم ٧ (${label}).`
+      );
+    }
+  });
+});
 
 describe("Activity logs load states", () => {
   it.each(["en", "ar"] as const)(

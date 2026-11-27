@@ -1,16 +1,23 @@
 // Filtering for the admin Activity logs screen. Stored actions are dotted/underscored codes
-// (`invoice.create`, `auth.login_success`), while the action dropdown offers plain verbs
-// ("create", "login"); a verb matches when it is one of the code's words.
+// (`invoice.create`, `ai_gl_draft_created`), while the dropdown offers plain verbs.
 import { activityActionLabel, activityEntityLabel, activitySentence } from "./activity-log-labels";
 import type { ActivityLogLike } from "./activity-log-labels";
 
+const actionAliases: Record<string, string> = {
+  created: "create",
+  add: "create",
+  updated: "update",
+  edit: "update",
+  deleted: "delete",
+  remove: "delete",
+};
+
 export function matchesActionFilter(action: string, filter: string): boolean {
   if (filter === "all") return true;
-  if (action === filter) return true;
   return action
     .toLowerCase()
     .split(/[._-]+/)
-    .includes(filter);
+    .some((word) => word === filter || actionAliases[word] === filter);
 }
 
 /** Text a user can search: the sentence as displayed (so Arabic mode searches Arabic), the
