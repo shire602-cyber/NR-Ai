@@ -105,9 +105,8 @@ it("amends a filed return: the original stays effective until the amendment is f
 });
 
 it("amends a submitted (record-only) return: DB regression coverage for the submitted path", async () => {
-  // Additional coverage for the record-only path (no ftaReferenceNumber → "submitted" status).
-  // The recorded staging failure used "filed" status (see file header); this case is kept as
-  // regression coverage so that both submission modes are proven by DB test.
+  // Covers the record-only submission path (no ftaReferenceNumber → "submitted" status).
+  // Kept as regression coverage so both submission modes are proven by DB test.
   const t = await h.createTenant({
     companyColumns: {
       trn_vat_number: "100000000000004",
@@ -138,7 +137,6 @@ it("amends a submitted (record-only) return: DB regression coverage for the subm
   expect(submitted.body.status).toBe("submitted");
   expect(Number(submitted.body.box14PayableTax)).toBe(1000);
 
-  // This is the call that returned 409 DUPLICATE_VALUE on staging 9e5fa726.
   const amend = await t.as.post(`/api/vat-returns/${originalId}/amend`, {
     reason: "Invoice amount was incorrect",
   });

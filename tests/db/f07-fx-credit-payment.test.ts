@@ -296,6 +296,18 @@ it("C: F07 reporting readers (trial balance, customer statement, aged A/R, VAT 2
     expect(Number(vat.body.box4ZeroRatedAmount), "Box 4 amount").toBe(-expected["4060"] || 0);
   }
 
+  // Checkpoint 0: issuance only — AR 3,801.04 appears on the trial balance before any credit.
+  {
+    const tb = await t.as.get(
+      `${base(t)}/reports/trial-balance?from=2026-01-01&to=2026-01-31&format=json`
+    );
+    expect(tb.status, tb.text).toBe(200);
+    const arRow = (tb.body.rows as Array<{ accountCode: string; debitBalance: number }>).find(
+      (r) => r.accountCode === "1040"
+    );
+    expect(Number(arRow?.debitBalance), "AR 1040 at issuance").toBe(3801.04);
+  }
+
   // Checkpoint 1: after the partial credit.
   const partial = await t.as.post(url, { date, lines: [std(350)] });
   expect(partial.status, partial.text).toBe(201);
@@ -308,4 +320,48 @@ it("C: F07 reporting readers (trial balance, customer statement, aged A/R, VAT 2
   const final = await t.as.post(url, { date });
   expect(final.status, final.text).toBe(201);
   await checkReaders({ "1040": 0, "4020": 0, "4060": 0, "2020": 0 }, 0);
+});
+
+it("D: foreign reverse-charge credit — Box 1 is not inflated by the posted revenue remainder", async () => {
+  // A domestic reverse-charge credit note is in `foreignCreditIds` when issued in USD.
+  // Before the fix, `POSTED_ROLE_FAMILY` mapped the posted revenue account (4020) to `standard`,
+  // which added a second Box 1 contribution on top of the reverse_charge family from the lines.
+  const t = await h.createTenant({
+    companyColumns: {
+      emirate: "dubai",
+      trn_vat_number: "100000000000003",
+      vat_filing_frequency: "Quarterly",
+      vat_period_start_month: 1,
+    },
+  });
+
+  // USD 1,000 reverse-charge invoice at 3.6725. Box 1b Dubai Amount = 3,672.50 (no VAT on
+  // the supplier side; the recipient self-assesses). Revenue is posted to account 4020.
+  const draft = await t.as.post(`${base(t)}/invoices`, {
+    customerName: "Overseas LLC",
+    date,
+    placeOfSupplyEmirate: "dubai",
+    currency: "USD",
+    exchangeRate: 3.6725,
+    reverseCharge: true,
+    lines: [{ description: "RC Services", quantity: 1, unitPrice: 1000, vatRate: 5 }],
+  });
+  expect(draft.status, draft.text).toBe(200);
+  const issued = await t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+  expect(issued.status, issued.text).toBe(200);
+
+  // Full credit note clears the reverse-charge amount.
+  const cn = await t.as.post(`${base(t)}/invoices/${draft.body.id}/credit-note`, { date });
+  expect(cn.status, cn.text).toBe(201);
+
+  // VAT 201: invoice + full credit net to 0 in Box 1 (reverse_charge maps to Box 1 Amount,
+  // no VAT). Without the fix the posted remainder adds a second standard-family Box 1
+  // contribution, leaving Box 1 Amount = -(3,672.50) instead of 0.
+  const vat = await t.as.post(`${base(t)}/vat-returns/generate`, {
+    periodStart: "2026-01-01",
+    periodEnd: "2026-03-31",
+  });
+  expect(vat.status, vat.text).toBe(201);
+  expect(Number(vat.body.box1bDubaiAmount), "Box 1 amount must net to 0").toBe(0);
+  expect(Number(vat.body.box1bDubaiVat), "Box 1 VAT must be 0").toBe(0);
 });

@@ -754,11 +754,19 @@ async function collectInvoices(
       }).vat201Family;
       netByFamily.set(fam, (netByFamily.get(fam) ?? 0) + net);
     });
-    const postedVat = postedRemainderVat.get(inv.id);
+    // Apply the posted-AED remainder only for ordinary foreign credits.
+    // Reverse-charge: document lines classify as reverse_charge (Box 1 amount, no VAT); the
+    // revenue account maps to standard via POSTED_ROLE_FAMILY — applying the override creates a
+    // second Box 1 contribution from the same amount.
+    // Margin scheme: the taxable base is the VAT-exclusive margin; the posted revenue includes
+    // purchase cost and would inflate Box 1 beyond the correct margin.
+    const hasMarginScheme = totals.lines.some((lt) => lt.marginFils !== null);
+    const usePostedRemainder = !inv.reverseCharge && !hasMarginScheme;
+    const postedVat = usePostedRemainder ? postedRemainderVat.get(inv.id) : undefined;
     const vatBase = postedVat ?? toBaseFils(totals.vatFils, rate);
     // The last credit can clear base-currency VAT rounding with only zero-rated lines left.
     if (postedVat && !netByFamily.has("standard")) netByFamily.set("standard", 0);
-    const postedNet = postedRemainderNet.get(inv.id);
+    const postedNet = usePostedRemainder ? postedRemainderNet.get(inv.id) : undefined;
     if (postedNet) {
       for (const [family, net] of postedNet) {
         if (net !== 0 && !netByFamily.has(family)) netByFamily.set(family, 0);
