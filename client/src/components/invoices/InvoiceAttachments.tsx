@@ -72,7 +72,7 @@ export function InvoiceAttachments({
   };
 
   return (
-    <div className="space-y-3" data-testid="invoice-attachments">
+    <div className="space-y-4" data-testid="invoice-attachments">
       <FileDrop
         multiple
         accept={ATTACHMENT_ACCEPT}
@@ -84,9 +84,9 @@ export function InvoiceAttachments({
         inputTestId="input-invoice-attachment"
       />
       {(rows.length > 0 || pending.length > 0) && (
-        <ul className="divide-y divide-border rounded-lg border border-border">
+        <ul className="divide-y divide-border rounded-xl border border-border">
           {rows.map((a) => (
-            <li key={a.id} className="flex items-center gap-2 px-3 py-2 text-small">
+            <li key={a.id} className="flex items-center gap-3 px-4 py-3 text-small">
               <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
               <span className="min-w-0 flex-1 truncate" dir="auto">
                 {a.fileName}
@@ -125,7 +125,7 @@ export function InvoiceAttachments({
           {pending.map((f, i) => (
             <li
               key={`${f.name}-${i}`}
-              className="flex items-center gap-2 px-3 py-2 text-small"
+              className="flex items-center gap-3 px-4 py-3 text-small"
               data-testid={`pending-attachment-${i}`}
             >
               <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />

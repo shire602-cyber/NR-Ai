@@ -23,25 +23,79 @@ export default {
           {
             lineHeight: "var(--text-display-xl-line)",
             letterSpacing: "-0.032em",
-            fontWeight: "600",
+            fontWeight: "var(--fw-heading)",
           },
         ],
         display: [
           "var(--text-display-size)",
-          { lineHeight: "var(--text-display-line)", letterSpacing: "-0.028em", fontWeight: "600" },
+          {
+            lineHeight: "var(--text-display-line)",
+            letterSpacing: "-0.028em",
+            fontWeight: "var(--fw-heading)",
+          },
         ],
         lead: ["1.125rem", { lineHeight: "1.75rem" }],
-        h1: ["1.5rem", { lineHeight: "2rem", letterSpacing: "-0.02em", fontWeight: "600" }],
-        h2: ["1.125rem", { lineHeight: "1.625rem", letterSpacing: "-0.012em", fontWeight: "600" }],
-        h3: ["0.9375rem", { lineHeight: "1.375rem", letterSpacing: "-0.006em", fontWeight: "600" }],
-        h4: ["0.875rem", { lineHeight: "1.25rem", fontWeight: "600" }],
+        // The fixed steps read CSS variables too, so the app surface can set a roomier scale
+        // and a calmer weight (index.css, html[data-surface="app"]).
+        h1: [
+          "var(--text-h1-size)",
+          {
+            lineHeight: "var(--text-h1-line)",
+            letterSpacing: "-0.02em",
+            fontWeight: "var(--fw-heading)",
+          },
+        ],
+        h2: [
+          "var(--text-h2-size)",
+          {
+            lineHeight: "var(--text-h2-line)",
+            letterSpacing: "-0.012em",
+            fontWeight: "var(--fw-heading)",
+          },
+        ],
+        h3: [
+          "var(--text-h3-size)",
+          {
+            lineHeight: "var(--text-h3-line)",
+            letterSpacing: "-0.006em",
+            fontWeight: "var(--fw-heading)",
+          },
+        ],
+        h4: [
+          "var(--text-h4-size)",
+          { lineHeight: "var(--text-h4-line)", fontWeight: "var(--fw-heading)" },
+        ],
         kpi: [
           "var(--text-kpi-size)",
-          { lineHeight: "var(--text-kpi-line)", letterSpacing: "-0.02em", fontWeight: "600" },
+          {
+            lineHeight: "var(--text-kpi-line)",
+            letterSpacing: "-0.02em",
+            fontWeight: "var(--fw-heading)",
+          },
         ],
-        body: ["0.875rem", { lineHeight: "1.375rem" }],
-        small: ["0.8125rem", { lineHeight: "1.25rem" }],
-        caption: ["0.75rem", { lineHeight: "1rem", letterSpacing: "0.01em", fontWeight: "500" }],
+        body: ["var(--text-body-size)", { lineHeight: "var(--text-body-line)" }],
+        small: ["var(--text-small-size)", { lineHeight: "var(--text-small-line)" }],
+        caption: [
+          "var(--text-caption-size)",
+          { lineHeight: "var(--text-caption-line)", letterSpacing: "0.01em", fontWeight: "500" },
+        ],
+      },
+      // Weights as variables: the app surface maps semibold to 500 and bold to 600.
+      fontWeight: {
+        semibold: "var(--fw-semibold)",
+        bold: "var(--fw-bold)",
+      },
+      // Semantic spacing (index.css "Spacing scale"): `p-card`, `gap-stack`, `space-y-section`,
+      // `px-gutter`, `h-control`.
+      spacing: {
+        card: "var(--card-pad)",
+        stack: "var(--stack-gap)",
+        section: "var(--section-gap)",
+        gutter: "var(--page-gutter)",
+        control: "var(--control-h)",
+        "control-sm": "var(--control-h-sm)",
+        "control-lg": "var(--control-h-lg)",
+        header: "var(--header-height)",
       },
       maxWidth: {
         content: "var(--content-max)",

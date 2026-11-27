@@ -92,7 +92,7 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        "flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6",
+        "flex flex-col gap-stack sm:flex-row sm:items-end sm:justify-between sm:gap-8",
         className
       )}
     >
@@ -106,7 +106,7 @@ export function PageHeader({
             {backLabel ?? t["components.back"]}
           </Link>
         )}
-        {eyebrow && <div className="eyebrow mb-1.5 text-accent">{translatedEyebrow}</div>}
+        {eyebrow && <div className="eyebrow mb-2 text-accent">{translatedEyebrow}</div>}
         <h1
           className="min-w-0 break-words text-h1 text-foreground"
           data-testid={testId ?? "text-page-title"}
@@ -120,7 +120,7 @@ export function PageHeader({
         )}
       </div>
       {hasActions && (
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <div className="flex flex-wrap items-center gap-2.5 sm:justify-end">
           {actions}
           {secondaryActions}
           {overflow && (

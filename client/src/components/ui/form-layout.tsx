@@ -41,7 +41,7 @@ export function FormSection({
       data-testid={testId}
       data-form-section=""
       className={cn(
-        "min-w-0 space-y-4 border-t border-border pt-5 first-of-type:border-t-0 first-of-type:pt-0",
+        "min-w-0 space-y-stack border-t border-border pt-5 first-of-type:border-t-0 first-of-type:pt-0",
         className
       )}
       {...props}
@@ -54,9 +54,7 @@ export function FormSection({
                 {title}
               </h3>
             )}
-            {description && (
-              <p className="mt-0.5 text-small text-muted-foreground">{description}</p>
-            )}
+            {description && <p className="mt-1 text-small text-muted-foreground">{description}</p>}
           </div>
           {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </div>
@@ -265,7 +263,7 @@ export function FormErrorSummary({ className }: { className?: string }) {
 export function LineItemList({ className, ...props }: React.HTMLAttributes<HTMLOListElement>) {
   return (
     <ol
-      className={cn("divide-y divide-border rounded-lg bg-surface-sunken/60 px-3", className)}
+      className={cn("divide-y divide-border rounded-xl bg-surface-sunken/60 px-4", className)}
       {...props}
     />
   );
@@ -297,7 +295,7 @@ export function LineItem({
 }: LineItemProps) {
   const { t } = useTranslation();
   return (
-    <li className={cn("space-y-3 py-3", className)}>
+    <li className={cn("space-y-4 py-4", className)}>
       <div className="flex items-start gap-2">
         <span
           aria-hidden

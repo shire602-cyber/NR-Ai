@@ -118,6 +118,8 @@
   "shell.themeLight": "Light",
   "shell.themeSystem": "System",
   "shell.themeToggle": "Change appearance",
+  "shell.motionPause": "Pause motion",
+  "shell.motionSystemReduced": "Motion is off (your device asks for reduced motion)",
   "shell.toggleSidebar": "Toggle sidebar",
   "shell.trn": "TRN {trn}",
   "shell.cmdGroupNavigate": "Go to",

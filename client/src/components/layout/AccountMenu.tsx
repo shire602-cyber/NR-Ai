@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import {
   Building2,
+  Check,
   Languages,
   LifeBuoy,
   LogOut,
@@ -21,6 +22,7 @@ import {
 import { useTranslation } from "@/lib/i18n";
 import { useSessionActions } from "@/hooks/useSessionActions";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useMotionPreference } from "@/lib/motion/preference";
 
 /** Support mailbox published on the Help centre (client/src/pages/HelpCenter.tsx). */
 export const SUPPORT_EMAIL = "support@muhasib.ai";
@@ -37,6 +39,8 @@ export function AccountMenu() {
   // STEP5: a login that accepted a supplier's invitation can open that supplier's portal.
   const { data: me } = useCurrentUser();
   const hasPortals = Number(me?.portalAccounts) > 0;
+  const motion = useMotionPreference();
+  const motionOff = motion.paused || motion.systemReduced;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -44,20 +48,20 @@ export function AccountMenu() {
         <Button
           variant="ghost"
           size="icon"
-          className="ms-0.5 rounded-full"
+          className="ms-1 rounded-full"
           data-testid="button-profile"
           aria-label={tt["shell.accountMenu"]}
           title={tt["shell.accountMenu"]}
         >
           <span
             aria-hidden
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-100"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 shadow-[var(--control-shadow)] dark:bg-neutral-700 dark:text-neutral-100"
           >
             <User className="!size-4" />
           </span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-56" data-testid="menu-account">
+      <DropdownMenuContent align="end" className="min-w-60" data-testid="menu-account">
         <DropdownMenuItem asChild>
           <Link href="/settings/company" data-testid="menu-account-profile">
             <Building2 aria-hidden />
@@ -108,6 +112,20 @@ export function AccountMenu() {
           <span lang={locale === "en" ? "ar" : "en"}>
             {locale === "en" ? "العربية" : "English"}
           </span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          role="menuitemcheckbox"
+          aria-checked={motionOff}
+          disabled={motion.systemReduced}
+          onSelect={(event) => {
+            event.preventDefault();
+            motion.toggle();
+          }}
+          title={motion.systemReduced ? tt["shell.motionSystemReduced"] : undefined}
+          data-testid="menu-account-motion"
+        >
+          <Check aria-hidden className={motionOff ? undefined : "invisible"} />
+          {tt["shell.motionPause"]}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => void signOut()} data-testid="menu-account-logout">
           <LogOut aria-hidden className="rtl:-scale-x-100" />

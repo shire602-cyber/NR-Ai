@@ -102,20 +102,22 @@ export function StatCard({
       {/* The figure fits the tile at any width: the wrapper is a size container and the
           figure scales with it (≈ 14 characters, e.g. "AED 343,532.50", fit in a 2×2 tile at
           390 px), capped at text-kpi. It never wraps or clips. */}
-      <div className="mt-2 [container-type:inline-size]">
+      <div className="mt-3 [container-type:inline-size]">
         <div className="whitespace-nowrap text-kpi text-foreground tabular-nums [font-size:min(var(--text-kpi-size),11.5cqi)] [line-height:min(var(--text-kpi-line),14cqi)]">
           {loading ? <Skeleton className="h-8 w-36" /> : value}
         </div>
       </div>
       {hint && !loading && (
-        <div className="mt-1 line-clamp-2 break-words text-small text-muted-foreground">{hint}</div>
+        <div className="mt-1.5 line-clamp-2 break-words text-small text-muted-foreground">
+          {hint}
+        </div>
       )}
       {sparkline && sparkline.length >= 2 && !loading && (
         <Sparkline values={sparkline} tone={sparklineTone} className="mt-4" />
       )}
       {/* Legacy visual slot: only when there is a series, and only from 640px up. */}
       {visual && !loading && visualOverlay && (
-        <div className="absolute inset-x-5 bottom-3 hidden sm:block">{visual}</div>
+        <div className="absolute inset-x-card bottom-3 hidden sm:block">{visual}</div>
       )}
       {visual && !loading && !visualOverlay && <div className="mt-4 hidden sm:block">{visual}</div>}
     </>
@@ -125,13 +127,14 @@ export function StatCard({
     return (
       <Card
         interactive
+        data-tilt="5"
         className={cn("p-0", className)}
         data-testid={testId}
         aria-busy={loading || undefined}
       >
         <Link
           href={href}
-          className="block h-full rounded-xl p-4 focus-visible:outline-none sm:p-5 focus-visible:ring-2 focus-visible:ring-ring"
+          className="block h-full rounded-xl p-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {body}
         </Link>
@@ -140,7 +143,8 @@ export function StatCard({
   }
   return (
     <Card
-      className={cn("relative p-4 sm:p-5", className)}
+      className={cn("relative p-card", className)}
+      data-tilt="5"
       data-testid={testId}
       aria-busy={loading || undefined}
     >
