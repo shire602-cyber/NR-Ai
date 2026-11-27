@@ -11,7 +11,7 @@
  *                    ↘ retrying → sending … → dead                   (after max_attempts)
  *   queued → blocked_no_provider → queued (when a provider appears, rows < 24h old)
  */
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, notInArray, sql, type AnyColumn } from "drizzle-orm";
 import { db, pool } from "../db";
 import {
   emailDeliveryEvents,
@@ -344,17 +344,20 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
         content: Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content as Uint8Array),
       })),
     });
+    // A delivery webhook (an SMTP DSN matches by outbox id) can land before this write: keep
+    // the provider's outcome instead of downgrading it to "sent" (AU7 precedence).
+    const stillSending = sql`${emailOutbox.status} = 'sending'`;
     const [sent] = await db
       .update(emailOutbox)
       .set({
         ...refreshed,
-        status: "sent",
+        status: sql`CASE WHEN ${stillSending} THEN 'sent' ELSE ${emailOutbox.status} END`,
         attempts,
         provider: transport.name,
         providerMessageId,
         sentAt: new Date(),
         lockedUntil: null,
-        lastError: null,
+        lastError: sql`CASE WHEN ${stillSending} THEN NULL ELSE ${emailOutbox.lastError} END`,
         updatedAt: new Date(),
         ...(row.sensitive ? { html: null, textBody: null } : {}),
       })
@@ -369,6 +372,8 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
       : (err as Error)?.message || "Email provider error";
     const permanent = err instanceof EmailTransportError && err.permanent;
     const dead = permanent || attempts >= row.maxAttempts;
+    // Only a row this attempt still owns is marked for retry; one a provider webhook already
+    // settled (delivered / bounced ...) keeps that outcome and is not resent.
     const [failed] = await db
       .update(emailOutbox)
       .set({
@@ -382,11 +387,13 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
         deadAt: dead ? new Date() : null,
         updatedAt: new Date(),
       })
-      .where(eq(emailOutbox.id, row.id))
+      .where(and(eq(emailOutbox.id, row.id), eq(emailOutbox.status, "sending")))
       .returning();
     await recordEvent(row.id, dead ? "dead" : "failed", message, transport.name);
     log.warn({ outboxId: row.id, attempts, dead, err: message }, "Email delivery failed");
-    return toResult(failed as EmailOutboxRow);
+    if (failed) return toResult(failed as EmailOutboxRow);
+    const [settled] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, row.id));
+    return toResult(settled as EmailOutboxRow);
   }
 }
 
@@ -552,8 +559,44 @@ export async function listOutboxForCompany(
 export type ProviderEventType = "delivered" | "bounced" | "complained" | "opened" | "failed";
 
 /**
+ * Delivery-status precedence (AU7). Provider webhooks arrive concurrently and out of order
+ * (e.g. "delivered" and "bounced" for the same message, or a DSN that beats the send's own
+ * "sent" write), so every transition is ONE guarded UPDATE: the WHERE clause names the statuses
+ * the event may replace, and Postgres re-checks it against the committed row when two writers
+ * collide. A later or stronger state is never downgraded by a weaker or late event:
+ *
+ *   pre-send (queued, retrying, sending, blocked_no_provider, cancelled)
+ *     < sent < delivered < dead (provider "failed") < bounced < complained
+ *
+ *   delivered / opened -> delivered   only from sending | sent | retrying | delivered
+ *   failed             -> dead        unless already delivered, bounced or complained
+ *   bounced            -> bounced     unless already complained (a bounce after delivery counts)
+ *   complained         -> complained  always (strongest signal)
+ *
+ * Status timestamps keep the provider's event time (or receipt time when it sends none) and the
+ * EARLIEST one wins when the same state is reported twice. Every event, applied or not, is still
+ * appended to email_delivery_events so the delivery history stays complete.
+ */
+const DELIVERY_TRANSITIONS: Record<
+  ProviderEventType,
+  { to: EmailOutboxStatus; from?: EmailOutboxStatus[]; notFrom?: EmailOutboxStatus[] }
+> = {
+  delivered: { to: "delivered", from: ["sending", "sent", "retrying", "delivered"] },
+  opened: { to: "delivered", from: ["sending", "sent", "retrying", "delivered"] },
+  failed: { to: "dead", notFrom: ["delivered", "bounced", "complained"] },
+  bounced: { to: "bounced", notFrom: ["complained"] },
+  complained: { to: "complained" },
+};
+
+function earliest(column: AnyColumn, at: Date) {
+  // timestamp (without time zone) columns hold UTC wall time, as drizzle writes them.
+  const iso = at.toISOString();
+  return sql`LEAST(COALESCE(${column}, ${iso}::timestamp), ${iso}::timestamp)`;
+}
+
+/**
  * Apply a provider delivery event (from a verified webhook). Matches by provider message id
- * (or outbox id). Returns the updated row id, or null when nothing matched.
+ * (or outbox id). Returns the matched row id, or null when nothing matched.
  */
 export async function applyProviderEvent(evt: {
   provider: string;
@@ -561,41 +604,52 @@ export async function applyProviderEvent(evt: {
   outboxId?: string | null;
   type: ProviderEventType;
   detail?: string | null;
+  occurredAt?: Date | null;
 }): Promise<string | null> {
-  let row: EmailOutboxRow | undefined;
+  let row: Pick<EmailOutboxRow, "id" | "sensitive"> | undefined;
+  const match = { id: emailOutbox.id, sensitive: emailOutbox.sensitive };
   if (evt.outboxId && /^[0-9a-f-]{36}$/i.test(evt.outboxId)) {
-    row = await getOutboxMessage(evt.outboxId);
+    [row] = await db.select(match).from(emailOutbox).where(eq(emailOutbox.id, evt.outboxId));
   }
   if (!row && evt.providerMessageId) {
-    const [byMsg] = await db
-      .select()
+    [row] = await db
+      .select(match)
       .from(emailOutbox)
       .where(eq(emailOutbox.providerMessageId, evt.providerMessageId));
-    row = byMsg as EmailOutboxRow | undefined;
   }
   if (!row) {
     await recordEvent(null, evt.type, null, evt.provider, evt.providerMessageId);
     return null;
   }
+  const transition = DELIVERY_TRANSITIONS[evt.type];
+  if (!transition) {
+    await recordEvent(row.id, evt.type, null, evt.provider, evt.providerMessageId);
+    return row.id;
+  }
   const detail = row.sensitive ? null : evt.detail;
   const now = new Date();
-  const patch: Partial<typeof emailOutbox.$inferInsert> = { updatedAt: now };
-  if (evt.type === "delivered" && ["sent", "sending", "retrying"].includes(row.status)) {
-    patch.status = "delivered";
-    patch.deliveredAt = now;
-  } else if (evt.type === "bounced") {
-    patch.status = "bounced";
-    patch.bouncedAt = now;
+  const at = evt.occurredAt && evt.occurredAt.getTime() <= now.getTime() ? evt.occurredAt : now;
+  const patch: Record<string, unknown> = { status: transition.to, updatedAt: now };
+  if (transition.to === "delivered") patch.deliveredAt = earliest(emailOutbox.deliveredAt, at);
+  if (transition.to === "bounced") {
+    patch.bouncedAt = earliest(emailOutbox.bouncedAt, at);
     patch.lastError = detail ?? "Bounced";
-  } else if (evt.type === "complained") {
-    patch.status = "complained";
-    patch.complainedAt = now;
-  } else if (evt.type === "failed" && row.status !== "delivered") {
-    patch.status = "dead";
-    patch.deadAt = now;
+  }
+  if (transition.to === "complained") patch.complainedAt = earliest(emailOutbox.complainedAt, at);
+  if (transition.to === "dead") {
+    patch.deadAt = earliest(emailOutbox.deadAt, at);
     patch.lastError = detail ?? "Delivery failed";
   }
-  await db.update(emailOutbox).set(patch).where(eq(emailOutbox.id, row.id));
+  await db
+    .update(emailOutbox)
+    .set(patch as Partial<typeof emailOutbox.$inferInsert>)
+    .where(
+      and(
+        eq(emailOutbox.id, row.id),
+        transition.from ? inArray(emailOutbox.status, transition.from) : undefined,
+        transition.notFrom ? notInArray(emailOutbox.status, transition.notFrom) : undefined
+      )
+    );
   await recordEvent(row.id, evt.type, detail, evt.provider, evt.providerMessageId);
   return row.id;
 }
