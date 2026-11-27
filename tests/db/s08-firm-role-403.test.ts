@@ -3,8 +3,8 @@
 // Source-inspection tests (tests/unit/role-matrix.test.ts) confirm the permission table, but they
 // cannot prove the middleware fires on a live HTTP request. This file proves it end-to-end:
 //   1. firm_admin → POST /api/firm/clients/:companyId/assign-staff → 403 FIRM_PERMISSION_DENIED
-//   2. firm_owner → same endpoint → succeeds (200/201)
-//   3. no-token request → rejected (401 from authMiddleware once Bearer bypasses CSRF)
+//   2. firm_owner → same endpoint → 200 and assignment persists
+//   3. invalid bearer token → 401 TOKEN_INVALID
 //
 // The assign-staff route sits behind requireFirmAccess() (router-level) and then
 // requireFirmPermission("firm.staff.manage"). firm_admin has firm access but not staff.manage.
@@ -54,18 +54,24 @@ it("firm_owner can assign a preparer to a client (200)", async () => {
     staffUserId: preparer.user.id,
     action: "assign",
   });
-  // May be 200 or 201 depending on whether the assignment already existed.
-  expect([200, 201]).toContain(r.status);
+  expect(r.status, r.text).toBe(200);
+  const assignments = await h.sql<{ role: string }>(
+    "SELECT role FROM firm_staff_assignments WHERE company_id = $1 AND user_id = $2",
+    [client.company.id, preparer.user.id]
+  );
+  expect(assignments).toEqual([{ role: "accountant" }]);
 });
 
-it("request with no valid token to assign-staff is rejected (401)", async () => {
-  // h.anon has no Bearer header so CSRF fires first (403 CSRF_INVALID).
-  // A fake Bearer token bypasses CSRF (hasBearerAuth = true) so authMiddleware
-  // runs and returns 401 TOKEN_INVALID, proving no-token calls are rejected.
+it("assign-staff rejects an invalid bearer token (401 TOKEN_INVALID)", async () => {
+  // CSRF runs before auth for POSTs without a bearer token. Sending an invalid
+  // bearer token exercises the auth middleware's token validation.
   const { client } = await linkedClient();
-  const r = await h.client("not-a-real-jwt").post(
-    `/api/firm/clients/${client.company.id}/assign-staff`,
-    { staffUserId: "00000000-0000-0000-0000-000000000000", action: "assign" }
-  );
-  expect(r.status).toBe(401);
+  const r = await h
+    .client("not-a-real-jwt")
+    .post(`/api/firm/clients/${client.company.id}/assign-staff`, {
+      staffUserId: "00000000-0000-0000-0000-000000000000",
+      action: "assign",
+    });
+  expect(r.status, r.text).toBe(401);
+  expect(r.body.code).toBe("TOKEN_INVALID");
 });

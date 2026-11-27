@@ -4,11 +4,10 @@
 // assertRetentionExpired is called in the right routes, but they cannot prove
 // the guard fires on a live HTTP request. This file does the live check.
 //
-// Three surfaces:
+// Three cases:
 //   1. DELETE /api/invoices/:id on an issued invoice → 409 RETENTION_NOT_EXPIRED
-//   2. DELETE /api/receipts/:id on a captured receipt → 409 RETENTION_NOT_EXPIRED
-//   3. DELETE /api/journal/:id on a draft journal entry → 409 RETENTION_NOT_EXPIRED
-//      (drafts are recent financial records; the kernel keeps them for audit)
+//   2. DELETE /api/journal/:id on a recent draft journal entry → 409 RETENTION_NOT_EXPIRED
+//   3. DELETE /api/invoices/:id on a never-issued draft → 200 and the draft is removed
 import { expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
 
@@ -86,8 +85,13 @@ it("DELETE draft invoice (never issued) succeeds — no retention block on draft
   });
   expect(draft.status, draft.text).toBe(200);
 
-  const r = await t.as.delete(`/api/invoices/${draft.body.id}`);
-  // A draft may be deleted (number cancelled if sequence would have a gap) or
-  // hard-deleted; either way the status code is 200.
-  expect(r.status).toBe(200);
+  const invoiceId: string = draft.body.id;
+  const r = await t.as.delete(`/api/invoices/${invoiceId}`);
+  expect(r.status, r.text).toBe(200);
+  expect(["deleted", "cancelled"]).toContain(r.body.outcome);
+
+  const rows = await h.sql<{ status: string }>("SELECT status FROM invoices WHERE id = $1", [
+    invoiceId,
+  ]);
+  expect(rows).toEqual(r.body.outcome === "deleted" ? [] : [{ status: "cancelled" }]);
 });

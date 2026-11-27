@@ -7,11 +7,12 @@
 // Critical surfaces:
 //   1. invoice.create     — POST /api/companies/:id/invoices
 //   2. invoice.status_change — PATCH /api/invoices/:id/status (issue)
-//   3. journal.create     — POST /api/companies/:id/journal
+//   3. journal.create_draft — POST /api/companies/:id/journal
 //   4. journal.post       — POST /api/journal/:id/post
 //
 // All four must produce a row with the right action, resource_type, resource_id, user_id,
-// company_id, and non-null details (JSON with before/after).
+// and company_id. Creation details record the draft status. Transition details
+// record the statuses before and after the change.
 import { expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
 
@@ -83,6 +84,7 @@ it("invoice.status_change audit row is written when invoice is issued", async ()
   const row = rows[0];
   expect(row.resource_type).toBe("invoice");
   expect(row.user_id).toBe(t.user.id);
+  expect(row.company_id).toBe(t.company.id);
   const details = JSON.parse(row.details!);
   expect(details.before?.status).toBe("draft");
   expect(details.after?.status).toBe("sent");
@@ -110,6 +112,8 @@ it("journal.create_draft audit row is written when a draft entry is created", as
   expect(row.resource_type).toBe("journal_entry");
   expect(row.user_id).toBe(t.user.id);
   expect(row.company_id).toBe(t.company.id);
+  const details = JSON.parse(row.details!);
+  expect(details.after?.status).toBe("draft");
 });
 
 it("journal.post audit row is written when a draft entry is posted", async () => {
@@ -138,6 +142,7 @@ it("journal.post audit row is written when a draft entry is posted", async () =>
   const row = rows[0];
   expect(row.resource_type).toBe("journal_entry");
   expect(row.user_id).toBe(t.user.id);
+  expect(row.company_id).toBe(t.company.id);
   const details = JSON.parse(row.details!);
   expect(details.before?.status).toBe("draft");
   expect(details.after?.status).toBe("posted");

@@ -226,12 +226,24 @@ it("B: foreign receipts realise FX; overpayment credit refunds at its booked AED
   expect(closed).toEqual({ status: "void", remaining: 0 });
 });
 
-it("C: trial balance AR row is zero after full FX credit-note sequence; settlement ties", async () => {
-  // This test proves that the reporting layer (not just the GL ledger) reflects the correct
-  // AR balance after a USD invoice is fully reversed with two credit notes.  Addresses the
-  // "trial balance needs a DB-backed run" open item in F07.
+it("C: trial balance shows the issued USD receivable and clears it after both credits", async () => {
   const t = await h.createTenant({ companyColumns: { emirate: "dubai" } });
   const id = await issueUsd(t, [std(700), zero(300)]);
+
+  const expectTrialBalanceAr = async (debitBalance: number) => {
+    const tb = await t.as.get(`${base(t)}/reports/trial-balance?to=${date}`);
+    expect(tb.status, tb.text).toBe(200);
+    const arRow = (tb.body.rows as Array<{ accountCode: string }>).find(
+      (row) => row.accountCode === "1040"
+    );
+    expect(arRow, "AR row (1040) in trial balance").toMatchObject({
+      debitBalance,
+      creditBalance: 0,
+    });
+  };
+
+  // Revenue AED 2,570.75 + AED 1,101.75 and VAT AED 128.54.
+  await expectTrialBalanceAr(3801.04);
 
   // Partial CN: standard revenue USD 350 reversed at the original rate.
   const url = `${base(t)}/invoices/${id}/credit-note`;
@@ -243,20 +255,12 @@ it("C: trial balance AR row is zero after full FX credit-note sequence; settleme
   expect(final.status, final.text).toBe(201);
 
   // GL legs all net to zero to the fil.
-  for (const code of ["1040", "4020", "4060", "2020"])
-    expect(await glNet(t, code)).toBe(0);
+  for (const code of ["1040", "4020", "4060", "2020"]) expect(await glNet(t, code)).toBe(0);
 
   // The settlement open balance (AED fils via the settlement rule) must also be 0
   // and must tie to GL 1040 — this is the same assertion as expectSettlementTiesToGl
   // but made explicit for the register evidence trail.
   await expectSettlementTiesToGl(t);
 
-  // Trial balance API: account 1040 (Accounts Receivable) must carry zero balance.
-  const tb = await t.as.get(`${base(t)}/reports/trial-balance?to=${date}`);
-  expect(tb.status, tb.text).toBe(200);
-  const arRow = (tb.body.rows as Array<{ accountCode: string; debitBalance: number; creditBalance: number }>)
-    ?.find((r) => r.accountCode === "1040");
-  expect(arRow, "AR row (1040) must exist in trial balance").toBeTruthy();
-  expect(Number(arRow!.debitBalance)).toBe(0);
-  expect(Number(arRow!.creditBalance)).toBe(0);
+  await expectTrialBalanceAr(0);
 });
