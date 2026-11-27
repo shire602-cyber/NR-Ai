@@ -13,11 +13,6 @@ export function MotionToggle({ className }: { className?: string }) {
   const { t } = useTranslation();
   const { paused, systemReduced, toggle } = useMotionPreference();
   const off = paused || systemReduced;
-  const label = systemReduced
-    ? t["shell.motionSystemReduced"]
-    : off
-      ? t["shell.motionPlay"]
-      : t["shell.motionPause"];
   const Icon = off ? Play : Pause;
   return (
     <Button
@@ -28,11 +23,11 @@ export function MotionToggle({ className }: { className?: string }) {
       onClick={systemReduced ? undefined : toggle}
       aria-pressed={off}
       aria-disabled={systemReduced || undefined}
-      aria-label={label}
-      title={label}
+      aria-label={t["shell.motionPause"]}
+      title={systemReduced ? t["shell.motionSystemReduced"] : t["shell.motionPause"]}
       data-testid="button-motion-toggle"
     >
-      <Icon className="rtl:-scale-x-100" />
+      <Icon aria-hidden className="rtl:-scale-x-100" />
     </Button>
   );
 }

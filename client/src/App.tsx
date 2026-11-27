@@ -368,7 +368,7 @@ function ProtectedLayout({
                 data-testid="button-command-palette"
                 title={t["shell.searchAndCommands"]}
                 aria-keyshortcuts="Control+K Meta+K"
-                className="me-2 hidden h-10 w-60 items-center gap-2.5 rounded-full border border-input bg-card/80 ps-4 pe-2.5 text-muted-foreground shadow-[var(--control-shadow)] transition-[border-color,color,box-shadow,width] duration-base ease-out hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex lg:w-72 lg:hover:w-80"
+                className="topbar-search me-2 hidden h-10 w-60 items-center gap-2.5 rounded-full border border-input bg-card/80 ps-4 pe-2.5 text-muted-foreground shadow-[var(--control-shadow)] transition-[border-color,color,box-shadow,width] duration-base ease-out hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex lg:w-72"
               >
                 <Search className="h-4 w-4 shrink-0" aria-hidden />
                 <span className="flex-1 text-start text-small">{t["shell.search"]}</span>

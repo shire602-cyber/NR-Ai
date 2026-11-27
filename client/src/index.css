@@ -1373,6 +1373,11 @@ html[data-surface="app"].dark {
     html:not([data-motion="off"]) .nav-icon-hover:hover > svg {
       scale: 1.1;
     }
+    @screen lg {
+      html:not([data-motion="off"]) .topbar-search:hover {
+        width: 20rem;
+      }
+    }
   }
 
   /* Pointer tilt. The glare sits between the surface fill and its content. */

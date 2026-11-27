@@ -138,25 +138,66 @@ describe("MotionToggle", () => {
     container.remove();
   });
 
-  async function renderToggle() {
+  async function renderToggle(locale: "en" | "ar" = "en") {
     const { useI18n } = await import("../../client/src/lib/i18n");
     const { MotionToggle } = await import("../../client/src/components/ui/motion-toggle");
-    act(() => useI18n.getState().setLocale("en"));
+    act(() => useI18n.getState().setLocale(locale));
     act(() => root.render(h(MotionToggle)));
     return container.querySelector<HTMLButtonElement>('[data-testid="button-motion-toggle"]')!;
   }
 
-  it("is a labelled pause button that toggles the paused state", async () => {
-    const button = await renderToggle();
-    expect(button.getAttribute("aria-label")).toBe("Pause motion");
-    expect(button.getAttribute("aria-pressed")).toBe("false");
-    act(() => button.click());
-    expect(document.documentElement.dataset.motion).toBe("off");
-    expect(button.getAttribute("aria-label")).toBe("Play motion");
-    expect(button.getAttribute("aria-pressed")).toBe("true");
-    act(() => button.click());
-    expect(document.documentElement.dataset.motion).toBeUndefined();
-  });
+  const labels = [
+    ["en", "Pause motion"],
+    ["ar", "إيقاف الحركة مؤقتًا"],
+  ] as const;
+
+  it.each(labels)(
+    "keeps the %s button name stable as its pressed state changes",
+    async (locale, label) => {
+      const button = await renderToggle(locale);
+      function expectState(pressed: boolean) {
+        expect(button.getAttribute("aria-label")).toBe(label);
+        expect(button.getAttribute("aria-pressed")).toBe(String(pressed));
+        expect(document.documentElement.dataset.motion).toBe(pressed ? "off" : undefined);
+      }
+      expectState(false);
+      act(() => button.click());
+      expectState(true);
+      act(() => button.click());
+      expectState(false);
+    }
+  );
+
+  it.each(labels)(
+    "keeps the %s account menu name stable as its checked state changes",
+    async (locale, label) => {
+      const { useI18n } = await import("../../client/src/lib/i18n");
+      const { AccountMenu } = await import("../../client/src/components/layout/AccountMenu");
+      const client = new QueryClient();
+      client.setQueryData(["/api/auth/me"], null);
+      try {
+        act(() => {
+          useI18n.getState().setLocale(locale);
+          root.render(h(QueryClientProvider, { client }, h(AccountMenu)));
+        });
+        const trigger = container.querySelector('[data-testid="button-profile"]')!;
+        act(() => {
+          trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+        });
+        const item = document.querySelector<HTMLElement>('[data-testid="menu-account-motion"]')!;
+        expect(item.getAttribute("role")).toBe("menuitemcheckbox");
+        expect(item.textContent).toBe(label);
+        expect(item.getAttribute("aria-checked")).toBe("false");
+        act(() => item.click());
+        expect(item.textContent).toBe(label);
+        expect(item.getAttribute("aria-checked")).toBe("true");
+        act(() => item.click());
+        expect(item.getAttribute("aria-checked")).toBe("false");
+      } finally {
+        client.clear();
+      }
+    }
+  );
 
   it("pauses and detaches pointer depth when browser storage throws", async () => {
     finePointer = true;
@@ -200,14 +241,18 @@ describe("MotionToggle", () => {
     }
   });
 
-  it("shows the paused state and does not resume when the OS asks for reduced motion", async () => {
-    reduced = true;
-    const button = await renderToggle();
-    expect(button.getAttribute("aria-pressed")).toBe("true");
-    expect(button.getAttribute("aria-disabled")).toBe("true");
-    act(() => button.click());
-    expect(document.documentElement.dataset.motion).toBeUndefined();
-  });
+  it.each(labels)(
+    "keeps the %s button name when the OS locks motion in the paused state",
+    async (locale, label) => {
+      reduced = true;
+      const button = await renderToggle(locale);
+      expect(button.getAttribute("aria-label")).toBe(label);
+      expect(button.getAttribute("aria-pressed")).toBe("true");
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      act(() => button.click());
+      expect(document.documentElement.dataset.motion).toBeUndefined();
+    }
+  );
 });
 
 it("renders mirrored dashboard action arrows in Arabic with motion on and paused", async () => {
@@ -273,15 +318,6 @@ it("renders mirrored dashboard action arrows in Arabic with motion on and paused
 
 describe("motion strings and stylesheet", () => {
   const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
-
-  it("has the three motion strings in English and Arabic", () => {
-    const en = JSON.parse(read("client/src/locales/en/shell.json")) as Record<string, string>;
-    const ar = JSON.parse(read("client/src/locales/ar/shell.json")) as Record<string, string>;
-    for (const key of ["shell.motionPause", "shell.motionPlay", "shell.motionSystemReduced"]) {
-      expect(en[key], key).toBeTruthy();
-      expect(ar[key], key).toMatch(/[؀-ۿ]/);
-    }
-  });
 
   it("stops tilt and parallax under the pause control and under prefers-reduced-motion", () => {
     const css = read("client/src/index.css");

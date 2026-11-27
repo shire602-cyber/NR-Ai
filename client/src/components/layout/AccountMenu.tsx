@@ -1,13 +1,12 @@
 import { Link } from "wouter";
 import {
   Building2,
+  Check,
   Languages,
   LifeBuoy,
   LogOut,
   MessageSquare,
   MessageSquareText,
-  Pause,
-  Play,
   Store,
   User,
 } from "lucide-react";
@@ -115,20 +114,18 @@ export function AccountMenu() {
           </span>
         </DropdownMenuItem>
         <DropdownMenuItem
+          role="menuitemcheckbox"
+          aria-checked={motionOff}
           disabled={motion.systemReduced}
           onSelect={(event) => {
-            // Keep the menu open so the new state is visible.
             event.preventDefault();
             motion.toggle();
           }}
+          title={motion.systemReduced ? tt["shell.motionSystemReduced"] : undefined}
           data-testid="menu-account-motion"
         >
-          {motionOff ? <Play aria-hidden className="rtl:-scale-x-100" /> : <Pause aria-hidden />}
-          {motion.systemReduced
-            ? tt["shell.motionSystemReduced"]
-            : motionOff
-              ? tt["shell.motionPlay"]
-              : tt["shell.motionPause"]}
+          <Check aria-hidden className={motionOff ? undefined : "invisible"} />
+          {tt["shell.motionPause"]}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => void signOut()} data-testid="menu-account-logout">
           <LogOut aria-hidden className="rtl:-scale-x-100" />
