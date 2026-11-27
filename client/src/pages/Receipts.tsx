@@ -1755,7 +1755,7 @@ function CompanyReceipts({
 
     setIsOcrExporting(true);
     try {
-      await downloadOcrExcel(rows, { assertActive: () => assertDraftCompany(companyId) });
+      await downloadOcrExcel(rows, { locale, assertActive: () => assertDraftCompany(companyId) });
       toast({
         title: tr("Excel ready", "ملف Excel جاهز"),
         description: tr(
@@ -1792,6 +1792,7 @@ function CompanyReceipts({
     try {
       await downloadReceiptsExcel(companyId, {
         ids: filteredReceipts.map((r: any) => r.id),
+        locale,
         assertActive: () => assertDraftCompany(companyId),
       });
       toast({

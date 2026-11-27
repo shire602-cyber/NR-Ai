@@ -1,5 +1,6 @@
 import { todayDubai } from "@shared/accounting-date";
 import ExcelJS from "exceljs";
+import { fromFils, tryToFils } from "@shared/money";
 
 // One row in the OCR / receipt Excel export. Field names match the column
 // labels required by the spec: Date, Vendor, Invoice No., Amount, VAT.
@@ -18,6 +19,9 @@ export interface OcrExportOptions {
   // Filename embedded in workbook properties (the HTTP filename is set by the
   // route). Defaults to "Muhasib OCR Export".
   title?: string;
+  // Output language for headers, labels, sheet name and sheet direction.
+  // Defaults to "en"; "ar" writes Arabic labels and a right-to-left sheet.
+  locale?: "en" | "ar";
 }
 
 export interface GenericExportColumn {
@@ -38,13 +42,45 @@ const BRAND_COLOR = "FF0F172A"; // slate-900 — matches Muhasib editorial palet
 const HEADER_FONT_COLOR = "FFFFFFFF";
 const ZEBRA_COLOR = "FFF8FAFC"; // slate-50
 
-const COLUMNS: Array<{ header: string; key: keyof OcrExportRow; width: number }> = [
-  { header: "Date", key: "date", width: 14 },
-  { header: "Vendor", key: "vendor", width: 32 },
-  { header: "Invoice No.", key: "invoiceNumber", width: 22 },
-  { header: "Amount", key: "amount", width: 16 },
-  { header: "VAT", key: "vat", width: 16 },
+const COLUMN_DEFS: Array<{ key: keyof OcrExportRow; width: number }> = [
+  { key: "date", width: 14 },
+  { key: "vendor", width: 32 },
+  { key: "invoiceNumber", width: 22 },
+  { key: "amount", width: 16 },
+  { key: "vat", width: 16 },
 ];
+
+const RECEIPT_LABELS = {
+  en: {
+    headers: ["Date", "Vendor", "Invoice No.", "Amount", "VAT"],
+    total: "Total",
+    sheetNames: {} as Record<string, string>,
+    titles: {} as Record<string, string>,
+  },
+  ar: {
+    headers: ["التاريخ", "المورد", "رقم الفاتورة", "المبلغ", "ضريبة القيمة المضافة"],
+    total: "الإجمالي",
+    sheetNames: { "OCR Receipts": "إيصالات OCR", Receipts: "الإيصالات" } as Record<string, string>,
+    titles: {
+      "Muhasib OCR Export": "تصدير إيصالات OCR",
+      "Muhasib Receipts Export": "تصدير الإيصالات",
+    } as Record<string, string>,
+  },
+};
+
+function rowCurrency(row: OcrExportRow): string {
+  return (row.currency || "AED").toUpperCase();
+}
+
+/** Exact sum of the given values in integer fils (blank values are skipped). */
+function sumFilsAsNumber(values: Array<number | null>): number {
+  let total = 0;
+  for (const v of values) {
+    const f = v === null ? null : tryToFils(v);
+    if (f !== null) total += f;
+  }
+  return Number(fromFils(total));
+}
 
 function toNumber(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -74,22 +110,42 @@ export async function buildOcrReceiptsWorkbook(
   rows: OcrExportRow[],
   options: OcrExportOptions = {}
 ): Promise<Buffer> {
+  const locale = options.locale === "ar" ? "ar" : "en";
+  const rtl = locale === "ar";
+  const labels = RECEIPT_LABELS[locale];
+
+  // A single total over mixed currencies is meaningless (no FX here), so with
+  // more than one currency the rows are grouped (stable, first-appearance order)
+  // and each group gets its own total row.
+  const currencyOrder: string[] = [];
+  for (const row of rows) {
+    const c = rowCurrency(row);
+    if (!currencyOrder.includes(c)) currencyOrder.push(c);
+  }
+  if (currencyOrder.length > 1) {
+    rows = [...rows].sort(
+      (a, b) => currencyOrder.indexOf(rowCurrency(a)) - currencyOrder.indexOf(rowCurrency(b))
+    );
+  }
+
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Muhasib.ai";
   workbook.lastModifiedBy = "Muhasib.ai";
   workbook.created = new Date();
   workbook.modified = new Date();
-  workbook.title = options.title ?? "Muhasib OCR Export";
+  const baseTitle = options.title ?? "Muhasib OCR Export";
+  workbook.title = labels.titles[baseTitle] ?? baseTitle;
   workbook.company = "Muhasib.ai";
 
-  const sheetName = (options.sheetName ?? "OCR Receipts").slice(0, 31);
+  const baseSheetName = options.sheetName ?? "OCR Receipts";
+  const sheetName = (labels.sheetNames[baseSheetName] ?? baseSheetName).slice(0, 31);
   const sheet = workbook.addWorksheet(sheetName, {
-    views: [{ state: "frozen", ySplit: 1 }],
+    views: [{ state: "frozen", ySplit: 1, rightToLeft: rtl }],
     properties: { defaultRowHeight: 18 },
   });
 
-  sheet.columns = COLUMNS.map((c) => ({
-    header: c.header,
+  sheet.columns = COLUMN_DEFS.map((c, i) => ({
+    header: labels.headers[i],
     key: c.key as string,
     width: c.width,
   }));
@@ -100,7 +156,7 @@ export async function buildOcrReceiptsWorkbook(
   headerRow.eachCell((cell) => {
     cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: HEADER_FONT_COLOR } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_COLOR } };
-    cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+    cell.alignment = { vertical: "middle", horizontal: rtl ? "right" : "left", indent: 1 };
     cell.border = {
       bottom: { style: "thin", color: { argb: "FF1E293B" } },
     };
@@ -108,8 +164,7 @@ export async function buildOcrReceiptsWorkbook(
 
   // ─── Data rows ──────────────────────────────────────────────
   rows.forEach((row, idx) => {
-    const currency = (row.currency || "AED").toUpperCase();
-    const currencyFmt = buildCurrencyFormat(currency);
+    const currencyFmt = buildCurrencyFormat(rowCurrency(row));
     const amount = toNumber(row.amount);
     const vat = toNumber(row.vat);
 
@@ -137,7 +192,7 @@ export async function buildOcrReceiptsWorkbook(
       }
       // Invoice No. uses a monospaced look-alike via right alignment for digits.
       if (colNumber === 3) {
-        cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+        cell.alignment = { vertical: "middle", horizontal: rtl ? "right" : "left", indent: 1 };
       }
     });
 
@@ -150,16 +205,26 @@ export async function buildOcrReceiptsWorkbook(
     void rowNumber;
   });
 
-  // ─── Totals row ─────────────────────────────────────────────
-  if (rows.length > 0) {
+  // ─── Totals rows (one per currency) ─────────────────────────
+  const multiCurrency = currencyOrder.length > 1;
+  for (const currency of currencyOrder) {
+    const indices: number[] = [];
+    rows.forEach((r, idx) => {
+      if (rowCurrency(r) === currency) indices.push(idx);
+    });
+    const first = indices[0] + 2;
+    const last = indices[indices.length - 1] + 2;
+    const group = indices.map((i) => rows[i]);
+    const amountSum = sumFilsAsNumber(group.map((r) => toNumber(r.amount)));
+    const vatSum = sumFilsAsNumber(group.map((r) => toNumber(r.vat)));
     const totalRow = sheet.addRow({
       date: "",
       vendor: "",
-      invoiceNumber: "Total",
-      amount: { formula: `SUM(D2:D${rows.length + 1})` },
-      vat: { formula: `SUM(E2:E${rows.length + 1})` },
+      invoiceNumber: multiCurrency ? `${labels.total} (${currency})` : labels.total,
+      amount: { formula: `SUM(D${first}:D${last})`, result: amountSum },
+      vat: { formula: `SUM(E${first}:E${last})`, result: vatSum },
     });
-    const currencyFmt = buildCurrencyFormat((rows[0]?.currency || "AED").toUpperCase());
+    const currencyFmt = buildCurrencyFormat(currency);
     totalRow.eachCell((cell, colNumber) => {
       cell.font = { name: "Calibri", size: 11, bold: true };
       cell.border = { top: { style: "thin", color: { argb: "FF1E293B" } } };
@@ -167,7 +232,7 @@ export async function buildOcrReceiptsWorkbook(
         cell.numFmt = currencyFmt;
         cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
       } else if (colNumber === 3) {
-        cell.alignment = { vertical: "middle", horizontal: "right", indent: 1 };
+        cell.alignment = { vertical: "middle", horizontal: rtl ? "left" : "right", indent: 1 };
       } else {
         cell.alignment = { vertical: "middle", indent: 1 };
       }
