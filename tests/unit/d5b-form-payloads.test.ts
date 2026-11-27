@@ -15,6 +15,7 @@ import {
   buttonByText,
   click,
   flush,
+  flushUntil,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
   inputByLabel,
@@ -29,6 +30,7 @@ import {
 } from "./helpers/form-harness";
 import { act } from "react";
 import { loadLocale } from "../../client/src/lib/i18n";
+import { queryClient } from "../../client/src/lib/queryClient";
 import Invoices from "../../client/src/pages/Invoices";
 
 vi.mock("../../client/src/lib/queryClient", () => formHarnessQueryClientMock());
@@ -449,6 +451,8 @@ describe("[D5b] vendor form payload unchanged", () => {
     await renderPage(Vendors);
     await click(buttonByText(/^\s*new supplier\s*$/i));
     const byId = (id: string) => document.getElementById(id);
+    // NewVendorDialog is lazy: wait for its form before typing.
+    await flushUntil(() => byId("vendor-name") !== null);
     await type(byId("vendor-name"), "Atlas Office Supplies");
     await type(byId("vendor-name_ar"), "أطلس للوازم المكتبية");
     await type(byId("vendor-trn"), "100456789000003");
@@ -518,11 +522,10 @@ describe("[D5b] product form payload unchanged", () => {
 });
 
 describe("[D5b] fixed asset form payload unchanged", () => {
-  it("POSTs the same fixed asset body", async () => {
-    setFixtures({ [`${C}/fixed-assets/summary`]: null });
+  async function createAsset() {
     const { default: FixedAssets } = await import("../../client/src/pages/FixedAssets");
     await renderPage(FixedAssets);
-    await click(buttonByText(/add asset/i));
+    await click(byTestId("button-add-asset"));
     await type(named("assetName"), "Delivery van");
     await type(named("assetNameAr"), "شاحنة توصيل");
     await type(named("assetNumber"), "FA-014");
@@ -536,7 +539,44 @@ describe("[D5b] fixed asset form payload unchanged", () => {
     await type(named("notes"), "Financed in full");
     await pickNative(0, "Vehicles");
     await submit(dialog().querySelector('button[type="submit"]'));
+  }
+
+  it("POSTs the same fixed asset body", async () => {
+    setFixtures({ [`${C}/fixed-assets/summary`]: null });
+    await createAsset();
     expect(body("POST", `${C}/fixed-assets`)).toStrictEqual(ASSET_BODY);
+  });
+
+  it("cancels and restarts pending first reads of the register and summary after creating an asset", async ({
+    onTestFinished,
+  }) => {
+    const reads = [
+      { queryKey: [`${C}/fixed-assets`], data: [] },
+      { queryKey: [`${C}/fixed-assets/summary`], data: null },
+    ].map(({ queryKey, data }) => {
+      const queryFn = vi.fn(async (_context: { signal: AbortSignal }) => data);
+      queryFn.mockImplementationOnce(
+        ({ signal }) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          })
+      );
+      queryClient.setQueryDefaults(queryKey, { queryFn });
+      onTestFinished(() => queryClient.setQueryDefaults(queryKey, {}));
+      return { queryKey, queryFn, data };
+    });
+
+    await createAsset();
+
+    expect(body("POST", `${C}/fixed-assets`)).toBeDefined();
+    await flushUntil(() =>
+      reads.every(({ queryKey }) => queryClient.getQueryData(queryKey) !== undefined)
+    );
+    for (const { queryKey, queryFn, data } of reads) {
+      expect(queryFn).toHaveBeenCalledTimes(2);
+      expect(queryFn.mock.calls[0][0].signal.aborted).toBe(true);
+      expect(queryClient.getQueryData(queryKey)).toEqual(data);
+    }
   });
 });
 
@@ -674,6 +714,7 @@ describe("[D5b] cost centre form payload unchanged", () => {
     const { default: CostCenters } = await import("../../client/src/pages/CostCenters");
     await renderPage(CostCenters);
     await click(buttonByText(/add cost cent/i));
+    await flushUntil(() => !!dialog()); // the form dialog is a lazy chunk
     await type(named("code"), "CC-110");
     await type(named("name"), "Retail branch");
     await type(named("nameAr"), "فرع التجزئة");

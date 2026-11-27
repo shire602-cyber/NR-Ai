@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EInvoiceProvider } from "../../server/services/einvoice-provider";
 import { useHarness, type Tenant } from "./harness";
+import { recordTestAppointment } from "./einvoice-appointment-fixture";
 
 const h = useHarness();
 
@@ -102,6 +103,26 @@ async function externalFirmClient(independentMembership = false, assign = true) 
 }
 
 describe("Company-scoped e-invoicing permissions", () => {
+  it("PR #178 appointment writes require direct authority even for platform and firm staff", async () => {
+    const { staff, customer, platform } = await externalFirmClient();
+    const companyId = customer.company.id;
+    const path = `/api/companies/${companyId}/einvoice/partner`;
+    await h.sql("UPDATE companies SET einvoice_partner = 'complyance' WHERE id = $1", [companyId]);
+    await recordTestAppointment(customer, "complyance");
+    // A firm-generated admin-equivalent membership still carries only firm authority.
+    await h.sql("UPDATE company_users SET role = 'admin' WHERE company_id = $1 AND user_id = $2", [
+      companyId,
+      staff.user.id,
+    ]);
+    const firmRevoke = await staff.as.post(`${path}/revoke`, {});
+    expect(firmRevoke.status, firmRevoke.text).toBe(403);
+    const platformRevoke = await platform.as.post(`${path}/revoke`, {});
+    expect(platformRevoke.status, platformRevoke.text).toBe(404);
+    const state = await customer.as.get(path);
+    expect(state.status, state.text).toBe(200);
+    expect(state.body.state).toBe("active");
+  });
+
   it.each([false, true])(
     "firm_admin with platform admin = %s needs the NR client assignment",
     async (isAdmin) => {
@@ -353,6 +374,7 @@ describe("Company-scoped e-invoicing permissions", () => {
     "rechecks external firm authority at dispatch after %s",
     async (revokedBy) => {
       const { context, staff, customer, platform, firmId, invoiceId } = await externalFirmClient();
+      await recordTestAppointment(customer, "complyance");
       await h.sql("UPDATE companies SET einvoice_partner = 'complyance' WHERE id = $1", [
         customer.company.id,
       ]);

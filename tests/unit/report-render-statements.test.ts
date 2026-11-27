@@ -236,6 +236,7 @@ import {
   renderStatement,
 } from "../../server/services/report-render/statements";
 import { buildReportPdf } from "../../server/services/report-render/pdf";
+import { generalLedger } from "../../server/reporting";
 import { pdfToText } from "./pdf-test-helpers";
 import { buildReportWorkbook, guardCell } from "../../server/services/report-render/xlsx";
 import {
@@ -404,6 +405,19 @@ describe("statement builders", { timeout: 30_000 }, () => {
     expect(capped.notes[0].en).toMatch(/truncated/);
     const full = await renderGeneralLedger(company, period);
     expect(full.notes).toEqual([]);
+  });
+
+  it("never promises Excel has every line when the source ledger was truncated", async () => {
+    const company = await loadRenderCompany("c1");
+    const source = await generalLedger({ companyId: "c1", ...period });
+    for (const lineCap of [undefined, 1]) {
+      vi.mocked(generalLedger).mockResolvedValueOnce({ ...source, truncated: true });
+      const { notes } = await renderGeneralLedger(company, period, { lineCap });
+      expect(notes[0].en).toMatch(/both PDF and Excel/);
+      expect(notes[0].ar).toContain("Excel");
+      expect(notes.map((n) => n.en).join(" ")).not.toMatch(/every line\.$|workbook has every line/);
+      expect(notes).toHaveLength(lineCap ? 2 : 1);
+    }
   });
 
   it("ties the changes-in-equity statement to the balance sheet", async () => {

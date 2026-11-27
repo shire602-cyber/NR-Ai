@@ -1,7 +1,7 @@
 import { T } from "@/components/layout/T";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { PageHeader } from "@/components/ui/page-header";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Database,
@@ -50,13 +50,16 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, refreshAfterWrite } from "@/lib/queryClient";
+import { hasReadData, queryReadState } from "@/lib/queryReadState";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
 import { apiUrl } from "@/lib/api";
 import { formatDate, formatDateTime } from "@/lib/format-date";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ErrorState } from "@/components/ui/error-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import type { Backup } from "@shared/schema";
 import { formatMessage, useI18n, useTranslation, translateNow } from "@/lib/i18n";
 
@@ -170,7 +173,12 @@ const BACKUP_COPY = {
 export default function BackupRestore() {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const { companyId: selectedCompanyId } = useDefaultCompany();
+  const {
+    companyId: selectedCompanyId,
+    companyListState,
+    retryCompanyList,
+    error: companyError,
+  } = useDefaultCompany();
   const { can, known: accessKnown } = useCompanyPermission();
   const canManageBackups = can("backups.manage");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -187,32 +195,33 @@ export default function BackupRestore() {
   const [selectedBackupForRestore, setSelectedBackupForRestore] =
     useState<BackupWithoutData | null>(null);
 
-  const {
-    data: backups = [],
-    isLoading,
-    isError: backupsFailed,
-    refetch: refetchBackups,
-  } = useQuery<BackupWithoutData[]>({
+  const backupsQuery = useQuery<BackupWithoutData[]>({
     queryKey: ["/api/companies", selectedCompanyId, "backups"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!selectedCompanyId) return [];
       const res = await fetch(apiUrl(`/api/companies/${selectedCompanyId}/backups`), {
         credentials: "include",
+        signal,
       });
-      if (!res.ok) throw new Error("Failed to fetch backups");
+      // Status-bearing, so a revoked 401/403 shows the access state instead of cached rows.
+      if (!res.ok) throw new ApiError("Failed to fetch backups", res.status);
       return res.json();
     },
     // A role without backups.manage gets 403: show "no access", never an empty list.
     enabled: !!selectedCompanyId && canManageBackups,
     retry: false,
   });
+  const backupsState = queryReadState(backupsQuery);
+  const backupsPaused = backupsQuery.fetchStatus === "paused";
+  const backups = hasReadData(backupsState) ? (backupsQuery.data ?? []) : [];
+  const refetchBackups = () => void backupsQuery.refetch();
 
   const createBackupMutation = useMutation({
     mutationFn: async (data: { name: string; description: string }) => {
       return apiRequest("POST", `/api/companies/${selectedCompanyId}/backups`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "backups"]);
       toast({
         title: translateNow("toasts.backupCreated"),
         description: translateNow("toasts.yourFinancialDataHasBeenBackedUp"),
@@ -235,7 +244,7 @@ export default function BackupRestore() {
       return apiRequest("DELETE", `/api/backups/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "backups"]);
       toast({
         title: translateNow("toasts.backupDeleted"),
         description: translateNow("toasts.theBackupHasBeenRemoved"),
@@ -262,16 +271,27 @@ export default function BackupRestore() {
     },
   });
 
+  const restoreAttempt = useRef<{ id: string; mode: typeof restoreMode; key: string } | null>(null);
   const restoreMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest("POST", `/api/backups/${id}/restore`, {
-        mode: restoreMode,
-        confirmRestore: true,
-        ...(restoreMode === "replace" ? { confirmName } : {}),
-      });
+      if (restoreAttempt.current?.id !== id || restoreAttempt.current.mode !== restoreMode) {
+        restoreAttempt.current = { id, mode: restoreMode, key: crypto.randomUUID() };
+      }
+      return apiRequest(
+        "POST",
+        `/api/backups/${id}/restore`,
+        {
+          mode: restoreMode,
+          confirmRestore: true,
+          ...(restoreMode === "replace" ? { confirmName } : {}),
+        },
+        { "Idempotency-Key": restoreAttempt.current.key },
+        { queueWhenOffline: false }
+      );
     },
     onSuccess: (data: { message?: string }) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
+      restoreAttempt.current = null;
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "backups"]);
       toast({ title: c.restoreDone, description: data.message });
       setRestorePreview(null);
       setSelectedBackupForRestore(null);
@@ -294,9 +314,7 @@ export default function BackupRestore() {
     mutationFn: async (body: { frequency: string; retentionDays: number }) =>
       apiRequest("PUT", `/api/companies/${selectedCompanyId}/backups/schedule`, body),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", selectedCompanyId, "backups", "schedule"],
-      });
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "backups", "schedule"]);
       setScheduleDraft(null);
       toast({ title: c.saved });
     },
@@ -343,21 +361,21 @@ export default function BackupRestore() {
       case "completed":
         return (
           <Badge className="bg-success/10 text-success border-success/20">
-            <CheckCircle className="h-3 w-3 mr-1" />
+            <CheckCircle className="h-3 w-3 me-1" />
             <T k="pages.completed" />
           </Badge>
         );
       case "in_progress":
         return (
           <Badge className="bg-info/10 text-info border-info/20">
-            <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+            <RefreshCw className="h-3 w-3 me-1 animate-spin" />
             <T k="pages.inProgress" />
           </Badge>
         );
       case "failed":
         return (
           <Badge variant="destructive">
-            <XCircle className="h-3 w-3 mr-1" />
+            <XCircle className="h-3 w-3 me-1" />
             <T k="pages.failed" />
           </Badge>
         );
@@ -388,6 +406,31 @@ export default function BackupRestore() {
   };
 
   if (!selectedCompanyId) {
+    if (companyListState === "error") {
+      return (
+        <LoadErrorState
+          error={companyError}
+          onRetry={retryCompanyList}
+          testId="backups-company-error"
+        />
+      );
+    }
+    // "No company" is a successful empty read; until then the list is loading or waiting.
+    if (companyListState !== "empty") {
+      return (
+        <div
+          className="flex h-64 flex-col items-center justify-center gap-2"
+          data-testid="backups-company-loading"
+        >
+          {companyListState === "waiting" && (
+            <p className="text-sm text-muted-foreground" data-testid="backups-company-waiting">
+              {t["banking.query.paused"]}
+            </p>
+          )}
+          <Skeleton className="h-8 w-64" />
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">
@@ -400,7 +443,7 @@ export default function BackupRestore() {
   if (accessKnown && !canManageBackups) {
     return (
       <div className="space-y-6">
-        <PageHeader eyebrow="Settings" title={t["backupRestore.backupRestore"]} />
+        <PageHeader eyebrow={t["shell.nav.settings"]} title={t["backupRestore.backupRestore"]} />
         <EmptyState
           icon={Database}
           title={t["common.noAccessTitle"]}
@@ -415,13 +458,13 @@ export default function BackupRestore() {
     <SettingsLayout>
       <div className="space-y-6">
         <PageHeader
-          eyebrow="Settings"
+          eyebrow={t["shell.nav.settings"]}
           title={t["backupRestore.backupRestore"]}
           testId="text-backup-title"
           description={t["backupRestore.safeguardYourFinancialRecordsWith"]}
           actions={
             <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-backup">
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="h-4 w-4 me-2" />
               <T k="pages.createBackup" />
             </Button>
           }
@@ -476,12 +519,12 @@ export default function BackupRestore() {
               >
                 {createBackupMutation.isPending ? (
                   <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    <RefreshCw className="h-4 w-4 me-2 animate-spin" />
                     <T k="pageLabels.creating" />
                   </>
                 ) : (
                   <>
-                    <Database className="h-4 w-4 mr-2" />
+                    <Database className="h-4 w-4 me-2" />
                     <T k="pages.createBackup" />
                   </>
                 )}
@@ -525,14 +568,39 @@ export default function BackupRestore() {
             )}
           </CardHeader>
           <CardContent>
-            {isLoading ? (
-              <div className="flex items-center justify-center h-32">
-                <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+            {backupsPaused && hasReadData(backupsState) && (
+              <p
+                className="mb-3 text-sm text-muted-foreground"
+                role="status"
+                data-testid="state-backups-paused-cached"
+              >
+                {t["banking.query.pausedCached"]}
+              </p>
+            )}
+            {!backupsPaused && backupsState === "stale" && (
+              <div className="mb-3">
+                <StaleDataNotice onRetry={refetchBackups} testId="state-backups-stale" />
               </div>
-            ) : backupsFailed ? (
-              <ErrorState
+            )}
+            {backupsState === "pending" ? (
+              backupsPaused ? (
+                <p
+                  className="text-sm text-muted-foreground"
+                  role="status"
+                  data-testid="state-backups-waiting"
+                >
+                  {t["banking.query.paused"]}
+                </p>
+              ) : (
+                <div className="flex items-center justify-center h-32">
+                  <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              )
+            ) : backupsState === "error" ? (
+              <LoadErrorState
                 compact
-                onRetry={() => void refetchBackups()}
+                error={backupsQuery.error}
+                onRetry={refetchBackups}
                 testId="state-backups-error"
               />
             ) : backups.length === 0 ? (
@@ -569,7 +637,7 @@ export default function BackupRestore() {
                     <TableHead>
                       <T k="pages.created" />
                     </TableHead>
-                    <TableHead className="text-right">
+                    <TableHead className="text-end">
                       <T k="pages.actions" />
                     </TableHead>
                   </TableRow>
@@ -612,7 +680,7 @@ export default function BackupRestore() {
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         <div className="flex items-center justify-end gap-2">
                           <Button
                             variant="outline"
@@ -656,8 +724,9 @@ export default function BackupRestore() {
                                   <T k="pageLabels.deleteBackup" />
                                 </AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will permanently delete "{backup.name}". This action cannot
-                                  be undone.
+                                  {formatMessage(t["components.backupDeleteConfirm"], {
+                                    name: backup.name,
+                                  })}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

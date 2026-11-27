@@ -24,6 +24,8 @@ import {
   decryptOAuthSecret,
   encryptOAuthSecret,
   exchangeOAuthCallback,
+  extractOAuthSignupLocale,
+  withOAuthSignupLocale,
   getOAuthProviderInfo,
   hashOAuthSecret,
   isOAuthProviderId,
@@ -31,6 +33,24 @@ import {
   oauthCallbackSuccessUrl,
   sanitizeOAuthNextPath,
 } from "../../server/services/oauth.service";
+
+describe("oauth signup locale carrier", () => {
+  it("round-trips Arabic through next_path and strips it from the redirect path", () => {
+    const carried = withOAuthSignupLocale("/dashboard?signup_plan=starter", "ar");
+    expect(carried).toContain("signup_locale=ar");
+    expect(extractOAuthSignupLocale(carried)).toEqual({
+      locale: "ar",
+      nextPath: "/dashboard?signup_plan=starter",
+    });
+  });
+
+  it("leaves English and unknown languages untouched", () => {
+    expect(withOAuthSignupLocale("/dashboard", "en")).toBe("/dashboard");
+    expect(withOAuthSignupLocale("/dashboard", "fr")).toBe("/dashboard");
+    expect(extractOAuthSignupLocale("/dashboard?signup_locale=fr").locale).toBe("en");
+    expect(withOAuthSignupLocale("//evil.test", "ar")).toBe("/dashboard?signup_locale=ar");
+  });
+});
 
 describe("oauth service helpers", () => {
   it("recognizes only supported providers", () => {

@@ -6,7 +6,7 @@
  */
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearAuthHint, setAuthHint } from "../../client/src/lib/authHint";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
@@ -70,6 +70,7 @@ afterEach(async () => {
   container.remove();
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
+  onlineManager.setOnline(true);
   const { useI18n } = await import("../../client/src/lib/i18n");
   useI18n.getState().setLocale("en");
 });
@@ -133,7 +134,11 @@ function recordStatementRequests(importResponse = json({ imported: 1 })) {
   return { previews, imports };
 }
 
-function previewResponse(description: string, requiresChoice = false) {
+function previewResponse(
+  description: string,
+  requiresChoice = false,
+  overrides: Record<string, unknown> = {}
+) {
   return json({
     kind: "csv",
     detectedFormat: "generic",
@@ -148,6 +153,7 @@ function previewResponse(description: string, requiresChoice = false) {
     sampleRows: [{ rowIndex: 1, date: "2026-11-13", description, debit: 0, credit: 0, errors: [] }],
     warnings: [],
     requiresChoice,
+    ...overrides,
   });
 }
 
@@ -272,6 +278,61 @@ describe("bank statement import dialog", () => {
         expect(imports).toEqual([]);
       }
     );
+
+    it("blocks the import and hides the recognized badge when only some rows have a bad date", async () => {
+      const { previews, imports } = recordStatementRequests();
+      await mountPage(locale);
+      await selectImportAccount();
+      await chooseStatement(
+        ["Date,Description,Amount", "2026-03-10,Deposit,100.00", ",Deposit,50.00"].join("\n")
+      );
+      await vi.waitFor(() => expect(previews).toHaveLength(1));
+      await act(async () =>
+        previews[0].respond(
+          json({
+            kind: "csv",
+            detectedFormat: "generic",
+            decimalSeparator: ".",
+            dateOrder: "YMD",
+            headerRow: 1,
+            headers: ["Date", "Description", "Amount"],
+            mapping: { date: 0, description: 1, amount: 2 },
+            totalRows: 2,
+            validRows: 1,
+            errorRows: 1,
+            firstInvalidDateRow: 3,
+            sampleRows: [
+              {
+                rowIndex: 2,
+                date: "2026-03-10",
+                description: "Deposit",
+                debit: 0,
+                credit: 100,
+                errors: [],
+              },
+              {
+                rowIndex: 3,
+                date: null,
+                description: "Deposit",
+                debit: 0,
+                credit: 50,
+                errors: ["Missing date"],
+              },
+            ],
+            warnings: [],
+            requiresChoice: false,
+          })
+        )
+      );
+
+      expect(action().disabled).toBe(true);
+      expect(
+        mapper()?.querySelector('[role="alert"][data-testid="text-statement-preview-date-error"]')
+          ?.textContent
+      ).toBe(copy.replace("2", "3"));
+      expect(mapper()?.querySelector('[data-testid="statement-recognized"]')).toBeNull();
+      expect(imports).toEqual([]);
+    });
 
     it("shows CSV row 12 when the first date error is beyond the preview sample", async () => {
       const { previews, imports } = recordStatementRequests();
@@ -431,5 +492,232 @@ describe("bank statement import dialog", () => {
   it("lets the dialog content shrink to a phone (single minmax(0,1fr) column, no min-content growth)", async () => {
     await mountPage("en");
     expect(dialog()?.className).toContain("grid-cols-[minmax(0,1fr)]");
+  });
+
+  it("drops the recognized badge while re-previewing and restores it only for a valid result", async () => {
+    const { previews } = recordStatementRequests();
+    await mountPage("en");
+    await selectImportAccount();
+    await chooseStatement("first CSV");
+    await vi.waitFor(() => expect(previews).toHaveLength(1));
+    await act(async () => previews[0].respond(previewResponse("current sample")));
+    const badge = () => mapper()?.querySelector('[data-testid="statement-recognized"]') ?? null;
+    const decimal = () => dialog()!.querySelector('[data-testid="select-statement-decimal"]');
+    expect(badge()).not.toBeNull();
+
+    await pickOption(decimal(), /Comma/);
+    await vi.waitFor(() => expect(previews).toHaveLength(2));
+    expect(mapper()?.textContent).toContain("current sample");
+    expect(badge()).toBeNull();
+    expect(action().disabled).toBe(true);
+
+    await act(async () =>
+      previews[1].respond(previewResponse("bad date sample", false, { firstInvalidDateRow: 2 }))
+    );
+    await vi.waitFor(() => expect(mapper()?.textContent).toContain("bad date sample"));
+    expect(badge()).toBeNull();
+
+    await pickOption(decimal(), /Point/);
+    await vi.waitFor(() => expect(previews).toHaveLength(3));
+    expect(badge()).toBeNull();
+    await act(async () => previews[2].respond(previewResponse("fixed sample")));
+    await vi.waitFor(() => expect(badge()).not.toBeNull());
+    expect(action().disabled).toBe(false);
+  });
+});
+
+describe("bank reconciliation query states", () => {
+  const PAUSED = "Loading is paused. It will continue automatically.";
+  const PAUSED_CACHED =
+    "Updates are paused. You are seeing the last loaded data, which may be out of date.";
+  const transaction = {
+    id: "t-1",
+    companyId: "c-1",
+    bankStatementAccountId: "b-1",
+    transactionDate: "2026-03-10",
+    description: "Cached deposit",
+    amount: 100,
+    reference: null,
+    matchStatus: "unmatched",
+    isReconciled: false,
+    matchConfidence: null,
+  };
+  const suggestion = {
+    bankTransactionId: "t-1",
+    matchedType: "invoice",
+    matchedId: "inv-1",
+    confidence: 90,
+    matchReason: "",
+    matchedDescription: "Cached invoice",
+  };
+  const TRANSACTIONS_KEY = ["/api/companies", "c-1", "bank-statements", "transactions"];
+  const SUGGESTIONS_KEY = ["/api/companies", "c-1", "bank-statements", "t-1", "suggestions"];
+  const failure = () =>
+    new Response(JSON.stringify({ message: "Nope" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+
+  const find = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+  const transactionsEmpty = () => find("empty-state-bank-transactions");
+  const matchesEmpty = () => find("empty-state-match-suggestions");
+
+  /** Serve the two lists from mutable responders; `goOffline` drops once companies are asked for. */
+  function serve(
+    transactions: () => Response,
+    suggestions: () => Response = () => json([]),
+    { goOffline = false } = {}
+  ) {
+    const server = { transactions, suggestions };
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (goOffline && /\/api\/companies$/.test(url)) onlineManager.setOnline(false);
+      if (url.endsWith("/bank-statements/transactions")) return server.transactions();
+      if (url.endsWith("/suggestions")) return server.suggestions();
+      return original(input, init);
+    });
+    return server;
+  }
+
+  async function mount() {
+    window.history.pushState({}, "", "/bank-reconciliation");
+    await mountPage("en");
+  }
+
+  async function refetch(queryKey: string[]) {
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey, exact: true });
+      // TanStack batches observer notifications on a timer; flush it inside act.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  /** Toggle online state and flush the scheduled notifications while still inside act. */
+  async function setOnline(online: boolean) {
+    await act(async () => {
+      onlineManager.setOnline(online);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  const retry = async (scope: HTMLElement) => click(scope.querySelector("button"));
+
+  it("says a paused first load is paused, not loading or empty", async () => {
+    serve(
+      () => json([]),
+      () => json([]),
+      { goOffline: true }
+    );
+    await mount();
+    await vi.waitFor(() => expect(find("status-transactions-paused")?.textContent).toBe(PAUSED));
+    expect(transactionsEmpty()).toBeNull();
+
+    await setOnline(true);
+    await vi.waitFor(() => expect(transactionsEmpty()).not.toBeNull());
+    expect(find("status-transactions-paused")).toBeNull();
+  });
+
+  it("shows a retry, not an empty list, when the first transactions load fails", async () => {
+    const server = serve(failure);
+    await mount();
+    await vi.waitFor(() => expect(find("error-state")).not.toBeNull());
+    expect(transactionsEmpty()).toBeNull();
+
+    server.transactions = () => json([]);
+    await retry(find("error-state")!);
+    await vi.waitFor(() => expect(transactionsEmpty()).not.toBeNull());
+    expect(find("error-state")).toBeNull();
+  });
+
+  it("keeps cached transactions with feedback when a refresh fails or pauses", async () => {
+    const server = serve(() => json([transaction]));
+    await mount();
+    await vi.waitFor(() => expect(find("row-transaction-t-1")).not.toBeNull());
+
+    server.transactions = failure;
+    await refetch(TRANSACTIONS_KEY);
+    await vi.waitFor(() => expect(find("error-transactions-refresh")).not.toBeNull());
+    expect(find("row-transaction-t-1")).not.toBeNull();
+    expect(transactionsEmpty()).toBeNull();
+
+    await setOnline(false);
+    await refetch(TRANSACTIONS_KEY);
+    await vi.waitFor(() =>
+      expect(find("status-transactions-paused")?.textContent).toBe(PAUSED_CACHED)
+    );
+    expect(find("row-transaction-t-1")).not.toBeNull();
+    expect(transactionsEmpty()).toBeNull();
+  });
+
+  it("does not call a cached empty transactions list empty after a failed refresh", async () => {
+    const server = serve(() => json([]));
+    await mount();
+    await vi.waitFor(() => expect(transactionsEmpty()).not.toBeNull());
+
+    server.transactions = failure;
+    await refetch(TRANSACTIONS_KEY);
+    await vi.waitFor(() => expect(find("error-state")).not.toBeNull());
+    expect(transactionsEmpty()).toBeNull();
+  });
+
+  it("does not call a cached empty transactions list empty while a refresh is paused", async () => {
+    serve(() => json([]));
+    await mount();
+    await vi.waitFor(() => expect(transactionsEmpty()).not.toBeNull());
+
+    await setOnline(false);
+    await refetch(TRANSACTIONS_KEY);
+    await vi.waitFor(() => expect(find("status-transactions-paused")?.textContent).toBe(PAUSED));
+    expect(transactionsEmpty()).toBeNull();
+
+    await setOnline(true);
+    await vi.waitFor(() => expect(transactionsEmpty()).not.toBeNull());
+    expect(find("status-transactions-paused")).toBeNull();
+  });
+
+  async function openMatch() {
+    await vi.waitFor(() => expect(find("button-match-t-1")).not.toBeNull());
+    await click(find("button-match-t-1"));
+  }
+
+  it("says paused match suggestions are paused, not empty", async () => {
+    serve(() => json([transaction]));
+    await mount();
+    await vi.waitFor(() => expect(find("button-match-t-1")).not.toBeNull());
+    await setOnline(false);
+    await openMatch();
+    await vi.waitFor(() => expect(find("status-matches-paused")?.textContent).toBe(PAUSED));
+    expect(matchesEmpty()).toBeNull();
+  });
+
+  it("shows a retry for a failed first suggestions load, then a real empty result", async () => {
+    const server = serve(() => json([transaction]), failure);
+    await mount();
+    await openMatch();
+    await vi.waitFor(() => expect(find("error-matches")).not.toBeNull());
+    expect(matchesEmpty()).toBeNull();
+
+    server.suggestions = () => json([]);
+    await retry(find("error-matches")!);
+    await vi.waitFor(() => expect(matchesEmpty()).not.toBeNull());
+    expect(find("error-matches")).toBeNull();
+  });
+
+  it("keeps cached suggestions with feedback when a refresh fails", async () => {
+    const server = serve(
+      () => json([transaction]),
+      () => json([suggestion])
+    );
+    await mount();
+    await openMatch();
+    await vi.waitFor(() => expect(dialog()?.textContent).toContain("Cached invoice"));
+
+    server.suggestions = failure;
+    await refetch(SUGGESTIONS_KEY);
+    await vi.waitFor(() => expect(find("error-matches")).not.toBeNull());
+    expect(dialog()?.textContent).toContain("Cached invoice");
+    expect(matchesEmpty()).toBeNull();
   });
 });

@@ -200,6 +200,25 @@ describe("[G3] the lookup", () => {
     await loadLocale("ar");
   });
 
+  it.each([
+    ["en", "This customer is marked do-not-chase.", "Customer marked do-not-chase"],
+    ["ar", "هذا العميل مستثنى من تذكيرات الدفع.", "العميل مستثنى من تذكيرات الدفع"],
+  ] as const)("localizes the single and bulk reminder opt-out in %s", (locale, single, bulk) => {
+    const previous = useI18n.getState().locale;
+    useI18n.setState({ locale });
+    try {
+      expect(
+        localizeApiError({
+          code: "CUSTOMER_DO_NOT_CHASE",
+          message: "Customer is marked do-not-chase",
+        })
+      ).toBe(single);
+      expect(t[locale]["invoices.reminders.result.skipped_do_not_chase"]).toBe(bulk);
+    } finally {
+      useI18n.setState({ locale: previous });
+    }
+  });
+
   it("names the duplicate contact email and already-a-member errors in Arabic", () => {
     useI18n.setState({ locale: "ar" });
     const dup = localizeApiError({

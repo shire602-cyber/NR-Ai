@@ -128,6 +128,48 @@ async function vatGroup(representative: Tenant, member: Tenant) {
 }
 
 describe("VAT return settlement", () => {
+  it.each(["open", "submitted"])(
+    "PR #178 settles the effective predecessor only while its amendment is %s",
+    async (amendmentState) => {
+      const t = await vatTenant();
+      await foreignSale(t, "AED", 2000);
+      const ret = await generate(t, "2026-01-01", "2026-03-31");
+      const filed = await t.as.post(`/api/vat-returns/${ret.id}/submit`, {
+        ftaReferenceNumber: "FTA-ORIGINAL",
+        filedOn: "2026-04-15",
+      });
+      expect(filed.status, filed.text).toBe(200);
+      const amendment = await t.as.post(`/api/vat-returns/${ret.id}/amend`, {
+        reason: "Correct the original disclosure",
+      });
+      expect(amendment.status, amendment.text).toBe(201);
+      expect((await getSettledReturn(t, ret.id)).status).toBe("amended");
+
+      const bank = await accountByCode(t, "1020");
+      const payment = { date: "2026-04-20", paymentAccountId: bank.id };
+      const url = `/api/vat-returns/${ret.id}/settlement`;
+      if (amendmentState === "submitted") {
+        await submit(amendment.body.id, t);
+        const superseded = await t.as.post(url, payment);
+        expect(superseded.status, superseded.text).toBe(409);
+        expect(superseded.body.code).toBe("VAT_RETURN_NOT_SUBMITTED");
+        const successor = await t.as.post(
+          `/api/vat-returns/${amendment.body.id}/settlement`,
+          payment
+        );
+        expect(successor.status, successor.text).toBe(201);
+        expect(successor.body.netPayable).toBe(100);
+      } else {
+        const beforeFiling = await t.as.post(url, { ...payment, date: "2026-04-14" });
+        expect(beforeFiling.status, beforeFiling.text).toBe(422);
+        expect(beforeFiling.body.code).toBe("VAT_SETTLEMENT_BEFORE_FILING");
+        const settled = await t.as.post(url, payment);
+        expect(settled.status, settled.text).toBe(201);
+        expect(settled.body.netPayable).toBe(100);
+      }
+    }
+  );
+
   it("clears each USD member's own controls and translates group cash at the settlement rate", async () => {
     const representative = await vatTenant("USD");
     const member = await vatTenant("USD");

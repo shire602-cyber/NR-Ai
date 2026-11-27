@@ -45,6 +45,7 @@ import {
 } from "../../shared/validators/purchase-orders";
 import { zUuid } from "../../shared/validators/primitives";
 import { fromFils, mulRate, toFils } from "../../shared/money";
+import { todayDubai } from "@shared/accounting-date";
 import { nextDocNumber, createBill, resolveDocRate } from "../services/bill-payment.service";
 import { computeBillTotals, txRows } from "../services/bill-posting.service";
 import { resolveVendor } from "../services/vendor.service";
@@ -639,7 +640,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
         }
       }
       if (wanted.length === 0) throw new DomainError("PO_NOTHING_TO_RECEIVE", 409);
-      const receivedDate = body.receivedDate ?? new Date().toISOString().slice(0, 10);
+      const receivedDate = body.receivedDate ?? todayDubai();
       const result = await withLedgerTx(async (tx) => {
         const [receipt] = await tx
           .insert(purchaseOrderReceipts)
@@ -800,7 +801,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
         }
         return { l, quantity: w.quantity };
       });
-      const billDate = body.billDate ?? new Date().toISOString().slice(0, 10);
+      const billDate = body.billDate ?? todayDubai();
       const input = {
         vendor_id: po.vendorId ?? null,
         vendor_name: po.vendorName,

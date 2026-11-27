@@ -45,6 +45,7 @@ import { ACCOUNT_CODES } from "../constants";
 import { fromFils, mulRate, toFils } from "../../shared/money";
 import {
   accounts as accountsTable,
+  companies,
   bankAccounts,
   bankImportBatches,
   bankTransactionMatches,
@@ -2494,20 +2495,59 @@ export async function buildReconciliationStatement(input: {
   const gl = await storage.getAccount(ba.glAccountId, companyId);
   if (!gl) throw notFound("GL_ACCOUNT_NOT_FOUND");
 
-  const { accountTotals } = await import("../reporting");
-  const totals = await accountTotals(companyId, { to: periodEnd });
-  const t = totals.get(ba.glAccountId);
-  // Foreign-currency accounts reconcile in base currency here (GL is kept in base).
-  const glBalanceFils = t ? t.debit - t.credit : 0;
+  // Foreign-currency accounts (ba.currency != company base currency) reconcile in the account
+  // currency from journal_lines.foreign_debit/foreign_credit, and only when every non-zero line on
+  // the bank GL account up to period end carries a foreign amount in that currency. Otherwise the
+  // statement cannot be compared with the (account-currency) bank balance and is refused: an
+  // AED GL balance is never set against a foreign statement balance.
+  const [co] = await db
+    .select({ baseCurrency: companies.baseCurrency })
+    .from(companies)
+    .where(eq(companies.id, companyId));
+  const baseCurrency = co?.baseCurrency ?? "AED";
+  const isForeign = !!ba.currency && ba.currency !== baseCurrency;
+  let glBalanceFils: number;
+  let debitExpr = "ROUND(jl.debit * 100)";
+  let creditExpr = "ROUND(jl.credit * 100)";
+  const dateClause = "((je.date + interval '4 hours')::date) <= $3::date";
+  if (isForeign) {
+    const { rows: fxCheck } = await pool.query(
+      `SELECT COUNT(*) FILTER (WHERE jl.foreign_currency IS DISTINCT FROM $4
+                 OR (jl.debit <> 0 AND COALESCE(jl.foreign_debit, 0) = 0)
+                 OR (jl.credit <> 0 AND COALESCE(jl.foreign_credit, 0) = 0))::int AS bad,
+              COALESCE(SUM(ROUND(COALESCE(jl.foreign_debit, 0) * 100)), 0)::bigint
+                - COALESCE(SUM(ROUND(COALESCE(jl.foreign_credit, 0) * 100)), 0)::bigint AS net
+         FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+        WHERE je.company_id = $1 AND je.status = 'posted' AND jl.account_id = $2
+          AND (jl.debit <> 0 OR jl.credit <> 0) AND ${dateClause}`,
+      [companyId, ba.glAccountId, periodEnd, ba.currency]
+    );
+    if (Number(fxCheck[0]?.bad ?? 0) > 0) {
+      throw new DomainError(
+        "FX_RECONCILIATION_UNSUPPORTED",
+        409,
+        { currency: ba.currency, baseCurrency },
+        `Reconciling a ${ba.currency} account needs every ledger line on it to carry a ${ba.currency} amount; some do not, so it cannot be reconciled against the ${ba.currency} statement`
+      );
+    }
+    glBalanceFils = Number(fxCheck[0]?.net ?? 0);
+    debitExpr = "ROUND(COALESCE(jl.foreign_debit, 0) * 100)";
+    creditExpr = "ROUND(COALESCE(jl.foreign_credit, 0) * 100)";
+  } else {
+    const { accountTotals } = await import("../reporting");
+    const totals = await accountTotals(companyId, { to: periodEnd });
+    const t = totals.get(ba.glAccountId);
+    glBalanceFils = t ? t.debit - t.credit : 0;
+  }
 
   // GL lines on the bank account up to period end, and the entries cleared by bank lines dated
   // on or before period end.
   const { rows: glRows } = await pool.query(
     `SELECT je.id, ((je.date + interval '4 hours')::date)::text AS d, je.memo, je.reference,
-            COALESCE(SUM(ROUND(jl.debit * 100)), 0)::bigint - COALESCE(SUM(ROUND(jl.credit * 100)), 0)::bigint AS net
+            COALESCE(SUM(${debitExpr}), 0)::bigint - COALESCE(SUM(${creditExpr}), 0)::bigint AS net
        FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
       WHERE je.company_id = $1 AND je.status = 'posted' AND jl.account_id = $2
-        AND ((je.date + interval '4 hours')::date) <= $3::date
+        AND ${dateClause}
       GROUP BY je.id, je.date, je.memo, je.reference`,
     [companyId, ba.glAccountId, periodEnd]
   );

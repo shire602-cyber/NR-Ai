@@ -142,15 +142,22 @@ const bankStatementPreviewSchema = z
   })
   .refine(hasStatementSource, statementSourceMessage);
 
+/** O04: lightweight CSV preview without persisting.  Validated by strictBody. */
+const bankCsvImportPreviewSchema = z.object({ csvContent: z.string().min(1) }).strict();
+
 const unmatchBody = z.object({ reason: z.string().trim().max(500).optional() }).strict();
 const emptyBody = z.object({}).strict();
 
 /**
  * Synchronous CSV helper kept for existing callers/tests: parses CSV text and returns the
  * valid transactions plus row error messages.
+ * S05: `skippedRows` counts rows ignored (blank, summary, zero-value) so callers can surface
+ * the information to the user rather than silently dropping rows.
  */
 export function parseBankCsv(csvContent: string) {
-  return toLegacyTransactions(parseBankCsvText(csvContent));
+  const result = parseBankCsvText(csvContent);
+  const legacy = toLegacyTransactions(result);
+  return { ...legacy, skippedRows: result.ignored.length };
 }
 
 type StatementRequestBody = {
@@ -446,6 +453,36 @@ export function registerBankStatementRoutes(app: Express) {
           .map((r) => ({ rowIndex: r.rowIndex, errors: r.errors, raw: r.raw })),
         warnings: parsed.warnings,
         requiresChoice: parsed.warnings.some((w) => w.requiresChoice),
+      });
+    })
+  );
+
+  /**
+   * O04: Parse a CSV and return a lightweight preview without writing to the DB.
+   * Body: { csvContent: string }
+   * Response: { transactionCount, skippedRows, format, preview: first 5 rows }
+   */
+  app.post(
+    "/api/companies/:companyId/bank-statements/import-preview",
+    authMiddleware,
+    requireCustomer,
+    strictBody(bankCsvImportPreviewSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertAccess(req, companyId);
+      const { csvContent } = req.body as { csvContent: string };
+      const { transactions, format, errors, skippedRows } = parseBankCsv(csvContent);
+      res.json({
+        transactionCount: transactions.length,
+        skippedRows,
+        format,
+        parseErrors: errors.length > 0 ? errors.slice(0, 5) : undefined,
+        preview: transactions.slice(0, 5).map((t) => ({
+          date: t.date instanceof Date ? t.date.toISOString().slice(0, 10) : String(t.date),
+          description: t.description,
+          debit: t.debit,
+          credit: t.credit,
+        })),
       });
     })
   );

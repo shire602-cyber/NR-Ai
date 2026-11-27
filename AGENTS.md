@@ -31,6 +31,11 @@ the week's token budget for the work that needs it.
   base tokens. Depth is opt-in by attribute (`data-tilt`, `data-parallax` + `.parallax-layer`);
   the pointer code is `client/src/lib/motion/` (lazy). All motion must stop under
   `prefers-reduced-motion` and the top-bar pause control (`<html data-motion="off">`).
+- Public site: one design system, the homepage's (`client/src/components/marketing/phase/`:
+  `phase.css`, `home/home.css`, `SiteHeader`, `home/SiteFooter`). The `/en` and `/ar` pages render
+  in `PhaseSite`; sign-in, legal, help, demo and 404 use `MarketingLayout`/`AuthLayout`, which carry
+  the same header/footer and map the older `mk-` styles onto that system in `marketing/unified.css`.
+  Public pages are light only (`useLightPublicTheme`); do not add a second header, footer or palette.
 - Two client bundles: `npm run build` runs `vite build` and `FIRM_BUILD=1 vite build` (`client/firm.html`;
   the signed-in app and the two firm landing screens as one entry chunk). `server/vite.ts` serves it for
   `/firm/*`; `shared/firm-boot.ts` is the shared route/catalog/API table. See

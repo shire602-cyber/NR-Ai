@@ -242,8 +242,9 @@ function validationText(body: Record<string, unknown>, locale: "en" | "ar"): str
 /**
  * Text for a failed API response in the active language, or undefined when the server's own
  * message should be kept. Validation errors list each field by its form label with a reason;
- * a coded error uses its catalog copy (Arabic always; English when the server only sent the
- * generic words of the code). Field ids and English server text never reach an Arabic user.
+ * a coded error uses its catalog copy (Arabic always; English for specific overrides or when the
+ * server only sent the generic words of the code). Field ids and English server text never reach
+ * an Arabic user.
  */
 export function localizeApiError(body: Record<string, unknown> | undefined): string | undefined {
   const guard = localizeLedgerGuard(body);
@@ -251,6 +252,7 @@ export function localizeApiError(body: Record<string, unknown> | undefined): str
   if (!body) return undefined;
   const { locale } = useI18n.getState();
   const code = typeof body.code === "string" ? body.code : undefined;
+  if (code === "CUSTOMER_DO_NOT_CHASE") return serverErrorCopy(locale, code);
   if (code === "BANK_STATEMENT_INVALID_DATE") {
     const rowIndex = (body.details as { rowIndex?: unknown } | undefined)?.rowIndex;
     const copy = serverErrorCopy(locale, `${code}.row`);

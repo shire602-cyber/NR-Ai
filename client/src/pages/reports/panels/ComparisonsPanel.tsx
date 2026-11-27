@@ -20,6 +20,7 @@ import { comparisonBadgeVariant, formatComparisonPercent, formatComparisonValue 
 import { reportComparisonMetricBasis } from "@/lib/reportCatalog";
 import { useCatalogText } from "@/lib/reportCatalogText";
 import { useReportsPageContext } from "../context";
+import { SecondaryQueryError } from "../ReportQueryNotice";
 
 export default function ComparisonsPanel() {
   const { t } = useTranslation();
@@ -34,12 +35,21 @@ export default function ComparisonsPanel() {
     personaFilterLabel,
     personaScopeDescription,
     reportWorkspacePanelClass,
+    secondaryLoadErrors,
     setActiveTab,
     visibleComparisonRows,
     visibleReportComparisonPresets,
   } = useReportsPageContext();
   return (
     <>
+      <SecondaryQueryError error={secondaryLoadErrors.comparisonProfitLoss} testId="comparisons-panel-pl-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.comparisonBalanceSheet} testId="comparisons-panel-bs-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.comparisonVat} testId="comparisons-panel-vat-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.comparisonSalesProductService} testId="comparisons-panel-sps-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.comparisonCostCenter} testId="comparisons-panel-cc-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.comparisonCorporateTax} testId="comparisons-panel-ct-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.fxGainsLosses} testId="comparisons-panel-fx-error" />
+      <SecondaryQueryError error={secondaryLoadErrors.costCenterProfitability} testId="comparisons-panel-cost-center-error" />
       <section
         className={reportWorkspacePanelClass("comparisons", "space-y-4")}
         aria-labelledby="period-comparison-title"

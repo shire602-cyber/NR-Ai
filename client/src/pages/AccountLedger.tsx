@@ -1,6 +1,6 @@
 import { localizeJournalLine } from "@/lib/journal-memo";
 import { T } from "@/components/layout/T";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation, Link } from "wouter";
 import { format } from "date-fns";
@@ -30,6 +30,8 @@ import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
+import { Alert } from "@/components/ui/alert";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import {
@@ -42,7 +44,7 @@ import { cn } from "@/lib/utils";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import type { Account } from "@shared/schema";
@@ -58,6 +60,7 @@ import {
   ChevronRight,
   RefreshCw,
   MoreHorizontal,
+  WifiOff,
 } from "lucide-react";
 import { accountDisplayName } from "@/lib/account-name";
 import { parseCalendarDate } from "@/lib/format-date";
@@ -102,7 +105,9 @@ export default function AccountLedger() {
   const { companyId: selectedCompanyId } = useDefaultCompany();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const searchInput = useRef<HTMLInputElement>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
+  const [dateFilterResetCount, setDateFilterResetCount] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [reversalDialogOpen, setReversalDialogOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<LedgerEntry | null>(null);
@@ -110,17 +115,18 @@ export default function AccountLedger() {
   const [currentPage, setCurrentPage] = useState(1);
   const entriesPerPage = 25;
 
-  const {
-    data: ledger,
-    isLoading,
-    refetch,
-  } = useQuery<LedgerResponse>({
-    queryKey: ["/api/accounts", accountId, "ledger", { dateRange, searchQuery, currentPage }],
-    queryFn: async () => {
+  // A whitespace-only search is no filter at all: it is not sent, and it shares the query key, URL
+  // and filter state of an empty search. A search with any visible character is sent as typed.
+  const search = searchQuery.trim() === "" ? "" : searchQuery;
+
+  const filters = { dateRange, searchQuery: search, currentPage };
+  const query = useQuery<LedgerResponse>({
+    queryKey: ["/api/accounts", accountId, "ledger", filters],
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams();
       if (dateRange.from) params.set("dateStart", format(dateRange.from, "yyyy-MM-dd"));
       if (dateRange.to) params.set("dateEnd", format(dateRange.to, "yyyy-MM-dd"));
-      if (searchQuery) params.set("search", searchQuery);
+      if (search) params.set("search", search);
       params.set("limit", String(entriesPerPage));
       params.set("offset", String((currentPage - 1) * entriesPerPage));
 
@@ -131,12 +137,30 @@ export default function AccountLedger() {
           ...getAuthHeaders(),
         },
         credentials: "include",
+        signal,
       });
       if (!response.ok) throw new Error("Failed to fetch ledger");
       return response.json();
     },
     enabled: !!accountId,
   });
+  const { data, isLoading, isError, isLoadingError, isPending, fetchStatus, refetch } = query;
+
+  const ledger = data;
+
+  // The last page that exists for the server's own count. A page past it (rows removed or the
+  // filter narrowed while the user was on a later page) comes back with no rows but a positive
+  // count: that is not "no entries", it means go to the last real page.
+  const totalPages = Math.ceil((ledger?.totalCount || 0) / entriesPerPage);
+  const pageOutOfRange =
+    !!ledger && !ledger.entries.length && ledger.totalCount > 0 && currentPage > totalPages;
+  // Adjusting state during render: React re-renders at once, and the guard is false after the
+  // page changes, so this runs at most once per out-of-range response.
+  if (pageOutOfRange) setCurrentPage(totalPages);
+
+  // No connection and nothing cached for this page: the request is waiting, not empty or failed.
+  const waitingForConnection = isPending && fetchStatus === "paused";
+  const refreshPaused = !!ledger && fetchStatus === "paused";
 
   const reversalMutation = useMutation({
     mutationFn: async ({ entryId, reason }: { entryId: string; reason: string }) => {
@@ -151,7 +175,10 @@ export default function AccountLedger() {
       setReversalDialogOpen(false);
       setSelectedEntry(null);
       setReversalReason("");
-      queryClient.invalidateQueries({ queryKey: ["/api/accounts", accountId, "ledger"] });
+      // Cancels matching in-flight ledger reads that began before the reversal, then invalidates them.
+      // queryKey: form lets API-coverage join this to /api/accounts/:id/ledger instead of a bare /api/accounts.
+      const ledgerKey = { queryKey: ["/api/accounts", accountId, "ledger"] };
+      refreshAfterWrite(ledgerKey.queryKey);
     },
     onError: (error: any) => {
       toast({
@@ -162,7 +189,20 @@ export default function AccountLedger() {
     },
   });
 
-  const totalPages = Math.ceil((ledger?.totalCount || 0) / entriesPerPage);
+  const hasFilters = !!search || !!dateRange.from || !!dateRange.to;
+  const clearFilters = () => {
+    setSearchQuery("");
+    setDateRange({ from: undefined, to: undefined });
+    setDateFilterResetCount((count) => count + 1);
+    setCurrentPage(1);
+    searchInput.current?.focus();
+  };
+
+  // A failed load blocks the table; a failed refresh keeps the cached ledger and only warns.
+  const refreshFailed = isError && !isLoadingError && fetchStatus !== "paused";
+  // Empty only when the server answered with no rows and a count of zero.
+  const zeroRows = !!ledger && !ledger.entries.length && ledger.totalCount === 0;
+  const noMatch = hasFilters && zeroRows;
 
   const paginatedEntries = ledger?.entries || [];
   // The line's own description (system lines by their stored key), else the entry memo.
@@ -467,37 +507,67 @@ export default function AccountLedger() {
         }
       />
 
-      <div className="mobile-keep-cols grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard
-          label={locale === "ar" ? "الرصيد الافتتاحي" : t["accountLedger.openingBalance"]}
-          loading={isLoading}
-          value={<Money amount={ledger?.openingBalance ?? 0} />}
-          testId="text-opening-balance"
-        />
-        <StatCard
-          label={locale === "ar" ? "إجمالي المدين" : t["accountLedger.totalDebit"]}
-          loading={isLoading}
-          value={<Money amount={ledger?.totalDebit ?? 0} />}
-          testId="text-total-debit"
-        />
-        <StatCard
-          label={locale === "ar" ? "إجمالي الدائن" : t["accountLedger.totalCredit"]}
-          loading={isLoading}
-          value={<Money amount={ledger?.totalCredit ?? 0} />}
-          testId="text-total-credit"
-        />
-        <StatCard
-          label={locale === "ar" ? "الرصيد الختامي" : t["accountLedger.closingBalance"]}
-          loading={isLoading}
-          value={
-            <Money
-              amount={Math.abs(ledger?.closingBalance ?? 0)}
-              className={(ledger?.closingBalance ?? 0) < 0 ? "text-negative" : undefined}
-            />
+      {/* Always mounted, so a result that arrives later is announced. */}
+      <p role="status" aria-live="polite" className="sr-only" data-testid="ledger-live">
+        {noMatch ? t["accountLedger.noMatchTitle"] : ""}
+      </p>
+
+      {refreshPaused ? (
+        <Alert tone="warning" data-testid="warning-ledger-paused">
+          {t["accountLedger.pausedRefresh"]}
+        </Alert>
+      ) : null}
+
+      {refreshFailed ? (
+        <Alert
+          tone="warning"
+          data-testid="warning-ledger-refresh"
+          action={
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              <RefreshCw aria-hidden />
+              {t["components.errorRetry"]}
+            </Button>
           }
-          testId="text-closing-balance"
-        />
-      </div>
+        >
+          {t["accountLedger.refreshFailed"]}
+        </Alert>
+      ) : null}
+
+      {(isLoading || ledger) && (
+        <div className="mobile-keep-cols grid grid-cols-2 gap-4 md:grid-cols-4">
+          <StatCard
+            label={locale === "ar" ? "الرصيد الافتتاحي" : t["accountLedger.openingBalance"]}
+            loading={isLoading}
+            value={ledger && <Money amount={ledger.openingBalance} />}
+            testId="text-opening-balance"
+          />
+          <StatCard
+            label={locale === "ar" ? "إجمالي المدين" : t["accountLedger.totalDebit"]}
+            loading={isLoading}
+            value={ledger && <Money amount={ledger.totalDebit} />}
+            testId="text-total-debit"
+          />
+          <StatCard
+            label={locale === "ar" ? "إجمالي الدائن" : t["accountLedger.totalCredit"]}
+            loading={isLoading}
+            value={ledger && <Money amount={ledger.totalCredit} />}
+            testId="text-total-credit"
+          />
+          <StatCard
+            label={locale === "ar" ? "الرصيد الختامي" : t["accountLedger.closingBalance"]}
+            loading={isLoading}
+            value={
+              ledger && (
+                <Money
+                  amount={Math.abs(ledger.closingBalance)}
+                  className={ledger.closingBalance < 0 ? "text-negative" : undefined}
+                />
+              )
+            }
+            testId="text-closing-balance"
+          />
+        </div>
+      )}
 
       {/* Filters: one row, not in a card */}
       <div className="flex flex-wrap items-center gap-2">
@@ -507,30 +577,79 @@ export default function AccountLedger() {
             aria-hidden
           />
           <Input
+            ref={searchInput}
             placeholder={locale === "ar" ? "بحث..." : "Search entries..."}
             aria-label={locale === "ar" ? "بحث..." : "Search entries..."}
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="h-9 ps-9"
             data-testid="input-search-ledger"
           />
         </div>
-        <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+        <DateRangeFilter
+          key={dateFilterResetCount}
+          dateRange={dateRange}
+          onDateRangeChange={(range) => {
+            setDateRange(range);
+            setCurrentPage(1);
+          }}
+        />
+        {hasFilters ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            data-testid="button-clear-ledger-filters"
+          >
+            {t["accountLedger.clearFilters"]}
+          </Button>
+        ) : null}
       </div>
 
       <DataTableCard
-        status={isLoading ? "loading" : !ledger?.entries?.length ? "empty" : "ready"}
+        status={
+          isLoading || pageOutOfRange
+            ? "loading"
+            : isLoadingError
+              ? "error"
+              : waitingForConnection || ledger?.entries.length
+                ? "ready"
+                : zeroRows
+                  ? "empty"
+                  : "error"
+        }
         columnLabels={[t.date, t.description, t["screens.balance"]]}
-        empty={{
-          icon: BookOpen,
-          title: locale === "ar" ? "لا توجد قيود" : "No entries found",
-          description:
-            locale === "ar"
-              ? "لا توجد حركات لهذا الحساب بناءً على الفلاتر المحددة"
-              : "No transactions found for this account with the selected filters",
+        error={{
+          title: t["accountLedger.loadFailedTitle"],
+          description: t["accountLedger.loadFailedBody"],
+          onRetry: () => void refetch(),
+          testId: "error-ledger",
         }}
+        empty={
+          hasFilters
+            ? {
+                icon: Search,
+                title: t["accountLedger.noMatchTitle"],
+                description: t["accountLedger.noMatchBody"],
+                testId: "empty-ledger-no-match",
+                action: {
+                  label: t["accountLedger.clearFilters"],
+                  onClick: clearFilters,
+                  variant: "outline",
+                  testId: "button-clear-ledger-filters-empty",
+                },
+              }
+            : {
+                icon: BookOpen,
+                title: locale === "ar" ? "لا توجد قيود" : "No entries found",
+                description: t["accountLedger.emptyBody"],
+              }
+        }
         footer={
-          totalPages > 1 && ledger ? (
+          totalPages > 1 && ledger && currentPage <= totalPages ? (
             <>
               <span>
                 {formatMessage(t["screens.showingRange"], {
@@ -568,73 +687,88 @@ export default function AccountLedger() {
           ) : undefined
         }
       >
-        <Table className="row-cards">
-          <TableHeader>
-            <TableRow>
-              <TableHead>{locale === "ar" ? "التاريخ" : "Date"}</TableHead>
-              <TableHead>{locale === "ar" ? "رقم القيد" : "Entry #"}</TableHead>
-              <TableHead className="w-full">{locale === "ar" ? "الوصف" : "Description"}</TableHead>
-              <TableHead data-numeric="">{locale === "ar" ? "مدين" : "Debit"}</TableHead>
-              <TableHead data-numeric="">{locale === "ar" ? "دائن" : "Credit"}</TableHead>
-              <TableHead data-numeric="">{locale === "ar" ? "الرصيد" : "Balance"}</TableHead>
-              <TableHead>
-                <span className="sr-only">{t.actions}</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {paginatedEntries.map((entry) => (
-              <TableRow key={entry.id} className="group" data-testid={`row-entry-${entry.id}`}>
-                <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
-                  {formatDate(entry.date, locale)}
-                </TableCell>
-                <TableCell data-nowrap="" data-cell="meta">
-                  <Link
-                    href={`/journal/${entry.journalEntryId}`}
-                    dir="ltr"
-                    className="tabular-nums text-accent [unicode-bidi:isolate] hover:underline max-md:inline-flex max-md:min-h-11 max-md:items-center"
-                  >
-                    {entry.entryNumber.slice(-12)}
-                  </Link>
-                </TableCell>
-                <TableCell data-truncate="" data-cell="title">
-                  <span dir="auto">{entryText(entry) || "—"}</span>
-                </TableCell>
-                <TableCell data-numeric="">
-                  {entry.debit > 0 ? (
-                    <Money amount={entry.debit} showCurrency={false} />
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                <TableCell data-numeric="">
-                  {entry.credit > 0 ? (
-                    <Money amount={entry.credit} showCurrency={false} />
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                <MoneyCell
-                  amount={Math.abs(entry.runningBalance)}
-                  showCurrency={false}
-                  className={cn("font-medium", entry.runningBalance < 0 && "text-negative")}
-                  data-cell="amount"
-                />
-                <TableCell data-cell="actions" className="w-px">
-                  <RowActions collapseOnMobile>
-                    <RowActionButton
-                      label={locale === "ar" ? "عكس القيد" : t["journal.confirmReverse"]}
-                      icon={RotateCcw}
-                      className="md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:focus-visible:opacity-100"
-                      onClick={() => handleReverseEntry(entry)}
-                      data-testid={`button-reverse-${entry.id}`}
-                    />
-                  </RowActions>
-                </TableCell>
+        {waitingForConnection ? (
+          // Nothing cached and no connection: a waiting state, not an empty ledger.
+          <div role="status">
+            <EmptyState
+              compact
+              icon={WifiOff}
+              title={t["accountLedger.pausedTitle"]}
+              description={t["accountLedger.pausedBody"]}
+              testId="ledger-paused"
+            />
+          </div>
+        ) : (
+          <Table className="row-cards">
+            <TableHeader>
+              <TableRow>
+                <TableHead>{locale === "ar" ? "التاريخ" : "Date"}</TableHead>
+                <TableHead>{locale === "ar" ? "رقم القيد" : "Entry #"}</TableHead>
+                <TableHead className="w-full">
+                  {locale === "ar" ? "الوصف" : "Description"}
+                </TableHead>
+                <TableHead data-numeric="">{locale === "ar" ? "مدين" : "Debit"}</TableHead>
+                <TableHead data-numeric="">{locale === "ar" ? "دائن" : "Credit"}</TableHead>
+                <TableHead data-numeric="">{locale === "ar" ? "الرصيد" : "Balance"}</TableHead>
+                <TableHead>
+                  <span className="sr-only">{t.actions}</span>
+                </TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {paginatedEntries.map((entry) => (
+                <TableRow key={entry.id} className="group" data-testid={`row-entry-${entry.id}`}>
+                  <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                    {formatDate(entry.date, locale)}
+                  </TableCell>
+                  <TableCell data-nowrap="" data-cell="meta">
+                    <Link
+                      href={`/journal/${entry.journalEntryId}`}
+                      dir="ltr"
+                      className="tabular-nums text-accent [unicode-bidi:isolate] hover:underline max-md:inline-flex max-md:min-h-11 max-md:items-center"
+                    >
+                      {entry.entryNumber.slice(-12)}
+                    </Link>
+                  </TableCell>
+                  <TableCell data-truncate="" data-cell="title">
+                    <span dir="auto">{entryText(entry) || "—"}</span>
+                  </TableCell>
+                  <TableCell data-numeric="">
+                    {entry.debit > 0 ? (
+                      <Money amount={entry.debit} showCurrency={false} />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell data-numeric="">
+                    {entry.credit > 0 ? (
+                      <Money amount={entry.credit} showCurrency={false} />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <MoneyCell
+                    amount={Math.abs(entry.runningBalance)}
+                    showCurrency={false}
+                    className={cn("font-medium", entry.runningBalance < 0 && "text-negative")}
+                    data-cell="amount"
+                  />
+                  <TableCell data-cell="actions" className="w-px">
+                    <RowActions collapseOnMobile>
+                      <RowActionButton
+                        label={locale === "ar" ? "عكس القيد" : t["journal.confirmReverse"]}
+                        icon={RotateCcw}
+                        className="md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                        onClick={() => handleReverseEntry(entry)}
+                        data-testid={`button-reverse-${entry.id}`}
+                      />
+                    </RowActions>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </DataTableCard>
 
       <Dialog open={reversalDialogOpen} onOpenChange={setReversalDialogOpen}>

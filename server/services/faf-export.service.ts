@@ -16,6 +16,8 @@
 import { computeVat201, type VatContribution } from "../tax/vat-engine";
 import { generalLedger, loadAccounts } from "../reporting";
 import { pool } from "../db";
+import { DomainError } from "../errors";
+import { FAF_MAX_DAYS, fafSpanDays } from "@shared/faf-range";
 
 export const FAF_VERSION = "FAFv1.0.0";
 export const FAF_PRODUCT = "Muhasib.ai";
@@ -193,6 +195,11 @@ export async function buildFaf(input: {
   now?: Date;
 }): Promise<FafFile> {
   const { companyId, from, to } = input;
+  // The GL range is loaded into Node, so bound it before any query runs.
+  if (from > to) throw new DomainError("INVALID_RANGE", 400);
+  if (fafSpanDays(from, to) > FAF_MAX_DAYS) {
+    throw new DomainError("FAF_RANGE_TOO_LONG", 400, { maxDays: FAF_MAX_DAYS });
+  }
   const [{ rows: companyRows }, vat, gl, accounts] = await Promise.all([
     pool.query(`SELECT name, legal_name, trn_vat_number FROM companies WHERE id = $1`, [companyId]),
     computeVat201({ companyId, from, to, allowIncomplete: true, includeGroup: false }),

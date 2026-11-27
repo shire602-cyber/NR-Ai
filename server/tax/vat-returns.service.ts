@@ -5,8 +5,8 @@
  *
  *   draft -> ready -> submitted -> filed        (amended: superseded by a newer return)
  */
-import { and, desc, eq, ne, sql } from "drizzle-orm";
-import { db } from "../db";
+import { todayDubai } from "@shared/accounting-date";
+import { and, desc, eq, getTableColumns, ne, sql } from "drizzle-orm";
 import { DomainError } from "../errors";
 import { vatReturns, type VatReturn } from "../../shared/schema";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
@@ -31,6 +31,7 @@ import {
   type VerifiedVatGroup,
 } from "../ledger/vat-group-scope";
 import { getVatReturnSettlement } from "./vat-settlement.service";
+import { effectiveVatFilingStatus, vatFilingVersionOrder } from "./vat-filing-filter";
 import {
   computeVat201,
   loadVatCompany,
@@ -175,20 +176,38 @@ export async function findReturnForPeriod(
   excludingId?: string | null
 ): Promise<VatReturn | undefined> {
   const [row] = await tx
-    .select()
+    .select({ ...getTableColumns(vatReturns), status: effectiveVatFilingStatus })
     .from(vatReturns)
     .where(
       and(
         eq(vatReturns.companyId, companyId),
         sql`${vatReturns.periodStart}::date = ${from}::date`,
         sql`${vatReturns.periodEnd}::date = ${to}::date`,
-        ne(vatReturns.status, "amended"),
+        ne(effectiveVatFilingStatus, "amended"),
         excludingId ? ne(vatReturns.id, excludingId) : undefined
       )
     )
-    .orderBy(sql`(${vatReturns.status} IN ('submitted', 'filed')) DESC`, desc(vatReturns.createdAt))
+    .orderBy(...vatFilingVersionOrder)
     .limit(1);
   return row;
+}
+
+async function findOpenAmendment(tx: LedgerTx, original: VatReturn) {
+  const [amendment] = await tx
+    .select()
+    .from(vatReturns)
+    .where(
+      and(
+        eq(vatReturns.companyId, original.companyId),
+        eq(vatReturns.amendsReturnId, original.id),
+        sql`${vatReturns.periodStart}::date = ${dateOf(original.periodStart)}::date`,
+        sql`${vatReturns.periodEnd}::date = ${dateOf(original.periodEnd)}::date`,
+        sql`${vatReturns.status} IN ('draft', 'pending_review', 'ready')`
+      )
+    )
+    .orderBy(desc(vatReturns.createdAt))
+    .limit(1);
+  return amendment;
 }
 
 async function lockVatReturnScope(
@@ -260,7 +279,7 @@ async function validateReturnPeriod(
     frequency: company.frequency,
     startMonth: company.startMonth,
   });
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayDubai();
   if (period.to > today) {
     // X5 (J1 D7): the running period can be previewed (GET /vat/compute); the return itself
     // is generated only once the period has ended.
@@ -283,7 +302,11 @@ export async function generateVatReturn(input: {
   return withLedgerTx(async (tx) => {
     await lockVatGroupMembership(tx, input.companyId);
     const { from, to, dueDate } = await validateReturnPeriod(input, tx);
-    const existing = await findReturnForPeriod(tx, input.companyId, from, to);
+    const effective = await findReturnForPeriod(tx, input.companyId, from, to);
+    const existing =
+      effective && (effective.status === "submitted" || effective.status === "filed")
+        ? ((await findOpenAmendment(tx, effective)) ?? effective)
+        : effective;
     assertReturnIsEditable(existing);
     const scope = await lockVatReturnScope(tx, input.companyId, existing);
     assertVerifiedVatGroup(scope);
@@ -462,6 +485,8 @@ async function assertNoOtherFinalReturn(
   vatReturn: VatReturn,
   group: VerifiedVatGroup | null
 ): Promise<void> {
+  // The direct predecessor remains effective until this amendment is submitted.
+  const predecessorId = vatReturn.amendsReturnId;
   const [other] = await tx
     .select()
     .from(vatReturns)
@@ -469,7 +494,8 @@ async function assertNoOtherFinalReturn(
       and(
         eq(vatReturns.companyId, vatReturn.companyId),
         ne(vatReturns.id, vatReturn.id),
-        sql`${vatReturns.status} IN ('submitted', 'filed')`,
+        ...(predecessorId ? [ne(vatReturns.id, predecessorId)] : []),
+        sql`${effectiveVatFilingStatus} IN ('submitted', 'filed')`,
         sql`${vatReturns.periodStart}::date <= ${dateOf(vatReturn.periodEnd)}::date`,
         sql`${vatReturns.periodEnd}::date >= ${dateOf(vatReturn.periodStart)}::date`
       )
@@ -479,7 +505,11 @@ async function assertNoOtherFinalReturn(
   const from = dateOf(vatReturn.periodStart);
   const to = dateOf(vatReturn.periodEnd);
   for (const memberId of group?.memberIds ?? [vatReturn.companyId]) {
-    if (await findFiledVatPeriod(tx, memberId, from, to, vatReturn.id)) {
+    const overlap = await findFiledVatPeriod(tx, memberId, from, to, {
+      excludeReturnIds: predecessorId ? [vatReturn.id, predecessorId] : [vatReturn.id],
+      includePeriodsUnderAmendment: true,
+    });
+    if (overlap) {
       throw new DomainError(
         "VAT_RETURN_SCOPE_OVERLAP",
         409,
@@ -501,6 +531,20 @@ async function transitionReturn(
     .set({ ...values, updatedAt: new Date() })
     .where(eq(vatReturns.id, existing.id))
     .returning();
+  // Finish the recorded transition for amendments created with a filed or submitted predecessor.
+  const amendsId = existing.amendsReturnId;
+  if (amendsId && (values.status === "submitted" || values.status === "filed")) {
+    await tx
+      .update(vatReturns)
+      .set({ status: "amended", updatedAt: new Date() })
+      .where(
+        and(
+          eq(vatReturns.id, amendsId),
+          eq(vatReturns.companyId, existing.companyId),
+          sql`${vatReturns.status} IN ('submitted', 'filed')`
+        )
+      );
+  }
   await recordAudit({
     userId: input.userId,
     companyId: existing.companyId,
@@ -513,6 +557,7 @@ async function transitionReturn(
       ...(values.ftaReferenceNumber !== undefined
         ? { ftaReferenceNumber: values.ftaReferenceNumber }
         : {}),
+      ...(amendsId ? { amendsReturnId: amendsId } : {}),
     },
     req: input.req,
     tx,
@@ -732,6 +777,15 @@ export async function amendVatReturn(input: {
     }
     assertVerifiedVatGroup(scope);
     const group = await authorizeVatFilingGroup(tx, scope, input.userId);
+    const openAmendment = await findOpenAmendment(tx, original);
+    if (openAmendment) {
+      throw new DomainError(
+        "VAT_RETURN_EXISTS",
+        409,
+        { vatReturnId: openAmendment.id, status: openAmendment.status },
+        "An amendment is already being prepared for this VAT return."
+      );
+    }
     const from = new Date(original.periodStart).toISOString().slice(0, 10);
     const to = new Date(original.periodEnd).toISOString().slice(0, 10);
     const computation = await computeVat201({ companyId: original.companyId, from, to }, tx, group);
@@ -763,6 +817,7 @@ export async function amendVatReturn(input: {
         createdBy: input.userId,
       })
       .returning();
+    // Record the amendment now. The predecessor still represents the filing while this draft is open.
     await tx
       .update(vatReturns)
       .set({
@@ -790,14 +845,6 @@ export async function amendVatReturn(input: {
     });
     return { vatReturn: created, diff, computation };
   });
-}
-
-export async function listReturns(companyId: string) {
-  return db
-    .select()
-    .from(vatReturns)
-    .where(eq(vatReturns.companyId, companyId))
-    .orderBy(desc(vatReturns.periodEnd), desc(vatReturns.createdAt));
 }
 
 export { DERIVED_BOX_KEYS };

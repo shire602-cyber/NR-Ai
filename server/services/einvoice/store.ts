@@ -20,7 +20,10 @@ import {
   type Invoice,
   type EInvoiceInboundDocument,
 } from "../../../shared/schema";
-import type { EInvoiceProviderEnvironment } from "../einvoice-provider";
+import type {
+  EInvoiceDocumentCurrencyLine,
+  EInvoiceProviderEnvironment,
+} from "../einvoice-provider";
 import { reportingEvidenceAt, type ReportingObservation } from "./tracks";
 import { PINT_AE_CREDIT_NOTE_TYPES } from "./pint-ae-codes";
 
@@ -70,6 +73,7 @@ export function documentSubmissionMetadata(
   if (environment !== "sandbox" && environment !== "production" && environment !== "mock") return;
   const priorReporting = metadata?.correctionOriginalReporting;
   const priorRejection = metadata?.correctionOriginalRejection;
+  const currencyLines = metadata?.documentCurrencyLines;
   return {
     environment: environment as EInvoiceProviderEnvironment,
     operationId: typeof metadata?.operationId === "string" ? metadata.operationId : null,
@@ -81,6 +85,13 @@ export function documentSubmissionMetadata(
     sourceName: typeof metadata?.sourceName === "string" ? metadata.sourceName : null,
     sourceVersion: typeof metadata?.sourceVersion === "string" ? metadata.sourceVersion : null,
     scope: typeof metadata?.scope === "string" ? metadata.scope : null,
+    documentCurrencyLines:
+      Array.isArray(currencyLines) &&
+      currencyLines.every(
+        (line) => line && Number.isFinite(line.taxAmount) && Number.isFinite(line.lineTotal)
+      )
+        ? (currencyLines as EInvoiceDocumentCurrencyLine[])
+        : undefined,
     reportingRequired:
       typeof metadata?.reportingRequired === "boolean" ? metadata.reportingRequired : null,
     environmentVerifiedAt:

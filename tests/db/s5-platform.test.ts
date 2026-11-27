@@ -379,17 +379,31 @@ describe("S5 backup restore into a different company (W5-B, R19-17)", () => {
       let invoice;
       let otherInvoice;
       let earlyResponse: string | undefined;
+      let earlyCloneResponse: string | undefined;
       try {
         await blocker.query("BEGIN");
         // Pause the clone after its emptiness check, at the safety snapshot insert.
         await blocker.query("LOCK TABLE backups IN SHARE MODE");
-        clone = fresh.post(`/api/backups/${backup.body.id}/clone`, {
-          targetCompanyId,
-          confirmRestore: true,
-          confirmTargetName: target.body.name,
-        });
+        clone = fresh
+          .post(`/api/backups/${backup.body.id}/clone`, {
+            targetCompanyId,
+            confirmRestore: true,
+            confirmTargetName: target.body.name,
+          })
+          .then((response) => {
+            earlyCloneResponse = `${response.status} ${response.text}`;
+            return response;
+          });
         await expect
-          .poll(() => waiting("relation = 'backups'::regclass AND mode = 'RowExclusiveLock'"))
+          .poll(
+            async () => {
+              return (
+                earlyCloneResponse ??
+                (await waiting("relation = 'backups'::regclass AND mode = 'RowExclusiveLock'"))
+              );
+            },
+            { timeout: 15000 }
+          )
           .toBe(true);
         let otherResult: unknown = "pending";
         otherInvoice = seedBooks(other).then(

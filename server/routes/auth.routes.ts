@@ -95,6 +95,8 @@ import {
 import {
   consumeOAuthState,
   createOAuthAuthorizationUrl,
+  extractOAuthSignupLocale,
+  withOAuthSignupLocale,
   exchangeOAuthCallback,
   frontendBaseUrl,
   getAuthIdentity,
@@ -249,7 +251,8 @@ async function refuseBreachedPassword(res: Response, password: string): Promise<
 async function createOAuthCustomer(
   req: Request,
   profile: OAuthIdentityProfile,
-  signupPlan: SignupPlanChoice | null = null
+  signupPlan: SignupPlanChoice | null = null,
+  locale: "en" | "ar" = "en"
 ) {
   const passwordHash = await bcrypt.hash(randomBytes(32).toString("hex"), 10);
   const user = await storage.createUser({
@@ -261,7 +264,9 @@ async function createOAuthCustomer(
     emailVerified: hasOAuthMailboxProof(profile),
     avatarUrl: profile.picture,
   } as unknown as Parameters<typeof storage.createUser>[0]);
-  const company = await provisionCustomerCompany(user.id, `${profile.name}'s Company`);
+  const company = await provisionCustomerCompany(user.id, `${profile.name}'s Company`, {
+    locale,
+  });
   await freezeTrialEnd(company.id);
   if (signupPlan) {
     await recordPlanChoice(company.id, signupPlan, { userId: user.id, req });
@@ -273,7 +278,8 @@ async function resolveOAuthUser(
   req: Request,
   profile: OAuthIdentityProfile,
   signupPlan: SignupPlanChoice | null = null,
-  expectedUserId?: string | null
+  expectedUserId?: string | null,
+  locale: "en" | "ar" = "en"
 ): Promise<{ user: User; mode: "existing_identity" | "linked_existing" | "created_customer" }> {
   // Legacy Microsoft links may have been marked verified without a verified email claim.
   if (profile.provider === "microsoft" && !hasOAuthMailboxProof(profile)) {
@@ -303,7 +309,7 @@ async function resolveOAuthUser(
     return { user, mode: "linked_existing" };
   }
 
-  const createdUser = await createOAuthCustomer(req, profile, signupPlan);
+  const createdUser = await createOAuthCustomer(req, profile, signupPlan, locale);
   await linkAuthIdentity(createdUser.id, profile);
   const user = await markOAuthLogin(createdUser.id, profile);
   return { user, mode: "created_customer" };
@@ -316,11 +322,15 @@ async function completeOAuthSignIn(
   nextPath: string,
   expectedUserId?: string | null
 ): Promise<string> {
+  // The owner's signup language rides on next_path; strip it before redirecting.
+  const carried = extractOAuthSignupLocale(nextPath);
+  nextPath = carried.nextPath;
   const { user, mode } = await resolveOAuthUser(
     req,
     profile,
     parseSignupPlanFromPath(nextPath),
-    expectedUserId
+    expectedUserId,
+    carried.locale
   );
   if (await isMfaEnabled(user.id)) {
     clearAuthCookies(res);
@@ -389,12 +399,12 @@ async function seedChartOfAccounts(
 async function provisionCustomerCompany(
   userId: string,
   companyName: string,
-  extra: { trnVatNumber?: string } = {}
+  extra: { trnVatNumber?: string; locale?: "en" | "ar" } = {}
 ) {
   const company = await storage.createCompany({
     name: companyName,
     baseCurrency: "AED",
-    locale: "en",
+    locale: extra.locale === "ar" ? "ar" : "en",
     companyType: "customer", // Self-signup companies are customer type (not managed by NR)
     ...(extra.trnVatNumber ? { trnVatNumber: extra.trnVatNumber } : {}),
   } as Parameters<typeof storage.createCompany>[0]);
@@ -425,6 +435,8 @@ const registerBodySchema = z.object({
     .regex(/^\d{15}$/, "TRN must be exactly 15 digits")
     .optional(),
   phone: zText(40).optional(),
+  /** Language the owner signed up in; becomes the company's default locale. */
+  locale: z.enum(["en", "ar"]).optional(),
   /** Cloudflare Turnstile token; required only when TURNSTILE_SECRET_KEY is set. */
   captchaToken: z.string().max(4096).optional(),
   /** STEP4: plan chosen on the sign-up plan step (recorded for after the trial, never a gate). */
@@ -667,6 +679,7 @@ export function registerAuthRoutes(app: Express): void {
       const companyName = body.companyName?.trim() || `${body.name}'s Company`;
       const company = await provisionCustomerCompany(user.id, companyName, {
         trnVatNumber: body.trn,
+        locale: body.locale,
       });
 
       // STEP4: freeze the trial end the sign-up screen showed, and record the chosen plan.
@@ -857,7 +870,11 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       try {
-        const redirectTo = await createOAuthAuthorizationUrl(provider, req, req.query.next);
+        const redirectTo = await createOAuthAuthorizationUrl(
+          provider,
+          req,
+          withOAuthSignupLocale(req.query.next, req.query.locale)
+        );
         if (provider === "microsoft") {
           const state = redirectTo.searchParams.get("state");
           if (!state) throw new OAuthIdentityError("Microsoft authorization state is missing");

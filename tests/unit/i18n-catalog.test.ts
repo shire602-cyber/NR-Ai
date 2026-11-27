@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error - plain .mjs script without type declarations
 import { scanComponents, scanPages } from "../../scripts/i18n-scan.mjs";
-import { formatMessage, isLocaleLoaded, loadLocale, t } from "../../client/src/lib/i18n";
+import { formatMessage, isLocaleLoaded, loadLocale, t, useI18n } from "../../client/src/lib/i18n";
 import { brandOnlyPageLabels } from "../helpers/brand-only-page-labels";
 
 // S5: namespace catalogs are code-split (one lazy chunk per namespace and locale).
@@ -87,6 +87,28 @@ describe("i18n catalogs", () => {
         expect(value, `${namespace}/${key}`).toMatch(/[؀-ۿ]/);
       }
     }
+  });
+
+  // The checks above read the namespace files only. This one reads the merged runtime dictionary
+  // (legacy flat keys included), so an English value copied into Arabic anywhere is caught.
+  it("R18-02: no Arabic value is newly identical to English Latin text", () => {
+    // Exact key and value: a changed value has to be reviewed again.
+    const legitimate: Record<string, string> = {
+      "pageLabels.muhasibAi": "Muhasib.ai", // brand
+      "reportCenter.downloadPdfArabic": "PDF (العربية)", // file format
+    };
+    // Parameter names are not visible text.
+    const hasLatin = (value: string) => /[A-Za-z]/.test(value.replace(/\{\w+\}/g, ""));
+    const english = t.en as Record<string, unknown>;
+    const arabic = t.ar as Record<string, unknown>;
+    const missing = Object.keys(english).filter((key) => !(key in arabic));
+    expect(missing).toEqual([]);
+    const identical = Object.fromEntries(
+      Object.entries(english).filter(
+        ([key, value]) => typeof value === "string" && value === arabic[key] && hasLatin(value)
+      )
+    );
+    expect(identical).toEqual(legitimate);
   });
 
   it("R18-02: interpolation placeholders match between en and ar (word order lives in the template)", () => {
@@ -189,6 +211,33 @@ describe("i18n catalogs", () => {
       "اكتمل 0 من 8"
     );
     expect(formatMessage("{a} {missing}", { a: 1 })).toBe("1 {missing}");
+  });
+
+  it("interpolates the recurring interval unit inside plural forms", () => {
+    const originalLocale = useI18n.getState().locale;
+    try {
+      const formatUnit = (locale: "en" | "ar", count: number) => {
+        useI18n.setState({ locale });
+        const catalog = t[locale];
+        return formatMessage(catalog["firmOps.recurringIntervalUnit"], {
+          count,
+          day: catalog["firmOps.recurringIntervalDay"],
+          days: catalog["firmOps.recurringIntervalDays"],
+        });
+      };
+
+      expect([1, 2].map((count) => formatUnit("en", count))).toEqual(["day", "days"]);
+      expect([0, 1, 2, 3, 11, 100].map((count) => formatUnit("ar", count))).toEqual([
+        "يوم",
+        "يوم",
+        "يومان",
+        "أيام",
+        "يومًا",
+        "يوم",
+      ]);
+    } finally {
+      useI18n.setState({ locale: originalLocale });
+    }
   });
 });
 

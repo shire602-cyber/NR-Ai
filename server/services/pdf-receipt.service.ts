@@ -6,7 +6,7 @@
  */
 import type { Company, Receipt } from "../../shared/schema";
 import { pdfLocale } from "./pdf-fonts";
-import { bi, companyDetails, date, Ledger, money } from "./pdf-ledger";
+import { bi, companyDetails, date, Ledger, money, sellerIdentity } from "./pdf-ledger";
 
 type ReceiptLike = Pick<
   Receipt,
@@ -53,7 +53,7 @@ export function renderReceiptPdf(r: ReceiptLike, company: Company): Promise<Buff
     info: { Title: `Receipt ${r.merchant ?? r.id}`, Author: company.name },
   });
   ledger.header({
-    companyName: company.name,
+    companyName: sellerIdentity(company, ledger.locale).name,
     details: companyDetails(ledger, { trn: company.trnVatNumber }),
     title: bi("Expense receipt", "إيصال مصروف"),
   });
@@ -85,7 +85,7 @@ export function renderReceiptsExportPdf(
           : ledger.pair(bi("All dates", "كل التواريخ"))[0];
 
   ledger.header({
-    companyName: company.name,
+    companyName: sellerIdentity(company, ledger.locale).name,
     details: companyDetails(ledger, { trn: company.trnVatNumber }),
     title: bi("Expense receipts", "إيصالات المصروفات"),
     subtitle: range,
@@ -126,7 +126,7 @@ export function renderReceiptsExportPdf(
     ledger.doc.addPage();
     ledger.y = ledger.margin;
     ledger.header({
-      companyName: company.name,
+      companyName: sellerIdentity(company, ledger.locale).name,
       details: [],
       title: bi("Expense receipt", "إيصال مصروف"),
     });

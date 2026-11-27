@@ -10,6 +10,7 @@
  * - Time entries (timer or manual) roll into WIP per client; billing WIP or a
  *   recurring engagement fee produces a service invoice (fils-exact, 5% VAT).
  */
+import { todayDubai } from "@shared/accounting-date";
 import { and, desc, eq, inArray, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { DomainError } from "../../errors";
@@ -140,7 +141,7 @@ export async function createLetter(
     fee: input.feeAmount != null ? fromFils(toFils(input.feeAmount)) : "",
     billing_cycle: input.billingCycle ?? "monthly",
     services: input.services ?? "",
-    date: new Date().toISOString().slice(0, 10),
+    date: todayDubai(),
   });
   const [row] = await db
     .insert(firmEngagementLetters)

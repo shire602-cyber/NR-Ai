@@ -5,6 +5,7 @@
  * client). List only: the invoice editor is not touched.
  */
 import { act } from "react";
+import { onlineManager } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   flush,
@@ -42,7 +43,10 @@ beforeEach(() => {
   resetHarness();
   window.localStorage.clear();
 });
-afterEach(unmountPage);
+afterEach(async () => {
+  await unmountPage();
+  vi.mocked((await import("../../client/src/lib/queryClient")).apiRequest).mockReset();
+});
 
 describe("invoice list load failure", () => {
   it("shows an error state with Retry and no zero tiles or '0 invoices'", async () => {
@@ -71,5 +75,52 @@ describe("invoice list load failure", () => {
     );
     expect(retry).toBeTruthy();
     await act(async () => retry!.click());
+  });
+
+  it("shows waiting before the first read and identifies cached invoices during a paused refresh", async () => {
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    const { default: Invoices } = await import("../../client/src/pages/Invoices");
+    const { t } = await import("../../client/src/lib/i18n");
+    const path = `/api/companies/${COMPANY_ID}/invoices`;
+    setFixtures({
+      [`${path}?all=true`]: [],
+      [path]: {
+        items: [
+          {
+            id: "i-1",
+            number: "INV-1",
+            customerName: "Palm Co",
+            status: "sent",
+            total: 100,
+            currency: "AED",
+            invoiceType: "invoice",
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+    const state = (id: string) => document.querySelector(`[data-testid="${id}"]`);
+    const wasOnline = onlineManager.isOnline();
+    onlineManager.setOnline(false);
+    try {
+      await renderPage(Invoices);
+      expect(state("invoices-waiting")?.textContent).toBe(t.en["banking.query.paused"]);
+      expect(state("invoices-loading")).toBeNull();
+
+      await act(async () => onlineManager.setOnline(true));
+      await flush();
+      expect(state("invoices-waiting")).toBeNull();
+      expect(state("mobile-invoice-list")?.textContent).toContain("Palm Co");
+
+      await act(async () => {
+        onlineManager.setOnline(false);
+        void queryClient.refetchQueries({ queryKey: ["/api/companies", COMPANY_ID, "invoices"] });
+      });
+      await flush();
+      expect(state("invoices-paused-cached")?.textContent).toBe(t.en["banking.query.pausedCached"]);
+      expect(state("mobile-invoice-list")?.textContent).toContain("Palm Co");
+    } finally {
+      await act(async () => onlineManager.setOnline(wasOnline));
+    }
   });
 });

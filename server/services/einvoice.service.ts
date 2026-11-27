@@ -2,9 +2,8 @@
  * UAE e-invoice generator: UBL 2.1 in the Peppol PINT AE profile.
  *
  * Every tax category comes from shared/vat-classification.ts (classifySupply)
- * and every amount from server/services/document-totals.service.ts
- * (computeSalesDocument), so the XML can never disagree with the posted
- * invoice, the PDF or the VAT 201. The output is checked against the UBL 2.1
+ * and line amounts come from the posted invoice or the sales totals engine for
+ * legacy rows. The output is checked against the UBL 2.1
  * XSD, the OpenPeppol PINT AE schematron and the PINT AE rule list in
  * server/services/einvoice/validate.ts.
  *
@@ -18,9 +17,14 @@ import Decimal from "decimal.js";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { UNSPECIFIED_CARD_PAYMENT_MEANS_CODE } from "../../shared/einvoice-payment-means";
 import { classifySupply, type SupplyClassification } from "../../shared/vat-classification";
-import { fromFils, toFils, tryToFils } from "../../shared/money";
+import { allocate, fromFils, sumFils, toFils, tryToFils } from "../../shared/money";
 import { calendarDateKey, calendarTimeKey } from "../../shared/uae-date";
-import { computeSalesDocument, storedLineToTotalsInput } from "./document-totals.service";
+import {
+  computeSalesDocument,
+  readStoredInvoiceLineAmounts,
+  storedLineToTotalsInput,
+  sumSalesLines,
+} from "./document-totals.service";
 import { dueDateFromTerms } from "./invoice-lifecycle";
 import { comment, el, opt, serializeXml, type XmlElement } from "./einvoice/xml";
 import { all, attr, first, parseXml, partyVatTrn, text, textAt } from "./einvoice/dom";
@@ -105,6 +109,13 @@ export interface EInvoiceOptions {
   uuid?: string;
   /** An explicit UAE business clock time (HH:MM:SS). */
   issueTime?: string;
+  /** Conversion from the document currency into AED (tax-point dated for a non-AED ledger). */
+  taxExchangeRate?: string | null;
+  /**
+   * Where taxExchangeRate came from: the tax-point rate table, the original's exported XML, the
+   * original's own tax point, or the stored manual rate.
+   */
+  taxExchangeRateSource?: "tax_point" | "original_xml" | "original_supply" | "stored_manual";
   originalInvoice?: { number: string; date: Date | string } | null;
   creditNoteReasonCode?: CreditNoteReasonCode | null;
   paymentMeansCode?: PaymentMeansCode | null;
@@ -221,28 +232,54 @@ export interface ComputedEInvoiceLine {
   vatRate: number;
 }
 
-/** Amounts for the XML, from the same engine that priced the stored invoice. */
+/** Amounts for XML and provider snapshots, using posted nets when available. */
 export function computeEInvoiceAmounts(invoice: InvoiceLike, lines: InvoiceLine[]) {
   const sign = invoice.invoiceType === "credit_note" ? -1 : 1;
-  const totals = computeSalesDocument(
-    lines.map((l) => {
-      const input = storedLineToTotalsInput({
-        quantity: Math.abs(Number(l.quantity)),
-        unitPrice: Math.abs(Number(l.unitPrice)),
-        vatRate: l.vatRate,
-        vatSupplyType: l.vatSupplyType,
-        marginScheme: l.marginScheme,
-        marginPurchaseCost: l.marginPurchaseCost,
-        discountType: (l as InvoiceLine & { discountType?: string | null }).discountType ?? null,
-        discountValue: (l as InvoiceLine & { discountValue?: number | null }).discountValue ?? null,
-      });
-      return input;
-    }),
-    {
-      discountType: invoice.discountType ?? null,
-      discountValue: invoice.discountValue ?? null,
-      reverseCharge: invoice.reverseCharge ?? null,
-    }
+  const inputs = lines.map((line) =>
+    storedLineToTotalsInput({
+      ...line,
+      quantity: Math.abs(Number(line.quantity)),
+      unitPrice: Math.abs(Number(line.unitPrice)),
+    })
+  );
+  const stored = readStoredInvoiceLineAmounts(invoice, lines);
+  const legacy = stored.some((line) => line === null)
+    ? computeSalesDocument(inputs, invoice)
+    : null;
+  const lineDiscounts = lines.map((line, i) =>
+    stored[i] ? Math.abs(toFils(line.discountAmount ?? 0)) : legacy!.lines[i].lineDiscountFils
+  );
+  const estimatedGross = inputs.map((line) =>
+    new Decimal(line.quantity).times(line.unitPriceFils).toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+  );
+  // Quantity only estimates the relative allowance weights. The posted discount
+  // fixes their sum, and each posted net fixes the amount after allowances.
+  const documentDiscountFils = invoice.discountType
+    ? Math.max(0, Math.abs(toFils(invoice.discountAmount ?? 0)) - sumFils(lineDiscounts))
+    : 0;
+  const weights = estimatedGross.map((gross, i) =>
+    Math.max(0, gross.toNumber() - lineDiscounts[i])
+  );
+  const shares = lines.every((line) => line.documentDiscountAmount != null)
+    ? lines.map((line) => Math.abs(toFils(line.documentDiscountAmount ?? 0)))
+    : (legacy?.lines.map((line) => line.documentDiscountFils) ??
+      (documentDiscountFils > 0 && lines.length
+        ? allocate(
+            documentDiscountFils,
+            weights.some((weight) => weight > 0) ? weights : weights.map(() => 1)
+          )
+        : lines.map(() => 0)));
+  const totals = sumSalesLines(
+    stored.map((amount, i) => {
+      if (!amount) return legacy!.lines[i];
+      const priceFils = amount.netFils + (lines[i].marginScheme ? amount.vatFils : 0);
+      return {
+        ...amount,
+        grossFils: priceFils + lineDiscounts[i] + shares[i],
+        lineDiscountFils: lineDiscounts[i],
+        documentDiscountFils: shares[i],
+      };
+    })
   );
   const computed: ComputedEInvoiceLine[] = totals.lines.map((t, i) => {
     const line = lines[i];
@@ -250,11 +287,17 @@ export function computeEInvoiceAmounts(invoice: InvoiceLike, lines: InvoiceLine[
     // forbids a document allowance tagged N, so include its allocated share on each line.
     const margin = line.marginScheme;
     const lineDiscountFils = t.lineDiscountFils + (margin ? t.documentDiscountFils : 0);
+    const { unitPriceFils } = inputs[i];
+    // PINT AE requires quantity × unit price to reconcile to gross at fils precision.
+    const quantity =
+      unitPriceFils > 0 && !estimatedGross[i].eq(t.grossFils)
+        ? new Decimal(t.grossFils).div(unitPriceFils).toNumber()
+        : Math.abs(Number(line.quantity));
     return {
       line,
       category: margin ? "N" : t.classification.ublCategory,
-      quantity: Math.abs(Number(line.quantity)),
-      unitPriceFils: Math.abs(toFils(line.unitPrice)),
+      quantity,
+      unitPriceFils,
       grossFils: t.grossFils,
       lineDiscountFils,
       documentDiscountFils: margin ? 0 : t.documentDiscountFils,
@@ -266,32 +309,52 @@ export function computeEInvoiceAmounts(invoice: InvoiceLike, lines: InvoiceLine[
   return { sign, totals, lines: computed };
 }
 
-/** VAT breakdown: one subtotal per category (and rate). */
+/** VAT breakdown: sum posted line amounts within each category and rate. */
 export function taxBreakdown(computed: ComputedEInvoiceLine[]) {
   const groups = new Map<
     string,
-    { category: UblCategory; rate: number; taxableFils: number; allowanceFils: number }
+    {
+      category: UblCategory;
+      rate: number;
+      taxableFils: number;
+      allowanceFils: number;
+      taxFils: number;
+    }
   >();
   for (const l of computed) {
     const { category } = l;
     const rate = category === "S" || category === "N" ? l.vatRate : 0;
     const key = `${category}:${rate}`;
-    const g = groups.get(key) ?? { category, rate, taxableFils: 0, allowanceFils: 0 };
+    const g = groups.get(key) ?? { category, rate, taxableFils: 0, allowanceFils: 0, taxFils: 0 };
     g.taxableFils += l.lineExtensionFils - l.documentDiscountFils;
     g.allowanceFils += l.documentDiscountFils;
+    // Preserve the rounding applied to each line when posting the invoice.
+    // PINT AE's aligned-ibrp-s-09 allows a tolerance on the category calculation.
+    if (category === "S") g.taxFils += l.vatFils;
     groups.set(key, g);
   }
   return [...groups.values()].map((g) => ({
     ...g,
-    taxFils:
-      g.category === "S"
-        ? new Decimal(g.taxableFils)
-            .times(g.rate)
-            .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
-            .toNumber()
-        : 0,
+    // PINT AE validates the category total against the category taxable base.
+    // When the posted line VAT is outside its two-fil tolerance, carry the
+    // difference in PayableRoundingAmount and retain the VAT on each line.
+    taxFils: categoryVatFils(g),
     reasonCode: classifySupplyForCategory(g.category).exemptionReasonCode ?? null,
   }));
+}
+
+function categoryVatFils(group: {
+  category: UblCategory;
+  rate: number;
+  taxableFils: number;
+  taxFils: number;
+}) {
+  if (group.category !== "S") return group.taxFils;
+  const calculated = new Decimal(group.taxableFils)
+    .times(group.rate)
+    .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+    .toNumber();
+  return Math.abs(group.taxFils - calculated) > 2 ? calculated : group.taxFils;
 }
 
 function classifySupplyForCategory(category: UblCategory): SupplyClassification {
@@ -437,11 +500,13 @@ export function generateEInvoiceXML(
   const categories = computed.map((l) => l.category);
   const doc = documentKind(inv, categories);
   const isCredit = doc.root === "CreditNote";
-  const rate =
-    Number(inv.exchangeRate) > 0 ? new Decimal(String(inv.exchangeRate)) : new Decimal(1);
+  const exchangeRate = opts.taxExchangeRate === undefined ? inv.exchangeRate : opts.taxExchangeRate;
+  const rate = Number(exchangeRate) > 0 ? new Decimal(String(exchangeRate)) : new Decimal(1);
   const foreign = currency !== "AED";
   const toAedFils = (fils: number) =>
-    new Decimal(fils).times(rate).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber();
+    foreign
+      ? new Decimal(fils).times(rate).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber()
+      : fils;
 
   const seller = sellerFromCompany(co);
   const buyer: EInvoiceParty = {
@@ -478,6 +543,8 @@ export function generateEInvoiceXML(
   const payableFils = totals.totalFils;
   const subtotalFils = breakdown.reduce((s, g) => s + g.taxableFils, 0);
   const vatFils = breakdown.reduce((s, g) => s + g.taxFils, 0);
+  const taxInclusiveFils = subtotalFils + vatFils;
+  const payableRoundingFils = payableFils - taxInclusiveFils;
   const lineExtTotal = computed.reduce((s, l) => s + l.lineExtensionFils, 0);
   const docAllowanceFils = breakdown.reduce((s, g) => s + g.allowanceFils, 0);
 
@@ -605,9 +672,9 @@ export function generateEInvoiceXML(
       el(
         "cac:ItemPriceExtension",
         null,
-        amountEl("cbc:Amount", lineNetAfterDoc + lineVatFils, currency),
+        amountEl("cbc:Amount", toAedFils(lineNetAfterDoc + lineVatFils), "AED"),
         category !== "E" &&
-          el("cac:TaxTotal", null, amountEl("cbc:TaxAmount", lineVatFils, currency))
+          el("cac:TaxTotal", null, amountEl("cbc:TaxAmount", toAedFils(lineVatFils), "AED"))
       )
     );
   });
@@ -684,10 +751,12 @@ export function generateEInvoiceXML(
     null,
     amountEl("cbc:LineExtensionAmount", lineExtTotal, currency),
     amountEl("cbc:TaxExclusiveAmount", subtotalFils, currency),
-    amountEl("cbc:TaxInclusiveAmount", subtotalFils + vatFils, currency),
+    amountEl("cbc:TaxInclusiveAmount", taxInclusiveFils, currency),
     docAllowanceFils > 0 && amountEl("cbc:AllowanceTotalAmount", docAllowanceFils, currency),
-    opts.paidAtIssue && amountEl("cbc:PrepaidAmount", subtotalFils + vatFils, currency),
-    amountEl("cbc:PayableAmount", opts.paidAtIssue ? 0 : subtotalFils + vatFils, currency)
+    opts.paidAtIssue && amountEl("cbc:PrepaidAmount", payableFils, currency),
+    payableRoundingFils !== 0 &&
+      el("cbc:PayableRoundingAmount", { currencyID: currency }, fromFils(payableRoundingFils)),
+    amountEl("cbc:PayableAmount", opts.paidAtIssue ? 0 : payableFils, currency)
   );
   const paymentTerms = termsText && el("cac:PaymentTerms", null, el("cbc:Note", null, termsText));
 
@@ -802,6 +871,99 @@ export function frozenEInvoiceDispatchIssue(xml: string): string | null {
   }
 }
 
+/**
+ * PINT AE states each line's VAT and payable amount of a foreign-currency document in AED.
+ * Snapshots frozen by an earlier release used the document currency; they must be regenerated
+ * before a first provider attempt. Attempted requests are replayed unchanged, so this is not
+ * part of frozenEInvoiceDispatchIssue.
+ */
+export function frozenEInvoiceLineCurrencyIssue(xml: string): string | null {
+  try {
+    const root = parseXml(xml).documentElement;
+    if (textAt(root, "cbc:DocumentCurrencyCode") === "AED") return null;
+    const lineTag = root.localName === "CreditNote" ? "cac:CreditNoteLine" : "cac:InvoiceLine";
+    const outdated = all(root, lineTag).some((line) => {
+      const payable = first(line, "cac:ItemPriceExtension/cbc:Amount");
+      const vat = first(line, "cac:ItemPriceExtension/cac:TaxTotal/cbc:TaxAmount");
+      return attr(payable, "currencyID") !== "AED" || (!!vat && attr(vat, "currencyID") !== "AED");
+    });
+    return outdated ? "EINVOICE_SCHEMA_INVALID" : null;
+  } catch {
+    // Unparseable frozen XML must stop the queued job (schema invalid), never throw out of the
+    // claim transaction and leave the job due forever.
+    return "EINVOICE_SCHEMA_INVALID";
+  }
+}
+
+/** Compare a frozen document with the amounts a fresh export would report. */
+export function frozenEInvoiceAmountsMatch(
+  xml: string,
+  invoice: Invoice,
+  lines: InvoiceLine[]
+): boolean {
+  try {
+    const root = parseXml(xml).documentElement;
+    const currency = (invoice.currency || "AED").toUpperCase();
+    const taxTotal = all(root, "cac:TaxTotal").find(
+      (total) => attr(first(total, "cbc:TaxAmount"), "currencyID") === currency
+    );
+    const monetary = first(root, "cac:LegalMonetaryTotal");
+    if (!taxTotal || !monetary) return false;
+    const payable = tryToFils(textAt(monetary, "cbc:PayableAmount"));
+    const prepaid = tryToFils(textAt(monetary, "cbc:PrepaidAmount")) ?? 0;
+    const { lines: expectedLines } = computeEInvoiceAmounts(invoice, lines);
+    const breakdown = taxBreakdown(expectedLines);
+    if (
+      payable === null ||
+      payable + prepaid !== Math.abs(toFils(invoice.total)) ||
+      tryToFils(textAt(taxTotal, "cbc:TaxAmount")) !== sumFils(breakdown.map((g) => g.taxFils))
+    ) {
+      return false;
+    }
+
+    const lineTag = root.localName === "CreditNote" ? "cac:CreditNoteLine" : "cac:InvoiceLine";
+    const xmlLines = all(root, lineTag);
+    if (
+      xmlLines.length !== expectedLines.length ||
+      xmlLines.some((line, i) => {
+        const extension = first(line, "cbc:LineExtensionAmount");
+        return (
+          textAt(line, "cbc:ID") !== String(i + 1) ||
+          attr(extension, "currencyID") !== currency ||
+          tryToFils(text(extension)) !== expectedLines[i].lineExtensionFils
+        );
+      })
+    ) {
+      return false;
+    }
+
+    const expectedGroups = new Map(
+      breakdown.map((g) => [`${g.category}:${Number((g.rate * 100).toFixed(2))}`, g])
+    );
+    for (const subtotal of all(taxTotal, "cac:TaxSubtotal")) {
+      const category = textAt(subtotal, "cac:TaxCategory/cbc:ID");
+      const percent = Number(textAt(subtotal, "cac:TaxCategory/cbc:Percent") ?? 0);
+      const key = `${category}:${percent}`;
+      const expected = expectedGroups.get(key);
+      const taxable = first(subtotal, "cbc:TaxableAmount");
+      const vat = first(subtotal, "cbc:TaxAmount");
+      if (
+        !expected ||
+        attr(taxable, "currencyID") !== currency ||
+        tryToFils(text(taxable)) !== expected.taxableFils ||
+        attr(vat, "currencyID") !== currency ||
+        tryToFils(text(vat)) !== expected.taxFils
+      ) {
+        return false;
+      }
+      expectedGroups.delete(key);
+    }
+    return expectedGroups.size === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Check the stored invoice data before generating a UBL document. */
 export function validateForEInvoicing(
   invoice: Invoice,
@@ -821,6 +983,8 @@ export function validateForEInvoicing(
   const inv = invoice as InvoiceLike;
   const co = company as CompanyLike;
   const options = ctx.options;
+  const exchangeRate =
+    options?.taxExchangeRate === undefined ? inv.exchangeRate : options.taxExchangeRate;
   const categories = lines.map((line) => vatCategoryFor(line, inv.reverseCharge));
   const doc = documentKind(inv, categories);
   const seller = sellerFromCompany(co);
@@ -987,7 +1151,7 @@ export function validateForEInvoicing(
     );
   } else if (
     inv.currency.toUpperCase() !== "AED" &&
-    (!Number.isFinite(Number(inv.exchangeRate)) || Number(inv.exchangeRate) <= 0)
+    (!Number.isFinite(Number(exchangeRate)) || Number(exchangeRate) <= 0)
   ) {
     add(
       "invoice.exchangeRate",

@@ -69,6 +69,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         data-variant={variant ?? "default"}
+        // Styling hooks for surfaces that re-skin the button (the public site, unified.css).
+        data-button={variant ?? "default"}
+        data-size={size ?? "default"}
         ref={ref}
         {...props}
       />

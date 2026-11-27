@@ -20,9 +20,11 @@ import { isVatFilingRecorded } from "../../shared/vat-filing-status";
  * per return (idempotency key); reversing it uses the kernel's reverseBySource.
  */
 import { journalLine, journalMemo } from "@shared/journal-memo";
+import { sql } from "drizzle-orm";
 import type { Request } from "express";
+import { db } from "../db";
 import { DomainError } from "../errors";
-import { ledgerQueryable } from "../ledger/tx";
+import { ledgerQueryable, rowsOf } from "../ledger/tx";
 import { getFilingVatGroup } from "../ledger/vat-group-scope";
 import { lockVatGroupMembership, lockVatReturnCompanies } from "../ledger/vat-lock";
 import { recordAudit } from "../services/audit.service";
@@ -39,6 +41,7 @@ import {
   type PostJournalLineInput,
 } from "../ledger";
 import { fromFils, toFils } from "../../shared/money";
+import { effectiveVatFilingStatus } from "./vat-filing-filter";
 import {
   VAT_SETTLEMENT_SOURCE,
   type VatFilingMemberEvidence,
@@ -57,7 +60,7 @@ interface GroupSettlementEvidence {
 
 interface ReturnRow {
   id: string;
-  status: string;
+  effective_status: string;
   fta_reference_number: string | null;
   period_start: string;
   period_end: string;
@@ -84,18 +87,20 @@ async function loadReturn(
   tx?: LedgerTx,
   forUpdate = true
 ): Promise<ReturnRow> {
-  const { rows } = await ledgerQueryable(tx).query(
-    `SELECT id, status, fta_reference_number, period_start::date::text AS period_start,
+  const result = await (tx ?? db).execute(
+    sql`SELECT id, ${effectiveVatFilingStatus} AS effective_status,
+            fta_reference_number, period_start::date::text AS period_start,
             period_end::date::text AS period_end, box12_total_due_tax::text AS box12,
             box13_recoverable_tax::text AS box13, engine_version, vat_group_id, amends_return_id,
             reconciliation_snapshot, payment_status,
             payment_date::date::text AS payment_date, payment_amount::text AS payment_amount,
             declaration_date::date::text AS filed_on
-       FROM vat_returns WHERE id = $1 AND company_id = $2 ${tx && forUpdate ? "FOR UPDATE" : ""}`,
-    [vatReturnId, companyId]
+       FROM vat_returns WHERE id = ${vatReturnId} AND company_id = ${companyId}
+       ${tx && forUpdate ? sql`FOR UPDATE` : sql.empty()}`
   );
-  if (!rows[0]) throw new DomainError("VAT_RETURN_NOT_FOUND", 404);
-  return rows[0] as ReturnRow;
+  const [row] = rowsOf<ReturnRow>(result);
+  if (!row) throw new DomainError("VAT_RETURN_NOT_FOUND", 404);
+  return row;
 }
 
 async function accountId(companyId: string, code: string, tx: LedgerTx): Promise<string> {
@@ -673,11 +678,14 @@ export async function settleVatReturn(input: {
         prior
       );
     }
-    if (ret.status === "amended" || !isVatFilingRecorded(ret.status, ret.fta_reference_number)) {
+    if (
+      ret.effective_status === "amended" ||
+      !isVatFilingRecorded(ret.effective_status, ret.fta_reference_number)
+    ) {
       throw new DomainError(
         "VAT_RETURN_NOT_SUBMITTED",
         409,
-        { status: ret.status },
+        { status: ret.effective_status },
         "Record the EmaraTax filing before recording the payment or refund"
       );
     }
@@ -693,7 +701,7 @@ export async function settleVatReturn(input: {
     // declared, so it cannot predate the filing recorded on EmaraTax (the payable tax is the one the
     // filed return states). A payment made before filing is a payment on account:
     // record it once the return is filed. Without a stated filing date nothing is checked.
-    if (ret.status === "filed" && ret.filed_on && input.date < ret.filed_on) {
+    if (ret.effective_status === "filed" && ret.filed_on && input.date < ret.filed_on) {
       throw new DomainError(
         "VAT_SETTLEMENT_BEFORE_FILING",
         422,

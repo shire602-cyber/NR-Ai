@@ -65,6 +65,7 @@ import {
   assertNotFutureDate,
   lockPeriodPolicy,
 } from "../services/period-lock.service";
+import { todayDubai } from "@shared/accounting-date";
 import {
   dueDateFromTerms,
   prepareSalesLines,
@@ -174,6 +175,7 @@ export function lineRow(invoiceId: string, r: PreparedSalesLine) {
     discountType: r.discountType,
     discountValue: r.discountValue,
     discountAmount: r.discountAmount,
+    documentDiscountAmount: r.documentDiscountAmount,
     netAmount: r.netAmount,
     productId: r.productId,
     costCenterId: r.costCenterId,
@@ -974,7 +976,7 @@ export function registerInvoiceRoutes(app: Express) {
       const body = validated<z.output<typeof invoicePaymentSchema>>(req);
       const paymentDate = body.date
         ? toDate(body.date)
-        : toDate(new Date().toISOString().slice(0, 10));
+        : toDate(todayDubai());
       const invoice = await storage.getInvoice(invoiceId, companyId);
       if (!invoice)
         return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
@@ -1169,7 +1171,7 @@ export function registerInvoiceRoutes(app: Express) {
       const original = await storage.getInvoice(invoiceId, companyId);
       if (!original)
         return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
-      const cnDate = body.date ?? new Date().toISOString().slice(0, 10);
+      const cnDate = body.date ?? todayDubai();
       await assertPeriodNotLocked(companyId, toDate(cnDate));
       const lines = body.lines ? toCreditLines(body.lines, original) : undefined;
       const result = await createAndIssueCreditNote({
@@ -1224,7 +1226,7 @@ export function registerInvoiceRoutes(app: Express) {
       const userId = userOf(req);
       await assertCompanyAccess(req, companyId);
       const body = validated<z.output<typeof debitNoteRequestSchema>>(req);
-      const dnDate = toDate(body.date ?? new Date().toISOString().slice(0, 10));
+      const dnDate = toDate(body.date ?? todayDubai());
       const { invoice: dn, totalFils } = await withLedgerTx(async (tx) => {
         const original = await lockInvoice(tx, invoiceId, companyId);
         if (original.invoiceType !== "invoice" || !isIssuedStatus(original.status)) {
@@ -1342,7 +1344,7 @@ export function registerInvoiceRoutes(app: Express) {
       const userId = userOf(req);
       await assertCompanyAccess(req, companyId);
       const body = validated<z.output<typeof applyCustomerCreditSchema>>(req);
-      const date = body.date ?? new Date().toISOString().slice(0, 10);
+      const date = body.date ?? todayDubai();
       await assertPeriodNotLocked(companyId, toDate(date));
       const result = await applyCustomerCredit({
         companyId,
@@ -1376,7 +1378,7 @@ export function registerInvoiceRoutes(app: Express) {
       const userId = userOf(req);
       await assertCompanyAccess(req, companyId);
       const body = validated<z.output<typeof refundCustomerCreditSchema>>(req);
-      const date = body.date ?? new Date().toISOString().slice(0, 10);
+      const date = body.date ?? todayDubai();
       await assertPeriodNotLocked(companyId, toDate(date));
       const result = await refundCustomerCredit({
         companyId,
