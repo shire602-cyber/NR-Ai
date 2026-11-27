@@ -190,6 +190,8 @@
   "invoices.toastExportFailed": "Export failed",
   "invoices.endDateOptional": "End date (optional)",
   "invoices.recordPaymentDesc": "Record a payment received for invoice {number} (total: {total})",
+  "invoices.methodWriteOff": "Bad debt write-off",
+  "invoices.methodWriteOffReinstatement": "Write-off reinstated",
   "invoices.methodCash": "Cash",
   "invoices.noCashBankAccounts": "No cash or bank accounts found. Create one in the chart of accounts.",
   "invoices.referenceOptional": "Reference (optional)",

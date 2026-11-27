@@ -496,7 +496,7 @@ async function reconcileReceiptRecoveries(
             AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL
        ) posted ON true
       WHERE sp.invoice_id = $1 AND sp.company_id = $2 AND c.id = $3
-        AND sp.method <> 'write_off' AND ($5::boolean IS FALSE OR sp.created_at > c.created_at)
+        AND sp.method NOT IN ('write_off', 'write_off_reinstatement') AND ($5::boolean IS FALSE OR sp.created_at > c.created_at)
       ORDER BY sp.created_at, sp.id`,
     [claim.invoiceId, claim.companyId, claim.id, BAD_DEBT_SOURCE, ordered]
   );
@@ -679,7 +679,7 @@ async function legacyRecoveryForReceipt(
        JOIN invoice_payments sp ON sp.invoice_id = $2 AND sp.company_id = je.company_id
       WHERE je.company_id = $1 AND je.id = $3 AND je.source = $4 AND je.source_id = $5
         AND je.reversed_entry_id = $6 AND je.status = 'posted'
-        AND sp.method <> 'write_off' AND ${appliedReceiptAmountSql("sp")} > 0
+        AND sp.method NOT IN ('write_off', 'write_off_reinstatement') AND ${appliedReceiptAmountSql("sp")} > 0
         AND ${localDateSql("sp.date")} <= ${localDateSql("je.date")}
         AND sp.created_at <= COALESCE(je.posted_at, je.created_at)
         AND NOT EXISTS (
