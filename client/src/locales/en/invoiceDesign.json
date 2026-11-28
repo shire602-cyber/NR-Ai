@@ -49,6 +49,7 @@
   "invoiceDesign.documents.footerText": "Footer text",
   "invoiceDesign.documents.terms": "Payment terms",
   "invoiceDesign.documents.bankDetails": "Bank details",
+  "invoiceDesign.documents.notLoaded": "Your templates have not loaded yet. Try again before saving.",
   "invoiceDesign.documents.standardName": "Standard",
   "invoiceDesign.documents.sampleCustomer": "Sample customer",
   "invoiceDesign.documents.sampleLine": "Consulting services",
