@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { VAT201_BOX_KEYS } from "../../server/tax/vat-boxes";
-import { useHarness, type Tenant } from "./harness";
+import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
+const supplierInvoice =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
 const domestic = { description: "Supplies", unit_price: 1000, vat_rate: 5 };
 const reverseCharge = {
   description: "Imported service",
@@ -639,6 +641,98 @@ describe("PR 184 bill valuation matrix", () => {
   );
 });
 
+describe("PR 184 production bill encodings", () => {
+  it("returns BILL_LOCKED for a posted legacy bill and accepts its supplier invoice", async () => {
+    const t = await h.createTenant({ planId: "professional" });
+    const draft = await bill(t, {});
+    const url = `/api/bills/${draft.id}`;
+    await h.sql("UPDATE bill_line_items SET vat_amount = 0 WHERE bill_id = $1", [draft.id]);
+    await h.sql("UPDATE vendor_bills SET status = 'approved' WHERE id = $1", [draft.id]);
+
+    const edit = await t.as.patch(url, { notes: "Update a posted bill" });
+    expect(edit.status, edit.text).toBe(409);
+    expect(edit.body.code).toBe("BILL_LOCKED");
+    const tag = await t.as.post(`/api/companies/${t.company.id}/cost-centers/tag-lines`, {
+      documentType: "bill",
+      documentId: draft.id,
+      lineIds: [draft.line_items[0].id],
+      costCenterId: null,
+    });
+    expect(tag.status, tag.text).toBe(409);
+    expect(tag.body.code).toBe("BILL_LOCKED");
+    const attachment = await t.as.post(`${url}/attachment`, {
+      file: supplierInvoice,
+      filename: "supplier-invoice.png",
+    });
+    expect(attachment.status, attachment.text).toBe(200);
+    expect((await t.as.get(`${url}/attachment`)).status).toBe(200);
+  });
+
+  it("uses line-level reverse charge for a debit note and refuses ambiguous mixed VAT", async () => {
+    const t = await registeredTenant();
+    const reverseChargeBill = await bill(t, { line_items: [reverseCharge] });
+    const mixedBill = await bill(t, {
+      bill_number: "VAT-MIXED",
+      line_items: [domestic, reverseCharge],
+    });
+    const expense = await accountByCode(t, "5000");
+    const note = (billId: string) =>
+      t.as.post(`/api/companies/${t.company.id}/debit-notes`, {
+        bill_id: billId,
+        note_date: "2026-01-16",
+        reason: "Supplier credit",
+        lines: [
+          { description: "Supplier credit", amount: 100, vat_rate: 5, account_id: expense.id },
+        ],
+      });
+    const credited = await note(reverseChargeBill.id);
+    expect(credited.status, credited.text).toBe(201);
+    expect(credited.body.vat_treatment).toBe("reverse_charge");
+    expect(Number(credited.body.total_amount)).toBe(100);
+    const refused = await note(mixedBill.id);
+    expect(refused.status, refused.text).toBe(422);
+    expect(refused.body.code).toBe("DEBIT_NOTE_MIXED_BILL_VAT");
+  });
+
+  it.each([
+    { name: "reverse charge", header: { reverse_charge: true }, line: domestic },
+    { name: "line reverse charge", header: {}, line: reverseCharge },
+    { name: "import", header: { is_import: true, import_vat_amount: 50 }, line: domestic },
+  ])(
+    "allows editing, attachments and cost-centre tags on a $name bill",
+    async ({ header, line }) => {
+      const t = await h.createTenant({ planId: "professional" });
+      const draft = await bill(t, { ...header, line_items: [line] });
+      const url = `/api/bills/${draft.id}`;
+      // Before #184 the writer persisted the effective reverse-charge flag on each line.
+      await h.sql("UPDATE bill_line_items SET reverse_charge = true WHERE bill_id = $1", [
+        draft.id,
+      ]);
+      const attachment = await t.as.post(`${url}/attachment`, {
+        file: supplierInvoice,
+        filename: "supplier-invoice.png",
+      });
+      expect(attachment.status, attachment.text).toBe(200);
+      const centre = await t.as.post(`/api/companies/${t.company.id}/cost-centers`, {
+        code: "PUR",
+        name: "Purchasing",
+        type: "cost_centre",
+      });
+      expect(centre.status, centre.text).toBe(201);
+      const tag = await t.as.post(`/api/companies/${t.company.id}/cost-centers/tag-lines`, {
+        documentType: "bill",
+        documentId: draft.id,
+        lineIds: [draft.line_items[0].id],
+        costCenterId: centre.body.id,
+      });
+      expect(tag.status, tag.text).toBe(200);
+      const edited = await t.as.patch(url, { withholding_amount: 10 });
+      expect(edited.status, edited.text).toBe(200);
+      expect(edited.body.vat_amount).toBe(draft.vat_amount);
+    }
+  );
+});
+
 describe("PR 184 legacy bills match the test branch and reject edits", () => {
   const fixtures = [
     { name: "header VAT domestic", lines: [domestic], headerVat: true, billWide: false },
@@ -652,12 +746,6 @@ describe("PR 184 legacy bills match the test branch and reject edits", () => {
       name: "header VAT exempt",
       lines: [{ ...domestic, vat_supply_type: "exempt", vat_rate: 0 }],
       headerVat: true,
-      billWide: true,
-    },
-    {
-      name: "identical markers",
-      lines: [domestic, reverseCharge],
-      headerVat: false,
       billWide: true,
     },
   ];
@@ -681,7 +769,7 @@ describe("PR 184 legacy bills match the test branch and reject edits", () => {
     };
   }
 
-  it.each(fixtures)("$name", async ({ name, lines, headerVat, billWide }) => {
+  it.each(fixtures)("$name", async ({ lines, headerVat, billWide }) => {
     const t = await h.createTenant({
       planId: "professional",
       companyColumns: { emirate: "dubai" },
@@ -689,12 +777,7 @@ describe("PR 184 legacy bills match the test branch and reject edits", () => {
     const draft = await bill(t, { reverse_charge: billWide, line_items: lines });
     const id = draft.id;
     for (const line of lines) {
-      const supply =
-        name === "identical markers"
-          ? "reverse_charge"
-          : "vat_supply_type" in line
-            ? line.vat_supply_type
-            : "standard_rated";
+      const supply = "vat_supply_type" in line ? line.vat_supply_type : "standard_rated";
       await h.sql(
         `UPDATE bill_line_items SET vat_supply_type = $2, reverse_charge = $3, vat_amount = $4
           WHERE bill_id = $1 AND description = $5`,
@@ -730,10 +813,6 @@ describe("PR 184 legacy bills match the test branch and reject edits", () => {
       expect(edited.body.code).toBe("LEGACY_BILL_RECLASSIFY_REQUIRED");
       expect(await persisted(id)).toEqual(original);
     }
-    const attachment = await t.as.post(`${url}/attachment`, { file: "intentionally-not-an-image" });
-    expect(attachment.status, attachment.text).toBe(409);
-    expect(attachment.body.code).toBe("LEGACY_BILL_RECLASSIFY_REQUIRED");
-    expect(await persisted(id)).toEqual(original);
     const tag = await t.as.post(`/api/companies/${t.company.id}/cost-centers/tag-lines`, {
       documentType: "bill",
       documentId: id,

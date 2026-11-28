@@ -541,6 +541,7 @@ export async function planBillJournal(
   const valuedLines = lineItems.map((line) => ({ ...line, vatFils: filsOf(line.vat_amount) }));
   const legacy = isLegacyBill(vatDoc, valuedLines, {
     isImport: bill.is_import,
+    reverseCharge: bill.reverse_charge,
     declaredVatFils: filsOf(bill.import_vat_amount),
   });
   const rcVatDoc = isBillWideReverseCharge(bill.reverse_charge, bill.is_import)

@@ -922,6 +922,7 @@ async function collectBills(
     const lineVat = billLines.map((line) => ({
       vatFils: fils(line.vat_amount),
       reverse_charge: line.reverse_charge === true,
+      vat_supply_type: line.vat_supply_type,
     }));
     const legacy = isLegacyBill(vatDoc, lineVat);
     if (

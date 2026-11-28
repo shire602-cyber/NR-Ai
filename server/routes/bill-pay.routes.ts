@@ -55,7 +55,6 @@ import {
   createVendorCreditFromInbound,
   createPrepayment,
   createRecurringBill,
-  editableBillLines,
   prepareBillRevision,
   recordBillPayment,
   registerBillServices,
@@ -778,7 +777,6 @@ export function registerBillPayRoutes(app: Express) {
           [bill.id, bill.company_id]
         );
         if (!locked) throw new DomainError("BILL_NOT_FOUND", 404);
-        await editableBillLines(locked, tx);
         const path = await storePurchaseFile(file);
         await txRows(
           tx,

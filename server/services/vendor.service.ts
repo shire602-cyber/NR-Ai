@@ -243,11 +243,12 @@ export async function backfillVendorLinks(
       id: string;
       bill_date: string | Date;
       vat_amount: string | null;
+      reverse_charge: boolean;
       is_import: boolean;
       import_vat_amount: string;
     }>(
       tx,
-      `SELECT b.id, b.bill_date, b.vat_amount, b.is_import, b.import_vat_amount
+      `SELECT b.id, b.bill_date, b.vat_amount, b.reverse_charge, b.is_import, b.import_vat_amount
          FROM vendor_bills b JOIN vendors v
            ON v.company_id = b.company_id AND lower(trim(b.vendor_name)) = lower(v.name)
         WHERE b.company_id = $1 AND b.vendor_id IS NULL ORDER BY b.id FOR UPDATE OF b`,
@@ -260,11 +261,16 @@ export async function backfillVendorLinks(
     // Read the lines after locking the headers so a concurrent edit has finished replacing them.
     const billLines = await txRows<{
       bill_id: string;
-      lines: { vat_amount: string | null; reverse_charge: boolean }[];
+      lines: {
+        vat_amount: string | null;
+        reverse_charge: boolean;
+        vat_supply_type: string | null;
+      }[];
     }>(
       tx,
       `SELECT bill_id, json_agg(json_build_object(
-          'vat_amount', vat_amount::text, 'reverse_charge', reverse_charge
+          'vat_amount', vat_amount::text, 'reverse_charge', reverse_charge,
+          'vat_supply_type', vat_supply_type
         )) AS lines
          FROM bill_line_items WHERE bill_id = ANY($1::uuid[]) GROUP BY bill_id`,
       [sql.param(candidates.map((bill) => bill.id))]
@@ -281,10 +287,14 @@ export async function backfillVendorLinks(
         !isLegacyBill(
           filsOf(bill.vat_amount),
           (linesByBill.get(bill.id) ?? []).map((line) => ({
+            ...line,
             vatFils: filsOf(line.vat_amount),
-            reverse_charge: line.reverse_charge,
           })),
-          { isImport: bill.is_import, declaredVatFils: filsOf(bill.import_vat_amount) }
+          {
+            isImport: bill.is_import,
+            reverseCharge: bill.reverse_charge,
+            declaredVatFils: filsOf(bill.import_vat_amount),
+          }
         )
       ) {
         eligibleIds.push(bill.id);

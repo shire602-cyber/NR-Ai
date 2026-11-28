@@ -1,12 +1,14 @@
 import { mulRate } from "./money";
 
 /** Legacy flags carry reverse charge without saying whether it came from the header. */
-export function billLineSupplyType(line: {
-  vat_supply_type?: string | null;
-  reverse_charge?: boolean | null;
-}): string {
+export function billLineSupplyType(
+  line: { vat_supply_type?: string | null; reverse_charge?: boolean | null },
+  billWideReverseCharge = false
+): string {
   const supplyType = line.vat_supply_type || "standard_rated";
-  if (line.reverse_charge && supplyType === "standard_rated") return "reverse_charge";
+  if (!billWideReverseCharge && line.reverse_charge && supplyType === "standard_rated") {
+    return "reverse_charge";
+  }
   return supplyType;
 }
 
@@ -16,19 +18,26 @@ export function hasHeaderOnlyBillVat(headerVatFils: number, lineVatFils: readonl
 }
 
 /**
- * The current writer stores the line's own treatment in the enum and always writes a false
- * line flag. A historical true flag can encode either inherited or explicit reverse charge.
+ * Earlier writers also set the line flag for explicit reverse charge and bill-wide treatment.
+ * Only a flag without either source of treatment is ambiguous.
  */
 export function isLegacyBill(
   headerVatFils: number,
-  lines: readonly { vatFils: number; reverse_charge?: boolean | null }[],
-  customs?: { isImport?: boolean | null; declaredVatFils: number }
+  lines: readonly {
+    vatFils: number;
+    vat_supply_type?: string | null;
+    reverse_charge?: boolean | null;
+  }[],
+  header?: { isImport?: boolean | null; reverseCharge?: boolean | null; declaredVatFils: number }
 ): boolean {
   // Migration 0096 defaulted these fields to false and zero on historical bills.
   const hasDeclaredImportVat =
-    customs?.isImport === true && lines.length > 0 && headerVatFils === customs.declaredVatFils;
+    header?.isImport === true && lines.length > 0 && headerVatFils === header.declaredVatFils;
   return (
-    lines.some((line) => line.reverse_charge === true) ||
+    (!isBillWideReverseCharge(header?.reverseCharge, header?.isImport) &&
+      lines.some(
+        (line) => line.reverse_charge === true && line.vat_supply_type !== "reverse_charge"
+      )) ||
     (!hasDeclaredImportVat &&
       hasHeaderOnlyBillVat(
         headerVatFils,

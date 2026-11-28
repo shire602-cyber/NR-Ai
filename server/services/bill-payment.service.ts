@@ -303,7 +303,13 @@ interface PreparedBill {
 export async function editableBillLines(
   bill: Pick<
     BillRow,
-    "id" | "company_id" | "bill_date" | "vat_amount" | "is_import" | "import_vat_amount"
+    | "id"
+    | "company_id"
+    | "bill_date"
+    | "vat_amount"
+    | "is_import"
+    | "reverse_charge"
+    | "import_vat_amount"
   >,
   tx: LedgerTx
 ) {
@@ -318,7 +324,11 @@ export async function editableBillLines(
     isLegacyBill(
       filsOf(bill.vat_amount),
       lines.map((line) => ({ ...line, vatFils: filsOf(line.vat_amount) })),
-      { isImport: bill.is_import, declaredVatFils: filsOf(bill.import_vat_amount) }
+      {
+        isImport: bill.is_import,
+        reverseCharge: bill.reverse_charge,
+        declaredVatFils: filsOf(bill.import_vat_amount),
+      }
     )
   ) {
     throw await legacyBillEditError(tx, bill.company_id, isoDateOf(bill.bill_date));
@@ -862,15 +872,15 @@ export async function updateBillInPlace(args: {
 }): Promise<BillWriteResult> {
   return withLedgerTx(async (tx) => {
     const existing = await lockBill(tx, args.billId, args.companyId);
-    const savedLines = await editableBillLines(existing, tx);
     if (!["draft", "pending", "rejected"].includes(String(existing.status))) {
       throw new DomainError(
         "BILL_LOCKED",
         409,
         { status: existing.status },
-        "An approved bill cannot be edited in place; use revise (reversal + repost) or void it"
+        "Open this bill to review it. It is already posted and locked. Contact support if you need help making a correction."
       );
     }
+    const savedLines = await editableBillLines(existing, tx);
     await assertPeriodNotLocked(args.companyId, existing.bill_date, tx);
     if (args.input.bill_date) await assertPeriodNotLocked(args.companyId, args.input.bill_date, tx);
     const prepared = await prepareBill(args.companyId, args.input, existing, { tx, savedLines });
@@ -900,15 +910,15 @@ export async function tagBillLines(
 ): Promise<number> {
   return withLedgerTx(async (tx) => {
     const bill = await lockBill(tx, billId, companyId);
-    await editableBillLines(bill, tx);
     if (!["draft", "pending", "rejected"].includes(String(bill.status))) {
       throw new DomainError(
         "BILL_LOCKED",
         409,
         { status: bill.status },
-        "The bill is posted; revise it to change its cost centres"
+        "Open this bill to review it. It is already posted and locked. Contact support if you need help making a correction."
       );
     }
+    await editableBillLines(bill, tx);
     const { rows: lines } = await ledgerQueryable(tx).query(
       `UPDATE bill_line_items SET cost_center_id = $1
         WHERE bill_id = $2 AND id = ANY($3::uuid[]) RETURNING id`,
@@ -1522,8 +1532,18 @@ export async function createDebitNote(args: {
     const b = await pool.query(
       `SELECT vendor_id, vendor_name, currency, exchange_rate, vat_amount,
               COALESCE(reverse_charge, false) AS reverse_charge, COALESCE(is_import, false) AS is_import,
-              COALESCE(recoverable_vat_percent, 100) AS recoverable_pct, recoverable_vat_base
-         FROM vendor_bills WHERE id = $1 AND company_id = $2`,
+              COALESCE(recoverable_vat_percent, 100) AS recoverable_pct, recoverable_vat_base,
+              EXISTS (
+                SELECT 1 FROM bill_line_items l WHERE l.bill_id = b.id
+                  AND (l.reverse_charge IS TRUE OR l.vat_supply_type = 'reverse_charge')
+              ) AS has_reverse_charge_lines,
+              EXISTS (
+                SELECT 1 FROM bill_line_items l WHERE l.bill_id = b.id
+                  AND l.reverse_charge IS NOT TRUE
+                  AND l.vat_supply_type IS DISTINCT FROM 'reverse_charge'
+                  AND l.vat_amount > 0
+              ) AS has_supplier_vat_lines
+         FROM vendor_bills b WHERE id = $1 AND company_id = $2`,
       [input.bill_id, companyId]
     );
     if (!b.rows[0]) throw new DomainError("BILL_NOT_FOUND", 404);
@@ -1531,6 +1551,19 @@ export async function createDebitNote(args: {
     vendorId = vendorId ?? b.rows[0].vendor_id;
     // A1 (C2): the note follows the bill's VAT treatment (blocked / partial / reverse charge).
     const br = b.rows[0];
+    if (
+      !br.is_import &&
+      !br.reverse_charge &&
+      br.has_reverse_charge_lines &&
+      br.has_supplier_vat_lines
+    ) {
+      throw new DomainError(
+        "DEBIT_NOTE_MIXED_BILL_VAT",
+        422,
+        undefined,
+        "Ask your accountant to record this correction. The bill includes both supplier VAT and reverse charge. Contact support if you need help."
+      );
+    }
     const billBase = await loadBaseCurrency(companyId);
     const billVatBase = toBase(
       filsOf(br.vat_amount),
@@ -1539,7 +1572,7 @@ export async function createDebitNote(args: {
     );
     const pct = Number(br.recoverable_pct);
     billVat = {
-      reverseCharge: br.reverse_charge === true,
+      reverseCharge: br.reverse_charge === true || br.has_reverse_charge_lines === true,
       isImport: br.is_import === true,
       vatFils: billVatBase,
       recoverableFils:

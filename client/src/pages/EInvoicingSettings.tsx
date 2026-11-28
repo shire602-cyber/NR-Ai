@@ -115,6 +115,8 @@ const COPY = {
     retry: "Retry",
     problemReported:
       "The provider reported a problem. Open the invoice's e-invoice status for details.",
+    inboundQuantityPrecision:
+      "Enter the bill using the line totals from the original invoice. A quantity exceeds the precision supported by the bill editor. Contact support if you need help.",
     st_generated: "Generated",
     st_queued: "Queued",
     st_submitted: "Submitted",
@@ -198,6 +200,8 @@ const COPY = {
     loadFailed: "تعذّر تحميل هذه القائمة.",
     retry: "إعادة المحاولة",
     problemReported: "أبلغ المزود عن مشكلة. افتح حالة الفاتورة الإلكترونية لمعرفة التفاصيل.",
+    inboundQuantityPrecision:
+      "أدخل فاتورة المورد باستخدام إجماليات البنود في الفاتورة الأصلية. تتجاوز إحدى الكميات الدقة التي يدعمها محرر الفواتير. تواصل مع الدعم إذا احتجت إلى مساعدة.",
     st_generated: "تم الإنشاء",
     st_queued: "في قائمة الانتظار",
     st_submitted: "تم الإرسال",
@@ -896,7 +900,11 @@ function CompanyEInvoicingSettings({
                           {word(s, "st", d.status)}
                         </Badge>
                         {d.error ? (
-                          <div className="text-xs text-muted-foreground">{s.problemReported}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {d.error === "INBOUND_BILL_QUANTITY_PRECISION"
+                              ? s.inboundQuantityPrecision
+                              : s.problemReported}
+                          </div>
                         ) : null}
                       </TableCell>
                       <TableCell>

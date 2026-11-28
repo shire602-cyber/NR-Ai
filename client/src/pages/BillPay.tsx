@@ -91,6 +91,7 @@ import {
   hasStoredBillQuantityPrecision,
   isBillWideReverseCharge,
   isLegacyBill,
+  isBillWideReverseCharge,
 } from "@shared/bill-line-edit";
 import { MoneyError } from "@shared/money";
 import { EInvoiceOriginTag } from "@/components/einvoice/EInvoiceListCell";
@@ -659,6 +660,10 @@ export default function BillPay() {
   );
   const savedLine = (id?: string) => (id ? savedBillLines.get(id) : undefined);
 
+  const savedBillWide = isBillWideReverseCharge(
+    editingBill?.reverse_charge,
+    editingBill?.is_import
+  );
   const buildBillPayload = (data: BillFormData) => ({
     vendor_id: data.vendor_id || null,
     vendor_name: data.vendor_name,
@@ -683,7 +688,9 @@ export default function BillPay() {
         quantity: l.quantity,
         unit_price: l.unit_price,
         vat_supply_type:
-          saved && l.vat_supply_type === billLineSupplyType(saved) ? undefined : l.vat_supply_type,
+          saved && l.vat_supply_type === billLineSupplyType(saved, savedBillWide)
+            ? undefined
+            : l.vat_supply_type,
         vat_rate: l.vat_rate,
         account_id: l.account_id || null,
         cost_center_id: l.cost_center_id || null,
@@ -927,7 +934,10 @@ export default function BillPay() {
                 quantity: Number(l.quantity ?? 1),
                 unit_price: Number(l.unit_price),
                 vat_rate: Number(l.vat_rate ?? 5),
-                vat_supply_type: billLineSupplyType(l),
+                vat_supply_type: billLineSupplyType(
+                  l,
+                  isBillWideReverseCharge(detail.reverse_charge, detail.is_import)
+                ),
                 account_id: l.account_id || "",
                 cost_center_id: l.cost_center_id || "",
                 product_id: l.product_id || "",
@@ -1039,7 +1049,7 @@ export default function BillPay() {
     const unchanged =
       saved &&
       amount === Number(saved.amount) &&
-      line.vat_supply_type === billLineSupplyType(saved) &&
+      line.vat_supply_type === billLineSupplyType(saved, savedBillWide) &&
       Number(line.vat_rate) === Number(saved.vat_rate ?? 5);
     return {
       amount,
@@ -1062,6 +1072,7 @@ export default function BillPay() {
       editingBill.line_items.map((line) => ({ ...line, vatFils: Number(line.vat_amount ?? 0) })),
       {
         isImport: editingBill.is_import,
+        reverseCharge: editingBill.reverse_charge,
         declaredVatFils: Number(editingBill.import_vat_amount ?? 0),
       }
     );
