@@ -69,7 +69,8 @@ import {
   createBadDebtReliefClaim,
   deleteReturnAdjustment,
   installBadDebtPaymentHook,
-  listBadDebtReliefClaims,
+  listBadDebtReliefClaimsDetailed,
+  listReliefEligibleInvoices,
   listReturnAdjustments,
   reverseBadDebtReliefClaim,
   upsertVatGroup,
@@ -936,7 +937,17 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       if (!(await requireCompanyAccess(req, res, companyId))) return;
-      res.json(await listBadDebtReliefClaims(companyId));
+      res.json(await listBadDebtReliefClaimsDetailed(companyId));
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/vat/bad-debt-relief/eligible-invoices",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      if (!(await requireCompanyAccess(req, res, companyId))) return;
+      res.json(await listReliefEligibleInvoices(companyId));
     })
   );
 
