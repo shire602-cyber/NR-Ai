@@ -122,6 +122,31 @@ export function isVatDerived(input: ReceiptAmountsInput): boolean {
   return vatDerivedSource(input) !== null;
 }
 
+/**
+ * VAT rate for an AI-extracted receipt. A missing rate defaults to 5% (UAE) unless the model
+ * explicitly returned a VAT amount of 0 (not null): "VAT 0.00" printed on the document means
+ * nothing was charged, the same reading as the deterministic parser (`readZeroVatLines`), so the
+ * rate is 0 and no VAT is derived. A null/absent VAT amount is "not printed" and is derived and
+ * flagged by the caller. An explicit positive rate is always kept as printed.
+ */
+export function aiVatRate(
+  rawVatAmount: unknown,
+  rawVatPercentage: unknown
+): { vatPercentage: number; rateDefaulted: boolean } {
+  if (rawVatPercentage !== null && rawVatPercentage !== undefined) {
+    const n = parseFloat(String(rawVatPercentage).replace(/,/g, ""));
+    return { vatPercentage: !isNaN(n) && n >= 0 ? n : 0, rateDefaulted: false };
+  }
+  const explicitZeroVat =
+    rawVatAmount !== null &&
+    rawVatAmount !== undefined &&
+    String(rawVatAmount).trim() !== "" &&
+    parseFloat(String(rawVatAmount).replace(/,/g, "")) === 0;
+  return explicitZeroVat
+    ? { vatPercentage: 0, rateDefaulted: false }
+    : { vatPercentage: 5, rateDefaulted: true };
+}
+
 /** True when a VAT figure was supplied, measured in whole fils like the reconciler. */
 export function hasVatFigure(vatAmount: number): boolean {
   return fils(vatAmount) > 0;
@@ -183,4 +208,13 @@ export function vatDerivedMessage(
       ? `worked back from the total at ${rate} because the receipt shows no VAT amount`
       : `calculated at ${rate} on the subtotal because the receipt shows no VAT amount`;
   return `VAT ${money2(vatAmount)} was ${how}. Check before claiming it: input VAT can only be recovered with a valid tax invoice from a VAT-registered supplier that shows the VAT amount.`;
+}
+
+/**
+ * Review note when a receipt carries VAT but no valid supplier TRN. A tax invoice must show the
+ * supplier's TRN, so input VAT is not recoverable without one; a model-read VAT figure alone
+ * (it may have been computed, not printed) is not enough to book an input-VAT claim unattended.
+ */
+export function vatWithoutTrnMessage(vatAmount: number): string {
+  return `VAT ${money2(vatAmount)} is claimed but the receipt shows no valid supplier TRN. Check that this is a tax invoice from a VAT-registered supplier before claiming input VAT.`;
 }

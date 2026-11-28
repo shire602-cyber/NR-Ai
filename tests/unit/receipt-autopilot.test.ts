@@ -295,7 +295,31 @@ describe("runAutopilot pipeline", () => {
     total: 100,
     currency: "AED",
     date: "2026-04-12",
+    // Input VAT only auto-posts with a valid supplier TRN (tax invoice); see the gate test below.
+    supplierTrn: "100123456700003",
   };
+
+  it("VAT without a valid supplier TRN is queued with a VAT_NO_TRN note, never auto-posted", async () => {
+    highConfidenceRule();
+    const result = await runAutopilot("co-1", "user-1", { ...ocr, supplierTrn: null });
+    expect(result).toMatchObject({ autoPosted: false, queuedForReview: true });
+    expect(result.reviewNote?.code).toBe("VAT_NO_TRN");
+    expect(state.journalEntries).toHaveLength(0);
+    const bad = await runAutopilot("co-1", "user-1", { ...ocr, supplierTrn: "12345" });
+    expect(bad.autoPosted).toBe(false);
+  });
+
+  it("a VAT-free receipt auto-posts without a TRN", async () => {
+    highConfidenceRule();
+    const result = await runAutopilot("co-1", "user-1", {
+      ...ocr,
+      amount: 100,
+      vatAmount: 0,
+      total: 100,
+      supplierTrn: null,
+    });
+    expect(result.autoPosted).toBe(true);
+  });
 
   it("always creates a receipt + classification row", async () => {
     const result = await runAutopilot("co-1", "user-1", ocr);

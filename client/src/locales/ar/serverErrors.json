@@ -722,6 +722,7 @@
   "serverErrors.VAT_ADJUSTMENT_FAILED": "تعذّرت إضافة تعديل ضريبة القيمة المضافة. تحقق من التفاصيل وحاول مرة أخرى.",
   "serverErrors.VAT_ADJUSTMENT_NOT_FOUND": "تعذّر العثور على تعديل ضريبة القيمة المضافة.",
   "serverErrors.VAT_INPUT_ACCOUNT_MISSING": "حساب الذمم الدائنة غير موجود في دليل الحسابات. أضفه ثم حاول مرة أخرى.",
+  "serverErrors.VAT_NO_TRN": "تمت المطالبة بالضريبة في إيصال بلا رقم ضريبي صحيح للمورّد، لذا أُوقف للمراجعة.",
   "serverErrors.VAT_PERIOD_NOT_FOUND": "تعذّر العثور على فترة ضريبة القيمة المضافة.",
   "serverErrors.VAT_RATE_SUPPLY_MISMATCH": "نسبة الضريبة لا تطابق نوع التوريد في أحد بنود فاتورة المورد.",
   "serverErrors.VAT_RATE_UNUSUAL": "نسبة ضريبة القيمة المضافة في المستند ليست نسبة معتمدة في الإمارات (0% أو 5%).",

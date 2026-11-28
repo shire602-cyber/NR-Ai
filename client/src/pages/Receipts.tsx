@@ -393,6 +393,7 @@ const OCR_REVIEW_ISSUE_LABELS: Record<string, string> = {
   TRN_INVALID: "pageLabels.receiptIssueTrn",
   VAT_RATE_UNUSUAL: "pageLabels.receiptIssueVat",
   VAT_DERIVED: "pageLabels.receiptIssueVatDerived",
+  VAT_NO_TRN: "pageLabels.receiptIssueVatNoTrn",
 };
 
 function receiptReviewNotes(data: ExtractedData, locale: string, t: Record<string, string>) {

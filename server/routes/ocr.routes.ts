@@ -42,6 +42,7 @@ import { errorCode, errorMessage, errorProperty } from "../errors";
 import { todayDubai } from "@shared/accounting-date";
 import {
   amountMismatchMessage,
+  aiVatRate,
   hasVatFigure,
   reconcileReceiptAmounts,
   vatDerivedMessage,
@@ -569,8 +570,10 @@ function buildResult(
   const subtotal = parseNonNegative(aiResult.subtotal);
   const vatAmount = parseNonNegative(aiResult.vatAmount);
   // Treat null/undefined as missing (default to 5% for UAE); explicit 0 means zero-rated
-  const vatRateDefaulted = aiResult.vatPercentage === null || aiResult.vatPercentage === undefined;
-  const vatPercentage = vatRateDefaulted ? 5 : parseNonNegative(aiResult.vatPercentage);
+  const { vatPercentage, rateDefaulted: vatRateDefaulted } = aiVatRate(
+    aiResult.vatAmount,
+    aiResult.vatPercentage
+  );
   const total = parseNonNegative(aiResult.total);
 
   // Reconcile missing amounts in integer fils (half-up) so subtotal + VAT === total exactly.
