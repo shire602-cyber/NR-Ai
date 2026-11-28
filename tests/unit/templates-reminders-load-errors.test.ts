@@ -16,14 +16,15 @@ import { ApiError } from "../../client/src/lib/queryClient";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
-const net = vi.hoisted(() => ({ writes: [] as string[] }));
+const net = vi.hoisted(() => ({ writes: [] as string[], bodies: [] as unknown[] }));
 vi.mock("../../client/src/lib/queryClient", async (orig) => {
   const actual = await orig<typeof import("../../client/src/lib/queryClient")>();
   return {
     ...actual,
-    apiRequest: async (m: string, url: string) => {
+    apiRequest: async (m: string, url: string, body?: unknown) => {
       net.writes.push(`${m} ${url}`);
-      return {};
+      net.bodies.push(body);
+      return { id: "new1" };
     },
   };
 });
@@ -67,6 +68,7 @@ afterEach(async () => {
   root = null;
   node = null;
   net.writes.length = 0;
+  net.bodies.length = 0;
   useI18n.setState({ locale: "en" });
 });
 
@@ -108,6 +110,7 @@ async function mount(
     );
   });
   await settle();
+  return client;
 }
 
 const tid = (id: string) => node!.querySelector(`[data-testid="${id}"]`);
@@ -137,6 +140,61 @@ describe.each(["en", "ar"] as const)("Templates and reminders load errors (%s)",
     expect(save!.disabled).toBe(false);
   });
 
+  it("invoice templates: an empty loaded list enables Save, which creates a template then sets it default", async () => {
+    const { default: InvoiceTemplates } = await import("../../client/src/pages/InvoiceTemplates");
+    await mount(InvoiceTemplates as never, {}, locale, () => []);
+    expect(tid("invoice-templates-load-error")).toBeNull();
+    const save = tid("button-save-template") as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    await act(async () => save.click());
+    await settle();
+    expect(net.writes).toEqual([
+      "POST /api/companies/c1/invoice-templates",
+      "POST /api/invoice-templates/new1/set-default",
+    ]);
+    const created = net.bodies[0] as { layout: string; primaryColor: string };
+    expect(created.layout).toBe("standard");
+    expect(created.primaryColor).toMatch(/^#[0-9a-fA-F]{6}$/);
+  });
+
+  it("invoice templates: a failed refetch keeps the editor and saves onto the cached default", async () => {
+    const { default: InvoiceTemplates } = await import("../../client/src/pages/InvoiceTemplates");
+    let failing = false;
+    const client = await mount(InvoiceTemplates as never, {}, locale, (p) =>
+      p.includes("invoice-templates")
+        ? failing
+          ? "fail"
+          : [{ id: "t1", name: "Std", isDefault: true, primaryColor: "#112233" }]
+        : []
+    );
+    failing = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["/api/companies", "c1", "invoice-templates"] });
+    });
+    await settle();
+    expect(client.getQueryState(["/api/companies", "c1", "invoice-templates"])?.status).toBe(
+      "error"
+    );
+    expect(tid("invoice-templates-load-error")).toBeNull();
+    const save = tid("button-save-template") as HTMLButtonElement;
+    expect(save).not.toBeNull();
+    expect(save.disabled).toBe(false);
+    await act(async () => save.click());
+    await settle();
+    expect(net.writes).toEqual(["PUT /api/invoice-templates/t1"]);
+    expect((net.bodies[0] as { primaryColor: string }).primaryColor).toBe("#112233");
+  });
+
+  it("reminders: after a failed rules load the Add rule button is disabled", async () => {
+    const { AutomaticEmailRules } = await import("../../client/src/pages/Reminders");
+    await mount(AutomaticEmailRules as never, { companyId: "c1" }, locale, (p) =>
+      p.includes("reminders") || p.includes("reminder-settings") ? "fail" : { configured: true }
+    );
+    const add = tid("button-create-reminder") as HTMLButtonElement | null;
+    expect(add).not.toBeNull();
+    expect(add!.disabled).toBe(true);
+  });
+
   it("reminders: failed rules load shows the error, not the empty state", async () => {
     const { AutomaticEmailRules } = await import("../../client/src/pages/Reminders");
     await mount(AutomaticEmailRules as never, { companyId: "c1" }, locale, (p) =>
@@ -152,6 +210,8 @@ describe.each(["en", "ar"] as const)("Templates and reminders load errors (%s)",
       p.includes("status") ? { configured: true } : []
     );
     expect(tid("reminder-rules-load-error")).toBeNull();
+    expect(tid("empty-state")).not.toBeNull();
+    expect((tid("button-create-reminder") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("automatic email log: a failed load shows a compact error", async () => {
