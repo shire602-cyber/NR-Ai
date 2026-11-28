@@ -334,6 +334,7 @@
   "serverErrors.IMPORT_UNKNOWN_COLUMNS": "The file has columns we do not recognise. Use the template columns.",
   "serverErrors.INBOUND_ALREADY_CONVERTED": "This supplier credit note has already been recorded as a vendor credit.",
   "serverErrors.INBOUND_ARCHIVE_MISSING": "The original supplier document file is missing, so it cannot be converted.",
+  "serverErrors.INBOUND_BILL_QUANTITY_PRECISION": "A line on this e-invoice has a quantity with more than 2 decimal places, which a bill cannot store. Enter the bill manually using the line totals from the original invoice, or ask the supplier to resend it.",
   "serverErrors.INBOUND_DOCUMENT_NOT_FOUND": "The supplier document could not be found.",
   "serverErrors.INBOUND_NOT_CREDIT_NOTE": "This supplier document is not a credit note.",
   "serverErrors.INBOUND_NOT_REVIEWABLE": "Only a received, validated supplier document can be converted.",
