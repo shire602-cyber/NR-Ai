@@ -243,6 +243,7 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
       imageData: PNG_URL,
       companyId: COMPANY,
     });
+    expect(res.status).toBe(200);
     expect(res.body.vatAmount).toBe(5);
     const notes = res.body.validationIssues.filter((i: any) => i.code === "AMOUNT_MISMATCH");
     expect(notes).toHaveLength(1);
@@ -293,7 +294,7 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
     const { client } = anthropicReturning({
       ...goodExtraction,
       subtotal: 100,
-      vatAmount: 0,
+      vatAmount: null, // not printed (a printed 0.00 stays 0, see the explicit-zero tests)
       vatPercentage: 5,
       total: 0,
     });
@@ -314,7 +315,7 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
     const { client } = anthropicReturning({
       ...goodExtraction,
       subtotal: 0,
-      vatAmount: 0,
+      vatAmount: null, // not printed (a printed 0.00 stays 0, see the explicit-zero tests)
       vatPercentage: 5,
       total: 105,
     });
@@ -449,6 +450,32 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
     expect(mismatch[0].message).toMatch(/prints a VAT rate of 5% but a VAT amount of 0\.00/);
     expect(res.body.confidenceBand).not.toBe("high");
   });
+
+  it.each([
+    ["subtotal only", { subtotal: 100, total: null }, [100, 0, 100]],
+    ["total only", { subtotal: null, total: 105 }, [105, 0, 105]],
+  ])(
+    "R251-VAT0: an explicit VAT 0 at a printed 5%% rate with %s stays 0 (no calculated 5, no VAT_DERIVED)",
+    async (_label, figures, expected) => {
+      const { client } = anthropicReturning({
+        ...goodExtraction,
+        vatAmount: 0,
+        vatPercentage: 5,
+        ...figures,
+      });
+      const res = await post(appWith({ anthropic: client }), {
+        imageData: PNG_URL,
+        companyId: COMPANY,
+      });
+      expect(res.status).toBe(200);
+      expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual(expected);
+      const codes = res.body.validationIssues.map((i: any) => i.code);
+      expect(codes).not.toContain("VAT_DERIVED");
+      // A model's 0 next to a printed rate with a figure missing is raised, never auto-posted clean.
+      expect(codes).toContain("AMOUNT_MISMATCH");
+      expect(res.body.confidenceBand).not.toBe("high");
+    }
+  );
 
   it("an explicit VAT 0 with a printed rate and no gap stays a clean zero-VAT receipt", async () => {
     const { client } = anthropicReturning({
