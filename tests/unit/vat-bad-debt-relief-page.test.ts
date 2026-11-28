@@ -12,8 +12,8 @@ import { uaeToday } from "../../shared/uae-date";
 import arShell from "../../client/src/locales/ar/shell.json";
 import enShell from "../../client/src/locales/en/shell.json";
 import enCompliance from "../../client/src/locales/en/vatBadDebtRelief.json";
+import arForms from "../../client/src/locales/ar/forms.json";
 import arCompliance from "../../client/src/locales/ar/vatBadDebtRelief.json";
-import enForms from "../../client/src/locales/en/forms.json";
 import {
   apiCalls,
   byTestId,
@@ -80,7 +80,6 @@ vi.mock("../../client/src/hooks/use-toast", () => ({
 
 const CLAIMS_URL = `/api/companies/${COMPANY_ID}/vat/bad-debt-relief`;
 const ELIGIBLE_URL = `${CLAIMS_URL}/eligible-invoices`;
-const FILED_Q1 = { from: "2026-01-01", to: "2026-03-31", status: "filed", source: "company" };
 const claim = (over: object) => ({
   id: "11111111-1111-4111-8111-111111111111",
   companyId: COMPANY_ID,
@@ -96,8 +95,6 @@ const claim = (over: object) => ({
   invoiceNumber: "INV-0042",
   customerName: "Acme Trading",
   remainingRelief: 50,
-  claimReturnPeriod: FILED_Q1,
-  reversalReturnPeriod: null,
   ...over,
 });
 const ELIGIBLE = [
@@ -167,12 +164,13 @@ describe("VAT bad-debt relief screen", () => {
     );
     const reversed = byTestId("relief-row-55555555-5555-4555-8555-555555555555")!;
     expect(reversed.textContent).toContain("Customer paid");
-    // the period comes from the endpoint (the filed return), never derived from settings
+    // neutral wording naming the date; the server, not the screen, decides the return
     expect(byTestId("relief-period-11111111-1111-4111-8111-111111111111")!.textContent).toBe(
-      "1 Jan 2026 to 31 Mar 2026"
+      "Reported in the VAT return for the period containing 15 Mar 2026"
     );
-    // no return yet for the reversal date: a forecast wording, no invented range
-    expect(reversed.textContent).toContain("The return for the period containing 2 May 2026");
+    expect(reversed.textContent).toContain(
+      "Reported in the VAT return for the period containing 2 May 2026"
+    );
     expect(reversed.textContent).toContain(enCompliance["vatBadDebtRelief.statusReversed"]);
     expect(byTestId("button-reverse-55555555-5555-4555-8555-555555555555")).toBeNull();
   });
@@ -185,6 +183,7 @@ describe("VAT bad-debt relief screen", () => {
     expect(arCompliance["vatBadDebtRelief.statusClaimed"]).not.toBe("مطلوب");
     expect(text()).toContain(arCompliance["vatBadDebtRelief.statusReversed"]);
     expect(text()).not.toContain(enCompliance["vatBadDebtRelief.statusClaimed"]);
+    expect(text()).toContain(arCompliance["vatBadDebtRelief.periodNeutral"].replace("{date}", ""));
   });
 
   it("shows the empty state", async () => {
@@ -250,27 +249,34 @@ describe("VAT bad-debt relief screen", () => {
     expect(effect).not.toMatch(/AED/);
   });
 
-  it("uses the claim's return for a reversal date inside it, else the forecast wording", async () => {
+  it("words the reversal effect by date, never naming a return the screen cannot know", async () => {
     await renderPage(VatBadDebtRelief);
     await click(byTestId("button-reverse-11111111-1111-4111-8111-111111111111"));
     await type(byTestId("input-reverse-reason"), "Customer paid in full");
-    // today is outside Q1 2026: no return known for it, so the dialog forecasts
     expect(byTestId("reverse-effect")!.textContent).toContain(
-      "The return for the period containing"
+      "in the VAT return for the period containing"
     );
+    expect((byTestId("button-confirm-reverse") as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("does not name a filed return as the add-back return; it says the period is closed", async () => {
-    // The reversal date defaults to today, which this filed return covers.
-    const open = { ...FILED_Q1, to: "2099-12-31" };
-    setFixtures({ [CLAIMS_URL]: [claim({ claimReturnPeriod: open })], [ELIGIBLE_URL]: ELIGIBLE });
-    await renderPage(VatBadDebtRelief);
-    await click(byTestId("button-reverse-11111111-1111-4111-8111-111111111111"));
-    await type(byTestId("input-reverse-reason"), "Customer paid in full");
-    expect(byTestId("reverse-effect")!.textContent).toBe(
-      enForms["forms.serverErrors.VAT_PERIOD_FILED"]
-    );
-    expect((byTestId("button-confirm-reverse") as HTMLButtonElement).disabled).toBe(true);
+  it("shows the server's translated error when a reversal lands in a filed period (Arabic)", async () => {
+    state.lang = "ar";
+    const { useI18n } = await import("../../client/src/lib/i18n");
+    useI18n.setState({ locale: "ar" } as never);
+    const restore = failPosts("VAT_PERIOD_FILED", 409);
+    try {
+      await renderPage(VatBadDebtRelief);
+      await click(byTestId("button-reverse-11111111-1111-4111-8111-111111111111"));
+      await type(byTestId("input-reverse-reason"), "سبب كاف");
+      await click(byTestId("button-confirm-reverse"));
+      await flush(5);
+      const toast = state.toasts.at(-1)!;
+      expect(toast.variant).toBe("destructive");
+      expect(toast.description).toBe(arForms["forms.serverErrors.VAT_PERIOD_FILED"]);
+    } finally {
+      useI18n.setState({ locale: "en" } as never);
+      restore();
+    }
   });
 
   it("labels a claim closed by customer payments without naming one return", async () => {
@@ -280,7 +286,6 @@ describe("VAT bad-debt relief screen", () => {
           status: "reversed",
           reversedAt: "2026-05-02",
           reversalReason: "Payment received after bad-debt relief was claimed",
-          reversalReturnPeriod: FILED_Q1,
         }),
       ],
       [ELIGIBLE_URL]: ELIGIBLE,

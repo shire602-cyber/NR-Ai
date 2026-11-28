@@ -48,13 +48,6 @@ import { formatDate } from "@/lib/format-date";
 import { formatCurrency } from "@/lib/format";
 import { uaeToday } from "@shared/uae-date";
 
-interface ReturnPeriod {
-  from: string;
-  to: string;
-  status: string;
-  source: "company" | "group";
-}
-
 interface ReliefClaim {
   id: string;
   invoiceId: string;
@@ -67,8 +60,6 @@ interface ReliefClaim {
   invoiceNumber: string | null;
   customerName: string | null;
   remainingRelief: number | string | null;
-  claimReturnPeriod: ReturnPeriod | null;
-  reversalReturnPeriod: ReturnPeriod | null;
 }
 
 interface EligibleInvoice {
@@ -107,13 +98,10 @@ export default function VatBadDebtRelief() {
     queryFn: getQueryFn<ReliefClaim[]>({ on401: "throw" }),
     enabled: !!companyId,
   });
-  const periodLabel = (period: ReturnPeriod | null, date: string) =>
-    period
-      ? formatMessage(t["vatBadDebtRelief.periodRange"], {
-          from: formatDate(period.from, locale),
-          to: formatDate(period.to, locale),
-        })
-      : formatMessage(t["vatBadDebtRelief.periodForecast"], { date: formatDate(date, locale) });
+  // The server decides which return a date lands in (and refuses filed or locked periods), so the
+  // screen names the date, not a predicted return.
+  const periodLabel = (date: string) =>
+    formatMessage(t["vatBadDebtRelief.periodNeutral"], { date: formatDate(date, locale) });
 
   const claims = Array.isArray(claimsQuery.data) ? claimsQuery.data : undefined;
 
@@ -267,7 +255,7 @@ export default function VatBadDebtRelief() {
                         </TableCell>
                         <TableCell>{formatDate(claim.claimDate, locale)}</TableCell>
                         <TableCell data-testid={`relief-period-${claim.id}`}>
-                          {periodLabel(claim.claimReturnPeriod, claim.claimDate)}
+                          {periodLabel(claim.claimDate)}
                         </TableCell>
                         <TableCell>
                           <Badge variant={claimed ? "default" : "secondary"}>
@@ -289,12 +277,7 @@ export default function VatBadDebtRelief() {
                                   ? // Closed by customer payments: the add-backs were posted on each
                                     // payment date, so no single return carries them.
                                     t["vatBadDebtRelief.reversalPeriodRecovered"]
-                                  : formatMessage(t["vatBadDebtRelief.reversalPeriod"], {
-                                      period: periodLabel(
-                                        claim.reversalReturnPeriod,
-                                        claim.reversedAt
-                                      ),
-                                    })}
+                                  : periodLabel(claim.reversedAt)}
                               </p>
                               {claim.reversalReason ? (
                                 <p className="text-muted-foreground">
@@ -357,7 +340,6 @@ export default function VatBadDebtRelief() {
         <ReverseClaimDialog
           companyId={companyId}
           claim={reversing}
-          periodLabel={periodLabel}
           onClose={() => setReversing(null)}
           onDone={() => {
             setReversing(null);
@@ -382,14 +364,12 @@ export default function VatBadDebtRelief() {
 function ReverseClaimDialog({
   companyId,
   claim,
-  periodLabel,
   onClose,
   onDone,
   onError,
 }: {
   companyId: string;
   claim: ReliefClaim;
-  periodLabel: (period: ReturnPeriod | null, date: string) => string;
   onClose: () => void;
   onDone: () => void;
   onError: (e: unknown) => void;
@@ -410,28 +390,15 @@ function ReverseClaimDialog({
   // The server never dates a reversal before the claim.
   const effectiveDate = date < String(claim.claimDate) ? String(claim.claimDate) : date;
   const remaining = Number(claim.remainingRelief ?? 0);
-  // The return carrying the reversal is known only when the reversal date falls inside the claim's
-  // own return; otherwise it is the return for the period containing the date (a forecast).
-  const claimPeriod = claim.claimReturnPeriod;
-  const inClaimPeriod =
-    !!claimPeriod && effectiveDate >= claimPeriod.from && effectiveDate <= claimPeriod.to;
-  const period = periodLabel(inClaimPeriod ? claimPeriod : null, effectiveDate);
   const invoice = claim.invoiceNumber || t["vatBadDebtRelief.unknownInvoice"];
   // Mirrors reverseBadDebtReliefClaim: only relief not yet recovered through customer payments
   // is added back; with nothing left the claim just closes.
-  // A filed or submitted return is closed: the ledger refuses the add-back there (VAT_PERIOD_FILED),
-  // so say so instead of naming it as the return that carries the add-back.
-  const locked =
-    remaining > 0 &&
-    inClaimPeriod &&
-    ["filed", "submitted", "amended"].includes(claimPeriod?.status ?? "");
-  const effect = locked
-    ? t["forms.serverErrors.VAT_PERIOD_FILED"]
-    : remaining > 0
+  const effect =
+    remaining > 0
       ? formatMessage(t["vatBadDebtRelief.reverseBody"], {
           invoice,
           amount: formatCurrency(remaining, "AED", locale),
-          period,
+          date: formatDate(effectiveDate, locale),
         })
       : formatMessage(t["vatBadDebtRelief.reverseBodyNothing"], { invoice });
   return (
@@ -471,7 +438,7 @@ function ReverseClaimDialog({
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || !date || trimmed.length < 3 || locked}
+            disabled={mutation.isPending || !date || trimmed.length < 3}
             data-testid="button-confirm-reverse"
           >
             {t["vatBadDebtRelief.reverseConfirm"]}

@@ -1,8 +1,8 @@
 /**
  * VAT bad-debt relief screen endpoints (FDL 8/2017 Art. 64): the claims list returns invoice number,
- * customer, the relief still to be added back and the VAT return period each date actually falls
- * in (taken from the company's returns, or the representative's group return), and the eligible
- * invoices list offers written-off invoices without an active claim. Both are tenant-scoped.
+ * customer and the relief still to be added back (no exact VAT return period: the server's period
+ * lock decides that when a claim or reversal posts), and the eligible invoices list offers
+ * written-off invoices without an active claim. Both are tenant-scoped.
  */
 import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
@@ -54,69 +54,12 @@ const list = (t: Tenant, companyId = t.company.id) =>
 const eligible = (t: Tenant, companyId = t.company.id) =>
   t.as.get(`/api/companies/${companyId}/vat/bad-debt-relief/eligible-invoices`);
 
-async function insertReturn(
-  t: Tenant,
-  companyId: string,
-  from: string,
-  to: string,
-  groupId?: string,
-  status = "filed",
-  filingMemberIds?: string[]
-) {
-  // A closed group return carries its frozen filing scope, as the filing flow records it.
-  const snapshot =
-    groupId && filingMemberIds
-      ? {
-          filingVatGroup: {
-            groupId,
-            name: "Group",
-            groupTrn: GROUP_TRN,
-            memberIds: filingMemberIds,
-            provenance: "recorded",
-            memberAuthority: "settings.company",
-          },
-        }
-      : null;
+async function insertFiledReturn(t: Tenant, from: string, to: string) {
   await h.sql(
-    `INSERT INTO vat_returns (company_id, period_start, period_end, due_date, status, vat_group_id, created_by, reconciliation_snapshot)
-     VALUES ($1, $2::date, $3::date, ($3::date + 28), $6, $4, $5, $7::jsonb)`,
-    [
-      companyId,
-      from,
-      to,
-      groupId ?? null,
-      t.user.id,
-      status,
-      snapshot ? JSON.stringify(snapshot) : null,
-    ]
+    `INSERT INTO vat_returns (company_id, period_start, period_end, due_date, status, created_by)
+     VALUES ($1, $2::date, $3::date, ($3::date + 28), 'filed', $4)`,
+    [t.company.id, from, to, t.user.id]
   );
-}
-
-const GROUP_TRN = "100000000000003";
-
-async function createGroup(rep: Tenant, members: Tenant[]) {
-  const g = await h.sql<{ id: string }>(
-    `INSERT INTO vat_groups (representative_company_id, name, group_trn)
-     VALUES ($1, 'Group', $2) RETURNING id`,
-    [rep.company.id, GROUP_TRN]
-  );
-  for (const m of members) {
-    await h.sql(`INSERT INTO vat_group_members (group_id, company_id) VALUES ($1, $2)`, [
-      g[0].id,
-      m.company.id,
-    ]);
-  }
-  return g[0].id;
-}
-
-/** What the ledger lock says closes this date: the screen must name the same return. */
-async function lockPeriod(companyId: string, date: string) {
-  const { db } = await import("../../server/db");
-  const { findFiledVatPeriod } = await import("../../server/ledger/vat-lock");
-  const closure = await findFiledVatPeriod(db, companyId, date);
-  return closure && typeof closure === "object"
-    ? { from: closure.periodStart, to: closure.periodEnd, status: closure.status }
-    : null;
 }
 
 describe("bad-debt relief claims list and eligible invoices", () => {
@@ -130,7 +73,7 @@ describe("bad-debt relief claims list and eligible invoices", () => {
     expect((await eligible(t)).body).toEqual([]);
   });
 
-  it("returns invoice, customer, remaining relief and a null period when no return exists", async () => {
+  it("returns invoice, customer and remaining relief, with no return-period fields", async () => {
     const { t, invoiceId, number } = await setup("BDR-list");
     const c = await claim(t, invoiceId);
     const r = await list(t);
@@ -141,33 +84,31 @@ describe("bad-debt relief claims list and eligible invoices", () => {
       invoiceNumber: number,
       customerName: "Acme LLC",
       remainingRelief: 50,
-      claimReturnPeriod: null,
-      reversalReturnPeriod: null,
     });
+    expect(r.body[0]).not.toHaveProperty("claimReturnPeriod");
+    expect(r.body[0]).not.toHaveProperty("reversalReturnPeriod");
   });
 
-  it("takes the period from the company's actual return, not from its current settings", async () => {
-    const { t, invoiceId } = await setup("BDR-period");
-    // A return that does not follow the default stagger: it still decides the label.
-    await insertReturn(t, t.company.id, "2026-07-01", "2026-09-30", undefined, "draft");
+  it("refuses a reversal dated in a filed period with the server's VAT_PERIOD_FILED error", async () => {
+    const { t, invoiceId } = await setup("BDR-locked");
     const c = await claim(t, invoiceId);
-    let r = await list(t);
-    expect(r.body[0].claimReturnPeriod).toEqual({
-      from: "2026-07-01",
-      to: "2026-09-30",
-      status: "draft",
-      source: "company",
-    });
-    await insertReturn(t, t.company.id, "2026-10-01", "2026-12-31", undefined, "draft");
+    await insertFiledReturn(t, "2026-07-01", "2026-09-30");
     const rev = await t.as.post(
       `/api/companies/${t.company.id}/vat/bad-debt-relief/${c.id}/reverse`,
-      { date: "2026-11-05", reason: "Customer paid" }
+      { date: "2026-09-10", reason: "Customer paid" }
     );
-    expect(rev.status, rev.text).toBe(200);
-    r = await list(t);
-    expect(r.body[0].status).toBe("reversed");
-    expect(r.body[0].remainingRelief).toBeNull();
-    expect(r.body[0].reversalReturnPeriod).toMatchObject({ from: "2026-10-01", to: "2026-12-31" });
+    expect(rev.status, rev.text).toBe(409);
+    expect(rev.body.code ?? rev.body.error?.code).toBe("VAT_PERIOD_FILED");
+    // The claim stays active with its full remaining relief.
+    const r = await list(t);
+    expect(r.body[0]).toMatchObject({ status: "claimed", remainingRelief: 50 });
+    // The same reversal dated in the next, open period is accepted.
+    const ok = await t.as.post(
+      `/api/companies/${t.company.id}/vat/bad-debt-relief/${c.id}/reverse`,
+      { date: "2026-10-05", reason: "Customer paid" }
+    );
+    expect(ok.status, ok.text).toBe(200);
+    expect((await list(t)).body[0]).toMatchObject({ status: "reversed", remainingRelief: null });
   });
 
   it("reports only the relief not yet recovered through customer part-payments", async () => {
@@ -194,85 +135,6 @@ describe("bad-debt relief claims list and eligible invoices", () => {
       [t.company.id]
     );
     expect(Math.round(row.remainingRelief * 100)).toBe(5000 - Number(restored[0].f));
-  });
-
-  it("shows the representative's filed group return when its frozen scope lists the member", async () => {
-    const rep = await h.createTenant({ name: "BDR-rep", planId: "professional" });
-    const { t, invoiceId } = await setup("BDR-member");
-    // Claimed before the returns are filed: a closed period refuses new claims.
-    await claim(t, invoiceId);
-    const gid = await createGroup(rep, [t]);
-    await insertReturn(rep, rep.company.id, "2026-08-01", "2026-08-31", gid, "filed", [
-      rep.company.id,
-      t.company.id,
-    ]);
-    const r = await list(t);
-    expect(r.body[0].claimReturnPeriod).toEqual({
-      from: "2026-08-01",
-      to: "2026-08-31",
-      status: "filed",
-      source: "group",
-    });
-    expect(await lockPeriod(t.company.id, CLAIMED)).toEqual({
-      from: "2026-08-01",
-      to: "2026-08-31",
-      status: "filed",
-    });
-  });
-
-  it("shows the member's own return when it joined after the group return was filed without it", async () => {
-    const rep = await h.createTenant({ name: "BDR-rep-late", planId: "professional" });
-    const { t, invoiceId } = await setup("BDR-member-late");
-    // Claimed before the returns are filed: a closed period refuses new claims.
-    await claim(t, invoiceId);
-    const gid = await createGroup(rep, []);
-    // Filed August group return: the member was not part of it.
-    await insertReturn(rep, rep.company.id, "2026-08-01", "2026-08-31", gid, "filed", [
-      rep.company.id,
-    ]);
-    await insertReturn(t, t.company.id, "2026-07-01", "2026-09-30", undefined, "filed");
-    // The member joins afterwards.
-    await h.sql(`INSERT INTO vat_group_members (group_id, company_id) VALUES ($1, $2)`, [
-      gid,
-      t.company.id,
-    ]);
-    const r = await list(t);
-    expect(r.body[0].claimReturnPeriod).toEqual({
-      from: "2026-07-01",
-      to: "2026-09-30",
-      status: "filed",
-      source: "company",
-    });
-    expect(await lockPeriod(t.company.id, CLAIMED)).toEqual({
-      from: "2026-07-01",
-      to: "2026-09-30",
-      status: "filed",
-    });
-  });
-
-  it("keeps the group return for a member that left the group after the filing", async () => {
-    const rep = await h.createTenant({ name: "BDR-rep-left", planId: "professional" });
-    const { t, invoiceId } = await setup("BDR-member-left");
-    // Claimed before the returns are filed: a closed period refuses new claims.
-    await claim(t, invoiceId);
-    const gid = await createGroup(rep, [t]);
-    await insertReturn(rep, rep.company.id, "2026-07-01", "2026-09-30", gid, "filed", [
-      rep.company.id,
-      t.company.id,
-    ]);
-    await h.sql(`DELETE FROM vat_group_members WHERE group_id = $1 AND company_id = $2`, [
-      gid,
-      t.company.id,
-    ]);
-    const r = await list(t);
-    expect(r.body[0].claimReturnPeriod).toEqual({
-      from: "2026-07-01",
-      to: "2026-09-30",
-      status: "filed",
-      source: "group",
-    });
-    const locked = await lockPeriod(t.company.id, CLAIMED);
-    expect(locked).toEqual({ from: "2026-07-01", to: "2026-09-30", status: "filed" });
   });
 
   it("never exposes another tenant's claims or invoices", async () => {
