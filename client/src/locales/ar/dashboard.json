@@ -119,6 +119,7 @@
   "dashboard.needsLoadFailedTitle": "تعذّر تحميل بعض الفحوصات",
   "dashboard.needsLoadFailedBody": "تعذّر علينا التحقق مما يحتاج إلى انتباهك. أعد المحاولة.",
   "dashboard.loadForbiddenBody": "ليس لديك صلاحية الوصول إلى هذا. اطلب من مالك الشركة منحك إياها.",
+  "dashboard.needsLoading": "جارٍ التحقق مما يحتاج إلى انتباهك",
   "dashboard.needsNothing": "لا شيء يحتاج إليك الآن",
   "dashboard.modelHandoffAck": "تم الإقرار بفجوات التسليم",
   "dashboard.modelHandoffAckBody": "لدى {title} {gap}. اضغط على «الطابور» مرة أخرى للإرسال مع الإقرار بهذه الفجوات.",

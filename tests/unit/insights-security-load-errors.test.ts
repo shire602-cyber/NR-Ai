@@ -74,7 +74,7 @@ async function mount(
         retry: false,
         queryFn: async ({ queryKey }) => {
           const r = responder(String(queryKey[0]));
-          if (r === "fail") throw new ApiError(500, "Server exploded", {});
+          if (r === "fail") throw new ApiError("Server exploded", 500, {});
           return (r as { ok: unknown }).ok;
         },
       },

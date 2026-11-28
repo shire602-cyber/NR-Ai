@@ -5,6 +5,7 @@ import { canPerform, companyAccessQueryKey, type CompanyAccess } from "@/lib/aut
 import { useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { Link } from "wouter";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import { classifyLoadError } from "@/lib/loadError";
 import { apiRequest } from "@/lib/queryClient";
@@ -21,7 +22,7 @@ import {
 
 type LoadState = Pick<
   UseQueryResult,
-  "isError" | "isFetching" | "error" | "errorUpdatedAt" | "dataUpdatedAt" | "refetch"
+  "isError" | "isFetching" | "isLoading" | "error" | "errorUpdatedAt" | "dataUpdatedAt" | "refetch"
 >;
 
 const TONE_DOT: Record<NeedsYouChip["tone"], string> = {
@@ -117,6 +118,10 @@ export function NeedsYouStrip({
   const retryFailed = () => {
     for (const [, q] of reads) if (q.isError) void q.refetch();
   };
+  // First load: a contributing query that is fetching with no result yet. Until every one has
+  // settled the strip cannot know there is nothing to do, so it shows a neutral loading state.
+  // A refetch after an error also reports isLoading (the error clears); it has settled before.
+  const loading = reads.some(([, q]) => q.isLoading === true && (q.errorUpdatedAt ?? 0) === 0);
   const chips = buildNeedsYouChips(
     {
       invoices,
@@ -148,6 +153,16 @@ export function NeedsYouStrip({
           forbiddenDescription={tt["dashboard.loadForbiddenBody"]}
           testId="needs-you-load-error"
         />
+      ) : chips.length === 0 && loading ? (
+        <span
+          role="status"
+          aria-busy="true"
+          aria-label={tt["dashboard.needsLoading"]}
+          className="inline-flex h-10 items-center"
+          data-testid="needs-you-loading"
+        >
+          <Skeleton className="h-10 w-56 rounded-full" />
+        </span>
       ) : chips.length === 0 ? (
         <span
           className="inline-flex h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-small text-muted-foreground shadow-card-soft"
