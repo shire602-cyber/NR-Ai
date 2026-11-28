@@ -713,3 +713,117 @@ describe("review 6098131504 regression sweep (92 receipts, English and Arabic)",
     expect(r.issues).toEqual(issues);
   });
 });
+
+// Round 3 (review 6098587275 on PR #251): a tender word on the only total line must not make the
+// VAT the total. Tender-led totals are lower-priority candidates, not excluded ones.
+describe("a tender-led line is the total when it is the only total line", () => {
+  const T = "TRN 100111222300003";
+  it.each([
+    ["Card Total 105.00 / VAT 5.00", `Shop\n${T}\nCard Total 105.00\nVAT 5.00`],
+    ["Total Paid AED 105.00", `Shop\n${T}\nItem 100.00\nTotal Paid AED 105.00\nVAT 5.00`],
+    ["Total Amount Paid 105.00", `Shop\n${T}\nItem 100.00\nVAT 5.00\nTotal Amount Paid 105.00`],
+    ["Amount Paid 105.00", `Shop\n${T}\nItem 100.00\nVAT 5.00\nAmount Paid 105.00`],
+    [
+      "Card Total 105.00 with Cash 200.00",
+      `Shop\n${T}\nItem 100.00\nVAT 5.00\nCard Total 105.00\nCash 200.00`,
+    ],
+    ["Arabic المدفوع الاجمالي", `متجر\n${T}\nالمدفوع الاجمالي 105.00\nالضريبة 5.00`],
+    ["Arabic الاجمالي نقدا", `متجر\n${T}\nصنف 100.00\nالضريبة 5.00\nالاجمالي نقدا 105.00`],
+    ["Arabic اجمالي البطاقة", `متجر\n${T}\nالضريبة 5.00\nاجمالي البطاقة 105.00`],
+    ["Total 105.00 Visa", `Shop\n${T}\nTotal 105.00 Visa\nVAT 5.00`],
+    ["Total 105.00 (Card)", `Shop\n${T}\nTotal 105.00 (Card)\nVAT 5.00`],
+  ])("%s reads 100 / 5 / 105 with no issue", (_name, text) => {
+    const r = read(text);
+    expect(r.figures).toEqual([100, 5, 105]);
+    expect(r.issues).toEqual([]);
+  });
+
+  it("'Total Visa 30.00' with no VAT line works VAT back from 30, it is not 0 / 0 / 0", () => {
+    const r = read("Shop\nTotal Visa 30.00");
+    expect(r.figures).toEqual([28.57, 1.43, 30]);
+    expect(r.issues).toEqual(["VAT_DERIVED"]);
+  });
+
+  it("an ordinary total still beats a tender-led one, and a change line is never a total", () => {
+    expect(
+      read(`Shop\n${T}\nItem 100.00\nVAT 5.00\nCash Total 200.00\nTotal 105.00`).figures
+    ).toEqual([100, 5, 105]);
+    expect(
+      read(`Shop\n${T}\nItem 100.00\nVAT 5.00\nCard Total 105.00\nTotal Change 95.00`).figures
+    ).toEqual([100, 5, 105]);
+  });
+
+  it("with several tender-led totals the one that reconciles with the VAT wins", () => {
+    const r = read(`Shop\n${T}\nItem 100.00\nVAT 5.00\nCash Total 200.00\nCard Total 105.00`);
+    expect(r.figures).toEqual([100, 5, 105]);
+    const r2 = read(`Shop\n${T}\nItem 100.00\nVAT 5.00\nCard Total 105.00\nTotal Paid 200.00`);
+    expect(r2.figures).toEqual([100, 5, 105]);
+  });
+
+  it("a pure 'Cash 100' tender never becomes the total when nothing reconciles", () => {
+    for (const text of [
+      `Shop\n${T}\nItem 10.00\nVAT 0.50\nCash 100.00`,
+      `Shop\n${T}\nItem 10.00\nVAT 0.50\nCash 100.00\nChange 89.50`,
+    ]) {
+      const r = read(text);
+      expect(r.figures).toEqual([0.48, 0.5, 0.5]);
+      expect(r.issues).toEqual(["AMOUNT_MISMATCH"]);
+    }
+    const big = read(`Shop\n${T}\nItem 1000.00\nVAT 50.00\nCash 2000.00`);
+    expect(big.figures).toEqual([47.62, 50, 50]);
+    expect(big.issues).toEqual(["AMOUNT_MISMATCH"]);
+  });
+
+  it("a payment line that equals a printed figure plus the VAT is read as the total", () => {
+    const r = read(`Shop\n${T}\nItem 100.00\nCard Payment AED 105.00\nVAT 5.00`);
+    expect(r.figures).toEqual([100, 5, 105]);
+  });
+
+  it("cashew and gift-card item lines are not payment lines", () => {
+    expect(read(`Shop\n${T}\nCashew nuts 100.00\nVAT 5.00\nTotal 105.00`).figures).toEqual([
+      100, 5, 105,
+    ]);
+    expect(read(`Shop\n${T}\nGift Card 100.00\nVAT 5.00\nTotal 105.00`).figures).toEqual([
+      100, 5, 105,
+    ]);
+  });
+});
+
+describe("Gross Amount is a total word", () => {
+  it("'Net Amount 100 / VAT 5 / Gross Amount 105' is clean", () => {
+    const r = read("Shop\nTRN 100111222300003\nNet Amount 100.00\nVAT 5.00\nGross Amount 105.00");
+    expect(r.figures).toEqual([100, 5, 105]);
+    expect(r.issues).toEqual([]);
+  });
+});
+
+describe("two different printed VAT figures go to review with the smaller kept", () => {
+  it.each([
+    [
+      "Total 105 / Incl. VAT 3.00 / VAT 5.00",
+      "Total 105.00\nIncl. VAT 3.00\nVAT 5.00",
+      [102, 3, 105],
+    ],
+    [
+      "Subtotal 100 / VAT 5 / Total 105 / Incl. VAT 3.00",
+      "Subtotal 100.00\nVAT 5.00\nTotal 105.00\nIncl. VAT 3.00",
+      [100, 3, 105],
+    ],
+    ["Total 105 / VAT 5 / Incl. VAT 3.00", "Total 105.00\nVAT 5.00\nIncl. VAT 3.00", [102, 3, 105]],
+    [
+      "Arabic شامل الضريبة 3 and ضريبة القيمة المضافة 5",
+      "الاجمالي 105.00\nشامل الضريبة 3.00\nضريبة القيمة المضافة 5.00",
+      [102, 3, 105],
+    ],
+  ])("%s", (_name, body, figures) => {
+    const r = read(`Shop\nTRN 100111222300003\n${body}`);
+    expect(r.figures).toEqual(figures);
+    expect(r.issues).toEqual(["AMOUNT_MISMATCH"]);
+  });
+
+  it("the same figure on both lines is not a conflict", () => {
+    const r = read("Shop\nTRN 100111222300003\nTotal 105.00\nIncl. VAT 5.00\nVAT 5.00");
+    expect(r.figures).toEqual([100, 5, 105]);
+    expect(r.issues).toEqual([]);
+  });
+});

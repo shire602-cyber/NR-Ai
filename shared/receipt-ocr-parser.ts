@@ -390,30 +390,47 @@ function readZeroVatLines(
 const TENDER_LINE =
   /\b(?:cash|paid|tender(?:ed)?|change|card|visa|master\s*card|amex|received|refund)\b|نقد|بطاقة|الباقي|المتبقي|المدفوع|مدفوع|فيزا/i;
 
-function findLargestLikelyAmount(allLines: string[]): number {
-  const lines = allLines.filter((line) => !TENDER_LINE.test(line));
+// A change / refund line is money given back, never a total candidate.
+const CHANGE_LINE = /\b(?:change|refund)\b|الباقي|المتبقي/i;
+
+/**
+ * Last-resort total: the largest amount on a line that talks about money. A payment line (cash,
+ * card, paid) loses to the receipt's own figures: it is used only when it equals a printed figure
+ * plus the VAT ("Item 100 / Card Payment 105 / VAT 5").
+ * "Item 10 / VAT 0.50 / Cash 100" keeps the 10.50 reading and goes to review, never the cash 100.
+ */
+function findLargestLikelyAmount(allLines: string[], vatAmount = 0): number {
+  const amountsOnLine = (line: string): number[] =>
+    Array.from(line.matchAll(new RegExp(`(?:${CUR})?\\s*(-?\\d[\\d,]*\\.?\\d{0,2})`, "gi")))
+      .map((match) => parseAmount(match[1]))
+      .filter((amount) => amount > 0 && amount < 100000000);
   const amounts: number[] = [];
-  for (const line of lines) {
+  const tenderAmounts: number[] = [];
+  const plainFigures: number[] = [];
+  for (const line of allLines) {
+    if (!TENDER_LINE.test(line)) plainFigures.push(...amountsOnLine(line));
     const hasAmountSignal =
       /\b(aed|dhs?|total|amount|payable|cash|card|vat|tax)\b|درهم|د\.\s?إ|د\.\s?ا|الاجمالي|اجمالي|المبلغ|ضريبة/i.test(
         line
       );
-    const lineAmounts = Array.from(
-      line.matchAll(new RegExp(`(?:${CUR})?\\s*(-?\\d[\\d,]*\\.?\\d{0,2})`, "gi"))
-    )
-      .map((match) => parseAmount(match[1]))
-      .filter((amount) => amount > 0 && amount < 100000000);
-    if (hasAmountSignal) {
-      amounts.push(...lineAmounts);
-    }
+    if (!hasAmountSignal) continue;
+    if (!TENDER_LINE.test(line)) amounts.push(...amountsOnLine(line));
+    else if (!CHANGE_LINE.test(line)) tenderAmounts.push(...amountsOnLine(line));
   }
   if (amounts.length === 0) {
-    for (const match of lines.join("\n").matchAll(/\b(-?\d[\d,]+\.\d{2})\b/g)) {
+    const plainLines = allLines.filter((line) => !TENDER_LINE.test(line)).join("\n");
+    for (const match of plainLines.matchAll(/\b(-?\d[\d,]+\.\d{2})\b/g)) {
       const amount = parseAmount(match[1]);
       if (amount > 0 && amount < 100000000) amounts.push(amount);
     }
   }
-  return amounts.length ? Math.max(...amounts) : 0;
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.015;
+  // A payment amount counts only when it is a printed figure plus the VAT.
+  const keepTender = tenderAmounts.filter(
+    (t) => vatAmount > 0 && plainFigures.some((a) => near(t, a + vatAmount))
+  );
+  const all = [...amounts, ...keepTender];
+  return all.length ? Math.max(...all) : 0;
 }
 
 function extractMerchant(lines: string[]): string {
@@ -504,12 +521,18 @@ export function parseReceiptOcrText(
   const tenderFreeText = lines.filter((line) => !TENDER_LINE.test(line)).join("\n");
   // A tender word before the amount on the same line ("Cash Total 200", "Total Paid 200") makes it
   // a payment figure, never the receipt's total ("Total 105 Visa" is still a total).
-  const amountsOf = (pattern: RegExp): number[] =>
+  // `tender: true` returns the opposite set: total-like lines that carry a tender word and are not
+  // change lines. Those are candidates only when no ordinary total line exists.
+  const amountsOf = (pattern: RegExp, tender = false): number[] =>
     Array.from(matchText.matchAll(pattern))
       .filter((match) => {
         const index = match.index ?? 0;
         const lineStart = matchText.lastIndexOf("\n", index) + 1;
-        return !TENDER_LINE.test(matchText.slice(lineStart, index + match[0].length));
+        const upToAmount = matchText.slice(lineStart, index + match[0].length);
+        if (!tender) return !TENDER_LINE.test(upToAmount);
+        const lineEnd = matchText.indexOf("\n", index);
+        const wholeLine = matchText.slice(lineStart, lineEnd < 0 ? undefined : lineEnd);
+        return TENDER_LINE.test(upToAmount) && !CHANGE_LINE.test(wholeLine);
       })
       .map((match) => parseAmount(match[1]))
       .filter((amount) => amount > 0 && amount < 100000000);
@@ -518,16 +541,16 @@ export function parseReceiptOcrText(
   // discount line). Then plain Total / Amount Due lines. "Net Total" is the total only when no such
   // line exists. "Sub Total" / "Sub-Total" and totals "before tax", "excluding VAT" or "exclusive
   // of VAT" (English and Arabic) are net figures, never the total.
-  const grandTotals = amountsOf(
-    /\b(?:grand\s+total|net\s+payable|total\s+due)\b(?!\s*(?:vat|tax|gst)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi
-  );
-  const plainTotals = amountsOf(
-    /(?<!\b(?:sub|net)[ \t-]*)\b(?:amount\s+due|balance\s+due|total\s+amount|total)\b(?!\s*\(?\s*(?:vat|tax|gst|before|excl\w*|exclusive|without|w\/o|ex[ \t.]+(?:vat|tax))\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi
-  );
-  const netTotals = amountsOf(
-    /\bnet[ \t-]*total\b(?!\s*\(?\s*(?:vat|tax|gst|before|excl\w*|exclusive|without|w\/o)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi
-  );
-  const otherTotal = findFirstAmount(tenderFreeText, [
+  const GRAND_RE =
+    /\b(?:grand\s+total|net\s+payable|total\s+due)\b(?!\s*(?:vat|tax|gst)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi;
+  const PLAIN_RE =
+    /(?<!\b(?:sub|net)[ \t-]*)\b(?:amount\s+due|balance\s+due|total\s+amount|gross\s+(?:amount|total)|total)\b(?!\s*\(?\s*(?:vat|tax|gst|before|excl\w*|exclusive|without|w\/o|ex[ \t.]+(?:vat|tax))\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi;
+  const NET_RE =
+    /\bnet[ \t-]*total\b(?!\s*\(?\s*(?:vat|tax|gst|before|excl\w*|exclusive|without|w\/o)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi;
+  const grandTotals = amountsOf(GRAND_RE);
+  const plainTotals = amountsOf(PLAIN_RE);
+  const netTotals = amountsOf(NET_RE);
+  const otherTotalPatterns = [
     new RegExp(
       `(?:المبلغ الاجمالي|الاجمالي الكلي|المجموع الكلي|المبلغ المستحق|صافي المبلغ|الاجمالي|اجمالي المبلغ|اجمالي)(?!\\s*(?:الفرعي|الضريبه|الضريبة|ضريبة|قبل|بدون|دون|غير\\s+شامل))[^\\d-]{0,30}${AMT}`,
       "g"
@@ -537,7 +560,27 @@ export function parseReceiptOcrText(
       `(\\d[\\d,]*\\.?\\d{0,2})\\s*${CUR}?\\s*(?:المبلغ الاجمالي|الاجمالي الكلي|المجموع الكلي|الاجمالي|اجمالي)(?!\\s*(?:الفرعي|الضريبه|الضريبة|ضريبة|قبل|بدون|دون))`,
       "g"
     ),
-  ]);
+  ];
+  const otherTotal = findFirstAmount(tenderFreeText, otherTotalPatterns);
+  // Total lines that carry a tender word ("Card Total 105", "Total Paid AED 105", "Amount Paid 105",
+  // "اجمالي البطاقة 105"): candidates only when no ordinary total line exists. Change lines never.
+  const tenderOnlyText = lines
+    .filter((line) => TENDER_LINE.test(line) && !CHANGE_LINE.test(line))
+    .join("\n");
+  const tenderAmountsOf = (pattern: RegExp): number[] =>
+    Array.from(tenderOnlyText.matchAll(new RegExp(pattern.source, pattern.flags)))
+      .map((match) => parseAmount(match[1]))
+      .filter((amount) => amount > 0 && amount < 100000000);
+  const tenderTotalCandidates = (): number[] => [
+    ...amountsOf(GRAND_RE, true),
+    ...amountsOf(PLAIN_RE, true),
+    ...amountsOf(NET_RE, true),
+    // The bare "AED 80" pattern is not a total word, so a "Paid AED 80" line is not a candidate.
+    ...otherTotalPatterns.filter((_, i) => i !== 1).flatMap(tenderAmountsOf),
+    ...tenderAmountsOf(
+      /\b(?:amount|total)\s+(?:paid|tendered|received)\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi
+    ),
+  ];
   const subtotal = findFirstAmount(matchText, [
     /\b(?:sub[\s-]*total|(?:amount|total)\s+before\s+(?:vat|tax)|net\s+amount|taxable\s+amount|excl\.?\s*vat|excluding\s+(?:vat|tax)|exclusive\s+of\s+(?:vat|tax))\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     new RegExp(
@@ -547,7 +590,7 @@ export function parseReceiptOcrText(
   ]);
   // "VAT 0%" ending its line must not read the next line's total as its amount.
   const vatSearchText = matchText.replace(BARE_ZERO_RATE_LINE, "$1 0.00");
-  const readVatAmount = findFirstAmount(vatSearchText, [
+  const vatPatterns = [
     // The optional "5%" label must be consumed so the percentage is never read as the VAT amount.
     // Not "Before Tax" / "Excl. VAT" (a net figure) and not "TAX INVOICE" / "VAT No" headers.
     // "Incl. VAT 3.00" with no total word is the VAT amount; "Total incl. VAT 105" is the gross total.
@@ -558,7 +601,23 @@ export function parseReceiptOcrText(
       "g"
     ),
     /\b5\s*%\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
-  ]);
+  ];
+  let readVatAmount = findFirstAmount(vatSearchText, vatPatterns);
+  // Two different printed VAT figures ("Incl. VAT 3.00" and "VAT 5.00"): keep the smaller so VAT is
+  // never over-claimed, and send the receipt to review.
+  let vatFiguresConflict = false;
+  {
+    const inclStart = /^[ \t*#\-•|:]*(?:incl\.?|including|inclusive[ \t]+of|شامل[ةه]?)[ \t]/i;
+    const vatLines = vatSearchText.split("\n");
+    const firstVat = (picked: string[]) =>
+      findFirstAmount(picked.join("\n"), vatPatterns.slice(0, 2));
+    const inclAmount = firstVat(vatLines.filter((l) => inclStart.test(l)));
+    const plainAmount = firstVat(vatLines.filter((l) => !inclStart.test(l)));
+    if (inclAmount > 0 && plainAmount > 0 && Math.abs(inclAmount - plainAmount) > 0.01) {
+      vatFiguresConflict = true;
+      readVatAmount = Math.min(inclAmount, plainAmount);
+    }
+  }
 
   // Resolve the total once VAT and subtotal are known. Several plain Total lines (a discount
   // between them): take the one that is the net line plus the read VAT. A Sub Total with VAT and
@@ -573,12 +632,26 @@ export function parseReceiptOcrText(
     );
     return fit ?? plainTotals[0];
   })();
-  const printedTotal =
+  const ordinaryTotal =
     grandTotals[grandTotals.length - 1] ?? (plainTotal || netTotals[0] || otherTotal || 0);
+  // No ordinary total line: a total line that carries a tender word ("Card Total 105", "Total Paid
+  // 105") is the best reading left. With several, the one that is the net plus the VAT wins.
+  const tenderTotal = (() => {
+    if (ordinaryTotal > 0) return 0;
+    const candidates = tenderTotalCandidates();
+    if (candidates.length <= 1) return candidates[0] ?? 0;
+    const near = (a: number, b: number) => Math.abs(a - b) < 0.015;
+    const reconciles = (c: number) =>
+      readVatAmount > 0 &&
+      ((subtotal > 0 && near(c, subtotal + readVatAmount)) ||
+        Math.abs(Math.round(readVatAmount * 100) - Math.round((c - readVatAmount) * 5)) <= 1);
+    return candidates.find(reconciles) ?? candidates[0];
+  })();
+  const printedTotal = ordinaryTotal || tenderTotal;
   const totalFromSubtotal =
     printedTotal === 0 && subtotal > 0 && readVatAmount > 0 ? round2(subtotal + readVatAmount) : 0;
   const total = printedTotal || totalFromSubtotal;
-  const readTotal = total || findLargestLikelyAmount(lines);
+  const readTotal = total || findLargestLikelyAmount(lines, readVatAmount);
   const feesInTotal = feeTotal > 0 && (readTotal === 0 || readTotal > feeTotal) ? feeTotal : 0;
 
   // A VAT line that prints zero ("VAT 0% AED 0.00", "VAT 0.00") is a read figure, not a missing
@@ -691,6 +764,13 @@ export function parseReceiptOcrText(
             hasVatFigure(vatAmount)
           )
         : `${FEE_VAT_AMBIGUOUS_NOTE} (${feeVat.toFixed(2)}) and on its own line (${readVatAmount.toFixed(2)}). The VAT line was used; check whether the fee-line VAT is already included in it.`,
+    });
+  }
+  if (vatFiguresConflict && !validationIssues.some((i) => i.code === "AMOUNT_MISMATCH")) {
+    validationIssues.push({
+      code: "AMOUNT_MISMATCH",
+      severity: "error",
+      message: `The receipt prints two different VAT figures (an "Incl. VAT" line and a VAT line). The smaller, ${readVatAmount.toFixed(2)}, was used so VAT is not over-claimed. Check the figures against the receipt.`,
     });
   }
   // A Sub Total with no printed total: the total is calculated (sub total + VAT) or guessed from
