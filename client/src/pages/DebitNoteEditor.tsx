@@ -193,6 +193,11 @@ export default function DebitNoteEditor() {
   // A linked bill supplies the currency, supplier and the apply step: wait for it too.
   const billReady = !billId || !!bill;
   const canSave = listsReady && billReady;
+  const saveBlockedReason = canSave
+    ? null
+    : listsFailed || billFailed
+      ? t["purchases.debitNote.loadFailedBlock"]
+      : t["purchases.debitNote.stillLoading"];
 
   const block = (message: string) => {
     setError(message);
@@ -244,6 +249,15 @@ export default function DebitNoteEditor() {
       }
       footer={
         <>
+          {saveBlockedReason && (
+            <p
+              id="debit-note-save-reason"
+              className="me-auto text-xs text-muted-foreground"
+              data-testid="debit-note-save-reason"
+            >
+              {saveBlockedReason}
+            </p>
+          )}
           <Button type="button" variant="ghost" onClick={() => navigate("/debit-notes")}>
             {t["pages.cancel"]}
           </Button>
@@ -251,6 +265,7 @@ export default function DebitNoteEditor() {
             type="button"
             onClick={submit}
             disabled={save.isPending || !canSave}
+            aria-describedby={saveBlockedReason ? "debit-note-save-reason" : undefined}
             {...gate("ledger.post")}
             data-testid="button-save-debit-note"
           >
