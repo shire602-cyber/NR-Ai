@@ -1,6 +1,7 @@
 import { T } from "@/components/layout/T";
 import { PracticeNav } from "@/components/firm/PracticeNav";
 import { PageHeader } from "@/components/ui/page-header";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -185,11 +186,24 @@ export default function FirmHealth() {
   const [sortField, setSortField] = useState<SortField>("health");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  const { data: healthData, isLoading } = useQuery<HealthData>({
+  const {
+    data: healthData,
+    isLoading,
+    isError: healthFailed,
+    error: healthError,
+    refetch: refetchHealth,
+    isFetching: healthFetching,
+  } = useQuery<HealthData>({
     queryKey: ["/api/firm/health"],
   });
 
-  const { data: deadlinesData } = useQuery<DeadlinesData>({
+  const {
+    data: deadlinesData,
+    isError: deadlinesFailed,
+    error: deadlinesError,
+    refetch: refetchDeadlines,
+    isFetching: deadlinesFetching,
+  } = useQuery<DeadlinesData>({
     queryKey: ["/api/firm/health/deadlines"],
   });
 
@@ -246,7 +260,16 @@ export default function FirmHealth() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-h1 font-semibold tabular-nums">{summary?.totalClients ?? 0}</p>
+            <p className="text-h1 font-semibold tabular-nums">
+              {healthFailed ? (
+                <>
+                  <span aria-hidden>—</span>
+                  <span className="sr-only">{t["firm.notAvailable"]}</span>
+                </>
+              ) : (
+                (summary?.totalClients ?? 0)
+              )}
+            </p>
           </CardContent>
         </Card>
 
@@ -258,7 +281,16 @@ export default function FirmHealth() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-h1 font-semibold tabular-nums">{summary?.healthy ?? 0}</p>
+            <p className="text-h1 font-semibold tabular-nums">
+              {healthFailed ? (
+                <>
+                  <span aria-hidden>—</span>
+                  <span className="sr-only">{t["firm.notAvailable"]}</span>
+                </>
+              ) : (
+                (summary?.healthy ?? 0)
+              )}
+            </p>
           </CardContent>
         </Card>
 
@@ -270,7 +302,16 @@ export default function FirmHealth() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-h1 font-semibold tabular-nums">{summary?.attention ?? 0}</p>
+            <p className="text-h1 font-semibold tabular-nums">
+              {healthFailed ? (
+                <>
+                  <span aria-hidden>—</span>
+                  <span className="sr-only">{t["firm.notAvailable"]}</span>
+                </>
+              ) : (
+                (summary?.attention ?? 0)
+              )}
+            </p>
           </CardContent>
         </Card>
 
@@ -282,7 +323,16 @@ export default function FirmHealth() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-h1 font-semibold tabular-nums">{summary?.critical ?? 0}</p>
+            <p className="text-h1 font-semibold tabular-nums">
+              {healthFailed ? (
+                <>
+                  <span aria-hidden>—</span>
+                  <span className="sr-only">{t["firm.notAvailable"]}</span>
+                </>
+              ) : (
+                (summary?.critical ?? 0)
+              )}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -293,7 +343,14 @@ export default function FirmHealth() {
           <CardTitle className="text-base">{t.clientHealthTable}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          {sortedClients.length === 0 ? (
+          {healthFailed ? (
+            <LoadErrorState
+              error={healthError}
+              onRetry={() => void refetchHealth()}
+              retrying={healthFetching}
+              testId="firm-health-load-error"
+            />
+          ) : sortedClients.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <Building2 className="w-10 h-10 text-muted-foreground mb-3" />
               <p className="text-muted-foreground">{t.noClients}</p>
@@ -429,7 +486,14 @@ export default function FirmHealth() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {deadlines.length === 0 ? (
+          {deadlinesFailed ? (
+            <LoadErrorState
+              error={deadlinesError}
+              onRetry={() => void refetchDeadlines()}
+              retrying={deadlinesFetching}
+              testId="firm-deadlines-load-error"
+            />
+          ) : deadlines.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-center">
               <CheckCircle2 className="w-8 h-8 text-success mb-2" />
               <p className="text-muted-foreground">{t.noDeadlines}</p>

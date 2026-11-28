@@ -15,6 +15,7 @@ import arEvidence from "../../client/src/locales/ar/documentsEvidence.json";
 import { localizeEvidenceText } from "../../shared/server-copy";
 import { stripAllowlisted } from "../e2e/lib/latin-text.mjs";
 import { useHarness } from "./harness";
+import { dubaiIso, dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 
@@ -73,8 +74,8 @@ describe("F13 evidence centre copy keys", () => {
     // A draft invoice with VAT in the current quarter feeds the proof rows and the risk scan.
     const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
       customerName: "Acme LLC",
-      date: new Date().toISOString().slice(0, 10),
-      dueDate: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+      date: dubaiToday(),
+      dueDate: dubaiIso(new Date(Date.now() + 14 * 86400000)),
       lines: [{ description: "Services", quantity: 1, unitPrice: 1000, vatRate: 5 }],
     });
     expect(inv.status, inv.text).toBe(200);

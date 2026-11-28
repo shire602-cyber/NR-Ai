@@ -10,10 +10,11 @@
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiIso } from "../helpers/dates";
 
 const h = useHarness();
 let t: Tenant;
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+const daysAgo = (n: number) => dubaiIso(new Date(Date.now() - n * 86_400_000));
 const base = () => `/api/companies/${t.company.id}`;
 const RATE = 3.6725;
 const ids: Record<string, string> = {};

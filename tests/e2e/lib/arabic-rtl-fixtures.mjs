@@ -5,6 +5,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { apiClient, PASSWORD } from "./sweep-personas.mjs";
+import { dubaiIso } from "../../helpers/dates.mjs";
 
 const exec = promisify(execFile);
 
@@ -75,7 +76,7 @@ export async function makeFixtures(base, cache) {
   const recurring = await checked(token, "POST", `${root}/recurring-invoices`, {
     contactId: contact.id,
     customerName: contactName,
-    startDate: new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10),
+    startDate: dubaiIso(new Date(Date.now() + 90 * 86_400_000)),
     frequency: "monthly",
     lines: [{ description: "خدمات شهرية", quantity: 1, unitPrice: 150, vatRate: 0.05 }],
   });

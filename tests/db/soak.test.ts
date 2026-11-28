@@ -17,6 +17,7 @@ import { randomBytes } from "node:crypto";
 import { stripVTControlCharacters } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { HARNESS_DB_PREFIX, createDatabase, databaseUrl, dropDatabase, repoRoot } from "./pg-admin";
+import { dubaiToday } from "../helpers/dates";
 
 const enabled = process.env.HARNESS_MODE === "postgres";
 const adminUrl = process.env.HARNESS_ADMIN_URL ?? "";
@@ -147,7 +148,7 @@ describe.skipIf(!enabled)("soak: real server survives mixed and malformed traffi
     });
     const cid = (companies.body as Array<{ id: string }>)[0].id;
     const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dubaiToday();
     const huge = "x".repeat(2 * 1024 * 1024);
 
     const scenarios: Array<() => Promise<{ status: number; body: any }>> = [

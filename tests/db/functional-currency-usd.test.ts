@@ -5,10 +5,11 @@
 import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
 import type { FxToVatFilingCurrency } from "../../server/services/fx";
+import { dubaiIso, dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
-const today = () => new Date().toISOString().slice(0, 10);
+const daysAgo = (n: number) => dubaiIso(new Date(Date.now() - n * 86_400_000));
+const today = () => dubaiToday();
 
 async function issuedInvoice(t: Tenant, body: Record<string, unknown>) {
   const c = await t.as.post(`/api/companies/${t.company.id}/invoices`, {

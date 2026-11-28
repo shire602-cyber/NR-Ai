@@ -6,9 +6,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { gunzipSync } from "node:zlib";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 async function seed(t: Tenant) {

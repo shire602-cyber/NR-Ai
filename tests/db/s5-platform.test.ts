@@ -10,9 +10,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { generateSync } from "otplib";
 import { freezeTime, useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 let restoreTime: (() => void) | null = null;
 const originalFlag = process.env.BILLING_ENFORCEMENT;

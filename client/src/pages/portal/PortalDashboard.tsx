@@ -21,6 +21,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PortalLoadNotice } from "@/components/portal/PortalLoadNotice";
+import { usePortalRetry } from "@/hooks/usePortalRetry";
 import { portalQuery } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { DateText } from "@/components/documents/DateText";
@@ -46,12 +48,23 @@ interface PortalDocumentRow {
 export default function PortalDashboard() {
   const supplier = usePortalAccountScope();
   const { t, locale } = useTranslation();
-  const { data, isLoading } = useQuery({
-    ...portalQuery("/api/client-portal/dashboard", supplier),
-  });
-  const { data: documents = [] } = useQuery<PortalDocumentRow[]>({
-    ...portalQuery("/api/client-portal/documents", supplier),
-  });
+  const dashboardQuery = portalQuery("/api/client-portal/dashboard", supplier);
+  const dashboard = useQuery<any>({ ...dashboardQuery });
+  const { data, isPaused, isFetching } = dashboard;
+  const { error, isLoading, retryPending, retry } = usePortalRetry(
+    dashboardQuery.queryKey,
+    dashboard
+  );
+  const documentsQuery = portalQuery("/api/client-portal/documents", supplier);
+  const documentsResult = useQuery<PortalDocumentRow[]>({ ...documentsQuery });
+  const documentsRetry = usePortalRetry(documentsQuery.queryKey, documentsResult);
+  const documents = documentsResult.data ?? [];
+  const documentsLoading = documentsRetry.isLoading;
+  const documentsNotice =
+    documentsRetry.error ||
+    documentsResult.isPaused ||
+    (documentsRetry.retryPending && documentsResult.isFetching);
+  const dashboardNotice = error || isPaused || (retryPending && isFetching);
 
   const { data: company } = useQuery<{ name?: string }>({
     ...portalQuery("/api/client-portal/company", supplier),
@@ -117,7 +130,9 @@ export default function PortalDashboard() {
         </Alert>
       )}
 
-      {(isLoading || hasInvoices) && <BalanceSummary data={data} loading={isLoading} />}
+      {(isLoading || hasInvoices) && !(dashboardNotice && data === undefined) && (
+        <BalanceSummary data={data} loading={isLoading} />
+      )}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -134,7 +149,19 @@ export default function PortalDashboard() {
           )}
         </CardHeader>
         <CardContent className="p-0">
-          {!isLoading && recentInvoices.length === 0 ? (
+          {dashboardNotice && !isLoading ? (
+            <PortalLoadNotice
+              error={error}
+              paused={isPaused}
+              retrying={isFetching}
+              retryPending={retryPending}
+              onRetry={retry}
+              compact={data !== undefined}
+              resource="dashboard"
+            />
+          ) : null}
+          {data === undefined && dashboardNotice ? null : !isLoading &&
+            recentInvoices.length === 0 ? (
             <EmptyState
               headingLevel="h2"
               icon={FileText}
@@ -202,7 +229,20 @@ export default function PortalDashboard() {
           )}
         </CardHeader>
         <CardContent className={documents.length ? "p-0" : undefined}>
-          {documents.length === 0 ? (
+          {documentsNotice && !documentsLoading ? (
+            <PortalLoadNotice
+              error={documentsRetry.error}
+              paused={documentsResult.isPaused}
+              retrying={documentsResult.isFetching}
+              retryPending={documentsRetry.retryPending}
+              onRetry={documentsRetry.retry}
+              compact={documentsResult.data !== undefined}
+              resource="documents"
+            />
+          ) : null}
+          {documentsLoading ||
+          (documentsResult.data === undefined && documentsNotice) ? null : documents.length ===
+            0 ? (
             <EmptyState
               compact
               className="[&_a]:min-h-11"

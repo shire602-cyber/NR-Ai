@@ -13,6 +13,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { gunzipSync } from "node:zlib";
+import { assertReleaseCompleted } from "../../docs/release/rehearsal/check-release-log.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -104,6 +105,7 @@ const env = { PATH: process.env.PATH, LANG: "C", TZ: "UTC" };
 // Keep local Docker configuration available without inheriting DOCKER_HOST or app/PG variables.
 const dockerEnv = { ...env, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
 let port;
+let clusterId;
 let scratch;
 let containerStarted = false;
 
@@ -164,6 +166,8 @@ function app(database, args) {
     env: {
       ...env,
       DATABASE_URL: url(database),
+      REHEARSAL_DATABASE: database,
+      REHEARSAL_CLUSTER_ID: clusterId,
       DOTENV_CONFIG_PATH: path.join(scratch, "intentionally-absent.env"),
       NODE_ENV: "production",
       SESSION_SECRET: "rehearsal-only-session-" + password,
@@ -178,11 +182,7 @@ function release(database) {
 
 function applyRelease(database) {
   const logs = output(release(database), "Release migration for " + database);
-  // The release entrypoint logs schema guard errors without changing its exit code.
-  const guard = logs
-    .split("\n")
-    .find((line) => line.includes('"msg":"Critical schema guard completed"'));
-  assert.equal(guard && JSON.parse(guard).failed, 0, logs);
+  assertReleaseCompleted(logs);
 }
 
 async function timed(label, action) {
@@ -229,6 +229,7 @@ async function startPostgres() {
         "Expected the disposable PostgreSQL cluster"
       );
       assert.match(actual.current_setting, /^16\./);
+      clusterId = actual.system_identifier;
       console.log("PostgreSQL " + actual.current_setting);
       return;
     }
@@ -441,6 +442,7 @@ async function verifyRollback() {
 
 async function timePendingFiles(expectedFixture) {
   createDatabase("file_timing", "upgrade");
+  psql("postgres", "COMMENT ON DATABASE file_timing IS 'Muhasib disposable release rehearsal'");
   const reportPath = path.join(scratch, "per-file.json");
   const text = await timed("Per-file migration pass", () =>
     output(

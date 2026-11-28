@@ -20,7 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
@@ -141,8 +143,21 @@ export function ScheduleTab({ companyId }: { companyId?: string }) {
     return list.find((tpl) => tpl.companyId === companyId) ?? list[0] ?? null;
   };
 
+  const staleRead =
+    (configQuery.isRefetchError ? configQuery : null) ??
+    (templatesQuery.isRefetchError ? templatesQuery : null);
+
   return (
     <div className="space-y-8">
+      {staleRead && (
+        <StaleDataNotice
+          onRetry={() => {
+            void configQuery.refetch();
+            void templatesQuery.refetch();
+          }}
+          testId="reminders-stale-notice"
+        />
+      )}
       <Card>
         <CardHeader>
           <CardTitle>{tt["invoices.reminders.howTitle"]}</CardTitle>
@@ -151,7 +166,16 @@ export function ScheduleTab({ companyId }: { companyId?: string }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {configQuery.isLoading ? (
+          {configQuery.isLoadingError ? (
+            <LoadErrorState
+              compact
+              error={configQuery.error}
+              onRetry={() => void configQuery.refetch()}
+              retrying={configQuery.isFetching}
+              forbiddenDescription={tt["dashboard.loadForbiddenBody"]}
+              testId="reminders-config-load-error"
+            />
+          ) : configQuery.isLoading ? (
             <Skeleton className="h-24" />
           ) : (
             <>
@@ -234,7 +258,16 @@ export function ScheduleTab({ companyId }: { companyId?: string }) {
         <h2 id="reminder-steps-title" className="text-h2 text-foreground">
           {tt["invoices.reminders.stepsTitle"]}
         </h2>
-        {templatesQuery.isLoading ? (
+        {templatesQuery.isLoadingError ? (
+          <LoadErrorState
+            compact
+            error={templatesQuery.error}
+            onRetry={() => void templatesQuery.refetch()}
+            retrying={templatesQuery.isFetching}
+            forbiddenDescription={tt["dashboard.loadForbiddenBody"]}
+            testId="reminders-templates-load-error"
+          />
+        ) : templatesQuery.isLoading ? (
           <Skeleton className="h-64" />
         ) : (
           <ol className="relative space-y-4">

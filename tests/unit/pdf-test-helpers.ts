@@ -74,3 +74,18 @@ export async function pdfWords(pdf: Buffer): Promise<PdfWord[]> {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
+
+/**
+ * True when the rotated English watermark ("VOID", "DRAFT") is on the page. poppler extracts
+ * rotated text either as one word or one glyph per word depending on the platform, so both are
+ * accepted: word boxes where `pdftotext -bbox` exists (poppler), else the plain text with its
+ * whitespace removed (xpdf has no -bbox).
+ */
+export async function hasEnglishStamp(pdf: Buffer, stamp: "VOID" | "DRAFT"): Promise<boolean> {
+  try {
+    const set = new Set((await pdfWords(pdf)).map((w) => w.text));
+    return set.has(stamp) || stamp.split("").every((letter) => set.has(letter));
+  } catch {
+    return (await pdfToText(pdf)).replace(/\s+/g, "").includes(stamp);
+  }
+}

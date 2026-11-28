@@ -1,4 +1,4 @@
--- DEPLOY-RUNBOOK section 2b + 2d (AFTER migrating). Run with psql -X -v ON_ERROR_STOP=0.
+-- DEPLOY-RUNBOOK section 2b + 2d (AFTER migrating).
 \pset footer off
 \echo '== row counts'
 SELECT (SELECT count(*) FROM companies) AS companies, (SELECT count(*) FROM users) AS users,
@@ -27,12 +27,61 @@ SELECT (SELECT count(*) FROM firms) AS firms, (SELECT count(*) FROM firm_members
 \echo '== 0109 audit chain'
 SELECT count(*) FILTER (WHERE legacy) AS legacy_chained, count(*) AS total,
        count(*) FILTER (WHERE seq IS NULL) AS unsealed FROM audit_logs;
-\echo '== 0113 subscriptions'
-SELECT count(*) AS free_rows FROM subscriptions WHERE plan_id = 'free';
-SELECT count(*) AS companies_without_subscription FROM companies c WHERE NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.company_id = c.id);
-\echo '== 2d 0118 employee unique indexes'
-SELECT 'uq_employees_company_employee_number' AS expected, to_regclass('uq_employees_company_employee_number') IS NOT NULL AS present
-UNION ALL SELECT 'uq_employees_company_iban', to_regclass('uq_employees_company_iban') IS NOT NULL
-UNION ALL SELECT 'uq_employees_company_emirates_id', to_regclass('uq_employees_company_emirates_id') IS NOT NULL;
+\echo '== 0113 Free subscriptions and companies without a subscription'
+\ir subscription-counts.sql
+SELECT :'free_rows'::bigint - :'pre_free'::bigint AS free_rows_added,
+       :'pre_missing'::bigint AS expected_free_rows_added,
+       :'companies_without_subscription'::bigint AS companies_without_subscription;
+SELECT :'free_rows'::bigint - :'pre_free'::bigint = :'pre_missing'::bigint
+       AND :'companies_without_subscription'::bigint = 0 AS subscription_backfill_ok
+\gset
+\if :subscription_backfill_ok
+\else
+DO $$ BEGIN
+  RAISE EXCEPTION 'Free subscription increase does not match the pre-migration gap, or companies still lack a subscription';
+END $$;
+\endif
+
 \echo '== S-H3 0054 owner account state (must be unchanged by the chain)'
 SELECT email, is_admin, user_type, firm_role FROM users WHERE lower(email) = 'shire602@gmail.com';
+
+\echo '== 2d required schema assertions'
+-- Pin the search path for consistent deparsing and catalog name resolution.
+SET search_path = pg_catalog;
+DO $$
+DECLARE
+  stale_tables text[];
+  incorrect_indexes text[];
+BEGIN
+  SELECT array_agg(c.relname ORDER BY c.relname) INTO stale_tables
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public'
+     AND c.relkind IN ('r', 'p', 'f', 'v', 'm')
+     AND (c.relname LIKE 'zatca\_%' OR c.relname IN ('subscription_plans', 'user_subscriptions'));
+
+  -- Compare PostgreSQL's canonical definition, including the access method,
+  -- indexed expressions, and partial predicates from migration 0118.
+  WITH expected(name, definition) AS (VALUES
+    ('uq_employees_company_employee_number',
+     $index$(company_id, lower(btrim(employee_number))) WHERE ((archived_at IS NULL) AND (employee_number IS NOT NULL) AND (btrim(employee_number) <> ''::text))$index$),
+    ('uq_employees_company_iban',
+     $index$(company_id, upper(regexp_replace(iban, '\s'::text, ''::text, 'g'::text))) WHERE ((archived_at IS NULL) AND (status <> 'terminated'::text) AND (iban IS NOT NULL) AND (regexp_replace(iban, '\s'::text, ''::text, 'g'::text) <> ''::text))$index$),
+    ('uq_employees_company_emirates_id',
+     $index$(company_id, regexp_replace(emirates_id, '[^0-9]'::text, ''::text, 'g'::text)) WHERE ((archived_at IS NULL) AND (status <> 'terminated'::text) AND (emirates_id IS NOT NULL) AND (regexp_replace(emirates_id, '[^0-9]'::text, ''::text, 'g'::text) <> ''::text))$index$)
+  )
+  SELECT array_agg(name ORDER BY name) INTO incorrect_indexes
+    FROM expected
+   WHERE NOT EXISTS (
+     SELECT FROM pg_index
+      WHERE indexrelid = to_regclass('public.' || name)
+        AND indrelid = 'public.employees'::regclass
+        AND indisvalid AND indisready AND indislive AND indisunique
+        AND pg_get_indexdef(indexrelid) =
+            format('CREATE UNIQUE INDEX %I ON public.employees USING btree %s', name, definition)
+   );
+
+  IF stale_tables IS NOT NULL OR incorrect_indexes IS NOT NULL THEN
+    RAISE EXCEPTION 'Release schema check failed. Stale tables: %. Missing, invalid or incorrect payroll indexes: %.',
+      coalesce(stale_tables::text, '{}'), coalesce(incorrect_indexes::text, '{}');
+  END IF;
+END $$;

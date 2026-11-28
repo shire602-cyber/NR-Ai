@@ -7,10 +7,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiIso, dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
-const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+const today = () => dubaiToday();
+const inDays = (n: number) => dubaiIso(new Date(Date.now() + n * 86_400_000));
 const BUYER_TRN = "100765432100003";
 
 async function issuedWithTrn(t: Tenant) {

@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import type { EInvoiceProvider } from "../../server/services/einvoice-provider";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const providerDocumentUuid = "01a0ab23-24d8-7787-bd01-883b1b089b00";
@@ -8,7 +9,7 @@ const providerDocumentUuid = "01a0ab23-24d8-7787-bd01-883b1b089b00";
 async function submittedInvoice(tenant: Tenant, environment: "production" | "sandbox") {
   const created = await tenant.as.post(`/api/companies/${tenant.company.id}/invoices`, {
     customerName: "Example buyer",
-    date: new Date().toISOString().slice(0, 10),
+    date: dubaiToday(),
     lines: [{ description: "Service", quantity: 1, unitPrice: 100, vatRate: 5 }],
   });
   expect(created.status, created.text).toBe(200);

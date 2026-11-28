@@ -21,6 +21,7 @@ import { db } from "../db";
 import {
   accounts,
   auditLogs,
+  badDebtReliefClaims,
   bankTransactionMatches,
   bankTransactions,
   customerCreditAllocations,
@@ -142,6 +143,9 @@ export interface RecordPaymentInput {
  */
 export async function recordInvoicePayment(input: RecordPaymentInput) {
   const exec: LedgerTx = input.tx ?? db;
+  // One Dubai business day for the journal, the FX rate, the bank rate and any write-off
+  // reinstatement; the invoice_payments row keeps the raw instant.
+  const paymentDay = uaeToday(input.date);
   const loadInvoice = async (): Promise<Invoice | undefined> => {
     if (!input.tx) return storage.getInvoice(input.invoiceId, input.companyId);
     const [row] = await exec
@@ -179,7 +183,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
       await reinstateWriteOffs({
         companyId: input.companyId,
         invoiceId: target.id,
-        date: input.date.toISOString().slice(0, 10),
+        date: paymentDay,
         reason: "Bad debt recovered: payment received",
         userId: input.createdBy,
         neededFils: wanted,
@@ -220,13 +224,9 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
   const currency = documentCurrency(invoice.currency, baseCurrency);
   if (!paymentExchangeRate && currency !== baseCurrency) {
     try {
-      const r = await getRate(
-        input.companyId,
-        currency,
-        baseCurrency,
-        input.date.toISOString().slice(0, 10),
-        { tx: input.tx }
-      );
+      const r = await getRate(input.companyId, currency, baseCurrency, paymentDay, {
+        tx: input.tx,
+      });
       if (!r.stale) paymentExchangeRate = r.rate;
     } catch {
       paymentExchangeRate = null;
@@ -249,7 +249,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
               input.companyId,
               bankCur,
               baseCurrency,
-              input.date.toISOString().slice(0, 10),
+              paymentDay,
               currency,
               input.tx
             ),
@@ -509,6 +509,8 @@ export async function reverseInvoicePayment(
     // A write-off is never deleted: undoing it records a dated reinstatement (history is kept).
     if (payment.method === WRITE_OFF_METHOD) {
       if (expected) throw reversalReviewRequired();
+      // Manual by nature: same owner rule as the reinstate route, so no caller can bypass it.
+      await assertNoActiveVatReliefClaim(tx, invoice.id, input.companyId);
       return reinstateWriteOffRow(tx, invoice, payment, input);
     }
     if (payment.method === WRITE_OFF_REINSTATEMENT_METHOD) {
@@ -1288,6 +1290,36 @@ export async function writeOffInvoice(input: WriteOffInput) {
 }
 
 /**
+ * Owner rule: a manual write-off reinstatement is refused while an active VAT bad-debt relief
+ * claim (FDL 8/2017 Art. 64) exists for the invoice. Call under the invoice lock.
+ */
+async function assertNoActiveVatReliefClaim(
+  tx: LedgerTx,
+  invoiceId: string,
+  companyId: string
+): Promise<void> {
+  const [claim] = await tx
+    .select({ id: badDebtReliefClaims.id })
+    .from(badDebtReliefClaims)
+    .where(
+      and(
+        eq(badDebtReliefClaims.invoiceId, invoiceId),
+        eq(badDebtReliefClaims.companyId, companyId),
+        eq(badDebtReliefClaims.status, "claimed")
+      )
+    )
+    .limit(1);
+  if (claim) {
+    throw new DomainError(
+      "REINSTATE_BLOCKED_VAT_RELIEF_CLAIMED",
+      409,
+      { claimId: claim.id },
+      "This invoice has an active VAT bad-debt relief claim. Reverse the VAT bad-debt relief claim first, then reinstate the write-off."
+    );
+  }
+}
+
+/**
  * Reinstate one write-off row inside `tx` (lock order: invoice, then the row). Adds a negative
  * settlement row dated `input.date` and reverses the write-off journal on that date through the
  * kernel; the write-off row and its journal stay as they were, so reports as of any earlier date
@@ -1367,10 +1399,19 @@ export async function reinstateWriteOffs(input: {
   reason: string;
   userId: string;
   neededFils?: number | null;
+  /**
+   * Manual reinstatement only: refuse while an active VAT bad-debt relief claim (FDL 8/2017
+   * Art. 64) exists for the invoice. Checked under the invoice lock, which claim creation and
+   * reversal also take, so a concurrent claim cannot slip through. The receipt-triggered caller
+   * leaves this unset (the payment hook reverses the relief itself).
+   */
+  blockIfVatReliefClaimed?: boolean;
   tx?: LedgerTx;
 }): Promise<{ reinstatedFils: number; invoice: Invoice | null }> {
   return withLedgerTx(async (tx) => {
     const invoice = await lockInvoice(tx, input.invoiceId, input.companyId);
+    if (input.blockIfVatReliefClaimed)
+      await assertNoActiveVatReliefClaim(tx, invoice.id, input.companyId);
     const rows = await tx
       .select()
       .from(invoicePayments)

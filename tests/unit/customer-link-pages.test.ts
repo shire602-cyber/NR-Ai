@@ -11,6 +11,7 @@ import { Route, Router, Switch } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { stripBidiControls } from "../../client/src/lib/format-money";
+import { dubaiIso } from "../helpers/dates";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -30,7 +31,7 @@ const INFO = {
   onlinePayment: { available: true, status: "live" },
 };
 
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+const daysAgo = (n: number) => dubaiIso(new Date(Date.now() - n * 86_400_000));
 
 const INVOICES = [
   {
@@ -51,7 +52,7 @@ const INVOICES = [
     number: "INV-2026-00002",
     invoiceType: "invoice",
     date: daysAgo(10),
-    dueDate: new Date(Date.now() + 20 * 86_400_000).toISOString().slice(0, 10),
+    dueDate: dubaiIso(new Date(Date.now() + 20 * 86_400_000)),
     currency: "AED",
     total: 3886.05,
     amountDue: 3886.05,

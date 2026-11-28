@@ -6,6 +6,7 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { useHarness } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 
@@ -70,7 +71,7 @@ describe("X1 J2 supplier TRN on tax invoices", () => {
     expect(c.status, c.text).toBeLessThan(300);
     const inv = await t.as.post(`/api/companies/${co}/invoices`, {
       contactId: c.body.id,
-      date: new Date().toISOString().slice(0, 10),
+      date: dubaiToday(),
       lines: [{ description: "Service", quantity: 1, unitPrice: 1000, vatRate: 5 }],
     });
     expect(inv.status, inv.text).toBe(200);

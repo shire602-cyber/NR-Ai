@@ -7,10 +7,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness } from "./harness";
+import { dubaiIso } from "../helpers/dates";
 
 const h = useHarness();
 const DAY = 86_400_000;
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+const iso = (d: Date) => dubaiIso(d);
 
 describe("F10 settlement fragment readers", () => {
   it("portal balance, dunning eligibility and bills list follow the server open balance", async () => {

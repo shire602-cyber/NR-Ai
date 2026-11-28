@@ -57,49 +57,14 @@ export const ASP_REQUIREMENTS: Record<
   },
 };
 
-const TRN_RE = /^1\d{12}03$/;
-
 async function sampleDocument() {
-  const { PINT_AE_FIXTURES, fixtureCompany, uaeBuyer } =
-    await import("../../tests/fixtures/pint-ae/fixtures");
-  const { generateEInvoiceXML, validateForEInvoicing } =
-    await import("../../server/services/einvoice.service");
-  const { summariseValidation, validateEInvoiceXml } =
-    await import("../../server/services/einvoice/validate");
-  const sellerTrn = process.env.ASP_DRYRUN_SELLER_TRN?.trim() || fixtureCompany.trnVatNumber;
-  const buyerTrn = process.env.ASP_DRYRUN_BUYER_TRN?.trim() || uaeBuyer.trn;
-  for (const [name, trn] of [
-    ["ASP_DRYRUN_SELLER_TRN", sellerTrn],
-    ["ASP_DRYRUN_BUYER_TRN", buyerTrn],
-  ] as const) {
-    if (!trn || !TRN_RE.test(trn)) {
-      console.error(`${name} must be a 15-digit UAE TRN (starts with 1, ends with 03)`);
-      process.exit(2);
-    }
+  const { buildSampleDocument } = await import("./asp-sample-document");
+  try {
+    return await buildSampleDocument();
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(err instanceof Error && /must be a 15-digit/.test(err.message) ? 2 : 1);
   }
-  const f = PINT_AE_FIXTURES[0];
-  const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
-  const today = new Date().toISOString().slice(0, 10);
-  const due = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
-  const invoice = {
-    ...f.invoice,
-    number: `DRYRUN-${stamp}`,
-    date: new Date(`${today}T00:00:00Z`),
-    dueDate: new Date(`${due}T00:00:00Z`),
-    customerTrn: buyerTrn,
-  };
-  const company = { ...fixtureCompany, trnVatNumber: sellerTrn };
-  // EndpointIDs are derived from the TRNs (scheme 0235 + 10-digit TIN), as in production.
-  const customer = { ...uaeBuyer, trn: buyerTrn, endpointId: null, endpointScheme: null };
-  const issues = validateForEInvoicing(invoice, f.lines, company, { customer });
-  if (issues.length > 0) {
-    console.error("sample invoice fails the data checks:", JSON.stringify(issues, null, 2));
-    process.exit(1);
-  }
-  const uuid = randomUUID();
-  const built = generateEInvoiceXML(invoice, f.lines, company, customer, { ...f.opts, uuid });
-  const validation = summariseValidation(await validateEInvoiceXml(built.xml));
-  return { invoice, company, xml: built.xml, uuid, validation };
 }
 
 function printValidation(v: Awaited<ReturnType<typeof sampleDocument>>["validation"]) {

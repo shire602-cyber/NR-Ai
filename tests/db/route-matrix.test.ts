@@ -30,6 +30,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { useHarness, type HttpMethod, type RegisteredRoute, type Tenant } from "./harness";
 import { insertRow, snapshotRow, type RowContext } from "./row-factory";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const ALLOW_DIR = path.join(__dirname, "route-matrix-allow");
@@ -179,7 +180,7 @@ const GLOBAL_WRITE_PROBES: GlobalProbe[] = [
         baseCurrency: "USD",
         targetCurrency: "AED",
         rate: 9.99,
-        date: new Date().toISOString().slice(0, 10),
+        date: dubaiToday(),
       });
       const after = await a.as.get("/api/exchange-rates/lookup?base=USD&target=AED");
       await h.sql(`DELETE FROM exchange_rates WHERE rate::numeric = 9.99`).catch(() => undefined);
@@ -191,7 +192,7 @@ const GLOBAL_WRITE_PROBES: GlobalProbe[] = [
   {
     key: "POST /api/exchange-rates/fta/bulk#global",
     async run(a, b) {
-      const date = new Date().toISOString().slice(0, 10);
+      const date = dubaiToday();
       const w = await b.as.post("/api/exchange-rates/fta/bulk", {
         baseCurrency: "AED",
         rates: [{ targetCurrency: "GBP", rate: 7.77, date }],

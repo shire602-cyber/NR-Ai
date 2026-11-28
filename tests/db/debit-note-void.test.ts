@@ -5,11 +5,12 @@
  */
 import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const TRN = "100000000000003";
 const SUPPLIER_TRN = "100222333400003";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 const tenant = () =>
   h.createTenant({
