@@ -48,6 +48,16 @@ import { formatDate } from "@/lib/format-date";
 import { formatCurrency } from "@/lib/format";
 import { uaeToday } from "@shared/uae-date";
 
+/** The VAT return a date lands in, as the server read it from the recorded returns. */
+interface ReturnAttribution {
+  from: string;
+  to: string;
+  status: "open" | "submitted" | "filed" | "amendment" | "forecast" | "unverified";
+  source: "company" | "group" | "forecast";
+  /** Net add-back (AED) the return carries, on add-back lists only. */
+  addBack?: number;
+}
+
 interface ReliefClaim {
   id: string;
   invoiceId: string;
@@ -60,6 +70,8 @@ interface ReliefClaim {
   invoiceNumber: string | null;
   customerName: string | null;
   remainingRelief: number | string | null;
+  claimReturn?: ReturnAttribution | null;
+  reversalReturns?: ReturnAttribution[];
 }
 
 interface EligibleInvoice {
@@ -98,10 +110,42 @@ export default function VatBadDebtRelief() {
     queryFn: getQueryFn<ReliefClaim[]>({ on401: "throw" }),
     enabled: !!companyId,
   });
-  // The server decides which return a date lands in (and refuses filed or locked periods), so the
-  // screen names the date, not a predicted return.
-  const periodLabel = (date: string) =>
-    formatMessage(t["vatBadDebtRelief.periodNeutral"], { date: formatDate(date, locale) });
+  // The server names the exact return a date lands in (read-only: it still decides locks and
+  // refuses filed periods when something is posted). Without an attribution the neutral line stays.
+  const statusText: Record<string, string> = {
+    open: t["vatBadDebtRelief.periodStatus.open"],
+    submitted: t["vatBadDebtRelief.periodStatus.submitted"],
+    filed: t["vatBadDebtRelief.periodStatus.filed"],
+    amendment: t["vatBadDebtRelief.periodStatus.amendment"],
+    forecast: t["vatBadDebtRelief.periodStatus.forecast"],
+    unverified: t["vatBadDebtRelief.periodStatus.unverified"],
+  };
+  const periodLabel = (date: string, period?: ReturnAttribution | null) => {
+    if (!period) {
+      return formatMessage(t["vatBadDebtRelief.periodNeutral"], { date: formatDate(date, locale) });
+    }
+    return formatMessage(t["vatBadDebtRelief.periodRange"], {
+      from: formatDate(period.from, locale),
+      to: formatDate(period.to, locale),
+      status: statusText[period.status] ?? period.status,
+    });
+  };
+
+  // Signed net add-back per return: a positive figure is relief added back; a negative one is a
+  // reversed recovery (a bounced payment) that claims the relief again in that return.
+  const addBackText = (period: ReturnAttribution) => {
+    if (typeof period.addBack !== "number") return "";
+    const key =
+      period.addBack < 0 ? "vatBadDebtRelief.claimedAgainAmount" : "vatBadDebtRelief.addBackAmount";
+    return ` · ${formatMessage(t[key], {
+      amount: formatCurrency(Math.abs(period.addBack), "AED", locale),
+    })}`;
+  };
+
+  /** Lead line from the NET across the listed returns (nil net: nothing is recovered overall). */
+  const isNetNil = (periods: ReturnAttribution[]) =>
+    periods.every((p) => typeof p.addBack === "number") &&
+    Math.round(periods.reduce((sum, p) => sum + (p.addBack as number) * 100, 0)) <= 0;
 
   const claims = Array.isArray(claimsQuery.data) ? claimsQuery.data : undefined;
 
@@ -255,7 +299,7 @@ export default function VatBadDebtRelief() {
                         </TableCell>
                         <TableCell>{formatDate(claim.claimDate, locale)}</TableCell>
                         <TableCell data-testid={`relief-period-${claim.id}`}>
-                          {periodLabel(claim.claimDate)}
+                          {periodLabel(claim.claimDate, claim.claimReturn)}
                         </TableCell>
                         <TableCell>
                           <Badge variant={claimed ? "default" : "secondary"}>
@@ -272,13 +316,35 @@ export default function VatBadDebtRelief() {
                                   date: formatDate(claim.reversedAt, locale),
                                 })}
                               </p>
-                              <p className="text-muted-foreground">
-                                {claim.reversalReason === PAYMENT_CLOSURE_REASON
-                                  ? // Closed by customer payments: the add-backs were posted on each
-                                    // payment date, so no single return carries them.
-                                    t["vatBadDebtRelief.reversalPeriodRecovered"]
-                                  : periodLabel(claim.reversedAt)}
-                              </p>
+                              {claim.reversalReturns?.length ? (
+                                <div
+                                  className="text-muted-foreground"
+                                  data-testid={`relief-reversal-period-${claim.id}`}
+                                >
+                                  {isNetNil(claim.reversalReturns) ? (
+                                    <p>{t["vatBadDebtRelief.netNilLead"]}</p>
+                                  ) : claim.reversalReason === PAYMENT_CLOSURE_REASON ? (
+                                    <p>{t["vatBadDebtRelief.reversalRecoveredLead"]}</p>
+                                  ) : null}
+                                  {claim.reversalReturns.map((period) => (
+                                    <p key={`${period.from}:${period.to}`}>
+                                      {periodLabel(claim.reversedAt as string, period)}
+                                      {addBackText(period)}
+                                    </p>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p
+                                  className="text-muted-foreground"
+                                  data-testid={`relief-reversal-period-${claim.id}`}
+                                >
+                                  {claim.reversalReason === PAYMENT_CLOSURE_REASON
+                                    ? // Closed by customer payments and no attribution available: the
+                                      // add-backs were posted on each payment date.
+                                      t["vatBadDebtRelief.reversalPeriodRecovered"]
+                                    : periodLabel(claim.reversedAt)}
+                                </p>
+                              )}
                               {claim.reversalReason ? (
                                 <p className="text-muted-foreground">
                                   {formatMessage(t["vatBadDebtRelief.reversalReason"], {
@@ -289,6 +355,24 @@ export default function VatBadDebtRelief() {
                                   })}
                                 </p>
                               ) : null}
+                            </div>
+                          ) : claim.reversalReturns?.length ? (
+                            // Part-paid and still claimed: the add-backs already reported.
+                            <div
+                              className="space-y-1 text-small text-muted-foreground"
+                              data-testid={`relief-reversal-period-${claim.id}`}
+                            >
+                              <p>
+                                {!isNetNil(claim.reversalReturns)
+                                  ? t["vatBadDebtRelief.partialRecoveredLead"]
+                                  : t["vatBadDebtRelief.netNilLead"]}
+                              </p>
+                              {claim.reversalReturns.map((period) => (
+                                <p key={`${period.from}:${period.to}`}>
+                                  {periodLabel(claim.claimDate, period)}
+                                  {addBackText(period)}
+                                </p>
+                              ))}
                             </div>
                           ) : (
                             "—"

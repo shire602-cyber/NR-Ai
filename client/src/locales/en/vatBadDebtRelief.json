@@ -49,5 +49,17 @@
   "vatBadDebtRelief.reasonPayment": "Payment received after bad-debt relief was claimed",
   "vatBadDebtRelief.periodNeutral": "Reported in the VAT return for the period containing {date}",
   "vatBadDebtRelief.reversalPeriodRecovered": "Recovered over customer payments, in the VAT return for the period containing each payment date, or the next open period if that return is already filed",
-  "vatBadDebtRelief.createCapNote": "Showing the 500 most recent eligible invoices. Older ones are not listed here."
+  "vatBadDebtRelief.createCapNote": "Showing the 500 most recent eligible invoices. Older ones are not listed here.",
+  "vatBadDebtRelief.periodRange": "VAT return {from}–{to} ({status})",
+  "vatBadDebtRelief.periodStatus.open": "open",
+  "vatBadDebtRelief.periodStatus.filed": "filed",
+  "vatBadDebtRelief.periodStatus.amendment": "under amendment",
+  "vatBadDebtRelief.periodStatus.forecast": "forecast, no return recorded yet",
+  "vatBadDebtRelief.reversalRecoveredLead": "Recovered over customer payments, in:",
+  "vatBadDebtRelief.periodStatus.submitted": "finalised in the app, not yet filed in EmaraTax",
+  "vatBadDebtRelief.periodStatus.unverified": "locked, VAT group membership still to be verified",
+  "vatBadDebtRelief.partialRecoveredLead": "Partly recovered over customer payments, in:",
+  "vatBadDebtRelief.addBackAmount": "net {amount} added back",
+  "vatBadDebtRelief.claimedAgainAmount": "relief claimed again: {amount} (a reversed recovery reduces the add-back)",
+  "vatBadDebtRelief.netNilLead": "Add-backs and reversed recoveries, in:"
 }

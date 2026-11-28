@@ -186,6 +186,184 @@ describe("VAT bad-debt relief screen", () => {
     expect(text()).toContain(arCompliance["vatBadDebtRelief.periodNeutral"].replace("{date}", ""));
   });
 
+  const FILED_Q3 = { from: "2026-07-01", to: "2026-09-30", status: "filed", source: "company" };
+  const CLAIM_ID = "11111111-1111-4111-8111-111111111111";
+  const REVERSED_ID = "55555555-5555-4555-8555-555555555555";
+
+  it("names the exact VAT return and its status for a claim and for a reversal (English)", async () => {
+    setFixtures({
+      [CLAIMS_URL]: [
+        claim({ claimReturn: FILED_Q3 }),
+        {
+          ...REVERSED,
+          claimReturn: { ...FILED_Q3, status: "open" },
+          reversalReturns: [
+            { from: "2026-04-01", to: "2026-06-30", status: "amendment", source: "company" },
+          ],
+        },
+      ],
+      [ELIGIBLE_URL]: ELIGIBLE,
+    });
+    await renderPage(VatBadDebtRelief);
+    expect(byTestId(`relief-period-${CLAIM_ID}`)!.textContent).toBe(
+      "VAT return 1 Jul 2026–30 Sep 2026 (filed)"
+    );
+    expect(byTestId(`relief-period-${REVERSED_ID}`)!.textContent).toBe(
+      "VAT return 1 Jul 2026–30 Sep 2026 (open)"
+    );
+    expect(byTestId(`relief-reversal-period-${REVERSED_ID}`)!.textContent).toBe(
+      "VAT return 1 Apr 2026–30 Jun 2026 (under amendment)"
+    );
+  });
+
+  it("marks a return that is only a forecast and lists each add-back return of a payment-closed claim", async () => {
+    setFixtures({
+      [CLAIMS_URL]: [
+        claim({
+          status: "reversed",
+          reversedAt: "2026-10-01",
+          reversalReason: "Payment received after bad-debt relief was claimed",
+          claimReturn: {
+            from: "2026-07-01",
+            to: "2026-09-30",
+            status: "forecast",
+            source: "forecast",
+          },
+          reversalReturns: [
+            { from: "2026-07-01", to: "2026-09-30", status: "filed", source: "company" },
+            { from: "2026-10-01", to: "2026-12-31", status: "forecast", source: "forecast" },
+          ],
+        }),
+      ],
+      [ELIGIBLE_URL]: ELIGIBLE,
+    });
+    await renderPage(VatBadDebtRelief);
+    expect(byTestId(`relief-period-${CLAIM_ID}`)!.textContent).toBe(
+      "VAT return 1 Jul 2026–30 Sep 2026 (forecast, no return recorded yet)"
+    );
+    const cell = byTestId(`relief-reversal-period-${CLAIM_ID}`)!.textContent!;
+    expect(cell).toContain(enCompliance["vatBadDebtRelief.reversalRecoveredLead"]);
+    expect(cell).toContain("VAT return 1 Jul 2026–30 Sep 2026 (filed)");
+    expect(cell).toContain("VAT return 1 Oct 2026–31 Dec 2026 (forecast, no return recorded yet)");
+  });
+
+  it("does not gate the reverse button on the return status (the server owns locks)", async () => {
+    setFixtures({
+      [CLAIMS_URL]: [claim({ claimReturn: FILED_Q3 })],
+      [ELIGIBLE_URL]: ELIGIBLE,
+    });
+    await renderPage(VatBadDebtRelief);
+    const button = byTestId(`button-reverse-${CLAIM_ID}`) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+  });
+
+  it("names the exact VAT return and its status in Arabic with no English left over", async () => {
+    state.lang = "ar";
+    setFixtures({
+      [CLAIMS_URL]: [
+        claim({ claimReturn: { ...FILED_Q3, status: "amendment" } }),
+        {
+          ...REVERSED,
+          claimReturn: FILED_Q3,
+          reversalReturns: [
+            { from: "2026-10-01", to: "2026-12-31", status: "open", source: "company" },
+          ],
+        },
+      ],
+      [ELIGIBLE_URL]: ELIGIBLE,
+    });
+    await renderPage(VatBadDebtRelief);
+    const claimed = byTestId(`relief-period-${CLAIM_ID}`)!.textContent!;
+    expect(claimed).toContain("إقرار ضريبة القيمة المضافة");
+    expect(claimed).toContain(arCompliance["vatBadDebtRelief.periodStatus.amendment"]);
+    expect(claimed).not.toMatch(/[A-Za-z]/);
+    expect(byTestId(`relief-period-${REVERSED_ID}`)!.textContent).toContain(
+      arCompliance["vatBadDebtRelief.periodStatus.filed"]
+    );
+    expect(byTestId(`relief-reversal-period-${REVERSED_ID}`)!.textContent).toContain(
+      arCompliance["vatBadDebtRelief.periodStatus.open"]
+    );
+    expect(text()).not.toContain(
+      arCompliance["vatBadDebtRelief.periodNeutral"].replace("{date}", "")
+    );
+  });
+
+  it.each(["en", "ar"] as const)(
+    "says a submitted return is not yet filed, a locked one needs verification, and shows partial recoveries (%s)",
+    async (lang) => {
+      const SUBMITTED = { ...FILED_Q3, status: "submitted" };
+      const LOCKED = { ...FILED_Q3, status: "unverified", source: "group" };
+      {
+        state.lang = lang;
+        const cat = lang === "en" ? enCompliance : arCompliance;
+        setFixtures({
+          [CLAIMS_URL]: [
+            claim({
+              claimReturn: SUBMITTED,
+              reversalReturns: [{ ...LOCKED, addBack: 25 }],
+            }),
+          ],
+          [ELIGIBLE_URL]: ELIGIBLE,
+        });
+        await renderPage(VatBadDebtRelief);
+        const period = byTestId(`relief-period-${CLAIM_ID}`)!.textContent!;
+        expect(period).toContain(cat["vatBadDebtRelief.periodStatus.submitted"]);
+        expect(period).not.toContain(cat["vatBadDebtRelief.periodStatus.filed"] + ")");
+        const partial = byTestId(`relief-reversal-period-${CLAIM_ID}`)!.textContent!;
+        expect(partial).toContain(cat["vatBadDebtRelief.partialRecoveredLead"]);
+        expect(partial).toContain(cat["vatBadDebtRelief.periodStatus.unverified"]);
+        if (lang === "ar") expect(period).not.toMatch(/[A-Za-z]/);
+      }
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "shows a reversed recovery as relief claimed again and leads from the net (%s)",
+    async (lang) => {
+      state.lang = lang;
+      const cat = lang === "en" ? enCompliance : arCompliance;
+      setFixtures({
+        [CLAIMS_URL]: [
+          claim({
+            reversalReturns: [
+              { ...FILED_Q3, addBack: 25 },
+              {
+                ...FILED_Q3,
+                from: "2026-10-01",
+                to: "2026-12-31",
+                status: "forecast",
+                addBack: -25,
+              },
+            ],
+          }),
+        ],
+        [ELIGIBLE_URL]: ELIGIBLE,
+      });
+      await renderPage(VatBadDebtRelief);
+      const cell = byTestId(`relief-reversal-period-${CLAIM_ID}`)!.textContent!;
+      // Net nil: no "recovered" lead, and the negative return says the relief is claimed again.
+      expect(cell).toContain(cat["vatBadDebtRelief.netNilLead"]);
+      expect(cell).not.toContain(cat["vatBadDebtRelief.partialRecoveredLead"]);
+      expect(cell).toContain(cat["vatBadDebtRelief.claimedAgainAmount"].split("{amount}")[0]);
+      expect(cell).toContain(cat["vatBadDebtRelief.periodStatus.forecast"]);
+    }
+  );
+
+  it("keeps catalogs complete for the status words, with tanween spelled letter, fathatan, alif", () => {
+    for (const key of ["open", "submitted", "filed", "amendment", "forecast", "unverified"]) {
+      expect(
+        enCompliance[`vatBadDebtRelief.periodStatus.${key}` as keyof typeof enCompliance]
+      ).toBeTruthy();
+      expect(
+        arCompliance[`vatBadDebtRelief.periodStatus.${key}` as keyof typeof arCompliance]
+      ).toBeTruthy();
+    }
+    for (const value of Object.values(arCompliance)) {
+      // A fathatan sits on the letter before the alif, never after it.
+      expect(value).not.toMatch(/اً/);
+    }
+  });
+
   it("shows the empty state", async () => {
     setFixtures({ [CLAIMS_URL]: [], [ELIGIBLE_URL]: ELIGIBLE });
     await renderPage(VatBadDebtRelief);

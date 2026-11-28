@@ -49,5 +49,17 @@
   "vatBadDebtRelief.reasonPayment": "تم استلام دفعة بعد المطالبة بإعفاء الديون المعدومة",
   "vatBadDebtRelief.periodNeutral": "يُدرج في إقرار ضريبة القيمة المضافة عن الفترة التي يقع فيها {date}",
   "vatBadDebtRelief.reversalPeriodRecovered": "استُردّ عبر دفعات العميل، في إقرار الفترة التي تقع فيها كل دفعة، أو في أول فترة مفتوحة إذا كان ذلك الإقرار قد قُدّم",
-  "vatBadDebtRelief.createCapNote": "تُعرض أحدث 500 فاتورة مؤهلة فقط، ولا تظهر الفواتير الأقدم هنا."
+  "vatBadDebtRelief.createCapNote": "تُعرض أحدث 500 فاتورة مؤهلة فقط، ولا تظهر الفواتير الأقدم هنا.",
+  "vatBadDebtRelief.periodRange": "إقرار ضريبة القيمة المضافة {from} – {to} ({status})",
+  "vatBadDebtRelief.periodStatus.open": "مفتوح",
+  "vatBadDebtRelief.periodStatus.filed": "مقدَّم",
+  "vatBadDebtRelief.periodStatus.amendment": "قيد التعديل",
+  "vatBadDebtRelief.periodStatus.forecast": "متوقَّع، لم يُسجَّل إقرار بعد",
+  "vatBadDebtRelief.reversalRecoveredLead": "استُردّ عبر دفعات العميل، في:",
+  "vatBadDebtRelief.periodStatus.submitted": "مُعتمد في النظام، لم يُقدَّم عبر إمارات تاكس بعد",
+  "vatBadDebtRelief.periodStatus.unverified": "مقفل، لم يُتحقق بعد من عضوية مجموعة ضريبة القيمة المضافة",
+  "vatBadDebtRelief.partialRecoveredLead": "استُردّ جزئيًا عبر دفعات العميل، في:",
+  "vatBadDebtRelief.addBackAmount": "صافي المبلغ المُضاف: {amount}",
+  "vatBadDebtRelief.claimedAgainAmount": "أُعيد المطالبة بالإعفاء: {amount} (استرداد مُعكوس يخفّض المبلغ المُضاف)",
+  "vatBadDebtRelief.netNilLead": "المبالغ المُضافة والاستردادات المعكوسة، في:"
 }
