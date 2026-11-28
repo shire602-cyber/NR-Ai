@@ -869,7 +869,14 @@ export interface SimpleDocument {
     vatPercent: string;
     amount: number;
   }>;
-  totals: { subtotal: number; vat: number; total: number; totalLabel: Bi };
+  totals: {
+    subtotal: number;
+    vat: number;
+    total: number;
+    totalLabel: Bi;
+    /** Rows printed after VAT and before the total (e.g. the AED VAT of a foreign document). */
+    extraRows?: Array<{ label: Bi; value: string }>;
+  };
   notes?: Array<{ label: Bi; text: string | null | undefined }>;
   /** Small print lines, each printed in both languages (document language first). */
   footer: Array<Bi | null>;
@@ -922,6 +929,7 @@ export function renderSimpleDocument(d: SimpleDocument): Promise<Buffer> {
     [
       { label: bi("Subtotal", "المجموع"), value: money(d.totals.subtotal, d.currency) },
       { label: bi("VAT", "الضريبة"), value: money(d.totals.vat, d.currency) },
+      ...(d.totals.extraRows ?? []),
     ],
     { label: d.totals.totalLabel, value: money(d.totals.total, d.currency) }
   );

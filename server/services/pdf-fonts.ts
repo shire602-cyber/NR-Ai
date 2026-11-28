@@ -648,8 +648,14 @@ export function isVoidedStatus(status: string | null | undefined): boolean {
  * draft cannot be sent as a tax invoice. The document must be created with `bufferPages: true`;
  * call this immediately before `doc.end()`. It is drawn last so header bars cannot hide it.
  */
-export function stampDraftWatermark(doc: PdfDoc, variant: "draft" | "void" = "draft"): void {
-  const [en, ar] = variant === "void" ? ["VOID", "ملغاة"] : ["DRAFT", "مسودة"];
+export function stampDraftWatermark(
+  doc: PdfDoc,
+  variant: "draft" | "void" = "draft",
+  /** Arabic void wording agrees with the document noun: feminine (فاتورة) by default. */
+  opts: { masculine?: boolean } = {}
+): void {
+  const [en, ar] =
+    variant === "void" ? ["VOID", opts.masculine ? "ملغى" : "ملغاة"] : ["DRAFT", "مسودة"];
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
     doc.switchToPage(i);

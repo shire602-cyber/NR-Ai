@@ -93,6 +93,12 @@ export async function generateInvoicePDF(
   company: Company,
   options: GenerateInvoicePdfOptions = {}
 ): Promise<Buffer> {
+  // A credit note row never renders as an invoice: it gets the credit note layout, with its
+  // reference invoice and (foreign currency) the posted rate and AED VAT.
+  if (invoice.invoiceType === "credit_note") {
+    const { renderCreditNotePdf } = await import("./credit-note-pdf");
+    return renderCreditNotePdf(invoice, lines, company);
+  }
   const template = invoicePdfTemplateForCompany(company);
   if (template === "nra") {
     return generateNraInvoicePDF(invoice, lines);
