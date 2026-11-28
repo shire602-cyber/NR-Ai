@@ -229,6 +229,7 @@
   "forms.errors.titleRequired": "Title is required",
   "forms.errors.expenseItemRequired": "At least one expense item is required",
   "forms.errors.reviewNotesRequired": "Review notes are required",
+  "forms.errors.billQuantityPrecision": "Enter a quantity greater than zero with up to two decimal places.",
   "forms.errors.quantityPositive": "Quantity must be positive",
   "forms.errors.paidFromRequired": "Choose the account the purchase was paid from",
   "forms.errors.priceNonNegative": "Price must be non-negative",
