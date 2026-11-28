@@ -71,3 +71,16 @@ Formula-leading text (`=`, `+`, `@`, `-`) is prefixed with a single quote; the n
 ## Fix for finding 1c
 
 Branch `claude/s05-staging-verify`: the `/bank-statements/import-preview` handler now runs `looksBinary` (on the UTF-8 bytes, and on the Latin-1 bytes when every character fits one byte, so PNG/JPEG magic arriving as a JS string is caught) and throws `DomainError("STATEMENT_CSV_REQUIRED", 400)`, the same shape as `/import`. Test: `tests/db/au6-bank-import.test.ts` (PDF and PNG-magic text give 400 `STATEMENT_CSV_REQUIRED`; a normal 2-row CSV gives 200 with `transactionCount` 2). Awaiting re-verify on staging after deploy; 1c stays FAIL on `70b223cc` until then.
+
+## Re-verify of 1c on `5ccd96f8` (PR #235 deployed), 2026-11-28
+
+`/api/version` reported commit `5ccd96f862b971b299437ccee01ee79d5068d0b6`. Same demo tenant and bank account.
+
+| Request to `POST /bank-statements/import-preview` | Result |
+|---|---|
+| `csvContent` starting `%PDF-1.4` | 400 `STATEMENT_CSV_REQUIRED` "Choose a bank CSV export." |
+| `csvContent` with PNG magic (`\u0089PNG\r\n\x1a\n…`) | 400 `STATEMENT_CSV_REQUIRED` |
+| 2-row CSV (`Date,Description,Amount`) | 200, `transactionCount` 2, credit 100 / debit 25.50 |
+| 1-row CSV with Arabic description | 200, `transactionCount` 1, description intact |
+
+`GET /bank-statements/imports` afterwards: 0 batches. **1c: PASS.** All S05 checks now pass on staging.
