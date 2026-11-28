@@ -1,7 +1,12 @@
 import { normalizeForLabelMatching } from "./arabic-text";
 import { uaeToday } from "./uae-date";
 import { roundHalfUp } from "./money";
-import { reconcileReceiptAmounts } from "./receipt-amounts";
+import { amountMismatchMessage, reconcileReceiptAmounts } from "./receipt-amounts";
+import {
+  deriveConfidenceBand,
+  type ConfidenceBand,
+  type ValidationIssue,
+} from "./receipt-confidence";
 
 export const UNKNOWN_RECEIPT_MERCHANT = "Unknown Merchant";
 
@@ -35,6 +40,11 @@ export type ParsedReceiptOcr = {
   simplifiedInvoice: boolean;
   /** Reverse-charge wording present, or foreign supplier without TRN/VAT line. */
   reverseChargeSuggested: boolean;
+  /** Review routing from the amount check (AMOUNT_MISMATCH when subtotal + VAT != total). */
+  confidenceBand: ConfidenceBand;
+  reviewReasons: string[];
+  reviewReasonCodes: string[];
+  validationIssues: ValidationIssue[];
 };
 
 /** UAE TRN: exactly 15 digits, FTA-issued numbers start with 100. */
@@ -359,7 +369,17 @@ export function parseReceiptOcrText(
     subtotal: derivedSubtotal,
     vatAmount: derivedVat,
     total: derivedTotal,
+    mismatch: amountsMismatch,
   } = reconcileReceiptAmounts({ subtotal, vatAmount, total: fallbackTotal, vatPercentage: 5 });
+  const validationIssues: ValidationIssue[] = amountsMismatch
+    ? [
+        {
+          code: "AMOUNT_MISMATCH",
+          severity: "error",
+          message: amountMismatchMessage(derivedSubtotal, derivedVat, derivedTotal, 5),
+        },
+      ]
+    : [];
 
   const { trn: supplierTrn, issue: supplierTrnIssue } = extractSupplierTrn(normalizedText);
   const simplifiedInvoice =
@@ -381,6 +401,12 @@ export function parseReceiptOcrText(
   if (lines.length >= 3) confidence += 0.05;
   if (supplierTrn) confidence += 0.05;
 
+  const finalConfidence = Math.min(0.75, confidence);
+  const band = deriveConfidenceBand({
+    extractionConfidence: finalConfidence,
+    issues: validationIssues,
+  });
+
   return {
     merchant: extractMerchant(displayLines),
     date: parseDate(normalizedText, fallbackDate),
@@ -393,11 +419,15 @@ export function parseReceiptOcrText(
     category: "Other",
     lineItems: extractLineItems(lines),
     rawText,
-    confidence: Math.min(0.75, confidence),
+    confidence: finalConfidence,
     supplierTrn,
     supplierTrnIssue,
     isTaxInvoice,
     simplifiedInvoice,
     reverseChargeSuggested,
+    confidenceBand: band.band,
+    reviewReasons: band.reasons,
+    reviewReasonCodes: band.reasonCodes,
+    validationIssues,
   };
 }

@@ -14,10 +14,13 @@
  * fils (a value with more than 2 decimals, e.g. 10.005, is rounded half-up to 10.01); a supplied
  * set that is itself inconsistent stays inconsistent and is reported through `mismatch`.
  *
- * Missing VAT is never made up from the subtotal/total gap alone: the gap is accepted as VAT only
- * when it matches `vatPercentage` x subtotal within VAT_GAP_TOLERANCE_FILS. Otherwise (service
- * charge, fee, tip, discount, zero-rated supply) VAT is derived from the rate, the total stays as
- * given, and `mismatch` is true so the caller can show the figures do not reconcile.
+ * Missing VAT with both subtotal and total present (never pre-fill VAT the receipt does not show):
+ * - gap (total - subtotal) is 0: VAT 0, no mismatch (no VAT charged).
+ * - gap within VAT_GAP_TOLERANCE_FILS of `vatPercentage` x subtotal: VAT = gap, no mismatch.
+ * - gap < 0 (discount): VAT 0, mismatch.
+ * - any other gap > 0 (service charge, fee, tip, zero-rated): VAT = rate x subtotal, mismatch.
+ * The total stays as given. Subtotal only: VAT = rate x subtotal and total = subtotal + VAT.
+ * Total only: subtotal is backed out of the VAT-inclusive total at the rate.
  */
 import Decimal from "decimal.js";
 import { filsToNumber, tryToFils } from "./money";
@@ -72,11 +75,20 @@ export function reconcileReceiptAmounts(input: ReceiptAmountsInput): {
   }
   if (v === 0) {
     const expected = pctOf(s, pct);
-    const gap = t - s;
-    v =
-      t > 0 && s > 0 && gap >= 0 && Math.abs(gap - expected) <= VAT_GAP_TOLERANCE_FILS
-        ? gap
-        : expected;
+    if (t > 0 && s > 0) {
+      const gap = t - s;
+      if (gap === 0) {
+        v = 0; // total equals subtotal: no VAT was charged (exempt / out of scope / unregistered)
+      } else if (gap > 0 && Math.abs(gap - expected) <= VAT_GAP_TOLERANCE_FILS) {
+        v = gap;
+      } else {
+        // Unsupported gap: a discount (gap < 0) never invents VAT; a surplus is assumed to carry
+        // VAT at the rate on the subtotal. Both are flagged through `mismatch` below.
+        v = gap < 0 ? 0 : expected;
+      }
+    } else {
+      v = expected; // subtotal only (total derived below) or nothing to compare against
+    }
   }
   if (t === 0) t = s + v;
 
@@ -87,4 +99,14 @@ export function reconcileReceiptAmounts(input: ReceiptAmountsInput): {
     total: filsToNumber(t),
     mismatch,
   };
+}
+
+/** Review note for a `mismatch` result; worded to fit a surcharge, a discount or a VAT-free gap. */
+export function amountMismatchMessage(
+  subtotal: number,
+  vatAmount: number,
+  total: number,
+  vatPercentage: number
+): string {
+  return `Subtotal ${subtotal} + VAT ${vatAmount} does not equal total ${total}; the receipt shows no VAT line matching ${vatPercentage}% of the subtotal`;
 }

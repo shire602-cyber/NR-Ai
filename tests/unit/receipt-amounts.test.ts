@@ -157,12 +157,30 @@ describe("reconcileReceiptAmounts inconsistent sets (never silently made to add 
     });
   });
 
-  it("total below subtotal (discount): VAT is rate x subtotal and flagged", () => {
-    expect(r({ subtotal: 100, vatAmount: 0, total: 90, vatPercentage: 5 })).toEqual({
+  it("total below subtotal (discount): VAT is 0 (never invented) and flagged", () => {
+    expect(r({ subtotal: 100, vatAmount: 0, total: 95, vatPercentage: 5 })).toEqual({
+      subtotal: 100,
+      vatAmount: 0,
+      total: 95,
+      mismatch: true,
+    });
+  });
+
+  it("subtotal 100 / total 100 with no VAT line: VAT 0 and no mismatch (no VAT charged)", () => {
+    expect(r({ subtotal: 100, vatAmount: 0, total: 100, vatPercentage: 5 })).toEqual({
+      subtotal: 100,
+      vatAmount: 0,
+      total: 100,
+      mismatch: false,
+    });
+  });
+
+  it("subtotal 100 / total 105 is VAT 5 with no mismatch", () => {
+    expect(r({ subtotal: 100, vatAmount: 0, total: 105, vatPercentage: 5 })).toEqual({
       subtotal: 100,
       vatAmount: 5,
-      total: 90,
-      mismatch: true,
+      total: 105,
+      mismatch: false,
     });
   });
 
@@ -198,6 +216,41 @@ describe("reconcileReceiptAmounts inconsistent sets (never silently made to add 
 });
 
 describe("parseReceiptOcrText amounts", () => {
+  it("Subtotal 100 / Total 100 with no VAT line gives VAT 0 and no AMOUNT_MISMATCH", () => {
+    const p = parseReceiptOcrText("Cafe\nSubtotal AED 100.00\nTotal AED 100.00");
+    expect([p.subtotal, p.vatAmount, p.total]).toEqual([100, 0, 100]);
+    expect(p.validationIssues).toEqual([]);
+    expect(p.reviewReasonCodes).toEqual([]);
+  });
+
+  it("a 100 / 115.50 receipt surfaces AMOUNT_MISMATCH matching the pre-filled figures", () => {
+    const p = parseReceiptOcrText("Cafe\nSubtotal AED 100.00\nTotal AED 115.50");
+    expect([p.subtotal, p.vatAmount, p.total]).toEqual([100, 5, 115.5]);
+    expect(p.validationIssues.map((i) => i.code)).toEqual(["AMOUNT_MISMATCH"]);
+    expect(p.reviewReasonCodes).toContain("AMOUNT_MISMATCH");
+    expect(p.reviewReasons.join(" ")).toMatch(/Subtotal 100 \+ VAT 5 does not equal total 115.5/);
+    expect(p.confidenceBand).not.toBe("high");
+  });
+
+  it("a 100 / 95 receipt (discount) pre-fills VAT 0 and flags the mismatch", () => {
+    const p = parseReceiptOcrText("Cafe\nSubtotal AED 100.00\nTotal AED 95.00");
+    expect([p.subtotal, p.vatAmount, p.total]).toEqual([100, 0, 95]);
+    expect(p.reviewReasonCodes).toContain("AMOUNT_MISMATCH");
+  });
+
+  it("the review-note catalog key for AMOUNT_MISMATCH exists in en and ar", async () => {
+    const en = (await import("../../client/src/locales/en/pageLabels.json")).default as Record<
+      string,
+      string
+    >;
+    const ar = (await import("../../client/src/locales/ar/pageLabels.json")).default as Record<
+      string,
+      string
+    >;
+    expect(en["pageLabels.receiptIssueAmounts"]).toBeTruthy();
+    expect(ar["pageLabels.receiptIssueAmounts"]).toBeTruthy();
+  });
+
   it("total-only receipt reconciles to the fil", () => {
     const r = parseReceiptOcrText("Shop\nTotal AED 10.01", { fallbackDate: "2026-06-29" });
     expect(f(r.subtotal) + f(r.vatAmount)).toBe(f(r.total));

@@ -40,7 +40,7 @@ import { assertAiQuota, type AiContext } from "../services/ai/usage-meter";
 import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
 import { errorCode, errorMessage, errorProperty } from "../errors";
 import { todayDubai } from "@shared/accounting-date";
-import { reconcileReceiptAmounts } from "@shared/receipt-amounts";
+import { amountMismatchMessage, reconcileReceiptAmounts } from "@shared/receipt-amounts";
 
 const log = createLogger("ocr");
 
@@ -615,13 +615,13 @@ function buildResult(
   });
   for (const issue of finalIssues) if (!have.has(issue.code)) issues.push(issue);
   // The figures never silently add up: when the subtotal/total gap is not VAT at the stated rate
-  // (service charge, fee, discount, zero-rated), VAT stays rate x subtotal and the user is told.
-  if (amountsMismatch && !issues.some((i) => i.code === "AMOUNT_MISMATCH")) {
-    issues.push({
-      code: "AMOUNT_MISMATCH",
-      severity: "error",
-      message: `Subtotal ${derivedSubtotal} + VAT ${derivedVat} does not equal total ${derivedTotal}: the difference is not VAT at ${vatPercentage}%`,
-    });
+  // (service charge, fee, discount, zero-rated), the user is told. The message is rebuilt from the
+  // final figures so it always matches the form, replacing any note built from the raw extraction.
+  if (amountsMismatch) {
+    const message = amountMismatchMessage(derivedSubtotal, derivedVat, derivedTotal, vatPercentage);
+    const existing = issues.find((i) => i.code === "AMOUNT_MISMATCH");
+    if (existing) existing.message = message;
+    else issues.push({ code: "AMOUNT_MISMATCH", severity: "error", message });
   }
   if (aiResult.supplierTrnIssue && !have.has("TRN_INVALID")) {
     issues.push({
