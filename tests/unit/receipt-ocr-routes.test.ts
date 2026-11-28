@@ -18,6 +18,8 @@ vi.mock("../../server/storage", () => ({
   storage: {
     hasCompanyAccess: vi.fn(async () => true),
     getCompaniesByUserId: vi.fn(async () => [{ id: COMPANY }]),
+    // The company's own TRN differs from the supplier's in the fixtures.
+    getCompany: vi.fn(async () => ({ trnVatNumber: "100555555500003" })),
   },
 }));
 vi.mock("../../server/services/excel-export.service", () => ({
@@ -233,6 +235,24 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
     const { client } = anthropicReturning({
       ...goodExtraction,
       subtotal: 100,
+      vatAmount: null,
+      vatPercentage: 5,
+      total: 115.5,
+    });
+    const res = await post(appWith({ anthropic: client }), {
+      imageData: PNG_URL,
+      companyId: COMPANY,
+    });
+    expect(res.body.vatAmount).toBe(5);
+    const notes = res.body.validationIssues.filter((i: any) => i.code === "AMOUNT_MISMATCH");
+    expect(notes).toHaveLength(1);
+    expect(notes[0].message).toMatch(/Subtotal 100\.00 \+ VAT 5\.00 does not equal total 115\.50/);
+  });
+
+  it("a 100 / 115.50 receipt with an explicit VAT 0 at 5%: VAT stays 0 and the note says why", async () => {
+    const { client } = anthropicReturning({
+      ...goodExtraction,
+      subtotal: 100,
       vatAmount: 0,
       vatPercentage: 5,
       total: 115.5,
@@ -242,18 +262,20 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
       companyId: COMPANY,
     });
     expect(res.status).toBe(200);
-    expect(res.body.vatAmount).toBe(5);
+    // A printed VAT 0.00 at a stated 5% rate is kept as read, never upgraded to 5.00.
+    expect(res.body.vatAmount).toBe(0);
     const notes = res.body.validationIssues.filter((i: any) => i.code === "AMOUNT_MISMATCH");
     expect(notes).toHaveLength(1);
-    expect(notes[0].message).toMatch(/Subtotal 100\.00 \+ VAT 5\.00 does not equal total 115\.50/);
-    expect(notes[0].message).not.toMatch(/VAT 0\.00 /);
+    expect(notes[0].message).toMatch(
+      /Subtotal 100\.00 \+ VAT 0\.00 against total 115\.50: the receipt prints a VAT rate of 5% but a VAT amount of 0\.00/
+    );
   });
 
-  it("a raw AMOUNT_MISMATCH note is dropped when the reconciled figures add up (100 / no VAT / 105)", async () => {
+  it("a raw AMOUNT_MISMATCH note is dropped when the reconciled figures add up (100 / VAT not printed / 105)", async () => {
     const { client } = anthropicReturning({
       ...goodExtraction,
       subtotal: 100,
-      vatAmount: 0,
+      vatAmount: null,
       vatPercentage: 5,
       total: 105,
     });
@@ -351,6 +373,7 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
 
   it("the company's own TRN read as the supplier's raises VAT_NO_TRN", async () => {
     const { storage } = await import("../../server/storage");
+    const original = (storage as any).getCompany;
     (storage as any).getCompany = vi.fn(async () => ({ trnVatNumber: "100123456700003" }));
     try {
       const { client } = anthropicReturning(goodExtraction);
@@ -360,8 +383,87 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
       });
       expect(res.body.validationIssues.map((i: any) => i.code)).toContain("VAT_NO_TRN");
     } finally {
-      delete (storage as any).getCompany;
+      (storage as any).getCompany = original;
     }
+  });
+
+  it.each([
+    ["throws", () => vi.fn(async () => Promise.reject(new Error("db down")))],
+    ["returns nothing", () => vi.fn(async () => undefined)],
+  ])(
+    "if the company TRN lookup %s the supplier TRN cannot be verified: VAT_NO_TRN, not high band",
+    async (_name, makeLookup) => {
+      const { storage } = await import("../../server/storage");
+      const original = (storage as any).getCompany;
+      (storage as any).getCompany = makeLookup();
+      try {
+        const { client } = anthropicReturning(goodExtraction);
+        const res = await post(appWith({ anthropic: client }), {
+          imageData: PNG_URL,
+          companyId: COMPANY,
+        });
+        expect(res.status).toBe(200);
+        expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual([100, 5, 105]);
+        expect(res.body.validationIssues.map((i: any) => i.code)).toContain("VAT_NO_TRN");
+        expect(res.body.confidenceBand).not.toBe("high");
+      } finally {
+        (storage as any).getCompany = original;
+      }
+    }
+  );
+
+  it("a company with no TRN on file still verifies: a valid supplier TRN is accepted", async () => {
+    const { storage } = await import("../../server/storage");
+    const original = (storage as any).getCompany;
+    (storage as any).getCompany = vi.fn(async () => ({ trnVatNumber: null }));
+    try {
+      const { client } = anthropicReturning(goodExtraction);
+      const res = await post(appWith({ anthropic: client }), {
+        imageData: PNG_URL,
+        companyId: COMPANY,
+      });
+      expect(res.body.validationIssues.map((i: any) => i.code)).not.toContain("VAT_NO_TRN");
+      expect(res.body.confidenceBand).toBe("high");
+    } finally {
+      (storage as any).getCompany = original;
+    }
+  });
+
+  it("an explicit VAT 0 at a printed 5% rate with a 100 / 105 gap keeps VAT 0 and raises AMOUNT_MISMATCH", async () => {
+    const { client } = anthropicReturning({
+      ...goodExtraction,
+      vatAmount: 0,
+      vatPercentage: 5,
+      subtotal: 100,
+      total: 105,
+    });
+    const res = await post(appWith({ anthropic: client }), {
+      imageData: PNG_URL,
+      companyId: COMPANY,
+    });
+    expect(res.status).toBe(200);
+    expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual([100, 0, 105]);
+    expect(res.body.vatPercentage).toBe(5);
+    const mismatch = res.body.validationIssues.filter((i: any) => i.code === "AMOUNT_MISMATCH");
+    expect(mismatch).toHaveLength(1);
+    expect(mismatch[0].message).toMatch(/prints a VAT rate of 5% but a VAT amount of 0\.00/);
+    expect(res.body.confidenceBand).not.toBe("high");
+  });
+
+  it("an explicit VAT 0 with a printed rate and no gap stays a clean zero-VAT receipt", async () => {
+    const { client } = anthropicReturning({
+      ...goodExtraction,
+      vatAmount: 0,
+      vatPercentage: 5,
+      subtotal: 100,
+      total: 100,
+    });
+    const res = await post(appWith({ anthropic: client }), {
+      imageData: PNG_URL,
+      companyId: COMPANY,
+    });
+    expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual([100, 0, 100]);
+    expect(res.body.validationIssues.map((i: any) => i.code)).not.toContain("AMOUNT_MISMATCH");
   });
 
   it("a VAT-bearing receipt with a valid supplier TRN does not raise VAT_NO_TRN", async () => {
@@ -684,5 +786,30 @@ describe("text-parser fallback keeps the parser's review issues", () => {
     expect(codes).toContain("NON_VAT_FEE");
     expect(codes).toContain("VAT_DERIVED");
     expect(codes.filter((c: string) => c === "VAT_DERIVED")).toHaveLength(1);
+  });
+
+  it("VAT on a fee line and on its own line keeps the parser's AMOUNT_MISMATCH although the figures add up", async () => {
+    const res = await post(appWith({}), {
+      companyId: COMPANY,
+      content: "Rest\nFood 100.00\nService charge 10% 10.00 VAT 0.50\nVAT 5.00\nTotal 115.00",
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.ocrSource).toBe("text-parser");
+    expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual([110, 5, 115]);
+    const mismatch = res.body.validationIssues.filter((i: any) => i.code === "AMOUNT_MISMATCH");
+    expect(mismatch).toHaveLength(1);
+    expect(mismatch[0].message).toMatch(
+      /VAT is printed on a fee line \(0\.50\) and on its own line/
+    );
+    expect(res.body.confidenceBand).not.toBe("high");
+  });
+
+  it("a fee-only receipt (Tourism dirham 20 / Total 20) comes back VAT 0 with NON_VAT_FEE only", async () => {
+    const res = await post(appWith({}), {
+      companyId: COMPANY,
+      content: "Hotel\nTourism dirham 20.00\nTotal 20.00",
+    });
+    expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual([20, 0, 20]);
+    expect(res.body.validationIssues.map((i: any) => i.code)).toEqual(["NON_VAT_FEE"]);
   });
 });

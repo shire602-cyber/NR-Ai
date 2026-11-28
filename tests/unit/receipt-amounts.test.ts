@@ -1,9 +1,12 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { toFils } from "../../shared/money";
 import {
   amountMismatchMessage,
   hasVatFigure,
   isVatDerived,
+  printedRateWithZeroVat,
   reconcileReceiptAmounts,
   vatDerivedMessage,
   vatDerivedSource,
@@ -398,5 +401,54 @@ describe("amountMismatchMessage / vatDerivedMessage wording", () => {
     >;
     expect(en["pageLabels.receiptIssueVatDerived"]).toBeTruthy();
     expect(ar["pageLabels.receiptIssueVatDerived"]).toBeTruthy();
+  });
+});
+
+describe("VAT_NO_TRN copy says the same thing in both languages and both places", () => {
+  const load = (lang: "en" | "ar", file: string): Record<string, string> =>
+    JSON.parse(
+      fs.readFileSync(
+        path.resolve(__dirname, `../../client/src/locales/${lang}/${file}.json`),
+        "utf8"
+      )
+    );
+  const enErr = load("en", "serverErrors")["serverErrors.VAT_NO_TRN"];
+  const arErr = load("ar", "serverErrors")["serverErrors.VAT_NO_TRN"];
+  const enLabel = load("en", "pageLabels")["pageLabels.receiptIssueVatNoTrn"];
+  const arLabel = load("ar", "pageLabels")["pageLabels.receiptIssueVatNoTrn"];
+
+  it("English and Arabic both say the receipt was held for review", () => {
+    expect(enErr).toMatch(/so it was held for review\.$/);
+    expect(arErr).toMatch(/لذا أُوقف للمراجعة\.$/);
+    // The VAT_DERIVED note ends the same way in both languages.
+    expect(load("en", "serverErrors")["serverErrors.VAT_DERIVED"]).toMatch(/held for review\.$/);
+  });
+
+  it("both languages state the only-with-a-tax-invoice rule in the server note and the page label", () => {
+    for (const en of [enErr, enLabel]) {
+      expect(en).toMatch(/doesn't show a valid supplier TRN/);
+      expect(en).toMatch(/only recover VAT with a tax invoice from a VAT-registered supplier/);
+    }
+    for (const ar of [arErr, arLabel]) {
+      expect(ar).toMatch(/لا يظهر عليه رقم تسجيل ضريبي صحيح للمورّد/);
+      expect(ar).toMatch(/لا يمكن استرداد الضريبة إلا بفاتورة ضريبية صادرة من مورّد مسجّل/);
+    }
+    // The old "check before claiming input VAT" wording is gone.
+    expect(arLabel).not.toMatch(/قبل المطالبة/);
+  });
+});
+
+describe("printedRateWithZeroVat", () => {
+  it.each([
+    [0, 5, 5],
+    ["0.00", "5", 5],
+    [0, 0, null],
+    [0, null, null],
+    [null, 5, null],
+    ["", 5, null],
+    [5, 5, null],
+    ["abc", 5, null],
+  ])("VAT %j at rate %j -> %j", (vat, rate, expected) => {
+    expect(printedRateWithZeroVat(vat, rate)).toBe(expected);
   });
 });

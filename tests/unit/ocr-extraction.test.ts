@@ -40,6 +40,28 @@ describe("normalizeOcrJson — amount reconciliation", () => {
     expect(r.amount).toBe(100);
   });
 
+  it("an explicit VAT 0 at a printed 5% rate with a 100 / 105 gap keeps VAT 0 and is held (AMOUNT_MISMATCH)", () => {
+    const r = normalizeOcrJson(
+      { merchant: "S", subtotal: 100, vatAmount: 0, vatPercentage: 5, total: 105 },
+      { today: TODAY }
+    );
+    expect([r.amount, r.vatAmount, r.total]).toEqual([100, 0, 105]);
+    expect(r.needsReview).toBe(true);
+    expect(r.reviewIssues?.map((i) => i.code)).toEqual(["AMOUNT_MISMATCH"]);
+    expect(r.reviewIssues?.[0].message).toMatch(
+      /prints a VAT rate of 5% but a VAT amount of 0\.00/
+    );
+  });
+
+  it("an explicit VAT 0 at a printed rate with no gap (100 / 100) is a clean zero-VAT receipt", () => {
+    const r = normalizeOcrJson(
+      { merchant: "S", subtotal: 100, vatAmount: 0, vatPercentage: 5, total: 100 },
+      { today: TODAY }
+    );
+    expect([r.amount, r.vatAmount, r.total]).toEqual([100, 0, 100]);
+    expect(r.reviewIssues).toEqual([]);
+  });
+
   it("defaults missing vatPercentage to 5%", () => {
     const r = normalizeOcrJson({ subtotal: 100 }, { today: TODAY });
     expect(r.vatAmount).toBe(5);
