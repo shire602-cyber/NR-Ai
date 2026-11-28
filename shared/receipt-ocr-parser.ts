@@ -386,8 +386,11 @@ function readZeroVatLines(
   return null;
 }
 
-// A change / refund line is money given back, never a total candidate.
-const CHANGE_LINE = /\b(?:change|refund)\b|الباقي|المتبقي/i;
+// A change / refund line is money given back, never a total candidate. Only a line whose LABEL is
+// change / refund counts ("Change 95", "Total Change 95", "الباقي 95"); a line that merely mentions
+// the word ("Total 105 No refund") or "المبلغ المتبقي" (the amount remaining / due) does not.
+const CHANGE_LINE =
+  /^[ \t*#\-•|:]*(?:(?:total|amount|cash|المبلغ|اجمالي|الاجمالي)[ \t]+)?(?:change|refund|الباقي)(?![a-z])/i;
 
 function findLargestLikelyAmount(allLines: string[]): number {
   const lines = allLines.filter((line) => !CHANGE_LINE.test(line));
@@ -511,14 +514,15 @@ export function parseReceiptOcrText(
       .map((match) => parseAmount(match[1]))
       .filter((amount) => amount > 0 && amount < 100000000);
   // Document precedence. A Grand Total / Net Payable / Total Due line is the receipt's total even
-  // when a Sub Total, Net Total or plain Total line comes first (the last one wins: it follows a
-  // discount line). Then plain Total / Amount Due lines. "Net Total" is the total only when no such
-  // line exists. "Sub Total" / "Sub-Total" and totals "before tax", "excluding VAT" or "exclusive
+  // when a Sub Total, Net Total or plain Total line comes first (the first one, as before). Then
+  // plain Total / Amount Due lines. "Net Total" is the total only as a last resort, after every other
+  // total line and before the largest-amount fallback. "Sub Total" / "Sub-Total" and totals "before tax",
+  // "excluding VAT" or "exclusive
   // of VAT" (English and Arabic) are net figures, never the total.
   const GRAND_RE =
     /\b(?:grand\s+total|net\s+payable|total\s+due)\b(?!\s*(?:vat|tax|gst)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi;
   const PLAIN_RE =
-    /(?<!\b(?:sub|net)[ \t-]*)\b(?:amount\s+due|balance\s+due|total\s+amount|gross\s+(?:amount|total)|total)\b(?!\s*\(?\s*(?:vat|tax|gst|before|excl\w*|exclusive|without|w\/o|ex[ \t.]+(?:vat|tax))\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi;
+    /(?<!\b(?:sub|net)[ \t-]*)\b(?:amount\s+due|balance\s+due|total\s+amount|gross\s+(?:amount|total)|total)\b(?!\s*\(?\s*(?:vat|tax|gst|before|excl\w*|exclusive|without|w\/o|ex[ \t.]+(?:vat|tax)|net(?![ \t]+payable)|taxable)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi;
   const NET_RE =
     /\bnet[ \t-]*total\b(?!\s*\(?\s*(?:vat|tax|gst|before|excl\w*|exclusive|without|w\/o)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi;
   const grandTotals = amountsOf(GRAND_RE);
@@ -574,21 +578,8 @@ export function parseReceiptOcrText(
     }
   }
 
-  // Resolve the total once VAT and subtotal are known. Several plain Total lines (a discount
-  // between them): take the one that is the net line plus the read VAT. A Sub Total with VAT and
-  // no total line is the net: total = sub + VAT (flagged below). Never a cash / change figure.
-  const plainTotal = (() => {
-    if (plainTotals.length <= 1 || readVatAmount <= 0) return plainTotals[0] ?? 0;
-    const near = (a: number, b: number) => Math.abs(a - b) < 0.015;
-    const fit = plainTotals.find(
-      (c) =>
-        (subtotal > 0 && near(c, subtotal + readVatAmount)) ||
-        plainTotals.some((d) => d !== c && near(c, d + readVatAmount))
-    );
-    return fit ?? plainTotals[0];
-  })();
-  const ordinaryTotal =
-    grandTotals[grandTotals.length - 1] ?? (plainTotal || netTotals[0] || otherTotal || 0);
+  // A Sub Total with VAT and no total line is the net: total = sub + VAT (flagged below).
+  const ordinaryTotal = grandTotals[0] ?? plainTotals[0] ?? (otherTotal || netTotals[0] || 0);
   const printedTotal = ordinaryTotal;
   const totalFromSubtotal =
     printedTotal === 0 && subtotal > 0 && readVatAmount > 0 ? round2(subtotal + readVatAmount) : 0;

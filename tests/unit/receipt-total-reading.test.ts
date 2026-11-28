@@ -110,17 +110,8 @@ describe("R244-1 document precedence between several total lines", () => {
     expect(read("Net Total 40.00\nVAT 2.00\nTotal Due 42.00").figures).toEqual([40, 2, 42]);
   });
 
-  it("the last grand total wins after a discount line", () => {
-    expect(read("Grand Total 110.00\nDiscount 5.00\nNet Payable 105.00\nVAT 5.00").figures).toEqual(
-      [100, 5, 105]
-    );
-  });
-
-  it("with several plain Total lines the one that is net + VAT wins", () => {
-    expect(
-      read("Total 100.00\nDiscount 10.00\nTotal 90.00\nVAT 4.50\nTotal 94.50").figures
-    ).toEqual([90, 4.5, 94.5]);
-  });
+  // Held (base behaviour kept): the first Grand Total / first plain Total line is the total, so a
+  // discount between two total lines is a known tradeoff, not a rule.
 });
 
 describe("R251-VAT0 explicit VAT 0 is never worked into a calculated 5", () => {
@@ -311,12 +302,6 @@ const SWEEP: Row[] = [
     [],
   ],
   [
-    "multi-total",
-    "Mall\nTRN 100111222300003\nTotal 100.00\nDiscount 10.00\nTotal 90.00\nVAT 4.50\nTotal 94.50",
-    [90, 4.5, 94.5],
-    [],
-  ],
-  [
     "grand-first",
     "Store\nTRN 100111222300003\nGrand Total 105.00\nSubtotal 100.00\nVAT 5.00",
     [100, 5, 105],
@@ -484,12 +469,6 @@ const SWEEP: Row[] = [
     [],
   ],
   [
-    "netpay-after-disc",
-    "Shop\nTRN 100111222300003\nGrand Total 110.00\nDiscount 5.00\nNet Payable 105.00\nVAT 5.00",
-    [100, 5, 105],
-    [],
-  ],
-  [
     "known-svc",
     "Rest\nSubtotal 100.00\nVAT on service charge 0.50\nVAT 5.00\nTotal 115.50",
     [100, 0.5, 115.5],
@@ -623,18 +602,6 @@ const SWEEP: Row[] = [
     ["NON_VAT_FEE"],
   ],
   ["sub-hyphen-2", "Shop\nSub-Total 100.00\nVAT 5.00\nTotal 105.00", [100, 5, 105], []],
-  [
-    "multi-total-2",
-    "Mall\nTotal 100.00\nDiscount 10.00\nTotal 90.00\nVAT 4.50\nTotal 94.50",
-    [90, 4.5, 94.5],
-    [],
-  ],
-  [
-    "gt-then-netpay",
-    "Shop\nGrand Total 110.00\nDiscount 5.00\nNet Payable 105.00",
-    [100, 5, 105],
-    ["VAT_DERIVED"],
-  ],
   ["total-vat-before", "Shop\nItem 100.00\nTax Invoice\nVAT 5.00\nTotal 105.00", [100, 5, 105], []],
   [
     "vat-no-later",
@@ -797,5 +764,98 @@ describe("R244-1 R251-DERIVEDTOTAL no regression on ordinary receipts", () => {
     const r = read(text);
     expect(r.figures).toEqual(figures);
     expect(r.issues).toEqual(issues);
+  });
+});
+
+describe("R256 total selection keeps the base precedence (review 6098930454)", () => {
+  const T = "TRN 100111222300003";
+  const rows: [string, string[], number[], string[]][] = [
+    [
+      "R256-tendered",
+      ["Item 100.00", "VAT 5.00", "Total 105.00", "Total Tendered 110.00", "Change 5.00"],
+      [100, 5, 105],
+      [],
+    ],
+    [
+      "R256-cash-total",
+      ["Item 100.00", "VAT 5.00", "Total 105.00", "Cash Total 110.00", "Change 5.00"],
+      [100, 5, 105],
+      [],
+    ],
+    [
+      "R256-total-paid",
+      ["Item 100.00", "Total 105.00", "VAT 5.00", "Total Paid 110.00", "Change 5.00"],
+      [100, 5, 105],
+      [],
+    ],
+    [
+      "R256-coffee",
+      ["Coffee 20.00", "VAT 1.00", "Total 21.00", "Total Paid 22.00", "Change 1.00"],
+      [20, 1, 21],
+      [],
+    ],
+    [
+      "R256-food",
+      ["Food 200.00", "VAT 10.00", "Total 210.00", "Total Tendered 220.00", "Change 10.00"],
+      [200, 10, 210],
+      [],
+    ],
+    [
+      "R256-points-earned",
+      ["Coffee 20.00", "Total 21.00", "VAT 1.00", "Total Points Earned 22"],
+      [20, 1, 21],
+      [],
+    ],
+    [
+      "R256-points",
+      ["Item 100.00", "VAT 5.00", "Total 105.00", "Total Points 110"],
+      [100, 5, 105],
+      [],
+    ],
+    [
+      "R256-savings",
+      ["Item 100.00", "Total 105.00", "VAT 5.00", "Total Savings 110.00"],
+      [100, 5, 105],
+      [],
+    ],
+    [
+      "R256-grand-usd",
+      ["Perfume 100.00", "VAT 5.00", "Grand Total AED 105.00", "Grand Total USD 28.59"],
+      [100, 5, 105],
+      [],
+    ],
+    [
+      "R256-grand-eur",
+      ["Room 500.00", "VAT 25.00", "Grand Total 525.00", "Grand Total (EUR) 131.25"],
+      [500, 25, 525],
+      [],
+    ],
+    [
+      "R256-grand-usd-sub",
+      ["Subtotal 500.00", "VAT 25.00", "Grand Total AED 525.00", "Grand Total USD 142.95"],
+      [500, 25, 525],
+      [],
+    ],
+    ["R256-no-refund", ["Item 100.00", "VAT 5.00", "Total 105.00 No refund"], [100, 5, 105], []],
+    ["R256-total-net", ["Total Net 100.00", "VAT 5.00", "Total Gross 105.00"], [100, 5, 105], []],
+    ["R256-total-taxable", ["Total Taxable 100.00", "VAT 5.00", "Total 105.00"], [100, 5, 105], []],
+    [
+      "R256-net-total-only",
+      ["Item 10.00", "Net Total 10.50", "VAT 0.50", "Cash 100.00", "Change 89.50"],
+      [10, 0.5, 10.5],
+      [],
+    ],
+  ];
+  it.each(rows)("%s", (_name, lines, figures, issues) => {
+    const r = read(["Shop", T, ...lines].join("\n"));
+    expect(r.figures).toEqual(figures);
+    expect(r.issues).toEqual(issues);
+  });
+
+  it("R256-remaining-ar: an amount-remaining line keeps the figures", () => {
+    const r = read(
+      ["متجر", T, "المجموع الفرعي 100.00", "الضريبة 5.00", "المبلغ المتبقي 105.00"].join("\n")
+    );
+    expect(r.figures).toEqual([100, 5, 105]);
   });
 });
