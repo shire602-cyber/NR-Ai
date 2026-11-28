@@ -154,6 +154,7 @@ describe("pdf invoice content", { timeout: 30_000 }, () => {
     });
     const pdf = await generateInvoicePDF(usd, lines().slice(0, 1), company(), {
       customer: { address: "Sheikh Zayed Road, Dubai", trn: "100555444400003" },
+      postedVatAed: null,
     });
     const text = (await pdfToText(pdf)).replace(/\s+/g, " ");
     expect(text).toContain("VAT total (AED)");
@@ -161,6 +162,26 @@ describe("pdf invoice content", { timeout: 30_000 }, () => {
     expect(text).toContain("USD 105.00");
     expect(text).toContain("Sheikh Zayed Road, Dubai");
     expect(text).toContain("100555444400003");
+  });
+
+  it("prints the POSTED AED VAT, not vat x rate, on a foreign-currency invoice", async () => {
+    // 1.00 USD VAT at 3.6725 is 3.6725 -> 3.67 by rate, but the ledger posted 3.68 (line-level
+    // rounding): the PDF must tie to the GL and the VAT 201.
+    const usd = invoice({
+      currency: "USD",
+      exchangeRate: 3.6725,
+      subtotal: 20,
+      vatAmount: 1,
+      total: 21,
+    });
+    expect(computeInvoicePdfTotals(usd, { postedVatAed: null }).vatAed).toBe(3.67);
+    expect(computeInvoicePdfTotals(usd, { postedVatAed: 3.68 }).vatAed).toBe(3.68);
+    const pdf = await generateInvoicePDF(usd, lines().slice(0, 1), company(), {
+      postedVatAed: 3.68,
+    });
+    const text = (await pdfToText(pdf)).replace(/\s+/g, " ");
+    expect(text).toContain("AED 3.68");
+    expect(text).not.toContain("AED 3.67");
   });
 
   it("R03-19 reverse-charge invoice labels lines as reverse charge", async () => {

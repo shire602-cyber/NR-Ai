@@ -2,7 +2,7 @@
 import PDFDocument from "pdfkit";
 import Decimal from "decimal.js";
 import { loadCompanyLogo } from "./pdf-logo";
-import { toFils } from "../../shared/money";
+import { fromFils, mulRate, toFils } from "../../shared/money";
 import { calendarParts } from "../../shared/uae-date";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { renderInvoiceShareQrPng } from "./einvoice-qr.service";
@@ -50,6 +50,11 @@ export interface GenerateInvoicePdfOptions {
   locale?: PdfLocale;
   /** Payments received so far. Defaults to the full total for `paid` invoices, else 0. */
   amountPaid?: number;
+  /**
+   * VAT in AED as posted to the ledger (foreign-currency invoices). When undefined the PDF reads
+   * it from the invoice's posted journal entry; null forces the stored-rate computation (draft).
+   */
+  postedVatAed?: number | null;
   /** Date of supply; defaults to the invoice date when absent. */
   supplyDate?: Date | string | null;
   /** Customer details from the linked contact, used when the invoice has none stored. */
@@ -166,7 +171,7 @@ export interface InvoicePdfTotals {
 /** Totals block (R03-15): amount due = total minus payments, never negative. */
 export function computeInvoicePdfTotals(
   invoice: Invoice,
-  options: Pick<GenerateInvoicePdfOptions, "amountPaid"> = {}
+  options: Pick<GenerateInvoicePdfOptions, "amountPaid" | "postedVatAed"> = {}
 ): InvoicePdfTotals {
   const currency = invoice.currency || "AED";
   const total = Number(invoice.total) || 0;
@@ -183,7 +188,13 @@ export function computeInvoicePdfTotals(
     amountPaid,
     amountDue,
     paid: status === "paid" || (total > 0 && amountDue === 0),
-    vatAed: currency === "AED" ? null : (Number(invoice.vatAmount) || 0) * exchangeRate,
+    vatAed:
+      currency === "AED"
+        ? null
+        : // Posted AED VAT when the invoice has a journal entry; else the stored booking rate in
+          // integer fils (draft), never a float product.
+          (options.postedVatAed ??
+          Number(fromFils(mulRate(toFils(Number(invoice.vatAmount) || 0), String(exchangeRate))))),
     exchangeRate,
   };
 }
@@ -258,7 +269,15 @@ async function generateStandardInvoicePDF(
       ).filter((value): value is string => Boolean(value))
     ),
   ];
-  const totals = computeInvoicePdfTotals(invoice, options);
+  const postedVatAed =
+    options.postedVatAed !== undefined
+      ? options.postedVatAed
+      : (invoice.currency || "AED") === "AED" || isDraftStatus(invoice.status)
+        ? null
+        : await import("./invoice-pdf-posted")
+            .then((m) => m.postedInvoiceVatBase(invoice))
+            .catch(() => null);
+  const totals = computeInvoicePdfTotals(invoice, { ...options, postedVatAed });
   const customer = {
     name: options.customer?.displayName || invoice.customerName || options.customer?.name || "",
     trn: invoice.customerTrn || options.customer?.trn || null,
