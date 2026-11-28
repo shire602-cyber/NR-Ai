@@ -280,9 +280,10 @@ describe("amountMismatchMessage / vatDerivedMessage wording", () => {
     expect(m).toMatch(/Check all three figures/);
   });
 
-  it("uses natural zero-rated wording at 0%", () => {
+  it("does not claim zero-rated when the parser only saw a zero VAT line", () => {
     const m = amountMismatchMessage(100, 0, 110, 0);
-    expect(m).toMatch(/zero-rated, so the total should equal the subtotal/);
+    expect(m).toMatch(/The receipt shows VAT of 0.00, so the total should equal the subtotal/);
+    expect(m).not.toMatch(/zero-rated/);
     expect(m).not.toMatch(/0% VAT/);
   });
 
@@ -292,7 +293,7 @@ describe("amountMismatchMessage / vatDerivedMessage wording", () => {
     expect(isVatDerived({ ...base, total: 105 })).toBe(false);
     expect(isVatDerived({ ...base, vatAmount: 5 })).toBe(false);
     expect(isVatDerived({ ...base, vatPercentage: 0 })).toBe(false);
-    expect(vatDerivedMessage(5, 5)).toMatch(/VAT 5\.00 was calculated at 5% of the subtotal/);
+    expect(vatDerivedMessage(5, 5)).toMatch(/VAT 5\.00 was calculated at 5% on the subtotal/);
   });
 
   it("flags a derived VAT for a total-only input too, and says where it came from", () => {
@@ -308,12 +309,12 @@ describe("amountMismatchMessage / vatDerivedMessage wording", () => {
     expect(m).toMatch(/VAT 5\.00 was worked back from the total at 5%/);
     expect(m).toMatch(/valid tax invoice from a VAT-registered supplier that shows the VAT amount/);
     expect(m).not.toMatch(/TRN/);
-    expect(vatDerivedMessage(5, 5)).toMatch(/calculated at 5% of the subtotal/);
+    expect(vatDerivedMessage(5, 5)).toMatch(/calculated at 5% on the subtotal/);
     expect(vatDerivedMessage(5, 5, "total", true)).toMatch(
       /worked back from the total at the default 5% rate/
     );
     expect(vatDerivedMessage(5, 5, "subtotal", true)).toMatch(
-      /at the default 5% rate of the subtotal/
+      /at the default 5% rate on the subtotal/
     );
     expect(vatDerivedMessage(2, 5, "total", false)).not.toMatch(/default/);
   });

@@ -6,6 +6,7 @@ import {
   hasVatFigure,
   reconcileReceiptAmounts,
   vatDerivedMessage,
+  vatRateAmountConflictMessage,
   vatDerivedSource,
 } from "./receipt-amounts";
 import {
@@ -234,14 +235,52 @@ function findFirstAmount(text: string, patterns: RegExp[]): number {
   return 0;
 }
 
-/** True when a VAT/tax line prints an explicit zero amount or a 0% rate (English or Arabic). */
-function hasZeroVatLine(lines: string[]): boolean {
-  const zeroVat = new RegExp(
-    String.raw`(?:\b(?:vat|tax|gst)\b|ضريبة القيمة المضافة|ضريبه القيمه المضافه|الضريبة|ضريبة)` +
-      String.raw`(?:[ \t]*@?[ \t]*\d+(?:\.\d+)?[ \t]*%)?[ \t:]{0,10}(?:${CUR})?[ \t]*0+(?:\.0+)?(?![\d.,])`,
-    "i"
-  );
-  return lines.some((line) => zeroVat.test(line));
+// VAT labels only. Generic "tax" (excise, tourism, municipality, "before tax", "Tax 0 items") is
+// deliberately not a VAT label. Arabic teh marbuta and heh spellings are both accepted.
+const VAT_LABEL = String.raw`(?:vat|value[ \t]+added[ \t]+tax|ضريب[ةه][ \t]+القيم[ةه][ \t]+المضاف[ةه]|ض\.?[ \t]?ق\.?[ \t]?م\.?|(?:ال)?ضريب[ةه])`;
+const VAT_LINE_START = String.raw`^[ \t*#\-•|:]*(?:(?:total|amount|net|sum|اجمالي|مجموع|المجموع)[ \t]+)?${VAT_LABEL}[ \t]*`;
+// The whole line is the VAT label with a rate and/or an amount.
+const VAT_LINE = new RegExp(
+  VAT_LINE_START +
+    String.raw`(?:%[ \t]*)?(?:@?[ \t]*(\d+(?:[.,]\d+)?)[ \t]*%)?[ \t:]{0,10}(?:${CUR})?[ \t]*(\d+(?:[.,]\d+)?)?[ \t]*(?:${CUR})?[ \t]*$`,
+  "i"
+);
+// A VAT label with a printed rate and a zero amount ("VAT 5% 0.00", "VAT @ 5% : 0.00"), anything after.
+const RATE_WITH_ZERO_AMOUNT_LINE = new RegExp(
+  VAT_LINE_START +
+    String.raw`@?[ \t]*(\d+(?:[.,]\d+)?)[ \t]*%[ \t:]{0,10}(?:${CUR})?[ \t]*0+(?:[.,]0+)?(?![\d.,])`,
+  "i"
+);
+// "VAT 0%" alone on its line: the zero rate is its figure, so the next line is not its amount.
+const BARE_ZERO_RATE_LINE = new RegExp(
+  `(${VAT_LINE_START}@?[ \t]*0+(?:[.,]0+)?[ \t]*%)[ \t]*(?:${CUR})?[ \t]*$`,
+  "gim"
+);
+
+function asNumber(raw: string | undefined): number | null {
+  return raw === undefined ? null : Number(raw.replace(",", "."));
+}
+
+/**
+ * What the receipt's VAT lines say when no VAT amount was read:
+ * - "zero": an explicit zero VAT line with no positive rate on it (a 0% rate or a 0.00 amount).
+ * - "conflict": a positive printed rate next to a zero amount; `rate` is the printed rate.
+ */
+function readZeroVatLines(
+  lines: string[]
+): { kind: "zero" } | { kind: "conflict"; rate: number } | null {
+  for (const line of lines) {
+    const m = RATE_WITH_ZERO_AMOUNT_LINE.exec(line);
+    const rate = m ? asNumber(m[1]) : null;
+    if (rate !== null && rate > 0) return { kind: "conflict", rate };
+  }
+  for (const line of lines) {
+    const m = VAT_LINE.exec(line);
+    if (!m) continue;
+    const figures = [asNumber(m[1]), asNumber(m[2])].filter((n): n is number => n !== null);
+    if (figures.length > 0 && figures.every((n) => n === 0)) return { kind: "zero" };
+  }
+  return null;
 }
 
 function findLargestLikelyAmount(lines: string[]): number {
@@ -342,7 +381,7 @@ export function parseReceiptOcrText(
   // Matching copy: Arabic-Indic digits -> ASCII, Arabic decimal separator -> ".",
   // diacritics/tatweel removed, alef/yeh variants normalised. Display lines are kept
   // separately so the merchant keeps its original spelling.
-  const normalizedText = normalizeForLabelMatching(displayText);
+  const normalizedText = normalizeForLabelMatching(displayText).replace(/٪/g, "%");
   const lines = normalizedText
     .split("\n")
     .map((line) => line.trim())
@@ -370,20 +409,27 @@ export function parseReceiptOcrText(
       "g"
     ),
   ]);
-  const vatAmount = findFirstAmount(normalizedText, [
+  // "VAT 0%" ending its line must not read the next line's total as its amount.
+  const vatSearchText = normalizedText.replace(BARE_ZERO_RATE_LINE, "$1 0.00");
+  const vatAmount = findFirstAmount(vatSearchText, [
     // The optional "5%" label must be consumed so the percentage is never read as the VAT amount.
     /\b(?:vat|tax|gst)\b(?:\s*@?\s*\d+(?:\.\d+)?\s*%)?[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     new RegExp(
-      `(?:ضريبة القيمة المضافة|ضريبه القيمه المضافه|الضريبة|ضريبة)(?:\\s*@?\\s*5\\s*%)?[^\\d-]{0,30}${AMT}`,
+      `(?:ضريب[ةه]\\s+القيم[ةه]\\s+المضاف[ةه]|(?:ال)?ضريب[ةه])(?:\\s*@?\\s*\\d+(?:\\.\\d+)?\\s*%)?[^\\d-]{0,30}${AMT}`,
       "g"
     ),
     /\b5\s*%\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
   ]);
 
   // A VAT line that prints zero ("VAT 0% AED 0.00", "VAT 0.00") is a read figure, not a missing
-  // one: the receipt is zero-rated, so VAT stays 0 and is never worked back at 5%.
-  const vatReadAsZero = vatAmount === 0 && hasZeroVatLine(lines);
-  const vatRate = vatReadAsZero ? 0 : 5;
+  // one, so VAT stays 0 and is never worked back at 5%. A positive printed rate next to a zero
+  // amount ("VAT 5% 0.00") contradicts itself: the rate is kept, VAT stays 0 and it goes to review.
+  const zeroVatRead = vatAmount === 0 ? readZeroVatLines(lines) : null;
+  const vatRate =
+    zeroVatRead?.kind === "zero" ? 0 : zeroVatRead?.kind === "conflict" ? zeroVatRead.rate : 5;
+
+  // A printed rate next to a zero amount is not worked into VAT: the 0.00 stays as read.
+  const reconcileRate = zeroVatRead?.kind === "conflict" ? 0 : vatRate;
 
   // Integer-fils reconciliation (half-up) so subtotal + VAT === total exactly.
   const {
@@ -395,10 +441,21 @@ export function parseReceiptOcrText(
     subtotal,
     vatAmount,
     total: fallbackTotal,
-    vatPercentage: vatRate,
+    vatPercentage: reconcileRate,
   });
   const validationIssues: ValidationIssue[] = [];
-  if (amountsMismatch) {
+  if (zeroVatRead?.kind === "conflict") {
+    validationIssues.push({
+      code: "AMOUNT_MISMATCH",
+      severity: "error",
+      message: vatRateAmountConflictMessage(
+        derivedSubtotal,
+        derivedVat,
+        derivedTotal,
+        zeroVatRead.rate
+      ),
+    });
+  } else if (amountsMismatch) {
     validationIssues.push({
       code: "AMOUNT_MISMATCH",
       severity: "error",
@@ -416,7 +473,7 @@ export function parseReceiptOcrText(
     subtotal,
     vatAmount,
     total: fallbackTotal,
-    vatPercentage: vatRate,
+    vatPercentage: reconcileRate,
   });
   if (vatDerivedFrom) {
     validationIssues.push({
