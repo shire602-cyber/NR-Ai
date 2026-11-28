@@ -1,20 +1,26 @@
 /**
- * A recurring template that fell behind issues one invoice per missed period (each dated its own
- * run date) up to and including the end date, instead of dropping the periods after the first when
- * the end date has passed. A missed period inside a filed VAT return is skipped with a recorded
- * reason, never posted into and never dropped silently.
+ * A recurring template that fell behind creates the CURRENT period as before (dated today, issued
+ * when the template auto-issues) and every OLDER missed period up to the end date as a DRAFT dated
+ * today with supply_date = the period: nothing is backdated, posted, numbered into an old series or
+ * emailed, so period locks, filed VAT and missing FX history cannot stall it.
  */
 import { describe, expect, it } from "vitest";
 import { freezeTime, useHarness } from "./harness";
 
 const h = useHarness();
 
-async function setup(nextRun: string, endDate: string | null, frequency = "monthly") {
+async function setup(
+  nextRun: string,
+  endDate: string | null,
+  frequency = "monthly",
+  extra: Record<string, unknown> = {}
+) {
   const t = await h.createTenant();
   const created = await t.as.post(`/api/companies/${t.company.id}/recurring-invoices`, {
     customerName: "Catch Up LLC",
     frequency,
     startDate: nextRun,
+    ...extra,
     ...(endDate ? { endDate } : {}),
     lines: [{ description: "Retainer", quantity: 1, unitPrice: 100, vatRate: 0.05 }],
   });
@@ -38,14 +44,6 @@ async function tickAt(iso: string, times = 1) {
   }
 }
 
-const datesOf = async (companyId: string) =>
-  (
-    await h.sql<{ date: string }>(
-      `SELECT to_char(date, 'YYYY-MM-DD') AS date FROM invoices WHERE company_id = $1 ORDER BY date`,
-      [companyId]
-    )
-  ).map((r) => r.date);
-
 const templateRow = async (id: string) =>
   (
     await h.sql<{
@@ -62,77 +60,181 @@ const templateRow = async (id: string) =>
     )
   )[0];
 
-describe("recurring catch-up up to the end date", () => {
-  it("issues every in-range missed period, dated per period, then ends", async () => {
-    const { t, id } = await setup("2031-01-15", "2031-03-31");
-    await tickAt("2031-06-10T06:00:00Z");
-    expect(await datesOf(t.company.id)).toEqual(["2031-01-15", "2031-02-15", "2031-03-15"]);
+const invoiceRows = async (companyId: string) =>
+  h.sql<{
+    date: string;
+    supply: string | null;
+    status: string;
+    number: string;
+    notes: string | null;
+  }>(
+    `SELECT to_char(date, 'YYYY-MM-DD') AS date, to_char(supply_date, 'YYYY-MM-DD') AS supply,
+            status, number, notes
+       FROM invoices WHERE company_id = $1 ORDER BY supply_date NULLS LAST, number`,
+    [companyId]
+  );
+
+const journalCount = async (companyId: string) =>
+  Number(
+    (
+      await h.sql<{ n: string }>(
+        `SELECT count(*) AS n FROM journal_entries WHERE company_id = $1`,
+        [companyId]
+      )
+    )[0].n
+  );
+
+const outboxCount = async (companyId: string) =>
+  Number(
+    (
+      await h.sql<{ n: string }>(`SELECT count(*) AS n FROM email_outbox WHERE company_id = $1`, [
+        companyId,
+      ])
+    )[0].n
+  );
+
+const draftIds = async (companyId: string) =>
+  (
+    await h.sql<{ id: string }>(
+      `SELECT id FROM invoices WHERE company_id = $1 AND status = 'draft'`,
+      [companyId]
+    )
+  ).map((r) => r.id);
+
+const TODAY = "2031-06-10";
+
+describe("recurring catch-up: drafts for missed periods, the current period as before", () => {
+  it("3 missed monthly periods: 2 supply-dated drafts and 1 issued current invoice, then ends", async () => {
+    const { t, id } = await setup("2031-04-10", "2031-06-30", "monthly", { autoIssue: true });
+    await tickAt(`${TODAY}T06:00:00Z`);
+    const rows = await invoiceRows(t.company.id);
+    expect(rows).toHaveLength(3);
+    const drafts = rows.filter((r) => r.supply !== null);
+    expect(drafts.map((r) => r.supply)).toEqual(["2031-04-10", "2031-05-10"]);
+    for (const d of drafts) {
+      expect(d.date).toBe(TODAY);
+      expect(d.status).toBe("draft");
+      expect(d.notes).toContain(id);
+      expect(d.notes).toContain(d.supply!);
+    }
+    const current = rows.find((r) => r.supply === null)!;
+    expect(current.date).toBe(TODAY);
+    expect(current.status).not.toBe("draft");
+    // Only the current invoice posted: one revenue entry, nothing for the drafts.
+    expect(await journalCount(t.company.id)).toBeGreaterThan(0);
+    const draftEntries = await h.sql(
+      `SELECT id FROM journal_entries WHERE company_id = $1 AND source_id = ANY($2::uuid[])`,
+      [t.company.id, await draftIds(t.company.id)]
+    );
+    expect(draftEntries).toHaveLength(0);
+    expect(await outboxCount(t.company.id)).toBe(0);
     const row = await templateRow(id);
     expect(row.is_active).toBe(false);
     expect(Number(row.total)).toBe(3);
-    // No fourth invoice on a later tick.
+    expect(row.message).toContain(
+      "Created 2 draft invoices for missed periods 2031-04-10, 2031-05-10"
+    );
+    expect(row.message).toContain("review and issue them");
+    const audit = await h.sql<{ details: string }>(
+      `SELECT details FROM audit_logs WHERE company_id = $1 AND action = 'recurring_invoice.catch_up_drafts' AND resource_id = $2`,
+      [t.company.id, id]
+    );
+    expect(audit).toHaveLength(1);
+    expect(audit[0].details).toContain("2031-04-10");
+    // A later tick creates nothing more.
     await tickAt("2031-06-11T06:00:00Z");
-    expect(await datesOf(t.company.id)).toHaveLength(3);
+    expect(await invoiceRows(t.company.id)).toHaveLength(3);
   });
 
-  it("includes a period that falls exactly on the end date", async () => {
-    const { t } = await setup("2031-01-15", "2031-03-15");
+  it("a locked past month does not stall the template: drafts are created and next run advances", async () => {
+    const { t, id } = await setup("2031-02-15", null);
+    await h.sql(
+      `INSERT INTO month_end_close (company_id, period_end, status, lock_type, lock_scope)
+       VALUES ($1, '2031-03-31', 'locked', 'hard', 'through')`,
+      [t.company.id]
+    );
     await tickAt("2031-06-10T06:00:00Z");
-    expect(await datesOf(t.company.id)).toEqual(["2031-01-15", "2031-02-15", "2031-03-15"]);
-  });
-
-  it("with no end date catches up to today only and stays active", async () => {
-    const { t, id } = await setup("2031-01-15", null);
-    await tickAt("2031-03-20T06:00:00Z");
-    expect(await datesOf(t.company.id)).toEqual(["2031-01-15", "2031-02-15", "2031-03-15"]);
+    const rows = await invoiceRows(t.company.id);
+    expect(rows.filter((r) => r.supply !== null).map((r) => r.supply)).toEqual([
+      "2031-02-15",
+      "2031-03-15",
+      "2031-04-15",
+    ]);
+    expect(rows).toHaveLength(4);
     const row = await templateRow(id);
+    expect(row.next).toBe("2031-06-15");
     expect(row.is_active).toBe(true);
-    expect(row.next).toBe("2031-04-15");
   });
 
-  it("caps catch-up per tick and continues on the next tick", async () => {
-    const { t, id } = await setup("2031-01-01", null, "weekly");
-    await tickAt("2032-01-01T06:00:00Z");
-    expect(await datesOf(t.company.id)).toHaveLength(24);
-    expect((await templateRow(id)).is_active).toBe(true);
-    await tickAt("2032-01-01T07:00:00Z");
-    expect(await datesOf(t.company.id)).toHaveLength(48);
-    await tickAt("2032-01-01T08:00:00Z");
-    expect(await datesOf(t.company.id)).toHaveLength(53);
-  });
-
-  it("skips a period inside a filed VAT return with a visible reason, issues the rest", async () => {
-    const { t, id } = await setup("2031-01-15", "2031-03-31");
+  it("a past period inside a filed VAT return becomes a draft, never posted", async () => {
+    const { t, id } = await setup("2031-01-15", "2031-03-31", "monthly", { autoIssue: true });
     await h.sql(
       `INSERT INTO vat_returns (company_id, period_start, period_end, due_date, status, fta_reference_number, created_by)
        VALUES ($1, '2031-02-01', '2031-02-28', '2031-03-28', 'filed', 'EMT-FILED', $2)`,
       [t.company.id, t.user.id]
     );
     await tickAt("2031-06-10T06:00:00Z");
-    expect(await datesOf(t.company.id)).toEqual(["2031-01-15", "2031-03-15"]);
-    const row = await templateRow(id);
-    expect(row.is_active).toBe(false);
-    expect(row.message).toContain("Skipped the 2031-02-15 invoice");
-    const audit = await h.sql<{ details: string }>(
-      `SELECT details FROM audit_logs WHERE company_id = $1 AND action = 'recurring_invoice.period_skipped' AND resource_id = $2`,
-      [t.company.id, id]
-    );
-    expect(audit).toHaveLength(1);
-    expect(audit[0].details).toContain("2031-02-15");
+    const rows = await invoiceRows(t.company.id);
+    expect(rows.filter((r) => r.status === "draft").map((r) => r.supply)).toEqual([
+      "2031-01-15",
+      "2031-02-15",
+    ]);
+    expect(rows).toHaveLength(3);
+    expect(await outboxCount(t.company.id)).toBe(0);
+    expect((await templateRow(id)).is_active).toBe(false);
   });
 
-  it("two parallel ticks issue each period exactly once", async () => {
+  it("two parallel ticks create each period exactly once", async () => {
     const { t, id } = await setup("2031-01-15", "2031-03-31");
     await tickAt("2031-06-10T06:00:00Z", 2);
-    expect(await datesOf(t.company.id)).toEqual(["2031-01-15", "2031-02-15", "2031-03-15"]);
+    const rows = await invoiceRows(t.company.id);
+    expect(rows.map((r) => r.supply ?? "current").sort()).toEqual([
+      "2031-01-15",
+      "2031-02-15",
+      "current",
+    ]);
     expect(Number((await templateRow(id)).total)).toBe(3);
+  });
+
+  it("caps catch-up per tick and continues on the next tick", async () => {
+    const { t, id } = await setup("2031-01-01", null, "weekly");
+    await tickAt("2032-01-01T06:00:00Z");
+    expect(await invoiceRows(t.company.id)).toHaveLength(24);
+    expect((await templateRow(id)).is_active).toBe(true);
+    await tickAt("2032-01-01T07:00:00Z");
+    expect(await invoiceRows(t.company.id)).toHaveLength(48);
+    await tickAt("2032-01-01T08:00:00Z");
+    const rows = await invoiceRows(t.company.id);
+    expect(rows).toHaveLength(53);
+    // Exactly one current (non-draft-by-catch-up) invoice, the rest are supply-dated drafts.
+    expect(rows.filter((r) => r.supply === null)).toHaveLength(1);
+    // Only the current invoice posts (the template auto-issues by default); no draft does.
+    expect(await journalCount(t.company.id)).toBe(1);
+  });
+
+  it("with no end date catches up to today only and stays active", async () => {
+    const { t, id } = await setup("2031-01-15", null);
+    await tickAt("2031-03-20T06:00:00Z");
+    expect(await invoiceRows(t.company.id)).toHaveLength(3);
+    const row = await templateRow(id);
+    expect(row.is_active).toBe(true);
+    expect(row.next).toBe("2031-04-15");
+  });
+
+  it("a period exactly on the end date is the current one when it is the latest due", async () => {
+    const { t, id } = await setup("2031-01-15", "2031-03-15");
+    await tickAt("2031-06-10T06:00:00Z");
+    const rows = await invoiceRows(t.company.id);
+    expect(rows.map((r) => r.supply)).toEqual(["2031-01-15", "2031-02-15", null]);
+    expect((await templateRow(id)).is_active).toBe(false);
   });
 
   it("uses the Dubai day at the boundary: 21:30Z on the end-date eve issues the 15th, not the 16th", async () => {
     const { t, id } = await setup("2031-05-15", "2031-05-16");
-    // 2031-05-15T21:30Z is 01:30 on 16 May in Dubai: the 15th is due, the next run is 15 June.
     await tickAt("2031-05-15T21:30:00Z");
-    expect(await datesOf(t.company.id)).toEqual(["2031-05-15"]);
+    const rows = await invoiceRows(t.company.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].date).toBe("2031-05-16");
     const row = await templateRow(id);
     expect(row.next).toBe("2031-06-15");
     expect(row.is_active).toBe(false);
@@ -140,7 +242,7 @@ describe("recurring catch-up up to the end date", () => {
 
   it("does not issue a period that is still in the future in Dubai", async () => {
     const { t } = await setup("2031-05-16", "2031-08-31");
-    await tickAt("2031-05-15T19:59:00Z"); // 23:59 on the 15th in Dubai
-    expect(await datesOf(t.company.id)).toEqual([]);
+    await tickAt("2031-05-15T19:59:00Z");
+    expect(await invoiceRows(t.company.id)).toEqual([]);
   });
 });

@@ -13,7 +13,6 @@ import {
 import { createLogger } from "../config/logger";
 import { getEnv } from "../config/env";
 import { errorCode } from "../errors";
-import { findFiledVatPeriod, lockVatReturns, vatPeriodFiledError } from "../ledger/vat-lock";
 import { recordAudit } from "./audit.service";
 import { assertPeriodNotLocked, lockPeriodPolicy } from "./period-lock.service";
 import { allocateInvoiceNumber } from "./invoice-numbering.service";
@@ -689,21 +688,23 @@ export async function generateDueRecurringInvoices(): Promise<number> {
     for (const row of skipped.rows as Array<{ id: string }>) seen.add(String(row.id));
   }
   const generatedBy = new Map<string, number>();
-  // Catch-up: periods handled per template this tick, and the periods skipped inside a filed VAT
-  // return (their reasons stay on the template's last-run message after later periods issue).
+  // Catch-up: periods handled per template this tick, and the draft invoices created for missed
+  // (older) periods, summarised on the template and in the audit log at the end of the tick.
   const periodsThisTick = new Map<string, number>();
-  const skippedNotes = new Map<string, string[]>();
+  const catchUpDrafts = new Map<string, { companyId: string; periods: string[]; ids: string[] }>();
 
   while (true) {
     type ProcessResult =
       | null
-      | { skipped: true; again?: boolean; templateId?: string; skipNote?: string }
+      | { skipped: true }
       | {
           skipped: false;
           template: typeof recurringInvoicesTable.$inferSelect;
           invoice: typeof invoicesTable.$inferSelect;
           /** The template has more due periods this tick: fetch it again (catch-up). */
           again: boolean;
+          /** A missed (older) period: created as a draft for review, never issued or sent. */
+          catchUpPeriod: string | null;
         };
 
     let result: ProcessResult;
@@ -731,10 +732,13 @@ export async function generateDueRecurringInvoices(): Promise<number> {
           return { skipped: true as const };
         };
 
-        // The end date is a calendar day and INCLUSIVE. Each tick handles one period: the period
+        // The end date is a calendar day and INCLUSIVE. Each pass handles one period: the period
         // whose run date is `template.nextRunDate`. A template that fell behind is fetched again
-        // (see `again`) until every period up to min(today, end date) is handled, each dated its
-        // own run date. Compare calendar days, not instants.
+        // (see `again`) until every period up to min(today, end date) is handled. The latest such
+        // period (the current one) behaves as always: dated today, issued when the template
+        // auto-issues. Every older missed period becomes a DRAFT dated today with supply_date set
+        // to the period, for the user to review and issue (nothing is backdated, posted or sent).
+        // Compare calendar days, not instants.
         const todayDubai = uaeToday(now);
         const runDay = new Date(template.nextRunDate).toISOString().slice(0, 10);
         const endDay = template.endDate
@@ -751,10 +755,11 @@ export async function generateDueRecurringInvoices(): Promise<number> {
         const advancedDay = advancedNextRunDate.toISOString().slice(0, 10);
         // Deactivate once the next run would fall after the (inclusive) end date.
         const finished = endDay !== null && advancedDay > endDay;
+        const hasLaterPeriod = !finished && advancedDay <= todayDubai;
         const again =
-          !finished &&
-          advancedDay <= todayDubai &&
+          hasLaterPeriod &&
           (periodsThisTick.get(template.id) ?? 0) + 1 < MAX_CATCH_UP_PERIODS_PER_TICK;
+        const catchUpPeriod = hasLaterPeriod ? runDay : null;
 
         let parsedLines: SalesLineInput[];
         try {
@@ -785,7 +790,7 @@ export async function generateDueRecurringInvoices(): Promise<number> {
           return note("invalid", `Template lines are invalid: ${(err as Error)?.message}`, true);
         }
 
-        const dateIso = runDay;
+        const dateIso = todayDubai;
         const invoiceDate = new Date(`${dateIso}T00:00:00.000Z`);
         await lockPeriodPolicy(tx, template.companyId, "shared");
         try {
@@ -798,35 +803,6 @@ export async function generateDueRecurringInvoices(): Promise<number> {
             "Skipping recurring invoice generation — target period is locked"
           );
           return note("period_locked", "Target period is locked; will retry");
-        }
-
-        // A missed period inside a submitted/filed VAT return is never posted into: the return
-        // already declared that period. Skip it, advance the schedule and leave a visible record.
-        await lockVatReturns(tx, template.companyId, "shared");
-        const filed = await findFiledVatPeriod(tx, template.companyId, dateIso);
-        if (filed) {
-          const reason = vatPeriodFiledError(filed, dateIso).message;
-          const message = `Skipped the ${dateIso} invoice: ${reason}`;
-          await recordAudit({
-            companyId: template.companyId,
-            action: "recurring_invoice.period_skipped",
-            entityType: "recurring_invoice",
-            entityId: template.id,
-            after: { period: dateIso, reason: "vat_period_filed" },
-            extra: { message },
-            tx,
-          });
-          await tx
-            .update(recurringInvoicesTable)
-            .set({
-              ...(finished ? { isActive: false } : {}),
-              nextRunDate: advancedNextRunDate,
-              lastRunStatus: "period_skipped_vat_filed",
-              lastRunMessage: message,
-              lastRunAt: now,
-            })
-            .where(eq(recurringInvoicesTable.id, template.id));
-          return { skipped: true as const, again, templateId: template.id, skipNote: message };
         }
 
         const currency = (template.currency || "AED").toUpperCase();
@@ -888,6 +864,10 @@ export async function generateDueRecurringInvoices(): Promise<number> {
             dueDate: header.dueDate ? new Date(`${header.dueDate}T00:00:00.000Z`) : null,
             placeOfSupplyEmirate: header.placeOfSupplyEmirate,
             date: invoiceDate,
+            supplyDate: catchUpPeriod ? new Date(`${catchUpPeriod}T00:00:00.000Z`) : null,
+            notes: catchUpPeriod
+              ? `Catch-up draft for the ${catchUpPeriod} period of recurring template ${template.id}. Review and issue it.`
+              : null,
             currency,
             exchangeRate: rate,
             baseCurrencyAmount: Number(fromFils(baseFils)),
@@ -924,13 +904,21 @@ export async function generateDueRecurringInvoices(): Promise<number> {
             nextRunDate: advancedNextRunDate,
             lastGeneratedInvoiceId: insertedInvoice.id,
             totalGenerated: sql`${recurringInvoicesTable.totalGenerated} + 1`,
-            lastRunStatus: "generated",
-            lastRunMessage: `Generated ${newNumber} as draft`,
+            lastRunStatus: catchUpPeriod ? "catch_up_draft" : "generated",
+            lastRunMessage: catchUpPeriod
+              ? `Created ${newNumber} as a draft for the missed ${catchUpPeriod} period`
+              : `Generated ${newNumber} as draft`,
             lastRunAt: now,
           })
           .where(eq(recurringInvoicesTable.id, template.id));
 
-        return { skipped: false as const, template, invoice: insertedInvoice, again };
+        return {
+          skipped: false as const,
+          template,
+          invoice: insertedInvoice,
+          again,
+          catchUpPeriod,
+        };
       });
     } catch (err) {
       // Per-template error boundary: one failure must not starve the others.
@@ -943,31 +931,27 @@ export async function generateDueRecurringInvoices(): Promise<number> {
 
     if (result === null) break;
     processed++;
-    if (result.skipped) {
-      if (result.templateId) {
-        periodsThisTick.set(result.templateId, (periodsThisTick.get(result.templateId) ?? 0) + 1);
-        if (result.skipNote) {
-          skippedNotes.set(result.templateId, [
-            ...(skippedNotes.get(result.templateId) ?? []),
-            result.skipNote,
-          ]);
-        }
-        if (result.again) seen.delete(result.templateId);
-      }
-      continue;
-    }
+    if (result.skipped) continue;
 
     const { template, invoice } = result;
     periodsThisTick.set(template.id, (periodsThisTick.get(template.id) ?? 0) + 1);
     if (result.again) seen.delete(template.id);
+    if (result.catchUpPeriod) {
+      const entry = catchUpDrafts.get(template.id) ?? {
+        companyId: template.companyId,
+        periods: [],
+        ids: [],
+      };
+      entry.periods.push(result.catchUpPeriod);
+      entry.ids.push(invoice.id);
+      catchUpDrafts.set(template.id, entry);
+      continue;
+    }
     generatedBy.set(template.companyId, (generatedBy.get(template.companyId) ?? 0) + 1);
     const outcome = await finishGeneratedInvoice(template, invoice);
     await db
       .update(recurringInvoicesTable)
-      .set({
-        lastRunStatus: outcome.status,
-        lastRunMessage: [outcome.message, ...(skippedNotes.get(template.id) ?? [])].join(" | "),
-      })
+      .set({ lastRunStatus: outcome.status, lastRunMessage: outcome.message })
       .where(eq(recurringInvoicesTable.id, template.id));
     log.info(
       { templateId: template.id, newInvoiceId: invoice.id, outcome: outcome.status },
@@ -975,11 +959,53 @@ export async function generateDueRecurringInvoices(): Promise<number> {
     );
   }
 
+  for (const [templateId, drafts] of catchUpDrafts) {
+    await summariseCatchUpDrafts(templateId, drafts);
+  }
   for (const [companyId, generated] of generatedBy) {
     await recordAutomationRun("recurringInvoices", companyId, "ok", { generated });
   }
   log.info({ processed }, "Recurring invoice generation cycle complete");
   return processed;
+}
+
+/**
+ * Missed periods were created as drafts: say so on the template (keeping the current period's
+ * outcome when one was issued in the same tick) and leave an audit row.
+ */
+async function summariseCatchUpDrafts(
+  templateId: string,
+  drafts: { companyId: string; periods: string[]; ids: string[] }
+): Promise<void> {
+  try {
+    const n = drafts.periods.length;
+    const summary = `Created ${n} draft invoice${n === 1 ? "" : "s"} for missed periods ${drafts.periods.join(", ")} - review and issue them`;
+    const [row] = await db
+      .select({
+        status: recurringInvoicesTable.lastRunStatus,
+        message: recurringInvoicesTable.lastRunMessage,
+      })
+      .from(recurringInvoicesTable)
+      .where(eq(recurringInvoicesTable.id, templateId));
+    const catchUpOnly = !row || row.status === "catch_up_draft";
+    await db
+      .update(recurringInvoicesTable)
+      .set({
+        ...(catchUpOnly ? { lastRunStatus: "catch_up_drafts" } : {}),
+        lastRunMessage: catchUpOnly || !row?.message ? summary : `${row.message} | ${summary}`,
+      })
+      .where(eq(recurringInvoicesTable.id, templateId));
+    await recordAudit({
+      companyId: drafts.companyId,
+      action: "recurring_invoice.catch_up_drafts",
+      entityType: "recurring_invoice",
+      entityId: templateId,
+      after: { periods: drafts.periods, invoiceIds: drafts.ids },
+      extra: { message: summary },
+    });
+  } catch (err) {
+    log.error({ err, templateId }, "Could not record the recurring catch-up draft summary");
+  }
 }
 
 /**

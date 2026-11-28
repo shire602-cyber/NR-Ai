@@ -57,16 +57,17 @@ describe("recurring end date is inclusive by Dubai day", () => {
     }
   );
 
-  it("issues the missed end-date period (dated its own day) when the job ran a day late", async () => {
+  it("issues the missed end-date period (the current one, dated today) when the job ran a day late", async () => {
     // 2031-05-14T21:30Z is 01:30 on 15 May in Dubai: the end date (14th) is yesterday, but the
-    // period due on the end date was never issued, so it is caught up and the template ends.
+    // period due on the end date was never issued. It is the latest due period, so it is issued as the
+    // current one, dated today in Dubai (not backdated), and the template ends.
     const { t, id } = await setup("2031-05-14", "2031-05-14");
     await runAt("2031-05-14T21:30:00Z");
     const invoices = await h.sql<{ date: string }>(
       `SELECT to_char(date, 'YYYY-MM-DD') AS date FROM invoices WHERE company_id = $1`,
       [t.company.id]
     );
-    expect(invoices).toEqual([{ date: "2031-05-14" }]);
+    expect(invoices).toEqual([{ date: "2031-05-15" }]);
     const [row] = await h.sql<{ is_active: boolean }>(
       `SELECT is_active FROM recurring_invoices WHERE id = $1`,
       [id]
