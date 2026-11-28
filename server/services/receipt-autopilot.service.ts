@@ -37,6 +37,7 @@ import {
   invalidateModel,
   applyAccuracyFailsafe,
 } from "./training-data.service";
+import type { ValidationIssue } from "../../shared/receipt-confidence";
 import type { Account } from "../../shared/schema";
 import { DEFAULT_CLASSIFIER_CONFIG } from "../../shared/schema";
 import { evaluateAutoPostGate } from "./classification-feedback.util";
@@ -66,6 +67,8 @@ export interface OcrReceipt {
   extractionConfidence?: number;
   /** True when extraction was not high-confidence/clean: never auto-post, always review. */
   needsReview?: boolean;
+  /** Why extraction needs a person (VAT_DERIVED, AMOUNT_MISMATCH); not persisted on the receipt row. */
+  reviewIssues?: ValidationIssue[];
   /** True file facts captured by the upload guard. */
   contentSha256?: string | null;
   fileMime?: string | null;

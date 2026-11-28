@@ -19,6 +19,8 @@ const db = vi.hoisted(() => ({
   messages: [] as any[],
   classifications: [] as any[],
   hashes: new Set<string>(),
+  autopilot: { enabled: false, rules: [] as any[] },
+  postedEntries: [] as any[],
 }));
 
 vi.mock("../../server/storage", () => ({
@@ -76,6 +78,12 @@ vi.mock("../../server/storage", () => ({
       return row;
     }),
     hasCompanyAccess: vi.fn(async () => true),
+    getCompany: vi.fn(async () => ({ id: COMPANY, baseCurrency: "AED" })),
+    postReceiptAtomic: vi.fn(async (args: any) => {
+      db.postedEntries.push(args);
+      return { entry: { id: `je-${db.postedEntries.length}` } };
+    }),
+    updateReceipt: vi.fn(async () => undefined),
   },
 }));
 vi.mock("../../server/db", () => ({ pool: { query: vi.fn(async () => ({ rows: [] })) } }));
@@ -86,11 +94,15 @@ vi.mock("../../server/services/audit.service", () => ({
   recordAudit: vi.fn(async () => undefined),
 }));
 vi.mock("../../server/services/training-data.service", () => ({
-  getModel: vi.fn(async () => ({ rules: [], trainingExamples: [], builtAt: Date.now() })),
+  getModel: vi.fn(async () => ({
+    rules: db.autopilot.rules,
+    trainingExamples: [],
+    builtAt: Date.now(),
+  })),
   getClassifierConfig: vi.fn(async () => ({
     mode: "hybrid",
     accuracyThreshold: 0.8,
-    autopilotEnabled: false,
+    autopilotEnabled: db.autopilot.enabled,
     autopostThreshold: 0.9,
   })),
   invalidateModel: vi.fn(),
@@ -186,6 +198,9 @@ beforeEach(() => {
   db.messages.length = 0;
   db.classifications.length = 0;
   db.hashes.clear();
+  db.postedEntries.length = 0;
+  db.autopilot.enabled = false;
+  db.autopilot.rules = [];
   anthropicCreate.mockReset();
   anthropicCreate.mockResolvedValue({
     content: [
@@ -291,13 +306,11 @@ describe("R05-19a email-forward capture", () => {
     // the extractor marks it for human review, which the autopilot gate honours
     const { normalizeOcrJson } = await import("../../server/services/ocr-extraction.service");
     expect(normalizeOcrJson({ merchant: "Blurry Shop", total: 105 }).needsReview).toBe(true);
-    expect(
-      normalizeOcrJson({ merchant: "Clear Shop", total: 105, confidence: 0.95 }).needsReview
-    ).toBe(false);
-    expect(
-      normalizeOcrJson({ merchant: "Clear Shop", total: 105, confidence: 0.95 }, { issueCount: 1 })
-        .needsReview
-    ).toBe(true);
+    const clear = { merchant: "Clear Shop", subtotal: 100, vatAmount: 5, total: 105 };
+    expect(normalizeOcrJson({ ...clear, confidence: 0.95 }).needsReview).toBe(false);
+    expect(normalizeOcrJson({ ...clear, confidence: 0.95 }, { issueCount: 1 }).needsReview).toBe(
+      true
+    );
   });
 
   it("R05-19a capture status is honest: disabled -> requires_configuration -> enabled", () => {
@@ -316,5 +329,96 @@ describe("R05-19a email-forward capture", () => {
     const res = await postWebhook(samplePayload, sign(samplePayload));
     expect(res.status).toBe(503);
     expect(db.receipts).toHaveLength(0);
+  });
+});
+
+describe("email intake: derived VAT never auto-posts", () => {
+  /** A company that has Receipt Autopilot on and a trusted rule for the merchant. */
+  function enableAutopilot() {
+    db.autopilot.enabled = true;
+    db.autopilot.rules = [
+      {
+        id: "rule-1",
+        merchantPattern: "Cafe Beirut",
+        descriptionPattern: null,
+        accountId: "acc-meals",
+        category: "Meals",
+        confidence: 0.97,
+        timesApplied: 12,
+        timesAccepted: 10,
+        timesRejected: 0,
+      },
+    ];
+  }
+  function extraction(fields: Record<string, unknown>) {
+    anthropicCreate.mockResolvedValue({
+      content: [
+        {
+          type: "tool_use",
+          name: "record_receipt",
+          input: {
+            merchant: "Cafe Beirut",
+            date: "2026-11-10",
+            currency: "AED",
+            category: "Meals",
+            confidence: 0.95,
+            ...fields,
+          },
+        },
+      ],
+      usage: { input_tokens: 10, output_tokens: 10 },
+    });
+  }
+
+  it("a confident total-only receipt is queued for review, not auto-posted", async () => {
+    enableAutopilot();
+    extraction({ total: 105 });
+    const res = await postWebhook(samplePayload, sign(samplePayload));
+    expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
+    expect(db.postedEntries).toHaveLength(0);
+    expect(db.receipts[0]).toMatchObject({ posted: false, autoPosted: false });
+  });
+
+  it("a confident subtotal-only receipt is queued for review, not auto-posted", async () => {
+    enableAutopilot();
+    extraction({ subtotal: 100 });
+    const res = await postWebhook(samplePayload, sign(samplePayload));
+    expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
+    expect(db.postedEntries).toHaveLength(0);
+  });
+
+  it("derived VAT carries the VAT_DERIVED note on the extraction", async () => {
+    const { normalizeOcrJson } = await import("../../server/services/ocr-extraction.service");
+    const total = normalizeOcrJson({ merchant: "Shop", total: 105, confidence: 0.95 });
+    expect(total).toMatchObject({ amount: 100, vatAmount: 5, total: 105, needsReview: true });
+    expect(total.reviewIssues?.map((i) => i.code)).toEqual(["VAT_DERIVED"]);
+    expect(total.reviewIssues?.[0].message).toMatch(/worked back from the total/);
+    const sub = normalizeOcrJson({ merchant: "Shop", subtotal: 100, confidence: 0.95 });
+    expect(sub).toMatchObject({ amount: 100, vatAmount: 5, total: 105, needsReview: true });
+    expect(sub.reviewIssues?.[0].message).toMatch(/on the subtotal/);
+  });
+
+  it("a receipt with an explicit positive VAT line still auto-posts when otherwise confident", async () => {
+    enableAutopilot();
+    extraction({ subtotal: 100, vatAmount: 5, total: 105, vatPercentage: 5 });
+    const res = await postWebhook(samplePayload, sign(samplePayload));
+    expect(res.body).toMatchObject({ autoPosted: 1, queuedForReview: 0 });
+    expect(db.postedEntries).toHaveLength(1);
+    const { normalizeOcrJson } = await import("../../server/services/ocr-extraction.service");
+    const r = normalizeOcrJson({ subtotal: 100, vatAmount: 5, total: 105, confidence: 0.95 });
+    expect(r.reviewIssues).toEqual([]);
+  });
+
+  it("a mismatching receipt is queued for review, not auto-posted", async () => {
+    enableAutopilot();
+    // 100 + 5 VAT read, but the total says 130 (service charge / misread)
+    extraction({ subtotal: 100, vatAmount: 5, total: 130 });
+    const res = await postWebhook(samplePayload, sign(samplePayload));
+    expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
+    expect(db.postedEntries).toHaveLength(0);
+    const { normalizeOcrJson } = await import("../../server/services/ocr-extraction.service");
+    const r = normalizeOcrJson({ subtotal: 100, vatAmount: 5, total: 130, confidence: 0.95 });
+    expect(r.needsReview).toBe(true);
+    expect(r.reviewIssues?.map((i) => i.code)).toEqual(["AMOUNT_MISMATCH"]);
   });
 });
