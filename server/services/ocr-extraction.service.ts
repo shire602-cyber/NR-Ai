@@ -122,17 +122,27 @@ export function normalizeOcrJson(
       ),
     });
   }
-  if (vatDerivedFrom) {
+  // Net and gross printed with no VAT figure at all: the reconciler reads the gap as VAT, but that
+  // is an assumption, not a printed figure (same review rule as a total-only receipt).
+  const vatNotPrinted =
+    raw?.vatAmount === null || raw?.vatAmount === undefined || raw?.vatAmount === "";
+  const vatGapAssumed = !vatDerivedFrom && vatNotPrinted && derivedVat > 0 && sIn > 0 && tIn > 0;
+  if (vatDerivedFrom || vatGapAssumed) {
     // The VAT is an assumption, not a read figure: a receipt with no VAT amount is not a tax
     // invoice, so it must never auto-post an input-VAT claim.
     reviewIssues.push({
       code: "VAT_DERIVED",
       severity: "warning",
-      message: vatDerivedMessage(derivedVat, vatPercentage, vatDerivedFrom, vatRateDefaulted),
+      message: vatDerivedMessage(
+        derivedVat,
+        vatPercentage,
+        vatDerivedFrom ?? "total",
+        vatRateDefaulted
+      ),
     });
   }
   const trn = validateUaeTrn(typeof raw?.supplierTrn === "string" ? raw.supplierTrn : null);
-  if (derivedVat > 0 && !trn.trn && !vatDerivedFrom) {
+  if (derivedVat > 0 && !trn.trn && !vatDerivedFrom && !vatGapAssumed) {
     // A VAT figure with no valid supplier TRN cannot be trusted as a read tax-invoice figure.
     reviewIssues.push({
       code: "VAT_NO_TRN",
