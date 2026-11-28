@@ -27,7 +27,11 @@ import {
   describeOcrProviders,
   summarizeOcrProviderError,
 } from "../services/ocr-provider-clients";
-import { parseReceiptOcrText, UNKNOWN_RECEIPT_MERCHANT } from "@shared/receipt-ocr-parser";
+import {
+  parseReceiptOcrText,
+  UNKNOWN_RECEIPT_MERCHANT,
+  validateUaeTrn,
+} from "@shared/receipt-ocr-parser";
 import { deriveConfidenceBand, type ValidationIssue } from "@shared/receipt-confidence";
 import { buildLimiter, limiterProfiles } from "../middleware/rateLimit";
 import { extractReceipt, type ExtractionClients } from "../services/ai/receipt-extraction";
@@ -47,6 +51,7 @@ import {
   reconcileReceiptAmounts,
   vatDerivedMessage,
   vatDerivedSource,
+  vatWithoutTrnMessage,
 } from "@shared/receipt-amounts";
 
 const log = createLogger("ocr");
@@ -646,6 +651,20 @@ function buildResult(
       code: "VAT_DERIVED",
       severity: "warning",
       message: vatDerivedMessage(derivedVat, vatPercentage, vatDerivedFrom, vatRateDefaulted),
+    });
+  }
+  // VAT read (not derived) with no valid supplier TRN: the reviewer is told before saving, because
+  // saving posts an input-VAT claim and a tax invoice must show the supplier's TRN.
+  if (
+    derivedVat > 0 &&
+    !vatDerivedFrom &&
+    !validateUaeTrn(typeof aiResult.supplierTrn === "string" ? aiResult.supplierTrn : null).valid &&
+    !have.has("VAT_NO_TRN")
+  ) {
+    issues.push({
+      code: "VAT_NO_TRN",
+      severity: "warning",
+      message: vatWithoutTrnMessage(derivedVat),
     });
   }
   if (aiResult.supplierTrnIssue && !have.has("TRN_INVALID")) {

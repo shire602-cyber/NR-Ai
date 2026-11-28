@@ -218,6 +218,9 @@ export function sanityCheckReceipt(
   const todayMs = Date.parse(`${opts.today ?? todayDubai()}T00:00:00Z`);
   const subtotal = Number(data.subtotal) || 0;
   const vat = Number(data.vatAmount) || 0;
+  // null/undefined VAT means "not printed", not "0": the gap is left to reconcileReceiptAmounts,
+  // which derives and flags it (VAT_DERIVED), instead of asking the model to fill the figure in.
+  const vatPrinted = data.vatAmount !== null && data.vatAmount !== undefined;
   const total = Number(data.total) || 0;
 
   if (total <= 0 && subtotal <= 0) {
@@ -227,7 +230,7 @@ export function sanityCheckReceipt(
       message: "No total or subtotal found",
     });
   }
-  if (subtotal > 0 && total > 0) {
+  if (vatPrinted && subtotal > 0 && total > 0) {
     const tolerance = Math.max(0.05, total * 0.01);
     if (Math.abs(subtotal + vat - total) > tolerance) {
       issues.push({
@@ -332,6 +335,8 @@ export interface StructuredResult<T> {
   /** Issues remaining on the returned data (empty when the output was fully valid). */
   issues: ValidationIssue[];
   attempts: number;
+  /** The first successfully parsed attempt (before any correction retry). */
+  firstData?: T;
 }
 
 export async function runStructured<T>(
@@ -341,6 +346,7 @@ export async function runStructured<T>(
   let feedback: string | undefined;
   let best: { data: T; issues: ValidationIssue[] } | null = null;
   let lastError = "Model output was invalid";
+  let firstData: T | undefined;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let parsed: z.ZodSafeParseResult<T>;
@@ -362,17 +368,18 @@ export async function runStructured<T>(
       continue;
     }
 
+    if (firstData === undefined) firstData = parsed.data;
     const issues = opts.sanity ? opts.sanity(parsed.data) : [];
     const errors = issues.filter((i) => i.severity === "error");
     // Prefer the attempt with fewer sanity errors.
     if (!best || errors.length < best.issues.filter((i) => i.severity === "error").length) {
       best = { data: parsed.data, issues };
     }
-    if (errors.length === 0) return { data: parsed.data, issues, attempts: attempt + 1 };
-    feedback = `Your previous reply failed validation: ${errors.map((e) => e.message).join("; ")}. Re-read the document and correct these values.`;
+    if (errors.length === 0) return { data: parsed.data, issues, attempts: attempt + 1, firstData };
+    feedback = `Your previous reply failed validation: ${errors.map((e) => e.message).join("; ")}. Re-read the document and correct only figures you misread that are PRINTED on it. Never calculate, estimate or fill in a figure that is not printed (for example VAT): leave it null.`;
   }
 
-  if (best) return { ...best, attempts: maxRetries + 1 };
+  if (best) return { ...best, attempts: maxRetries + 1, firstData };
   throw new StructuredOutputError(lastError, maxRetries + 1);
 }
 

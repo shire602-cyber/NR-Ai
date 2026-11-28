@@ -262,7 +262,18 @@ export async function extractReceipt(args: {
     const data = redactor
       ? ({ ...result.data, merchant: redactor.restore(result.data.merchant) } as ReceiptExtraction)
       : result.data;
-    return { data, issues: result.issues, provider, model, attempts: result.attempts };
+    // A correction retry that turns an unprinted/zero VAT into a positive figure has computed it,
+    // not read it: force review (VAT_DERIVED) so it can never auto-post an input-VAT claim.
+    const issues = [...result.issues];
+    const firstVat = Number(result.firstData?.vatAmount) || 0;
+    if (result.attempts > 1 && firstVat === 0 && (Number(data.vatAmount) || 0) > 0) {
+      issues.push({
+        code: "VAT_DERIVED",
+        severity: "warning",
+        message: `The VAT amount (${data.vatAmount}) appeared only after a correction retry, so it may have been calculated rather than printed on the document. Check it against the receipt.`,
+      });
+    }
+    return { data, issues, provider, model, attempts: result.attempts };
   };
 
   if (clients.anthropic) {

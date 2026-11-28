@@ -540,14 +540,37 @@ describe("email intake: derived VAT never auto-posts", () => {
   });
 
   it("a subtotal + total pair exactly 5% apart is held upstream by the 1% sanity check", async () => {
-    // normalizeOcrJson alone reads {subtotal 100, total 105} as 5% VAT and does not flag it
-    // (gap == rate x subtotal). The real intake path still queues it because extractReceipt's
-    // sanityCheckReceipt raises AMOUNT_MISMATCH (|100 + 0 - 105| > 1% of total) and the poller
-    // passes issueCount. If that upstream check or the issueCount hand-off changes, this
-    // test must fail rather than reopen the hole.
+    // sanityCheckReceipt treats a null VAT as "not printed" (no retry asking the model to fill it
+    // in), so the hold comes from normalizeOcrJson: net + gross with no VAT line is VAT_DERIVED.
     enableAutopilot();
     extraction({ subtotal: 100, vatAmount: null, total: 105, supplierTrn: VALID_TRN });
     const res = await postWebhook(samplePayload, sign(samplePayload));
+    expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
+    expect(db.postedEntries).toHaveLength(0);
+  });
+
+  it("a retry that turns an unprinted VAT into 5 is treated as derived, not posted", async () => {
+    enableAutopilot();
+    const tool = (input: Record<string, unknown>) => ({
+      content: [{ type: "tool_use", name: "record_receipt", input }],
+    });
+    const base = {
+      merchant: "Cafe Beirut",
+      currency: "AED",
+      category: "Meals",
+      confidence: 0.95,
+      subtotal: 100,
+      total: 105,
+      supplierTrn: VALID_TRN,
+    };
+    // First answer: VAT not printed, but a future date forces a correction retry.
+    // Retry answer: date fixed AND vatAmount filled in as 5.
+    anthropicCreate.mockReset();
+    anthropicCreate
+      .mockResolvedValueOnce(tool({ ...base, date: "2099-01-01", vatAmount: null }))
+      .mockResolvedValue(tool({ ...base, date: "2026-11-10", vatAmount: 5, vatPercentage: 5 }));
+    const res = await postWebhook(samplePayload, sign(samplePayload));
+    expect(anthropicCreate).toHaveBeenCalledTimes(2);
     expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
     expect(db.postedEntries).toHaveLength(0);
   });
