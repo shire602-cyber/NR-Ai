@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Receipt amount reconciliation in integer fils (shared/money.ts policy).
  *
  * OCR/AI extraction often returns only some of subtotal / VAT / total. This fills the gaps so
@@ -147,21 +147,40 @@ export function amountMismatchMessage(
   if (vatPercentage > 0) {
     return `${base}. The difference is not ${vatPercentage}% VAT on the subtotal; check for a service charge, fee or discount.`;
   }
-  return `${base}. This receipt is zero-rated, so the total should equal the subtotal; check for a fee or discount.`;
+  return `${base}. The receipt shows VAT of ${money2(vatAmount)}, so the total should equal the subtotal; check the VAT and any fee or discount.`;
+}
+
+/**
+ * Review note when a VAT line prints a positive rate next to a zero amount ("VAT 5% 0.00"): the
+ * receipt contradicts itself, so the rate is kept as printed, VAT stays 0 as read, and a person
+ * checks the receipt.
+ */
+export function vatRateAmountConflictMessage(
+  subtotal: number,
+  vatAmount: number,
+  total: number,
+  printedRate: number
+): string {
+  return `Subtotal ${money2(subtotal)} + VAT ${money2(vatAmount)} against total ${money2(total)}: the receipt prints a VAT rate of ${printedRate}% but a VAT amount of ${money2(vatAmount)}. Check the VAT rate and amount against the receipt.`;
 }
 
 /**
  * Review note when VAT was calculated from the rate because the receipt gave no VAT figure:
  * from the subtotal (no VAT or total shown) or worked back from a total-only receipt.
+ * `rateDefaulted` is true when no rate was read and the 5% default was applied. The closing
+ * sentence matters: a receipt with no VAT amount is not a tax invoice, so input VAT is not
+ * recoverable on it (a TRN alone does not make it one).
  */
 export function vatDerivedMessage(
   vatAmount: number,
   vatPercentage: number,
-  source: "subtotal" | "total" = "subtotal"
+  source: "subtotal" | "total" = "subtotal",
+  rateDefaulted = false
 ): string {
+  const rate = rateDefaulted ? "the default 5% rate" : `${vatPercentage}%`;
   const how =
     source === "total"
-      ? `worked back from the total at ${vatPercentage}% because the receipt shows no VAT or subtotal`
-      : `calculated at ${vatPercentage}% of the subtotal because the receipt shows no VAT or total`;
-  return `VAT ${money2(vatAmount)} was ${how}. Check it against the receipt and confirm the supplier charged VAT (look for their TRN on it).`;
+      ? `worked back from the total at ${rate} because the receipt shows no VAT amount`
+      : `calculated at ${rate} on the subtotal because the receipt shows no VAT amount`;
+  return `VAT ${money2(vatAmount)} was ${how}. Check before claiming it: input VAT can only be recovered with a valid tax invoice from a VAT-registered supplier that shows the VAT amount.`;
 }

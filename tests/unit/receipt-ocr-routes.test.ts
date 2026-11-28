@@ -305,7 +305,7 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
     const notes = res.body.validationIssues.filter((i: any) => i.code === "VAT_DERIVED");
     expect(notes).toHaveLength(1);
     expect(notes[0].message).toMatch(/VAT 5\.00 was worked back from the total at 5%/);
-    expect(notes[0].message).toMatch(/confirm the supplier charged VAT/);
+    expect(notes[0].message).toMatch(/valid tax invoice from a VAT-registered supplier/);
     expect(res.body.reviewReasonCodes).toContain("VAT_DERIVED");
     expect(res.body.confidenceBand).not.toBe("high");
   });

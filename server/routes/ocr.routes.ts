@@ -569,10 +569,8 @@ function buildResult(
   const subtotal = parseNonNegative(aiResult.subtotal);
   const vatAmount = parseNonNegative(aiResult.vatAmount);
   // Treat null/undefined as missing (default to 5% for UAE); explicit 0 means zero-rated
-  const vatPercentage =
-    aiResult.vatPercentage === null || aiResult.vatPercentage === undefined
-      ? 5
-      : parseNonNegative(aiResult.vatPercentage);
+  const vatRateDefaulted = aiResult.vatPercentage === null || aiResult.vatPercentage === undefined;
+  const vatPercentage = vatRateDefaulted ? 5 : parseNonNegative(aiResult.vatPercentage);
   const total = parseNonNegative(aiResult.total);
 
   // Reconcile missing amounts in integer fils (half-up) so subtotal + VAT === total exactly.
@@ -644,7 +642,7 @@ function buildResult(
     issues.push({
       code: "VAT_DERIVED",
       severity: "warning",
-      message: vatDerivedMessage(derivedVat, vatPercentage, vatDerivedFrom),
+      message: vatDerivedMessage(derivedVat, vatPercentage, vatDerivedFrom, vatRateDefaulted),
     });
   }
   if (aiResult.supplierTrnIssue && !have.has("TRN_INVALID")) {
