@@ -241,6 +241,8 @@ function FirmContextBanner() {
 
   return (
     <div
+      role="region"
+      aria-label={t["shell.managing"]}
       className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-brand-50 px-3 py-2 dark:bg-brand-950/60 md:px-6"
       data-testid="firm-context-banner"
     >

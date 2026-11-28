@@ -88,7 +88,9 @@ export function AuthLayout({ children, variant }: AuthLayoutProps) {
           <main id="main-content" className="mk-auth__body" tabIndex={-1}>
             <div className="mk-auth__inner">{children}</div>
           </main>
-          <p className="mk-auth__foot">{t["marketing.authFooter"]}</p>
+          <aside className="mk-auth__foot" aria-label={t["marketing.authFooterLabel"]}>
+            {t["marketing.authFooter"]}
+          </aside>
         </div>
       </div>
     </PublicChrome>
