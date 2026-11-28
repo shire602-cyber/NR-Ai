@@ -50,6 +50,9 @@ interface BillDetail extends DebitNoteBill {
 
 const CREDITABLE = ["approved", "partial", "paid", "overdue"];
 
+/** The note posted but applying it to the bill failed; it is not safe to submit again. */
+class NoteSavedNotAppliedError extends Error {}
+
 const blankLine = (): DebitNoteDraftLine => ({
   description: "",
   amount: "",
@@ -85,6 +88,7 @@ export default function DebitNoteEditor() {
     error: accountsError,
     refetch: refetchAccounts,
     isFetching: accountsFetching,
+    isSuccess: accountsLoaded,
   } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "accounts"],
     enabled: !!companyId,
@@ -95,12 +99,19 @@ export default function DebitNoteEditor() {
     error: billsError,
     refetch: refetchBills,
     isFetching: billsFetching,
+    isSuccess: billsLoaded,
   } = useQuery<DebitNoteBill[]>({
     queryKey: ["/api/companies", companyId, "bills"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills`),
     enabled: !!companyId,
   });
-  const { data: bill } = useQuery<BillDetail>({
+  const {
+    data: bill,
+    isError: billFailed,
+    error: billError,
+    refetch: refetchBill,
+    isFetching: billFetching,
+  } = useQuery<BillDetail>({
     queryKey: ["/api/bills", billId],
     queryFn: () => apiRequest("GET", `/api/bills/${billId}`),
     enabled: !!billId,
@@ -139,13 +150,20 @@ export default function DebitNoteEditor() {
           ...(l.productId ? { product_id: l.productId, quantity: l.quantity } : {}),
         })),
       });
-      const open = Number(bills.find((b) => b.id === billId)?.open_balance ?? 0);
-      if (applyNow && billId && open > 0 && bill && PAYABLE_BILL_STATUSES.includes(bill.status)) {
-        await apiRequest("POST", `/api/companies/${companyId}/debit-notes/${note.id}/apply`, {
-          bill_id: billId,
-          amount: Math.min(open, Number(note.total_amount)).toFixed(2),
-          date: noteDate,
-        });
+      if (applyNow && billId && bill && PAYABLE_BILL_STATUSES.includes(bill.status)) {
+        // Checked in submit() before anything posts; re-resolved here from the same lists.
+        const open = Number(bills.find((b) => b.id === billId)?.open_balance ?? 0);
+        try {
+          await apiRequest("POST", `/api/companies/${companyId}/debit-notes/${note.id}/apply`, {
+            bill_id: billId,
+            amount: Math.min(open, Number(note.total_amount)).toFixed(2),
+            date: noteDate,
+          });
+        } catch (e) {
+          // The note is already posted (create and apply are two calls): say so, do not invite a
+          // retry that would post a second note.
+          throw new NoteSavedNotAppliedError((e as Error).message);
+        }
       }
       return note;
     },
@@ -154,19 +172,52 @@ export default function DebitNoteEditor() {
       toast({ title: t["purchases.debitNote.saved"] });
       navigate("/debit-notes");
     },
-    onError: (e: Error) => setError(e.message),
+    onError: (e: Error) => {
+      if (e instanceof NoteSavedNotAppliedError) {
+        void queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
+        toast({
+          title: t["purchases.debitNote.savedNotApplied"],
+          description: e.message,
+          variant: "destructive",
+        });
+        navigate("/debit-notes");
+        return;
+      }
+      setError(e.message);
+    },
   });
 
   // The pickers are empty when these lists fail to load: do not let a note be saved blind.
   const listsFailed = accountsFailed || billsFailed;
+  const listsReady = accountsLoaded && billsLoaded;
+  // A linked bill supplies the currency, supplier and the apply step: wait for it too.
+  const billReady = !billId || !!bill;
+  const canSave = listsReady && billReady;
+
+  const block = (message: string) => {
+    setError(message);
+    toast({ title: message, variant: "destructive" });
+  };
 
   const submit = () => {
     setError(null);
-    if (listsFailed) return;
+    if (!canSave) {
+      return block(
+        listsFailed || billFailed
+          ? t["purchases.debitNote.loadFailedBlock"]
+          : t["purchases.debitNote.stillLoading"]
+      );
+    }
     if (!vendorName.trim()) return setError(t["forms.errors.vendorNameRequired"]);
     if (!reason.trim()) return setError(t["purchases.debitNote.reasonRequired"]);
     if (lines.some((l) => !l.description.trim() || !(Number(l.amount) > 0)))
       return setError(t["purchases.debitNote.lineRequired"]);
+    if (applyNow && billId && bill && PAYABLE_BILL_STATUSES.includes(bill.status)) {
+      const listed = bills.find((b) => b.id === billId);
+      if (!listed) return block(t["purchases.debitNote.billNotInList"]);
+      if (!(Number(listed.open_balance ?? 0) > 0))
+        return block(t["purchases.debitNote.noOpenBalance"]);
+    }
     save.mutate();
   };
 
@@ -199,7 +250,7 @@ export default function DebitNoteEditor() {
           <Button
             type="button"
             onClick={submit}
-            disabled={save.isPending || listsFailed}
+            disabled={save.isPending || !canSave}
             {...gate("ledger.post")}
             data-testid="button-save-debit-note"
           >
@@ -224,6 +275,15 @@ export default function DebitNoteEditor() {
           retrying={billsFetching}
           compact
           testId="debit-note-bills-load-error"
+        />
+      ) : null}
+      {billId && billFailed ? (
+        <LoadErrorState
+          error={billError}
+          onRetry={() => void refetchBill()}
+          retrying={billFetching}
+          compact
+          testId="debit-note-bill-load-error"
         />
       ) : null}
       <FormSection title={t["purchases.debitNote.sectionSupplier"]}>
