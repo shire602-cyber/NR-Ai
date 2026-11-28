@@ -9,12 +9,13 @@
 import crypto from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const TRN = "100000000000003";
 const BUYER_TRN = "100000000000011";
 const Q3 = { periodStart: "2026-07-01", periodEnd: "2026-09-30" };
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 beforeEach(async () => {
   const { resetPortalThrottle } = await import("../../server/services/portal-access.service");

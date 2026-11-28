@@ -19,6 +19,7 @@ import {
   sealCompanyCredentials,
 } from "../../server/services/einvoice/providers/company-credentials";
 import { PINT_AE_FIXTURES, fixtureCompany, type PintAeFixture } from "../fixtures/pint-ae/fixtures";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const TRN = "100123456700003";
@@ -26,7 +27,7 @@ const TIN = "1001234567";
 
 const PUBLIC_BASE = "https://app.muhasib.example";
 const WEBHOOK = "/api/webhooks/einvoice/acube/sandbox";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 // Opted in to e-invoicing with a go-live date already reached, so FTA reporting applies.
 const SELLER_COLUMNS = {

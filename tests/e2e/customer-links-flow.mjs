@@ -33,6 +33,7 @@ import path from "node:path";
 import { chromium, devices } from "playwright-core";
 import pg from "pg";
 import { classifyLines } from "./lib/latin-text.mjs";
+import { dubaiIso } from "../helpers/dates.mjs";
 
 const BASE = (process.env.BASE_URL || "http://localhost:5000").replace(/\/$/, "");
 const SHOT_DIR = process.env.SHOT_DIR || "";
@@ -439,7 +440,7 @@ async function runScenario(browser, scenario, viewport) {
     contactId = ct.json.id;
   }
   const today = new Date();
-  const d = (n) => new Date(today.getTime() + n * 86400000).toISOString().slice(0, 10);
+  const d = (n) => dubaiIso(new Date(today.getTime() + n * 86400000));
   const inv = await api("POST", `/api/companies/${cid}/invoices`, tok, {
     contactId,
     date: d(-40),

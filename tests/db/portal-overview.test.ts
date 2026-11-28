@@ -4,9 +4,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const DATE = new Date().toISOString().slice(0, 10);
+const DATE = dubaiToday();
 
 async function portalFor(t: Tenant, name: string) {
   const c = await t.as.post(`/api/companies/${t.company.id}/customer-contacts`, {

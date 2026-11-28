@@ -403,6 +403,7 @@ describe("WQ1 make recurring from an invoice (7.13)", () => {
       contactId: c.id,
       customerName: "Gulf Retail LLC",
       frequency: "monthly",
+      // UTC day: scheduler selects due templates by next_run_date <= now() (UTC instant).
       startDate: new Date().toISOString().slice(0, 10),
       autoIssue: true,
       autoSend: true,

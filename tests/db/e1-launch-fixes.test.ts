@@ -4,11 +4,12 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiIso, dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 
 const DAY = 24 * 60 * 60 * 1000;
-const isoDaysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString().slice(0, 10);
+const isoDaysAgo = (n: number) => dubaiIso(new Date(Date.now() - n * DAY));
 const rates = (t: Tenant) => `/api/companies/${t.company.id}/exchange-rates`;
 
 describe("E1 FX: the CBUAE peg is the default AED/USD rate", () => {
@@ -57,8 +58,8 @@ describe("E1 FX: the CBUAE peg is the default AED/USD rate", () => {
     const created = await t.as.post(`/api/companies/${t.company.id}/bills`, {
       vendor_name: "Overseas Supplier",
       bill_number: "OS-1",
-      bill_date: new Date().toISOString().slice(0, 10),
-      due_date: new Date(Date.now() + 14 * DAY).toISOString().slice(0, 10),
+      bill_date: dubaiToday(),
+      due_date: dubaiIso(new Date(Date.now() + 14 * DAY)),
       currency: "USD",
       line_items: [{ description: "Service", quantity: 1, unit_price: 500, vat_rate: 5 }],
     });
@@ -126,7 +127,7 @@ describe("E1 compliance obligations and the Periods tab (J3-r2)", () => {
     );
     const { buildObligationSpecs } =
       await import("../../server/services/compliance-obligations.service");
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dubaiToday();
     const year = Number(today.slice(0, 4));
     const specs = [
       ...(await buildObligationSpecs(t.company.id, year)),
@@ -193,7 +194,7 @@ describe("E1 compliance obligations and the Periods tab (J3-r2)", () => {
 describe("E1 month-end FX step ignores settled foreign documents", () => {
   it("counts only open exposures from the FX engine", async () => {
     const t = await h.createTenant({ name: "NoFxExposure" });
-    const end = new Date().toISOString().slice(0, 10);
+    const end = dubaiToday();
     const { computeFxExposure } = await import("../../server/services/fx/exposure");
     const exp = await computeFxExposure(t.company.id, end);
     expect(exp.items).toHaveLength(0);

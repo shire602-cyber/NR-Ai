@@ -13,6 +13,7 @@
 
 import { throttledFetch } from "./_http.mjs";
 import { withRegisterLogin } from "./register-compat.mjs";
+import { dubaiToday } from "../helpers/dates.mjs";
 
 const api = withRegisterLogin(apiRaw, { status: "status", body: "json" });
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
@@ -29,7 +30,7 @@ async function apiRaw(method, path, { body, token } = {}) {
   return { status: res.status, json, text };
 }
 const rnd = Math.random().toString(36).slice(2, 8);
-const today = new Date().toISOString().slice(0, 10);
+const today = dubaiToday();
 // A VAT 201 period must be a whole, already finished calendar quarter (PERIOD_IN_FUTURE /
 // PERIOD_NOT_ALIGNED), so the VAT fixtures are dated in the last completed quarter.
 function lastCompletedQuarter(iso) {

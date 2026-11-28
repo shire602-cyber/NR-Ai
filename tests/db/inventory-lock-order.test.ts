@@ -9,9 +9,10 @@
 import { sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 async function stockedProduct(t: Tenant, name: string): Promise<string> {
   const p = await t.as.post(`/api/companies/${t.company.id}/products`, {

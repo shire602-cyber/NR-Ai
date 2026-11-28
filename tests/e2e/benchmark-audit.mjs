@@ -26,9 +26,10 @@ import { chromium } from "playwright-core";
 
 import { readyReportCatalog, reportPersonaHref } from "../../client/src/lib/reportCatalog.ts";
 import { bankStatementEvidence, bankStatementReportRow } from "./lib/bank-statement-evidence.mjs";
+import { dubaiToday } from "../helpers/dates.mjs";
 
 const BASE = (process.env.BASE_URL || process.argv[2] || "").replace(/\/$/, "");
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = dubaiToday();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
 const OUTPUT_DIR = path.resolve(

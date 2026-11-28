@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { OutgoingEmail } from "../../server/outbox";
 import { useHarness } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 
@@ -27,7 +28,7 @@ describe("customer email delivery for an Arabic company", () => {
     expect(contact.status, contact.text).toBe(200);
     const invoice = await t.as.post(`${base}/invoices`, {
       contactId: contact.body.id,
-      date: new Date().toISOString().slice(0, 10),
+      date: dubaiToday(),
       lines: [{ description: "Consulting", quantity: 1, unitPrice: 1000, vatRate: 5 }],
     });
     expect(invoice.status, invoice.text).toBe(200);

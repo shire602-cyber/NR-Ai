@@ -30,6 +30,7 @@ import { ARTIFACT_DIR, PASSWORD, apiClient, assertLocal } from "./lib/sweep-pers
 import { englishWords } from "./lib/sweep-checks.mjs";
 
 import { readPortalInviteMail } from "./lib/portal-invite-mail.mjs";
+import { dubaiIso, dubaiToday } from "../helpers/dates.mjs";
 
 const BASE = (process.env.BASE_URL || "").replace(/\/$/, "");
 assertLocal(BASE);
@@ -42,8 +43,8 @@ const api = apiClient(BASE);
 const results = [];
 let browser;
 
-const today = () => new Date().toISOString().slice(0, 10);
-const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+const today = () => dubaiToday();
+const daysAgo = (n) => dubaiIso(new Date(Date.now() - n * 86400000));
 const listOf = (body) => (Array.isArray(body) ? body : (body?.items ?? body?.data ?? []));
 
 class StepError extends Error {}

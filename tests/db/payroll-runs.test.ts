@@ -6,6 +6,7 @@
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiIso } from "../helpers/dates";
 
 const h = useHarness();
 let t: Tenant;
@@ -353,7 +354,7 @@ describe("employee history (R09-05, R09-21)", () => {
   });
 
   it("R09-21: expiring visa emits one alert per document and date", async () => {
-    const soon = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    const soon = dubaiIso(new Date(Date.now() + 10 * 86_400_000));
     const emp = await createEmployee(t, {
       fullName: "Visa Soon",
       visaExpiry: soon,

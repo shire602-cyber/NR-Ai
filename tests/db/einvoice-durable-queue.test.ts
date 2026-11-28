@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EInvoiceProvider } from "../../server/services/einvoice-provider";
 import { useHarness, type Tenant } from "./harness";
 import { recordTestAppointment } from "./einvoice-appointment-fixture";
+import { dubaiIso, dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 
@@ -31,7 +32,7 @@ async function readyInvoice(invoiceFields: Record<string, unknown> = {}) {
     customerName: "Acme Gulf FZ-LLC",
     customerTrn: "100765432100003",
     contactId: contact.body.id,
-    date: new Date().toISOString().slice(0, 10),
+    date: dubaiToday(),
     paymentTerms: "net30",
     lines: [{ description: "Consulting", quantity: 2, unitPrice: 500, vatRate: 5 }],
     ...invoiceFields,
@@ -411,7 +412,7 @@ describe("Durable UAE e-invoice submission queue", () => {
     await h.sql(
       `INSERT INTO exchange_rates (company_id, base_currency, target_currency, rate, date, source)
        VALUES ($1, 'JPY', 'AED', 0.025, $2, 'manual')`,
-      [args.company.id, new Date().toISOString().slice(0, 10)]
+      [args.company.id, dubaiToday()]
     );
     await h.sql("UPDATE invoices SET currency = 'JPY', exchange_rate = 0.025 WHERE id = $1", [
       args.invoice.id,
@@ -437,8 +438,7 @@ describe("Durable UAE e-invoice submission queue", () => {
   it("[PR174] converts a non-AED ledger's document at the tax-point rate, not the issue rate", async () => {
     const args = await readyInvoice();
     const other = await h.createSecondTenant();
-    const day = (offset: number) =>
-      new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+    const day = (offset: number) => dubaiIso(new Date(Date.now() + offset * 86_400_000));
     const addRate = (companyId: string, rate: number, date: string, from = "EUR", to = "AED") =>
       h.sql(
         `INSERT INTO exchange_rates (company_id, base_currency, target_currency, rate, date, source)

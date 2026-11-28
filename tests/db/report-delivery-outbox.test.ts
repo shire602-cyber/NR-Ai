@@ -9,6 +9,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const SUB = "owner-weekly-executive-delivery";
@@ -27,7 +28,7 @@ async function useTransport(send: (msg: unknown) => Promise<{ providerMessageId:
 
 async function withBooks(): Promise<Tenant> {
   const t = await h.createTenant();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dubaiToday();
   const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
     customerName: "Delivery Customer LLC",
     date: today,

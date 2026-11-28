@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import pg from "pg";
+import { dubaiIso, dubaiToday } from "../helpers/dates.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 // Fable N1: browse in UAE time so a business date formatted as a browser-zone instant (a 30 Sep
@@ -322,7 +323,7 @@ async function main() {
     const entryRes = await page.request.post(`${BASE}/api/companies/${companyId}/journal`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
-        date: new Date().toISOString().slice(0, 10),
+        date: dubaiToday(),
         memo,
         status: "posted",
         lines: [
@@ -356,7 +357,7 @@ async function main() {
       data: {
         // number, status and totals are server-owned (strict body).
         customerName: "Quote Customer LLC",
-        date: new Date().toISOString().slice(0, 10),
+        date: dubaiToday(),
         currency: "AED",
         placeOfSupplyEmirate: "dubai",
         lines: [{ description: "Consulting services", quantity: 2, unitPrice: 500, vatRate: 0.05 }],
@@ -407,7 +408,7 @@ async function main() {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
         customerName: "Credit Note Customer LLC",
-        date: new Date().toISOString().slice(0, 10),
+        date: dubaiToday(),
         placeOfSupplyEmirate: "dubai",
         lines: [
           {
@@ -472,8 +473,8 @@ async function main() {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
         vendorName: "Supplier Trading FZE",
-        date: new Date().toISOString().slice(0, 10),
-        expectedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+        date: dubaiToday(),
+        expectedDeliveryDate: dubaiIso(new Date(Date.now() + 7 * 86400000)),
         currency: "AED",
         lines: [{ description: "Office supplies", quantity: 5, unitPrice: 100, vatRate: 0.05 }],
       },
@@ -552,7 +553,7 @@ async function main() {
     const companyId = companies?.[0]?.id;
 
     // P&L must reflect the journal entry posted in flow 4 (150 expense).
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dubaiToday();
     const plRes = await page.request.get(
       `${BASE}/api/companies/${companyId}/financial-statements/profit-loss?startDate=${today}&endDate=${today}`
     );
@@ -972,7 +973,7 @@ async function main() {
         customerName: "EInvoice Customer LLC",
         customerTrn: "100765432100003",
         contactId: buyer?.id,
-        date: new Date().toISOString().slice(0, 10),
+        date: dubaiToday(),
         currency: "AED",
         placeOfSupplyEmirate: "dubai",
         lines: [

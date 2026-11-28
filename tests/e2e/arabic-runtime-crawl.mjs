@@ -59,6 +59,7 @@ import {
   PUBLIC_ROUTES,
 } from "./launch-routes.mjs";
 import { classifyLines } from "./lib/latin-text.mjs";
+import { dubaiToday } from "../helpers/dates.mjs";
 
 const BASE = (process.env.BASE_URL || "http://127.0.0.1:5000").replace(/\/$/, "");
 // Fable N1: browse in UAE time so a business date formatted as a browser-zone instant (a 30 Sep
@@ -119,7 +120,7 @@ async function seed(page) {
     email: "palm@example.com",
   });
   out.contact = contact.status === 201 || contact.status === 200 ? contact.status : contact;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = dubaiToday();
   const invoice = await api(page, "POST", `/api/companies/${companyId}/invoices`, {
     customerName: "مؤسسة النخيل",
     date: today,

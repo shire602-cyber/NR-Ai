@@ -10,6 +10,7 @@ import {
 } from "../../server/services/invoice-lifecycle";
 import { createInvoiceSchema, salesLineInputSchema } from "../../shared/validators/invoices";
 import { invoiceMachine, settlementStatus } from "../../server/services/invoice-state-machine";
+import { dubaiToday } from "../helpers/dates";
 
 describe("computeSalesDocument [R03-07][R03-20]", () => {
   it("applies a 10% document discount pro-rata and rounds VAT once", () => {
@@ -99,7 +100,7 @@ describe("sales validators [R03-02][R03-07]", () => {
     ).toBe(false);
     const base = {
       customerName: "A",
-      date: new Date().toISOString().slice(0, 10),
+      date: dubaiToday(),
       lines: [{ description: "x", quantity: 1, unitPrice: 1 }],
     };
     expect(createInvoiceSchema.safeParse(base).success).toBe(true);

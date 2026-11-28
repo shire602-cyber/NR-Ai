@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
 import { useHarness } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const trn = "100123456700003";
@@ -43,7 +44,7 @@ async function fixture() {
   const created = await tenant.as.post(`/api/companies/${companyId}/invoices`, {
     customerName: "Example buyer",
     customerTrn: "100200300400003",
-    date: new Date().toISOString().slice(0, 10),
+    date: dubaiToday(),
     placeOfSupplyEmirate: "dubai",
     lines: [{ description: "Service", quantity: 1, unitPrice: 100, vatRate: 5 }],
   });

@@ -8,9 +8,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiIso } from "../helpers/dates";
 
 const h = useHarness();
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+const daysAgo = (n: number) => dubaiIso(new Date(Date.now() - n * 86_400_000));
 const AS_OF = daysAgo(1);
 
 async function usdBank(t: Tenant): Promise<{ glId: string; bankId: string }> {

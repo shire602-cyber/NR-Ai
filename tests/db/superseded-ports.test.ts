@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { useHarness } from "./harness";
+import { dubaiIso } from "../helpers/dates";
 
 const h = useHarness();
 
@@ -39,7 +40,7 @@ describe("PR-66 month-end checklist and quarterly VAT", () => {
 describe("PR-61 payment chasing reads the settlement rule", () => {
   it("PR-61: a partly credited overdue invoice is chased for its open balance, not its total", async () => {
     const t = await h.createTenant({ name: "ChaseCredit" });
-    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const iso = (d: Date) => dubaiIso(d);
     const day = 86_400_000;
     const created = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
       customerName: "Late Payer LLC",

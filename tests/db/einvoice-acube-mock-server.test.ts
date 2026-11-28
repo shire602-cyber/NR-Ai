@@ -15,6 +15,7 @@ import {
 import { recordTestAppointment } from "./einvoice-appointment-fixture";
 import { startAcubeMock, type AcubeMock } from "../fixtures/pint-ae/asp/acube/mock-server";
 import { useHarness } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 
@@ -66,7 +67,7 @@ async function linkedInvoice() {
     customerName: "Acme Gulf FZ-LLC",
     customerTrn: "100765432100003",
     contactId: contact.body.id,
-    date: new Date().toISOString().slice(0, 10),
+    date: dubaiToday(),
     paymentTerms: "net30",
     lines: [{ description: "Consulting", quantity: 2, unitPrice: 500, vatRate: 5 }],
   });

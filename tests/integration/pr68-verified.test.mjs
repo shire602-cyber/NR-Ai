@@ -20,6 +20,7 @@ import { createHmac } from "node:crypto";
 import { withRegisterLogin } from "./register-compat.mjs";
 import { throttledFetch } from "./_http.mjs";
 import { readPortalInviteMail } from "../e2e/lib/portal-invite-mail.mjs";
+import { dubaiIso } from "../helpers/dates.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const STRIPE_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
@@ -54,7 +55,7 @@ async function rawApi(method, path, { body, token, headers, raw } = {}) {
 }
 const api = withRegisterLogin(rawApi);
 const rnd = Math.random().toString(36).slice(2, 8);
-const iso = (d) => d.toISOString().slice(0, 10);
+const iso = (d) => dubaiIso(d);
 const DAY = 86_400_000;
 const TRN = "100000000000003";
 
