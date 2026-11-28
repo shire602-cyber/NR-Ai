@@ -23,6 +23,7 @@
   "pageLabels.receiptIssueVatNoTrn": "This receipt includes VAT but doesn't show a valid supplier TRN. You can only recover VAT with a tax invoice from a VAT-registered supplier.",
   "pageLabels.receiptIssueGeneral": "Compare the extracted details with the original receipt.",
   "pageLabels.receiptImageAttached": "Enter the receipt details. The selected image will be saved with the expense.",
+  "pageLabels.receiptIssueNonVatFee": "The receipt shows a tourism, municipality or service charge line. Tourism dirham and municipality fees are not VAT and cannot be recovered, so they stay in the expense and out of the VAT amount. A service charge is not VAT itself, but VAT may be charged on it. Check the figures against the receipt.",
   "pageLabels.receiptDocumentNumber": "Invoice or receipt number",
   "pageLabels.receiptSubtotal": "Subtotal before VAT",
   "pageLabels.receiptTotal": "Total including VAT",

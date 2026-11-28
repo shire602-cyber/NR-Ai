@@ -677,7 +677,12 @@ describe("e-invoice poll resource selection", () => {
 });
 
 describe("e-invoice inbox recovers incomplete purchases", () => {
-  async function purchase(number: string, documentId: string, includeUuid = true) {
+  async function purchase(
+    number: string,
+    documentId: string,
+    includeUuid = true,
+    sourceXml?: string
+  ) {
     const { runProviderEvents } = await import("../../server/services/einvoice/provider-events");
     const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
     const t = await h.createTenant({
@@ -687,7 +692,7 @@ describe("e-invoice inbox recovers incomplete purchases", () => {
       status: "active",
       legalEntityId: OWNER,
     });
-    const source = await incomingXml(number);
+    const source = sourceXml ?? (await incomingXml(number));
     const xml = includeUuid ? source : source.replace(/<cbc:UUID>[^<]*<\/cbc:UUID>/, "");
     const provider = simulatedProvider(xml);
     const { id } = await enqueueReceived(t.company.id, { documentId });
@@ -699,6 +704,43 @@ describe("e-invoice inbox recovers incomplete purchases", () => {
       );
     return { t, id, xml, run, bills };
   }
+
+  it("archives an invoice with a quantity the bill editor cannot store and reports the failure", async () => {
+    const { generateEInvoiceXML } = await import("../../server/services/einvoice.service");
+    const f = PINT_AE_FIXTURES[0];
+    const number = "SUP-QUANTITY-PRECISION";
+    const xml = generateEInvoiceXML(
+      {
+        ...f.invoice,
+        number,
+        discountType: null,
+        discountValue: null,
+        discountAmount: 0,
+        subtotal: 900,
+        vatAmount: 45,
+        total: 945,
+      },
+      [{ ...f.lines[1], quantity: 1.125 }],
+      fixtureCompany,
+      f.customer,
+      f.opts
+    ).xml;
+    const { t, run, bills } = await purchase(number, "quantity-precision", true, xml);
+    await run();
+    expect(await bills()).toEqual([]);
+    expect(
+      await h.sql(
+        "SELECT status, archive_id, error FROM einvoice_inbound_documents WHERE company_id = $1",
+        [t.company.id]
+      )
+    ).toEqual([
+      {
+        status: "failed",
+        archive_id: expect.any(String),
+        error: "INBOUND_BILL_QUANTITY_PRECISION",
+      },
+    ]);
+  });
 
   it("resumes an archived purchase when the provider switched during draft preparation", async () => {
     const { t, id, run, bills } = await purchase("SUP-SWITCH-BEFORE-POST", "provider-write-race");

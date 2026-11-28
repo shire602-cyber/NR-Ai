@@ -7,6 +7,7 @@
  * through debit notes.
  */
 import { z } from "zod";
+import { hasStoredBillQuantityPrecision } from "../bill-line-edit";
 import {
   zCurrency,
   zDate,
@@ -42,10 +43,15 @@ export const zFxRate = z.union([z.number(), z.string()]).transform((v, ctx) => {
 
 const zPositiveQuantity = zQuantity.refine((n) => n > 0, "Quantity must be greater than zero");
 
+const zStoredBillQuantity = zPositiveQuantity.refine(
+  hasStoredBillQuantityPrecision,
+  "Enter a quantity greater than zero with up to two decimal places"
+);
+
 export const billLineSchema = z
   .object({
     description: zText(500, { min: 1 }),
-    quantity: zPositiveQuantity.optional(),
+    quantity: zStoredBillQuantity.optional(),
     unit_price: zMoneyFils,
     vat_rate: zBillVatRate.optional().nullable(),
     vat_supply_type: zSupplyType.optional(),
@@ -61,6 +67,21 @@ export const billLineSchema = z
   })
   .strict();
 export type BillLineInput = z.output<typeof billLineSchema>;
+
+const billEditLineSchema = billLineSchema
+  .extend({
+    /** The existing line whose stored valuation and omitted treatment are carried forward. */
+    id: zUuid.optional(),
+    quantity: zQuantity.optional(),
+  })
+  .refine((line) => line.quantity !== 0 || line.id !== undefined, {
+    path: ["quantity"],
+    message: "Quantity must be greater than zero",
+  });
+const billEditLines = z
+  .array(billEditLineSchema)
+  .min(1, "At least one line item is required")
+  .max(500);
 
 const billFields = {
   vendor_id: zUuid.optional().nullable(),
@@ -114,7 +135,7 @@ export const billUpdateSchema = z
     ...billFields,
     vendor_name: billFields.vendor_name.optional(),
     bill_date: billFields.bill_date.optional(),
-    line_items: billFields.line_items.optional(),
+    line_items: billEditLines.optional(),
   })
   .refine((v) => Object.keys(v).length > 0, "No fields to update");
 export type BillUpdateInput = z.output<typeof billUpdateSchema>;
@@ -123,7 +144,7 @@ export const billReviseSchema = z.object({
   ...billFields,
   vendor_name: billFields.vendor_name.optional(),
   bill_date: billFields.bill_date.optional(),
-  line_items: billFields.line_items.optional(),
+  line_items: billEditLines.optional(),
   reason: zText(500, { min: 1 }),
 });
 export type BillReviseInput = z.output<typeof billReviseSchema>;
@@ -288,7 +309,7 @@ export const inboundBillSchema = z
         z
           .object({
             description: zText(500, { min: 1 }),
-            quantity: zPositiveQuantity.optional(),
+            quantity: zStoredBillQuantity.optional(),
             /** Major units over the wire ("12.50"); parsed to integer fils. */
             unitPrice: zMoneyFils,
             vatRate: zBillVatRate.optional().nullable(),

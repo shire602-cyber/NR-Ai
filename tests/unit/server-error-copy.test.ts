@@ -116,6 +116,27 @@ describe("[G3] every customer-reachable error code has English and Arabic copy",
     }
     expect(bad).toEqual([]);
   });
+
+  it.each(["en", "ar"] as const)(
+    "has plain guidance for both older bill refusals in %s",
+    (locale) => {
+      const errors = readCatalog(locale, "serverErrors");
+      const pages = readCatalog(locale, "pages");
+      const open = errors["serverErrors.LEGACY_BILL_RECLASSIFY_REQUIRED"];
+      const filed = errors["serverErrors.LEGACY_BILL_IN_FILED_RETURN"];
+      expect(open).toBeTruthy();
+      expect(filed).toBeTruthy();
+      expect(open).not.toBe(filed);
+      expect(
+        [
+          open,
+          filed,
+          pages["pages.vendorsBackfillSkipped"],
+          pages["pages.vendorsBackfillFiledSkipped"],
+        ].join(" ")
+      ).not.toMatch(/\b(void\w*|legacy|reclassif\w*|predicate|treatment)\b/i);
+    }
+  );
 });
 
 describe("[G3] common customer 4xx responses carry a code", () => {

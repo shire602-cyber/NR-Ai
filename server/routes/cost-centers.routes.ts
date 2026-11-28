@@ -11,6 +11,8 @@ import { createLogger } from "../config/logger";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
+import { resolve } from "../platform/service-registry";
+import type { tagBillLines } from "../services/bill-payment.service";
 import {
   ENTRY_LOCAL_DATE_SQL,
   NOT_CLOSING_SQL,
@@ -466,27 +468,13 @@ export function registerCostCenterRoutes(app: Express) {
         if (!cc || cc.companyId !== companyId) throw new DomainError("COST_CENTER_NOT_FOUND", 422);
         if (!cc.isActive) throw new DomainError("COST_CENTER_INACTIVE", 422);
       }
-      const bill = await pool.query(
-        `SELECT status FROM vendor_bills WHERE id = $1 AND company_id = $2`,
-        [body.documentId, companyId]
+      const updated = await resolve<typeof tagBillLines>("bills.tagLines")(
+        companyId,
+        body.documentId,
+        body.lineIds,
+        body.costCenterId
       );
-      if (!bill.rows[0]) throw new DomainError("BILL_NOT_FOUND", 404);
-      if (!["draft", "pending", "rejected"].includes(bill.rows[0].status)) {
-        throw new DomainError(
-          "BILL_LOCKED",
-          409,
-          { status: bill.rows[0].status },
-          "The bill is posted; revise it to change its cost centres"
-        );
-      }
-      const r = await pool.query(
-        `UPDATE bill_line_items SET cost_center_id = $1 WHERE bill_id = $2 AND id = ANY($3::uuid[])`,
-        [body.costCenterId, body.documentId, body.lineIds]
-      );
-      if (r.rowCount !== body.lineIds.length) {
-        throw new DomainError("BILL_LINE_NOT_FOUND", 404, { updated: r.rowCount });
-      }
-      res.json({ updated: r.rowCount });
+      res.json({ updated });
     })
   );
 
