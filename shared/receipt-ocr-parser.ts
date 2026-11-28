@@ -1,5 +1,12 @@
 import { normalizeForLabelMatching } from "./arabic-text";
 import { uaeToday } from "./uae-date";
+import { roundHalfUp } from "./money";
+import { amountMismatchMessage, reconcileReceiptAmounts } from "./receipt-amounts";
+import {
+  deriveConfidenceBand,
+  type ConfidenceBand,
+  type ValidationIssue,
+} from "./receipt-confidence";
 
 export const UNKNOWN_RECEIPT_MERCHANT = "Unknown Merchant";
 
@@ -33,6 +40,11 @@ export type ParsedReceiptOcr = {
   simplifiedInvoice: boolean;
   /** Reverse-charge wording present, or foreign supplier without TRN/VAT line. */
   reverseChargeSuggested: boolean;
+  /** Review routing from the amount check (AMOUNT_MISMATCH when subtotal + VAT != total). */
+  confidenceBand: ConfidenceBand;
+  reviewReasons: string[];
+  reviewReasonCodes: string[];
+  validationIssues: ValidationIssue[];
 };
 
 /** UAE TRN: exactly 15 digits, FTA-issued numbers start with 100. */
@@ -107,7 +119,7 @@ const AR_MONTHS: Record<string, number> = {
 const CUR = "(?:AED|DHS?|USD|EUR|GBP|SAR|د\\.?إ|د\\.?ا|درهم)";
 
 function round2(value: number): number {
-  return Number.isFinite(value) ? parseFloat(value.toFixed(2)) : 0;
+  return Number.isFinite(value) ? Number(roundHalfUp(value, 2)) : 0;
 }
 
 function parseAmount(raw: string | undefined): number {
@@ -352,22 +364,21 @@ export function parseReceiptOcrText(
     /\b5\s*%\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
   ]);
 
-  const derivedSubtotal =
-    subtotal > 0
-      ? subtotal
-      : vatAmount > 0 && fallbackTotal > 0
-        ? round2(fallbackTotal - vatAmount)
-        : fallbackTotal > 0
-          ? round2(fallbackTotal / 1.05)
-          : 0;
-  const derivedVat =
-    vatAmount > 0 ? vatAmount : fallbackTotal > 0 ? round2(fallbackTotal - derivedSubtotal) : 0;
-  const derivedTotal =
-    fallbackTotal > 0
-      ? fallbackTotal
-      : derivedSubtotal > 0
-        ? round2(derivedSubtotal + derivedVat)
-        : 0;
+  // Integer-fils reconciliation (half-up) so subtotal + VAT === total exactly.
+  const {
+    subtotal: derivedSubtotal,
+    vatAmount: derivedVat,
+    total: derivedTotal,
+    mismatch: amountsMismatch,
+  } = reconcileReceiptAmounts({ subtotal, vatAmount, total: fallbackTotal, vatPercentage: 5 });
+  const validationIssues: ValidationIssue[] = [];
+  if (amountsMismatch) {
+    validationIssues.push({
+      code: "AMOUNT_MISMATCH",
+      severity: "error",
+      message: amountMismatchMessage(derivedSubtotal, derivedVat, derivedTotal, 5, vatAmount > 0),
+    });
+  }
 
   const { trn: supplierTrn, issue: supplierTrnIssue } = extractSupplierTrn(normalizedText);
   const simplifiedInvoice =
@@ -389,6 +400,12 @@ export function parseReceiptOcrText(
   if (lines.length >= 3) confidence += 0.05;
   if (supplierTrn) confidence += 0.05;
 
+  const finalConfidence = Math.min(0.75, confidence);
+  const band = deriveConfidenceBand({
+    extractionConfidence: finalConfidence,
+    issues: validationIssues,
+  });
+
   return {
     merchant: extractMerchant(displayLines),
     date: parseDate(normalizedText, fallbackDate),
@@ -401,11 +418,15 @@ export function parseReceiptOcrText(
     category: "Other",
     lineItems: extractLineItems(lines),
     rawText,
-    confidence: Math.min(0.75, confidence),
+    confidence: finalConfidence,
     supplierTrn,
     supplierTrnIssue,
     isTaxInvoice,
     simplifiedInvoice,
     reverseChargeSuggested,
+    confidenceBand: band.band,
+    reviewReasons: band.reasons,
+    reviewReasonCodes: band.reasonCodes,
+    validationIssues,
   };
 }

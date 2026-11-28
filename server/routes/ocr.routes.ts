@@ -40,6 +40,12 @@ import { assertAiQuota, type AiContext } from "../services/ai/usage-meter";
 import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
 import { errorCode, errorMessage, errorProperty } from "../errors";
 import { todayDubai } from "@shared/accounting-date";
+import {
+  amountMismatchMessage,
+  isVatDerived,
+  reconcileReceiptAmounts,
+  vatDerivedMessage,
+} from "@shared/receipt-amounts";
 
 const log = createLogger("ocr");
 
@@ -566,21 +572,16 @@ function buildResult(
     aiResult.vatPercentage === null || aiResult.vatPercentage === undefined
       ? 5
       : parseNonNegative(aiResult.vatPercentage);
-  let total = parseNonNegative(aiResult.total);
+  const total = parseNonNegative(aiResult.total);
 
-  // Reconcile amounts if any are missing
-  if (total === 0 && subtotal > 0) {
-    total = parseFloat((subtotal + vatAmount).toFixed(2));
-  }
-  const derivedSubtotal =
-    subtotal > 0
-      ? subtotal
-      : total > 0
-        ? parseFloat((total / (1 + vatPercentage / 100)).toFixed(2))
-        : 0;
-  const derivedVat =
-    vatAmount > 0 ? vatAmount : parseFloat(((derivedSubtotal * vatPercentage) / 100).toFixed(2));
-  const derivedTotal = total > 0 ? total : parseFloat((derivedSubtotal + derivedVat).toFixed(2));
+  // Reconcile missing amounts in integer fils (half-up) so subtotal + VAT === total exactly.
+  const {
+    subtotal: derivedSubtotal,
+    vatAmount: derivedVat,
+    total: derivedTotal,
+    mismatch: amountsMismatch,
+  } = reconcileReceiptAmounts({ subtotal, vatAmount, total, vatPercentage });
+  const vatDerived = isVatDerived({ subtotal, vatAmount, total, vatPercentage });
 
   const category =
     typeof aiResult.category === "string" && validCategories.includes(aiResult.category)
@@ -606,7 +607,11 @@ function buildResult(
 
   // Validation: issues the provider path already found, plus checks on the final reconciled
   // figures (so deterministic-parser results are checked too).
-  const issues: ValidationIssue[] = Array.isArray(aiResult._issues) ? [...aiResult._issues] : [];
+  // A note from the raw extraction that the reconciled figures no longer warrant is dropped
+  // (e.g. raw 100 / no VAT / 105 reconciles to 100 / 5 / 105).
+  const issues: ValidationIssue[] = (
+    Array.isArray(aiResult._issues) ? [...aiResult._issues] : []
+  ).filter((i) => !(i.code === "AMOUNT_MISMATCH" && !amountsMismatch));
   const have = new Set(issues.map((i) => i.code));
   const finalIssues = sanityCheckReceipt({
     merchant: aiResult.merchant as string | undefined,
@@ -619,6 +624,28 @@ function buildResult(
     vatPercentage,
   });
   for (const issue of finalIssues) if (!have.has(issue.code)) issues.push(issue);
+  // The figures never silently add up: when the subtotal/total gap is not VAT at the stated rate
+  // (service charge, fee, discount, zero-rated), the user is told. The message is rebuilt from the
+  // final figures so it always matches the form, replacing any note built from the raw extraction.
+  if (amountsMismatch) {
+    const message = amountMismatchMessage(
+      derivedSubtotal,
+      derivedVat,
+      derivedTotal,
+      vatPercentage,
+      vatAmount > 0
+    );
+    const existing = issues.find((i) => i.code === "AMOUNT_MISMATCH");
+    if (existing) existing.message = message;
+    else issues.push({ code: "AMOUNT_MISMATCH", severity: "error", message });
+  }
+  if (vatDerived && !have.has("VAT_DERIVED")) {
+    issues.push({
+      code: "VAT_DERIVED",
+      severity: "warning",
+      message: vatDerivedMessage(derivedVat, vatPercentage),
+    });
+  }
   if (aiResult.supplierTrnIssue && !have.has("TRN_INVALID")) {
     issues.push({
       code: "TRN_INVALID",
