@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { toFils } from "../../shared/money";
 import {
   amountMismatchMessage,
+  hasVatFigure,
   isVatDerived,
   reconcileReceiptAmounts,
   vatDerivedMessage,
+  vatDerivedSource,
 } from "../../shared/receipt-amounts";
 import { parseReceiptOcrText } from "../../shared/receipt-ocr-parser";
 
@@ -293,6 +295,54 @@ describe("amountMismatchMessage / vatDerivedMessage wording", () => {
     expect(vatDerivedMessage(5, 5)).toMatch(/VAT 5\.00 was calculated at 5%/);
   });
 
+  it("flags a derived VAT for a total-only input too, and says where it came from", () => {
+    const t = { subtotal: 0, vatAmount: 0, total: 105, vatPercentage: 5 };
+    expect(isVatDerived(t)).toBe(true);
+    expect(vatDerivedSource(t)).toBe("total");
+    expect(vatDerivedSource({ ...t, vatAmount: 5 })).toBeNull();
+    expect(vatDerivedSource({ ...t, vatPercentage: 0 })).toBeNull();
+    expect(vatDerivedSource({ subtotal: 100, vatAmount: 0, total: 0, vatPercentage: 5 })).toBe(
+      "subtotal"
+    );
+    const m = vatDerivedMessage(5, 5, "total");
+    expect(m).toMatch(/VAT 5\.00 was worked back from the total at 5%/);
+    expect(m).toMatch(/confirm the supplier charged VAT/);
+    expect(vatDerivedMessage(5, 5)).toMatch(/calculated at 5% of the subtotal/);
+  });
+
+  it("treats sub-fil VAT as not read, consistently (fils helper)", () => {
+    expect(hasVatFigure(0.004)).toBe(false);
+    expect(hasVatFigure(0.01)).toBe(true);
+    expect(isVatDerived({ subtotal: 0, vatAmount: 0.004, total: 105, vatPercentage: 5 })).toBe(
+      true
+    );
+  });
+
+  it("the parser path flags a total-only receipt as VAT_DERIVED", () => {
+    const p = parseReceiptOcrText("Cafe\nTotal AED 105.00");
+    expect([p.subtotal, p.vatAmount, p.total]).toEqual([100, 5, 105]);
+    expect(p.validationIssues.map((i) => i.code)).toContain("VAT_DERIVED");
+    expect(p.confidenceBand).not.toBe("high");
+  });
+
+  it("the parser does not flag a receipt that shows its VAT", () => {
+    const p = parseReceiptOcrText("Cafe\nSubtotal AED 100.00\nVAT 5% AED 5.00\nTotal AED 105.00");
+    expect(p.validationIssues.map((i) => i.code)).not.toContain("VAT_DERIVED");
+  });
+
+  it("the VAT_DERIVED catalog strings carry no hardcoded rate (the warning fires for any rate)", async () => {
+    const en = (await import("../../client/src/locales/en/pageLabels.json")).default as Record<
+      string,
+      string
+    >;
+    const ar = (await import("../../client/src/locales/ar/pageLabels.json")).default as Record<
+      string,
+      string
+    >;
+    expect(en["pageLabels.receiptIssueVatDerived"]).not.toMatch(/\d\s*%/);
+    expect(ar["pageLabels.receiptIssueVatDerived"]).not.toMatch(/[\d٠-٩]\s*%|٪/);
+    expect(ar["pageLabels.receiptIssueVatDerived"]).toContain("ًا");
+  });
   it("the parser path never derives VAT from a subtotal alone (its total falls back to the subtotal)", () => {
     const p = parseReceiptOcrText("Cafe\nSubtotal AED 100.00");
     expect([p.subtotal, p.vatAmount, p.total]).toEqual([100, 0, 100]);

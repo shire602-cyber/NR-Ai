@@ -1,7 +1,13 @@
 import { normalizeForLabelMatching } from "./arabic-text";
 import { uaeToday } from "./uae-date";
 import { roundHalfUp } from "./money";
-import { amountMismatchMessage, reconcileReceiptAmounts } from "./receipt-amounts";
+import {
+  amountMismatchMessage,
+  hasVatFigure,
+  reconcileReceiptAmounts,
+  vatDerivedMessage,
+  vatDerivedSource,
+} from "./receipt-amounts";
 import {
   deriveConfidenceBand,
   type ConfidenceBand,
@@ -376,7 +382,27 @@ export function parseReceiptOcrText(
     validationIssues.push({
       code: "AMOUNT_MISMATCH",
       severity: "error",
-      message: amountMismatchMessage(derivedSubtotal, derivedVat, derivedTotal, 5, vatAmount > 0),
+      message: amountMismatchMessage(
+        derivedSubtotal,
+        derivedVat,
+        derivedTotal,
+        5,
+        hasVatFigure(vatAmount)
+      ),
+    });
+  }
+  // A total-only receipt has its VAT worked back at 5%; flag it so it goes to review.
+  const vatDerivedFrom = vatDerivedSource({
+    subtotal,
+    vatAmount,
+    total: fallbackTotal,
+    vatPercentage: 5,
+  });
+  if (vatDerivedFrom) {
+    validationIssues.push({
+      code: "VAT_DERIVED",
+      severity: "warning",
+      message: vatDerivedMessage(derivedVat, 5, vatDerivedFrom),
     });
   }
 

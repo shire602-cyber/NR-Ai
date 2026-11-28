@@ -42,9 +42,10 @@ import { errorCode, errorMessage, errorProperty } from "../errors";
 import { todayDubai } from "@shared/accounting-date";
 import {
   amountMismatchMessage,
-  isVatDerived,
+  hasVatFigure,
   reconcileReceiptAmounts,
   vatDerivedMessage,
+  vatDerivedSource,
 } from "@shared/receipt-amounts";
 
 const log = createLogger("ocr");
@@ -581,7 +582,7 @@ function buildResult(
     total: derivedTotal,
     mismatch: amountsMismatch,
   } = reconcileReceiptAmounts({ subtotal, vatAmount, total, vatPercentage });
-  const vatDerived = isVatDerived({ subtotal, vatAmount, total, vatPercentage });
+  const vatDerivedFrom = vatDerivedSource({ subtotal, vatAmount, total, vatPercentage });
 
   const category =
     typeof aiResult.category === "string" && validCategories.includes(aiResult.category)
@@ -633,17 +634,17 @@ function buildResult(
       derivedVat,
       derivedTotal,
       vatPercentage,
-      vatAmount > 0
+      hasVatFigure(vatAmount)
     );
     const existing = issues.find((i) => i.code === "AMOUNT_MISMATCH");
     if (existing) existing.message = message;
     else issues.push({ code: "AMOUNT_MISMATCH", severity: "error", message });
   }
-  if (vatDerived && !have.has("VAT_DERIVED")) {
+  if (vatDerivedFrom && !have.has("VAT_DERIVED")) {
     issues.push({
       code: "VAT_DERIVED",
       severity: "warning",
-      message: vatDerivedMessage(derivedVat, vatPercentage),
+      message: vatDerivedMessage(derivedVat, vatPercentage, vatDerivedFrom),
     });
   }
   if (aiResult.supplierTrnIssue && !have.has("TRN_INVALID")) {
