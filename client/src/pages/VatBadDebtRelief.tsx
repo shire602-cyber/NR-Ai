@@ -131,12 +131,21 @@ export default function VatBadDebtRelief() {
     });
   };
 
-  const addBackText = (period: ReturnAttribution) =>
-    typeof period.addBack === "number"
-      ? ` · ${formatMessage(t["vatBadDebtRelief.addBackAmount"], {
-          amount: formatCurrency(period.addBack, "AED", locale),
-        })}`
-      : "";
+  // Signed net add-back per return: a positive figure is relief added back; a negative one is a
+  // reversed recovery (a bounced payment) that claims the relief again in that return.
+  const addBackText = (period: ReturnAttribution) => {
+    if (typeof period.addBack !== "number") return "";
+    const key =
+      period.addBack < 0 ? "vatBadDebtRelief.claimedAgainAmount" : "vatBadDebtRelief.addBackAmount";
+    return ` · ${formatMessage(t[key], {
+      amount: formatCurrency(Math.abs(period.addBack), "AED", locale),
+    })}`;
+  };
+
+  /** Lead line from the NET across the listed returns (nil net: nothing is recovered overall). */
+  const isNetNil = (periods: ReturnAttribution[]) =>
+    periods.every((p) => typeof p.addBack === "number") &&
+    Math.round(periods.reduce((sum, p) => sum + (p.addBack as number) * 100, 0)) <= 0;
 
   const claims = Array.isArray(claimsQuery.data) ? claimsQuery.data : undefined;
 
@@ -312,7 +321,9 @@ export default function VatBadDebtRelief() {
                                   className="text-muted-foreground"
                                   data-testid={`relief-reversal-period-${claim.id}`}
                                 >
-                                  {claim.reversalReason === PAYMENT_CLOSURE_REASON ? (
+                                  {isNetNil(claim.reversalReturns) ? (
+                                    <p>{t["vatBadDebtRelief.netNilLead"]}</p>
+                                  ) : claim.reversalReason === PAYMENT_CLOSURE_REASON ? (
                                     <p>{t["vatBadDebtRelief.reversalRecoveredLead"]}</p>
                                   ) : null}
                                   {claim.reversalReturns.map((period) => (
@@ -351,7 +362,11 @@ export default function VatBadDebtRelief() {
                               className="space-y-1 text-small text-muted-foreground"
                               data-testid={`relief-reversal-period-${claim.id}`}
                             >
-                              <p>{t["vatBadDebtRelief.partialRecoveredLead"]}</p>
+                              <p>
+                                {!isNetNil(claim.reversalReturns)
+                                  ? t["vatBadDebtRelief.partialRecoveredLead"]
+                                  : t["vatBadDebtRelief.netNilLead"]}
+                              </p>
                               {claim.reversalReturns.map((period) => (
                                 <p key={`${period.from}:${period.to}`}>
                                   {periodLabel(claim.claimDate, period)}

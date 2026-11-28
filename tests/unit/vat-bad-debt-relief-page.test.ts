@@ -317,6 +317,38 @@ describe("VAT bad-debt relief screen", () => {
     }
   );
 
+  it.each(["en", "ar"] as const)(
+    "shows a reversed recovery as relief claimed again and leads from the net (%s)",
+    async (lang) => {
+      state.lang = lang;
+      const cat = lang === "en" ? enCompliance : arCompliance;
+      setFixtures({
+        [CLAIMS_URL]: [
+          claim({
+            reversalReturns: [
+              { ...FILED_Q3, addBack: 25 },
+              {
+                ...FILED_Q3,
+                from: "2026-10-01",
+                to: "2026-12-31",
+                status: "forecast",
+                addBack: -25,
+              },
+            ],
+          }),
+        ],
+        [ELIGIBLE_URL]: ELIGIBLE,
+      });
+      await renderPage(VatBadDebtRelief);
+      const cell = byTestId(`relief-reversal-period-${CLAIM_ID}`)!.textContent!;
+      // Net nil: no "recovered" lead, and the negative return says the relief is claimed again.
+      expect(cell).toContain(cat["vatBadDebtRelief.netNilLead"]);
+      expect(cell).not.toContain(cat["vatBadDebtRelief.partialRecoveredLead"]);
+      expect(cell).toContain(cat["vatBadDebtRelief.claimedAgainAmount"].split("{amount}")[0]);
+      expect(cell).toContain(cat["vatBadDebtRelief.periodStatus.forecast"]);
+    }
+  );
+
   it("keeps catalogs complete for the status words, with tanween spelled letter, fathatan, alif", () => {
     for (const key of ["open", "submitted", "filed", "amendment", "forecast", "unverified"]) {
       expect(

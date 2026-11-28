@@ -468,6 +468,7 @@ export async function listBadDebtReliefClaimsDetailed(companyId: string) {
                 SELECT 1 FROM journal_lines jl WHERE jl.entry_id = last.id AND jl.system_vat
               ))) AS recovery_in_ledger
        FROM bad_debt_relief_claims c
+       -- LEFT: list the claim even if its invoice row is gone; the add-back query below uses the engine's INNER JOIN
        LEFT JOIN invoices i ON i.id = c.invoice_id AND i.company_id = c.company_id
        LEFT JOIN journal_entries last ON last.id = c.reversal_entry_id AND last.company_id = c.company_id
          AND last.source = $2 AND last.source_id = c.id AND last.status = 'posted'
@@ -533,21 +534,31 @@ export async function listBadDebtReliefClaimsDetailed(companyId: string) {
   );
 
   return claimsQ.rows.map((c) => {
-    // Net add-back per return (a reversed recovery nets out against the repayment). Only returns
-    // with a net positive add-back are listed, in period order.
+    // Net add-back per return, signed: a reversed recovery nets out against the repayment in the
+    // same return, and one that lands in a later return shows there as a negative (relief claimed
+    // again). Every return with a non-zero net is listed, in period order, so the listed amounts
+    // sum to the claim's relief minus the remaining relief, to the fil.
     const perReturn = new Map<string, ReturnAttribution & { addBack: number }>();
+    let attributable = true;
     for (const event of claimAddBacks(c)) {
       const r = attribution.get(event.date);
-      if (!r) continue;
+      if (!r) {
+        // Cannot happen today: attributeDatesToReturns gives every date at least a forecast. If it
+        // ever does, show nothing rather than a partial list that would not sum to the add-back.
+        attributable = false;
+        break;
+      }
       const key = `${r.from}:${r.to}`;
       const entry = perReturn.get(key) ?? { ...r, addBack: 0 };
       entry.addBack += event.fils;
       perReturn.set(key, entry);
     }
-    const reversalReturns = [...perReturn.values()]
-      .filter((r) => r.addBack > 0)
-      .sort((x, y) => (x.from < y.from ? -1 : x.from > y.from ? 1 : 0))
-      .map((r) => ({ ...r, addBack: r.addBack / 100 }));
+    const reversalReturns = attributable
+      ? [...perReturn.values()]
+          .filter((r) => r.addBack !== 0)
+          .sort((x, y) => (x.from < y.from ? -1 : x.from > y.from ? 1 : 0))
+          .map((r) => ({ ...r, addBack: r.addBack / 100 }))
+      : [];
     const remainingFils =
       c.status === "claimed"
         ? Math.max(toFils(Number(c.vat_amount)) - (restored.get(c.id) ?? 0), 0)
@@ -578,8 +589,9 @@ export async function listBadDebtReliefClaimsDetailed(companyId: string) {
       remainingRelief: remainingFils === null ? null : remainingFils / 100,
       claimReturn: attribution.get(c.claim_date) ?? null,
       /**
-       * Returns with a net positive add-back (net amount in AED), including partial recoveries on a
-       * claim that is still open; empty when nothing was added back.
+       * Returns with a non-zero net add-back (signed net amount in AED; negative when a reversed
+       * recovery claims the relief again), including partial recoveries on a claim that is still
+       * open; empty when nothing was added back.
        */
       reversalReturns,
     };

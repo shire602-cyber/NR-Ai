@@ -549,6 +549,103 @@ describe("bad-debt relief list: exact VAT return attribution", () => {
     expect(Math.round(row.reversalReturns[0].addBack * 100)).toBe(engine);
   });
 
+  /** Listed signed amounts (fils) must equal the relief added back so far, to the fil. */
+  function expectAddBackInvariant(row: {
+    vatAmount: number;
+    remainingRelief: number | null;
+    reversalReturns: Array<{ addBack: number }>;
+  }) {
+    const listed = row.reversalReturns.reduce((sum, r) => sum + Math.round(r.addBack * 100), 0);
+    expect(listed).toBe(
+      Math.round(row.vatAmount * 100) - Math.round((row.remainingRelief ?? 0) * 100)
+    );
+  }
+
+  async function bounce(t: Tenant, invoiceId: string, date: string) {
+    const { reverseInvoicePayment } = await import("../../server/services/invoice-payment.service");
+    const ids = await paymentIds(invoiceId);
+    await reverseInvoicePayment({
+      companyId: t.company.id,
+      paymentId: ids[ids.length - 1],
+      actorId: t.user.id,
+      reason: "bounced",
+      date,
+    });
+  }
+
+  it("lists the later return that claims the relief again when a recovered part-payment bounces", async () => {
+    const { t, invoiceId } = await setup("BDRA-bounce");
+    await h.sql(`UPDATE companies SET vat_filing_frequency = 'quarterly' WHERE id = $1`, [
+      t.company.id,
+    ]);
+    await claim(t, invoiceId);
+    const bank = await accountByCode(t, "1020");
+    const pay = await t.as.post(`/api/companies/${t.company.id}/invoices/${invoiceId}/payments`, {
+      amount: 525,
+      date: "2026-09-05",
+      paymentAccountId: bank.id,
+    });
+    expect(pay.status, pay.text).toBe(201);
+    await insertReturn(t, Q3[0], Q3[1]);
+    await bounce(t, invoiceId, "2026-10-10");
+    // The engine: Q3 +25, Q4 -25 (the relief is claimed again).
+    expect(await engineAddBack(t.company.id, ...Q3)).toBe(2500);
+    expect(await engineAddBack(t.company.id, ...Q4)).toBe(-2500);
+    const row = (await list(t)).body[0];
+    expect(row.status).toBe("claimed");
+    expect(row.remainingRelief).toBe(50);
+    expect(row.reversalReturns).toEqual([
+      { from: Q3[0], to: Q3[1], status: "filed", source: "company", addBack: 25 },
+      { from: Q4[0], to: Q4[1], status: "forecast", source: "forecast", addBack: -25 },
+    ]);
+    expectAddBackInvariant(row);
+  });
+
+  it("lists a full recovery, its bounce and the later repayment, each return with its engine figure", async () => {
+    const { t, invoiceId } = await setup("BDRA-bounce-repay");
+    // Monthly filer: Sep and Oct returns filed, repayment lands in the next open month.
+    const Sep: [string, string] = ["2026-09-01", "2026-09-30"];
+    const Oct: [string, string] = ["2026-10-01", "2026-10-31"];
+    const Nov: [string, string] = ["2026-11-01", "2026-11-30"];
+    await h.sql(`UPDATE companies SET vat_filing_frequency = 'monthly' WHERE id = $1`, [
+      t.company.id,
+    ]);
+    await claim(t, invoiceId);
+    const bank = await accountByCode(t, "1020");
+    const payUrl = `/api/companies/${t.company.id}/invoices/${invoiceId}/payments`;
+    const pay = async (date: string) => {
+      const r = await t.as.post(payUrl, { amount: 1050, date, paymentAccountId: bank.id });
+      expect(r.status, r.text).toBe(201);
+    };
+    await pay("2026-09-05");
+    await insertReturn(t, Sep[0], Sep[1]);
+    await bounce(t, invoiceId, "2026-10-10");
+    await insertReturn(t, Oct[0], Oct[1]);
+
+    // Bounced, not yet repaid: Sep +50, Oct -50, the whole relief is still outstanding.
+    let row = (await list(t)).body[0];
+    expect(row.status).toBe("claimed");
+    expect(row.remainingRelief).toBe(50);
+    expect(row.reversalReturns).toEqual([
+      { from: Sep[0], to: Sep[1], status: "filed", source: "company", addBack: 50 },
+      { from: Oct[0], to: Oct[1], status: "filed", source: "company", addBack: -50 },
+    ]);
+    expectAddBackInvariant(row);
+
+    // Paid again inside the filed October: the recovery is dated in the next open month.
+    await pay("2026-10-20");
+    expect(await engineAddBack(t.company.id, ...Sep)).toBe(5000);
+    expect(await engineAddBack(t.company.id, ...Oct)).toBe(-5000);
+    expect(await engineAddBack(t.company.id, ...Nov)).toBe(5000);
+    row = (await list(t)).body[0];
+    expect(row.reversalReturns).toEqual([
+      { from: Sep[0], to: Sep[1], status: "filed", source: "company", addBack: 50 },
+      { from: Oct[0], to: Oct[1], status: "filed", source: "company", addBack: -50 },
+      { from: Nov[0], to: Nov[1], status: "forecast", source: "forecast", addBack: 50 },
+    ]);
+    expectAddBackInvariant(row);
+  });
+
   it("calls a return that is only finalised in the app submitted, not filed", async () => {
     const { t, invoiceId } = await setup("BDRA-submitted");
     await claim(t, invoiceId);
