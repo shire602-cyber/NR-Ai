@@ -265,8 +265,12 @@ export async function extractReceipt(args: {
     // A correction retry that turns an unprinted/zero VAT into a positive figure has computed it,
     // not read it: force review (VAT_DERIVED) so it can never auto-post an input-VAT claim.
     const issues = [...result.issues];
-    const firstVat = Number(result.firstData?.vatAmount) || 0;
-    if (result.attempts > 1 && firstVat === 0 && (Number(data.vatAmount) || 0) > 0) {
+    // Compare with the RAW first model answer (before schema validation): when the first answer
+    // was unparseable or failed the schema, nothing it said counts as a printed VAT figure.
+    const rawFirst = result.firstRaw as { vatAmount?: unknown } | null | undefined;
+    const firstVat = Number(rawFirst?.vatAmount) || 0;
+    const finalVat = Number(data.vatAmount) || 0;
+    if (result.attempts > 1 && finalVat > 0 && Math.abs(firstVat - finalVat) > 0.005) {
       issues.push({
         code: "VAT_DERIVED",
         severity: "warning",

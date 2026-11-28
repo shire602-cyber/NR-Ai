@@ -322,6 +322,48 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
     expect(res.body.confidenceBand).not.toBe("high");
   });
 
+  it("net + gross printed with no VAT line is VAT_DERIVED, not a clean high-confidence receipt", async () => {
+    const { client } = anthropicReturning({ ...goodExtraction, vatAmount: null });
+    const res = await post(appWith({ anthropic: client }), {
+      imageData: PNG_URL,
+      companyId: COMPANY,
+    });
+    expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual([100, 5, 105]);
+    const codes = res.body.validationIssues.map((i: any) => i.code);
+    expect(codes).toContain("VAT_DERIVED");
+    expect(res.body.confidenceBand).not.toBe("high");
+  });
+
+  it("VAT_DERIVED and no supplier TRN gives one note, not VAT_NO_TRN as well", async () => {
+    const { client } = anthropicReturning({
+      ...goodExtraction,
+      vatAmount: null,
+      supplierTrn: null,
+    });
+    const res = await post(appWith({ anthropic: client }), {
+      imageData: PNG_URL,
+      companyId: COMPANY,
+    });
+    const codes = res.body.validationIssues.map((i: any) => i.code);
+    expect(codes).toContain("VAT_DERIVED");
+    expect(codes).not.toContain("VAT_NO_TRN");
+  });
+
+  it("the company's own TRN read as the supplier's raises VAT_NO_TRN", async () => {
+    const { storage } = await import("../../server/storage");
+    (storage as any).getCompany = vi.fn(async () => ({ trnVatNumber: "100123456700003" }));
+    try {
+      const { client } = anthropicReturning(goodExtraction);
+      const res = await post(appWith({ anthropic: client }), {
+        imageData: PNG_URL,
+        companyId: COMPANY,
+      });
+      expect(res.body.validationIssues.map((i: any) => i.code)).toContain("VAT_NO_TRN");
+    } finally {
+      delete (storage as any).getCompany;
+    }
+  });
+
   it("a VAT-bearing receipt with a valid supplier TRN does not raise VAT_NO_TRN", async () => {
     const { client } = anthropicReturning(goodExtraction);
     const res = await post(appWith({ anthropic: client }), {

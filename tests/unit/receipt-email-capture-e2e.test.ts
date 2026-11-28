@@ -574,4 +574,70 @@ describe("email intake: derived VAT never auto-posts", () => {
     expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
     expect(db.postedEntries).toHaveLength(0);
   });
+
+  describe("a first answer that fails schema or JSON parsing cannot launder calculated VAT", () => {
+    const tool = (input: Record<string, unknown>) => ({
+      content: [{ type: "tool_use", name: "record_receipt", input }],
+    });
+    const base = {
+      merchant: "Cafe Beirut",
+      currency: "AED",
+      category: "Meals",
+      confidence: 0.95,
+      date: "2026-11-10",
+      subtotal: 100,
+      total: 105,
+      supplierTrn: VALID_TRN,
+    };
+
+    it("first answer vatAmount 'N/A' (schema failure), retry returns 5: held, not posted", async () => {
+      enableAutopilot();
+      anthropicCreate.mockReset();
+      anthropicCreate
+        .mockResolvedValueOnce(tool({ ...base, vatAmount: "N/A" }))
+        .mockResolvedValue(tool({ ...base, vatAmount: 5, vatPercentage: 5 }));
+      const res = await postWebhook(samplePayload, sign(samplePayload));
+      expect(anthropicCreate).toHaveBeenCalledTimes(2);
+      expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
+      expect(db.postedEntries).toHaveLength(0);
+    });
+
+    it("first answer is unparseable text, retry returns 5: held, not posted", async () => {
+      enableAutopilot();
+      anthropicCreate.mockReset();
+      anthropicCreate
+        .mockResolvedValueOnce({ content: [{ type: "text", text: "sorry {not json" }] })
+        .mockResolvedValue(tool({ ...base, vatAmount: 5, vatPercentage: 5 }));
+      const res = await postWebhook(samplePayload, sign(samplePayload));
+      expect(anthropicCreate).toHaveBeenCalledTimes(2);
+      expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
+      expect(db.postedEntries).toHaveLength(0);
+    });
+
+    it("every retry message carries the never-fill-in-unprinted-figures wording", async () => {
+      enableAutopilot();
+      anthropicCreate.mockReset();
+      anthropicCreate
+        .mockResolvedValueOnce(tool({ ...base, vatAmount: "N/A" }))
+        .mockResolvedValue(tool({ ...base, vatAmount: 5, vatPercentage: 5 }));
+      await postWebhook(samplePayload, sign(samplePayload));
+      const retryCall = JSON.stringify(anthropicCreate.mock.calls[1]?.[0]);
+      expect(retryCall).toMatch(
+        /Never calculate, estimate or fill in a figure that is not printed/
+      );
+    });
+
+    it("a retry that only fixes a date and keeps the same printed VAT still auto-posts", async () => {
+      enableAutopilot();
+      anthropicCreate.mockReset();
+      anthropicCreate
+        .mockResolvedValueOnce(
+          tool({ ...base, date: "2099-01-01", vatAmount: 5, vatPercentage: 5 })
+        )
+        .mockResolvedValue(tool({ ...base, vatAmount: 5, vatPercentage: 5 }));
+      const res = await postWebhook(samplePayload, sign(samplePayload));
+      expect(anthropicCreate).toHaveBeenCalledTimes(2);
+      expect(res.body).toMatchObject({ autoPosted: 1, queuedForReview: 0 });
+    });
+  });
 });

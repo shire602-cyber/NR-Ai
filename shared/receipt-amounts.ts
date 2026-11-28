@@ -216,5 +216,5 @@ export function vatDerivedMessage(
  * (it may have been computed, not printed) is not enough to book an input-VAT claim unattended.
  */
 export function vatWithoutTrnMessage(vatAmount: number): string {
-  return `VAT ${money2(vatAmount)} is claimed but the receipt shows no valid supplier TRN. Check that this is a tax invoice from a VAT-registered supplier before claiming input VAT.`;
+  return `This receipt includes VAT (${money2(vatAmount)}) but doesn't show a valid supplier TRN. You can only recover VAT with a tax invoice from a VAT-registered supplier.`;
 }

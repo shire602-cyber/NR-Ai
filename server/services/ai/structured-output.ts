@@ -337,6 +337,8 @@ export interface StructuredResult<T> {
   attempts: number;
   /** The first successfully parsed attempt (before any correction retry). */
   firstData?: T;
+  /** The raw JSON value of attempt 1 (before schema validation); undefined when it did not parse. */
+  firstRaw?: unknown;
 }
 
 export async function runStructured<T>(
@@ -347,15 +349,18 @@ export async function runStructured<T>(
   let best: { data: T; issues: ValidationIssue[] } | null = null;
   let lastError = "Model output was invalid";
   let firstData: T | undefined;
+  let firstRaw: unknown;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let parsed: z.ZodSafeParseResult<T>;
     try {
       const raw = await opts.call(feedback);
-      parsed = opts.schema.safeParse(extractJsonValue(raw));
+      const value = extractJsonValue(raw);
+      if (attempt === 0) firstRaw = value;
+      parsed = opts.schema.safeParse(value);
     } catch (err) {
       lastError = (err as Error).message;
-      feedback = `Your previous reply could not be parsed: ${lastError}. Reply with valid JSON only.`;
+      feedback = `Your previous reply could not be parsed: ${lastError}. Reply with valid JSON only. Correct only figures you misread that are PRINTED on the document. Never calculate, estimate or fill in a figure that is not printed (for example VAT): leave it null.`;
       continue;
     }
 
@@ -364,7 +369,7 @@ export async function runStructured<T>(
         .slice(0, 5)
         .map((i) => `${i.path.join(".") || "root"}: ${i.message}`)
         .join("; ");
-      feedback = `Your previous reply failed schema validation (${lastError}). Fix these fields and reply with valid JSON only.`;
+      feedback = `Your previous reply failed schema validation (${lastError}). Fix these fields and reply with valid JSON only. Correct only figures you misread that are PRINTED on the document. Never calculate, estimate or fill in a figure that is not printed (for example VAT): leave it null.`;
       continue;
     }
 
@@ -375,11 +380,12 @@ export async function runStructured<T>(
     if (!best || errors.length < best.issues.filter((i) => i.severity === "error").length) {
       best = { data: parsed.data, issues };
     }
-    if (errors.length === 0) return { data: parsed.data, issues, attempts: attempt + 1, firstData };
+    if (errors.length === 0)
+      return { data: parsed.data, issues, attempts: attempt + 1, firstData, firstRaw };
     feedback = `Your previous reply failed validation: ${errors.map((e) => e.message).join("; ")}. Re-read the document and correct only figures you misread that are PRINTED on it. Never calculate, estimate or fill in a figure that is not printed (for example VAT): leave it null.`;
   }
 
-  if (best) return { ...best, attempts: maxRetries + 1, firstData };
+  if (best) return { ...best, attempts: maxRetries + 1, firstData, firstRaw };
   throw new StructuredOutputError(lastError, maxRetries + 1);
 }
 
