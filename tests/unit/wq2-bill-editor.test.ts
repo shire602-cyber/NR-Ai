@@ -144,6 +144,43 @@ const capture: BillCaptureResult = {
 };
 
 describe("[WQ2 8.2] bill editor capture", () => {
+  it.each(["AED", "USD"])("reopens and saves 1.234 as a bill quantity in %s", async (currency) => {
+    const url = "/api/bills/fractional";
+    setFixtures({
+      [url]: {
+        id: "fractional",
+        status: "draft",
+        vendor_name: VENDOR.name,
+        vendor_trn: VENDOR.trn,
+        bill_date: "2026-01-15",
+        currency,
+        exchange_rate: currency === "USD" ? "3.675123" : "1",
+        line_items: [
+          {
+            description: "Fractional purchase",
+            quantity: "1.2340",
+            unit_price: "1000.00",
+            vat_rate: "5.00",
+            vat_supply_type: "standard_rated",
+          },
+        ],
+        payments: [],
+      },
+    });
+    const { default: BillPay } = await import("../../client/src/pages/BillPay");
+    await renderAt(BillPay, "/bill-pay/fractional/edit");
+    await flushUntil(() => !!byTestId("button-submit-bill"));
+    const quantity = editorPage().querySelector<HTMLInputElement>('[name="line_items.0.quantity"]');
+    expect(quantity?.value).toBe("1.234");
+    expect(quantity?.validity.valid).toBe(true);
+    await submit(byTestId("button-submit-bill"));
+    await flushUntil(() => apiCalls("PATCH").some((call) => call.url === url));
+    expect(apiCalls("PATCH").find((call) => call.url === url)?.body).toMatchObject({
+      currency,
+      line_items: [{ quantity: 1.234 }],
+    });
+  });
+
   it("a dropped invoice fills the form with per-field confidence; saving posts the bill and then the attachment", async () => {
     setFixtures({
       [`${C}/bills/summary`]: null,

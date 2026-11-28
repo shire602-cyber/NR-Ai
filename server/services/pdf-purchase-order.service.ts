@@ -41,10 +41,10 @@ export async function generatePurchaseOrderPDF(
     currency: po.currency || "AED",
     lines: lines.map((line) => ({
       description: line.description,
-      quantity: line.quantity,
+      quantity: Number(line.quantity),
       unitPrice: line.unitPrice,
       vatPercent: lineVatPercent(line),
-      amount: line.quantity * line.unitPrice,
+      amount: Number(line.quantity) * line.unitPrice,
     })),
     totals: {
       subtotal: po.subtotal,

@@ -8,6 +8,7 @@
  */
 import type { Express, Request, Response } from "express";
 import { and, eq, sql } from "drizzle-orm";
+import Decimal from "decimal.js";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
@@ -37,6 +38,7 @@ import {
   poReceiveSchema,
   poSendSchema,
   poUpdateSchema,
+  zPoQuantity,
   type PoConvertInput,
   type PoCreateInput,
   type PoLineInput,
@@ -138,13 +140,26 @@ function toLineRows(poId: string, lines: PoLineInput[]) {
   return lines.map((l) => ({
     purchaseOrderId: poId,
     description: l.description,
-    quantity: l.quantity,
+    quantity: String(l.quantity),
     unitPrice: Number(l.unitPrice),
     vatRate: poLineVat(l).vatRate === 5 ? 0.05 : 0,
     vatSupplyType: poLineVat(l).supplyType,
     productId: l.productId ?? null,
     accountId: l.accountId ?? null,
   }));
+}
+
+function lineForResponse(line: PurchaseOrderLine) {
+  return {
+    ...line,
+    quantity: Number(line.quantity),
+    quantityReceived: Number(line.quantityReceived),
+    quantityBilled: Number(line.quantityBilled),
+  };
+}
+
+function quantityRemaining(total: string, used: string) {
+  return new Decimal(total).minus(used).toNumber();
 }
 
 async function allocatePoNumber(tx: LedgerTx, companyId: string): Promise<string> {
@@ -197,8 +212,8 @@ function matchOf(lines: PurchaseOrderLine[]) {
       ordered,
       received,
       billed,
-      outstandingToReceive: Math.max(0, ordered - received),
-      outstandingToBill: Math.max(0, ordered - billed),
+      outstandingToReceive: Math.max(0, quantityRemaining(l.quantity, l.quantityReceived)),
+      outstandingToBill: Math.max(0, quantityRemaining(l.quantity, l.quantityBilled)),
       status,
     };
   });
@@ -233,7 +248,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const po = await loadPo(req);
       const lines = await linesOf(po.id);
-      res.json({ ...po, lines, match: matchOf(lines) });
+      res.json({ ...po, lines: lines.map(lineForResponse), match: matchOf(lines) });
     })
   );
 
@@ -304,7 +319,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
       });
       const lines = await linesOf(po.id);
       logger.info({ purchaseOrderId: po.id, companyId }, "Purchase order created");
-      res.status(201).json({ ...po, lines });
+      res.status(201).json({ ...po, lines: lines.map(lineForResponse) });
     })
   );
 
@@ -382,7 +397,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
         return row;
       });
       const lines = await linesOf(po.id);
-      res.json({ ...updated, lines });
+      res.json({ ...updated, lines: lines.map(lineForResponse) });
     })
   );
 
@@ -624,17 +639,18 @@ export function registerPurchaseOrderRoutes(app: Express) {
         : lines
             .map((l) => ({
               lineId: l.id,
-              quantity: Number(l.quantity) - Number(l.quantityReceived ?? 0),
+              quantity: quantityRemaining(l.quantity, l.quantityReceived),
             }))
             .filter((l) => l.quantity > 0);
       for (const w of wanted) {
         const l = lines.find((x) => x.id === w.lineId);
         if (!l) throw new DomainError("PO_LINE_NOT_FOUND", 404, { lineId: w.lineId });
-        if (Number(l.quantityReceived ?? 0) + w.quantity > Number(l.quantity) + 1e-9) {
+        const outstanding = quantityRemaining(l.quantity, l.quantityReceived);
+        if (w.quantity > outstanding) {
           throw new DomainError(
             "PO_OVER_RECEIVED",
             409,
-            { lineId: l.id, outstanding: Number(l.quantity) - Number(l.quantityReceived ?? 0) },
+            { lineId: l.id, outstanding },
             "Received quantity exceeds the ordered quantity"
           );
         }
@@ -660,7 +676,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
               and(
                 eq(purchaseOrderLines.id, w.lineId),
                 eq(purchaseOrderLines.purchaseOrderId, po.id),
-                sql`${purchaseOrderLines.quantityReceived} + ${w.quantity} <= ${purchaseOrderLines.quantity} + 0.000001`
+                sql`${purchaseOrderLines.quantityReceived} + ${w.quantity} <= ${purchaseOrderLines.quantity}`
               )
             )
             .returning();
@@ -668,16 +684,14 @@ export function registerPurchaseOrderRoutes(app: Express) {
           await tx.insert(purchaseOrderReceiptLines).values({
             receiptId: receipt.id,
             purchaseOrderLineId: w.lineId,
-            quantity: w.quantity,
+            quantity: String(w.quantity),
           });
         }
         const after = (await tx
           .select()
           .from(purchaseOrderLines)
           .where(eq(purchaseOrderLines.purchaseOrderId, po.id))) as PurchaseOrderLine[];
-        const complete = after.every(
-          (l) => Number(l.quantityReceived) >= Number(l.quantity) - 1e-9
-        );
+        const complete = after.every((l) => quantityRemaining(l.quantity, l.quantityReceived) <= 0);
         const target: PoState = complete ? "received" : "partially_received";
         if (target !== po.status) {
           const row = await transitionRow(
@@ -738,7 +752,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
       res.json({
         ...(await storage.getPurchaseOrder(po.id)),
         receiptId: result.receiptId,
-        lines: result.lines,
+        lines: result.lines.map(lineForResponse),
         match: matchOf(result.lines),
         inventoryUpdated: result.inventoryUpdated,
         warnings:
@@ -777,21 +791,26 @@ export function registerPurchaseOrderRoutes(app: Express) {
       const lines = await linesOf(po.id);
       const tracksReceipts = lines.some((l) => Number(l.quantityReceived) > 0);
       const wanted = body.lines
-        ? body.lines
+        ? body.lines.map(({ lineId, quantity }) => {
+            const parsed = zPoQuantity.safeParse(quantity);
+            if (!parsed.success) throw new DomainError("INVALID_QUANTITY", 422, { lineId });
+            return { lineId, quantity: parsed.data };
+          })
         : lines
             .map((l) => ({
               lineId: l.id,
-              quantity:
-                (tracksReceipts ? Number(l.quantityReceived) : Number(l.quantity)) -
-                Number(l.quantityBilled ?? 0),
+              quantity: quantityRemaining(
+                tracksReceipts ? l.quantityReceived : l.quantity,
+                l.quantityBilled
+              ),
             }))
-            .filter((l) => l.quantity > 1e-9);
+            .filter((l) => l.quantity > 0);
       if (wanted.length === 0)
         throw new DomainError("PO_NOTHING_TO_BILL", 409, undefined, "Nothing outstanding to bill");
       const billLines = wanted.map((w) => {
         const l = lines.find((x) => x.id === w.lineId);
         if (!l) throw new DomainError("PO_LINE_NOT_FOUND", 404, { lineId: w.lineId });
-        if (Number(l.quantityBilled ?? 0) + w.quantity > Number(l.quantity) + 1e-9) {
+        if (w.quantity > quantityRemaining(l.quantity, l.quantityBilled)) {
           throw new DomainError(
             "PO_OVER_BILLED",
             409,
@@ -830,7 +849,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
             .where(
               and(
                 eq(purchaseOrderLines.id, l.id),
-                sql`${purchaseOrderLines.quantityBilled} + ${quantity} <= ${purchaseOrderLines.quantity} + 0.000001`
+                sql`${purchaseOrderLines.quantityBilled} + ${quantity} <= ${purchaseOrderLines.quantity}`
               )
             )
             .returning();
