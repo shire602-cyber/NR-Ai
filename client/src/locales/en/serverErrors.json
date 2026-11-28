@@ -721,6 +721,7 @@
   "serverErrors.VAT_ACCOUNTS_MISSING": "The Input VAT account (1050) is missing from your chart of accounts. Add it, then try again.",
   "serverErrors.VAT_ADJUSTMENT_FAILED": "The VAT adjustment could not be added. Check the details and try again.",
   "serverErrors.VAT_ADJUSTMENT_NOT_FOUND": "The VAT adjustment could not be found.",
+  "serverErrors.VAT_AMENDMENT_CONFLICT": "The amendment could not be created because of a database rule on VAT returns. Contact support.",
   "serverErrors.VAT_INPUT_ACCOUNT_MISSING": "The Accounts Payable account is missing from your chart of accounts. Add it, then try again.",
   "serverErrors.VAT_NO_TRN": "This receipt includes VAT but doesn't show a valid supplier TRN. You can only recover VAT with a tax invoice from a VAT-registered supplier.",
   "serverErrors.VAT_DERIVED": "VAT on this receipt may have been calculated rather than printed, so it was held for review.",
