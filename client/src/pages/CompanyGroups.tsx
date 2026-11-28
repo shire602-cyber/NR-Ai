@@ -8,6 +8,8 @@ import { accountDisplayName } from "@/lib/account-name";
 import { useState } from "react";
 import { Alert } from "@/components/ui/alert";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
 import {
   Dialog,
   DialogContent,
@@ -130,10 +132,12 @@ export default function CompanyGroups() {
   const { companyId, companies } = useDefaultCompany();
   const [picked, setSelected] = useState("");
 
-  const { data: groups } = useQuery<GroupSummary[]>({ queryKey: ["/api/company-groups"] });
+  const groupsQuery = useQuery<GroupSummary[]>({ queryKey: ["/api/company-groups"] });
+  const groups = groupsQuery.data;
   const selected = picked || groups?.[0]?.id || "";
   const detailKey = `/api/company-groups/${selected}`;
-  const { data: detail } = useQuery<GroupDetail>({ queryKey: [detailKey], enabled: !!selected });
+  const detailQuery = useQuery<GroupDetail>({ queryKey: [detailKey], enabled: !!selected });
+  const detail = detailQuery.data;
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/company-groups"] });
@@ -288,6 +292,36 @@ export default function CompanyGroups() {
         </DialogContent>
       </Dialog>
 
+      {groupsQuery.isLoadingError && (
+        <LoadErrorState
+          error={groupsQuery.error}
+          onRetry={() => void groupsQuery.refetch()}
+          retrying={groupsQuery.isFetching}
+          forbiddenDescription={t["dashboard.loadForbiddenBody"]}
+          testId="company-groups-load-error"
+        />
+      )}
+      {groupsQuery.isRefetchError && (
+        <StaleDataNotice
+          onRetry={() => void groupsQuery.refetch()}
+          testId="company-groups-stale-notice"
+        />
+      )}
+      {detailQuery.isLoadingError && (
+        <LoadErrorState
+          error={detailQuery.error}
+          onRetry={() => void detailQuery.refetch()}
+          retrying={detailQuery.isFetching}
+          forbiddenDescription={t["dashboard.loadForbiddenBody"]}
+          testId="company-group-detail-load-error"
+        />
+      )}
+      {detailQuery.isRefetchError && (
+        <StaleDataNotice
+          onRetry={() => void detailQuery.refetch()}
+          testId="company-group-detail-stale-notice"
+        />
+      )}
       {groups && groups.length === 0 && (
         <div className="rounded-xl border border-border bg-card">
           <EmptyState
