@@ -713,7 +713,14 @@ export async function generateDueRecurringInvoices(): Promise<number> {
           return { skipped: true as const };
         };
 
-        if (template.endDate && new Date(template.endDate) < now) {
+        // The end date is a calendar day and INCLUSIVE: a template due on its end date still
+        // issues its last invoice. Compare Dubai days, not instants, so the answer does not
+        // depend on what time of day the job runs.
+        const todayDubai = uaeToday(now);
+        const endDay = template.endDate
+          ? new Date(template.endDate).toISOString().slice(0, 10)
+          : null;
+        if (endDay && endDay < todayDubai) {
           log.info({ templateId: template.id }, "Recurring template past endDate — disabled");
           return note("ended", "End date reached; template disabled", true);
         }
@@ -854,9 +861,12 @@ export async function generateDueRecurringInvoices(): Promise<number> {
           new Date(template.nextRunDate),
           template.frequency
         );
+        // Deactivate once the next run would fall after the (inclusive) end date.
+        const finished = endDay !== null && advancedNextRunDate.toISOString().slice(0, 10) > endDay;
         await tx
           .update(recurringInvoicesTable)
           .set({
+            ...(finished ? { isActive: false } : {}),
             nextRunDate: advancedNextRunDate,
             lastGeneratedInvoiceId: insertedInvoice.id,
             totalGenerated: sql`${recurringInvoicesTable.totalGenerated} + 1`,
