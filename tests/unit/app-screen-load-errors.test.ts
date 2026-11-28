@@ -72,6 +72,7 @@ async function mount(
         queryFn: async ({ queryKey }) => {
           const r = responder(queryKey.filter(Boolean).join("/"));
           if (r === "fail") throw new ApiError(500, "Server exploded", {});
+          if (r === "hang") return new Promise(() => {});
           return (r as { ok: unknown }).ok;
         },
       },
@@ -112,6 +113,49 @@ describe.each(["en", "ar"] as const)("App screen load errors (%s)", (locale) => 
     expect(tid("needs-you-clear")).toBeNull();
     expect(node!.textContent).not.toContain("Server exploded");
     expect(retryButton()).toBeDefined();
+  });
+
+  it("needs-you strip: failed access lookup shows an error, never the all-clear", async () => {
+    const { NeedsYouStrip } = await import("../../client/src/pages/dashboard/NeedsYouStrip");
+    await mount(NeedsYouStrip as never, strip, locale, (p) =>
+      p.includes("bank-statements") ? ok([]) : "fail"
+    );
+    expect(tid("needs-you-load-error")).not.toBeNull();
+    expect(tid("needs-you-clear")).toBeNull();
+  });
+
+  it("needs-you strip: failed compliance query shows an error, never the all-clear", async () => {
+    const { NeedsYouStrip } = await import("../../client/src/pages/dashboard/NeedsYouStrip");
+    const refetch = vi.fn();
+    const complianceQuery = {
+      isError: true,
+      isFetching: false,
+      error: new ApiError(500, "Server exploded", {}),
+      errorUpdateCount: 1,
+      refetch,
+    };
+    await mount(NeedsYouStrip as never, { ...strip, complianceQuery }, locale, (p) =>
+      p.includes("bank-statements") ? ok([]) : ok({ permissions: [] })
+    );
+    expect(tid("needs-you-load-error")).not.toBeNull();
+    expect(tid("needs-you-clear")).toBeNull();
+    await act(async () => retryButton()!.click());
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("needs-you strip: a retry after an error does not flash the all-clear", async () => {
+    const { NeedsYouStrip } = await import("../../client/src/pages/dashboard/NeedsYouStrip");
+    let bankCalls = 0;
+    await mount(NeedsYouStrip as never, strip, locale, (p) => {
+      if (!p.includes("bank-statements")) return ok({ permissions: [] });
+      return ++bankCalls === 1 ? "fail" : "hang";
+    });
+    expect(tid("needs-you-load-error")).not.toBeNull();
+    await act(async () => retryButton()!.click());
+    await settle(5);
+    expect(bankCalls).toBe(2);
+    expect(tid("needs-you-clear")).toBeNull();
+    expect(tid("needs-you-load-error")).not.toBeNull();
   });
 
   it("needs-you strip: successful empty load still shows the all-clear", async () => {

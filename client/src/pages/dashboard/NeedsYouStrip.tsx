@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { uaeToday } from "@shared/uae-date";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { canPerform, companyAccessQueryKey, type CompanyAccess } from "@/lib/auth";
 import { useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { Link } from "wouter";
@@ -19,6 +19,11 @@ import {
   type VatStatusLike,
 } from "./needsYou";
 
+type LoadState = Pick<
+  UseQueryResult,
+  "isError" | "isFetching" | "error" | "errorUpdateCount" | "refetch"
+>;
+
 const TONE_DOT: Record<NeedsYouChip["tone"], string> = {
   danger: "bg-destructive",
   warning: "bg-warning",
@@ -34,10 +39,13 @@ export function NeedsYouStrip({
   companyId,
   invoices,
   compliance,
+  complianceQuery,
 }: {
   companyId: string | null | undefined;
   invoices: InvoiceLike[] | undefined;
   compliance: { vatStatus?: VatStatusLike | null } | null | undefined;
+  /** State of the compliance (VAT) query; a failure there must not read as "nothing needs you". */
+  complianceQuery?: LoadState;
 }) {
   const stripRef = useRef<HTMLElement>(null);
   const fade = useEdgeFade(stripRef);
@@ -68,14 +76,18 @@ export function NeedsYouStrip({
     staleTime: 60_000,
   });
   if (!companyId || invoices === undefined) return null;
-  // A list the role cannot read (403) contributes no chip; any other failure means the strip
-  // cannot say "nothing needs you", so it must not show the all-clear.
-  const failedRead = [bank, payroll].find(
-    (q) => q.isError && classifyLoadError(q.error) !== "forbidden"
+  // A list the role cannot read (403) contributes no chip; any other failure (including the
+  // access lookup and the compliance overview, whose failure skips payroll / the VAT chip) means
+  // the strip cannot say "nothing needs you", so it must not show the all-clear. A query that
+  // is refetching after an error counts as still failed, so a retry does not flash the all-clear.
+  const reads: LoadState[] = [bank, access, payroll, ...(complianceQuery ? [complianceQuery] : [])];
+  const failedRead = reads.find(
+    (q) =>
+      (q.isError || (q.isFetching && q.errorUpdateCount > 0)) &&
+      classifyLoadError(q.error) !== "forbidden"
   );
   const retryFailed = () => {
-    if (bank.isError) void bank.refetch();
-    if (payroll.isError) void payroll.refetch();
+    for (const q of reads) if (q.isError) void q.refetch();
   };
   const chips = buildNeedsYouChips(
     {
@@ -102,7 +114,7 @@ export function NeedsYouStrip({
           compact
           error={failedRead.error}
           onRetry={retryFailed}
-          retrying={bank.isFetching || payroll.isFetching}
+          retrying={reads.some((q) => q.isFetching)}
           forbiddenDescription={tt["dashboard.loadForbiddenBody"]}
           testId="needs-you-load-error"
         />
