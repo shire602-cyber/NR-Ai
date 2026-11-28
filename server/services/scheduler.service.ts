@@ -11,6 +11,7 @@ import {
   type ReminderSetting,
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
+import { getEnv } from "../config/env";
 import { errorCode } from "../errors";
 import { assertPeriodNotLocked, lockPeriodPolicy } from "./period-lock.service";
 import { allocateInvoiceNumber } from "./invoice-numbering.service";
@@ -597,6 +598,12 @@ function registerBuiltInJobs() {
 }
 
 export function initScheduler() {
+  if (!getEnv().BACKGROUND_JOBS_ENABLED) {
+    log.info(
+      "Background jobs disabled (BACKGROUND_JOBS_ENABLED=false): no scheduled jobs or outbox pollers started"
+    );
+    return;
+  }
   log.info("Initializing background scheduler...");
   registerBuiltInJobs();
   const started = startRegisteredJobs();

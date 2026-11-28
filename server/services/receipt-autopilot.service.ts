@@ -44,6 +44,7 @@ import { evaluateAutoPostGate } from "./classification-feedback.util";
 import { errorMessage } from "../errors";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { vatWithoutTrnMessage } from "../../shared/receipt-amounts";
+import { isOwnTrn } from "../../shared/bill-capture";
 
 const log = createLogger("receipt-autopilot");
 
@@ -269,7 +270,12 @@ export async function runAutopilot(
   // TRN may have been computed by the model rather than printed (an unregistered supplier's
   // total), so it is never booked unattended. VAT-free receipts are unaffected. Callers that skip
   // normalizeOcrJson (POST /api/ai/autopilot/process) are covered too.
-  const vatWithoutTrn = vatAmount > 0 && !validateUaeTrn(ocr.supplierTrn ?? null).valid;
+  // The company's own TRN (printed as the buyer on a B2B invoice) is not the supplier's.
+  const company = await storage.getCompany(companyId);
+  const supplierTrnUsable =
+    validateUaeTrn(ocr.supplierTrn ?? null).valid &&
+    !isOwnTrn(ocr.supplierTrn, company?.trnVatNumber ?? null);
+  const vatWithoutTrn = vatAmount > 0 && !supplierTrnUsable;
   const shouldAutoPost =
     config.autopilotEnabled &&
     !vatWithoutTrn &&
@@ -279,7 +285,7 @@ export async function runAutopilot(
     !!paymentAccountId &&
     netAmount > 0 &&
     isAed &&
-    baseCurrencyOf(await storage.getCompany(companyId)) === "AED" &&
+    baseCurrencyOf(company) === "AED" &&
     !ocr.needsReview;
 
   if (!shouldAutoPost) {

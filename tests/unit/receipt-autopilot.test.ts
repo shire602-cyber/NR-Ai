@@ -299,6 +299,19 @@ describe("runAutopilot pipeline", () => {
     supplierTrn: "100123456700003",
   };
 
+  it("the company's own TRN read as the supplier TRN is not a valid supplier TRN", async () => {
+    highConfidenceRule();
+    state.company = { id: "co-1", classifierConfig: null as any, trnVatNumber: "100123456700003" };
+    try {
+      const result = await runAutopilot("co-1", "user-1", ocr);
+      expect(result).toMatchObject({ autoPosted: false, queuedForReview: true });
+      expect(result.reviewNote?.code).toBe("VAT_NO_TRN");
+      expect(state.journalEntries).toHaveLength(0);
+    } finally {
+      state.company = { id: "co-1", classifierConfig: null as any };
+    }
+  });
+
   it("VAT without a valid supplier TRN is queued with a VAT_NO_TRN note, never auto-posted", async () => {
     highConfidenceRule();
     const result = await runAutopilot("co-1", "user-1", { ...ocr, supplierTrn: null });
