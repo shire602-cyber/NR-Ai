@@ -638,3 +638,51 @@ describe("Receipt OCR request deadline", () => {
     }
   });
 });
+
+describe("non-VAT fee receipts add up through buildResult", () => {
+  const cases: Array<[string, string, [number, number, number]]> = [
+    ["tourism only", "Grand Hotel\nTourism tax 10.00\nTotal 110.00", [105.24, 4.76, 110]],
+    ["subtotal, VAT, fee", "Hotel\nSubtotal 100\nVAT 5\nTourism fee 10\nTotal 115", [110, 5, 115]],
+    [
+      "restaurant service charge",
+      "Restaurant\nSubtotal 100.00\nService charge 10.00\nVAT 5% 5.50\nTotal 115.50",
+      [110, 5.5, 115.5],
+    ],
+    ["Arabic municipality", "فندق\nضريبة البلدية 10.00\nالاجمالي 110.00", [105.24, 4.76, 110]],
+  ];
+  it.each(cases)(
+    "%s: no AMOUNT_MISMATCH, and the client accepts the figures",
+    async (_n, content, want) => {
+      const res = await post(appWith({}), { companyId: COMPANY, content });
+      expect(res.status).toBe(200);
+      expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual(want);
+      const codes = res.body.validationIssues.map((i: any) => i.code);
+      expect(codes).not.toContain("AMOUNT_MISMATCH");
+      const { approvedReceiptAmounts } =
+        await import("../../client/src/lib/receipt-review-amounts");
+      expect(
+        approvedReceiptAmounts({
+          subtotal: res.body.subtotal,
+          vatAmount: res.body.vatAmount,
+          total: res.body.total,
+        })
+      ).not.toBeNull();
+    }
+  );
+});
+
+describe("text-parser fallback keeps the parser's review issues", () => {
+  it("tourism-only receipt with no AI provider returns NON_VAT_FEE and VAT_DERIVED", async () => {
+    const res = await post(appWith({}), {
+      companyId: COMPANY,
+      content: "Grand Hotel\nTourism tax 10.00\nTotal 110.00",
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.ocrSource).toBe("text-parser");
+    expect(res.body).toMatchObject({ subtotal: 105.24, vatAmount: 4.76, total: 110 });
+    const codes = res.body.validationIssues.map((i: any) => i.code);
+    expect(codes).toContain("NON_VAT_FEE");
+    expect(codes).toContain("VAT_DERIVED");
+    expect(codes.filter((c: string) => c === "VAT_DERIVED")).toHaveLength(1);
+  });
+});

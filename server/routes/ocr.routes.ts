@@ -304,7 +304,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
           },
           "AI OCR unavailable; used deterministic text parser fallback"
         );
-        return { ...parsed, _ocrSource: "text-parser" };
+        return { ...parsed, _issues: parsed.validationIssues, _ocrSource: "text-parser" };
       };
 
       if (!anthropic && !openai) {

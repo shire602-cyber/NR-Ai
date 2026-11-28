@@ -18,7 +18,7 @@ const CASES: Row[] = [
   [`مقهى\nرقم التسجيل الضريبي 100123456700003\n${AR_T}`, 100, 5, 105, 5, ["VAT_DERIVED"]],
   // The 6 misfires: a non-VAT tax or label that happens to end in 0 is not a zero VAT line.
   [`Cafe\nExcise tax 0.00\n${T}`, 100, 5, 105, 5, ["VAT_DERIVED"]],
-  [`Cafe\nTourism tax 0.00\n${T}`, 100, 5, 105, 5, ["VAT_DERIVED"]],
+  [`Cafe\nTourism tax 0.00\n${T}`, 100, 5, 105, 5, ["NON_VAT_FEE", "VAT_DERIVED"]],
   [`Cafe\nTotal before tax 0.00\n${T}`, 100, 5, 105, 5, ["VAT_DERIVED"]],
   [`Cafe\nTax 0 items\n${T}`, 100, 5, 105, 5, ["VAT_DERIVED"]],
   [`Cafe\nTax Invoice No 0\n${T}`, 100, 5, 105, 5, ["VAT_DERIVED"]],
