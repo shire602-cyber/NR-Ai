@@ -19,6 +19,7 @@ import { dueDateFromTerms, prepareSalesLines, termsFromDays } from "./invoice-li
 import { issueInvoice, resolveCustomerHeader } from "./invoice-posting.service";
 import { getRate } from "./fx/rates";
 import { fromFils, mulRate } from "../../shared/money";
+import { uaeToday } from "../../shared/uae-date";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { generateInvoicePDF } from "./pdf-invoice.service";
 import { resolveEmailLanguage } from "./email-layout";
@@ -616,16 +617,16 @@ function advanceByInterval(date: Date, interval: string): Date {
   const next = new Date(date);
   switch (interval) {
     case "weekly":
-      next.setDate(next.getDate() + 7);
+      next.setUTCDate(next.getUTCDate() + 7);
       break;
     case "monthly":
-      next.setMonth(next.getMonth() + 1);
+      next.setUTCMonth(next.getUTCMonth() + 1);
       break;
     case "quarterly":
-      next.setMonth(next.getMonth() + 3);
+      next.setUTCMonth(next.getUTCMonth() + 3);
       break;
     case "yearly":
-      next.setFullYear(next.getFullYear() + 1);
+      next.setUTCFullYear(next.getUTCFullYear() + 1);
       break;
   }
   return next;
@@ -746,7 +747,7 @@ export async function generateDueRecurringInvoices(): Promise<number> {
           return note("invalid", `Template lines are invalid: ${(err as Error)?.message}`, true);
         }
 
-        const dateIso = now.toISOString().slice(0, 10);
+        const dateIso = uaeToday(now);
         const invoiceDate = new Date(`${dateIso}T00:00:00.000Z`);
         await lockPeriodPolicy(tx, template.companyId, "shared");
         try {
