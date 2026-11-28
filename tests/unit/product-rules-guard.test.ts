@@ -32,11 +32,7 @@ const countryAndCurrencyOptions = new Map<string, readonly string[]>([
     (locale) =>
       [
         `client/src/locales/${locale}/pageLabels.json`,
-        [
-          "pageLabels.sARSaudiRiyal",
-          "pageLabels.companySettings.currency.SAR",
-          "pageLabels.companySettings.country.SA",
-        ],
+        ["pageLabels.sARSaudiRiyal", "pageLabels.companySettings.currency.SAR"],
       ] as const
   ),
 ]);

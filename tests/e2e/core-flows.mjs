@@ -820,7 +820,9 @@ async function expiredTrialJourney(h) {
       });
       expect(legacy.status === 200, `seed existing Saudi address ${legacy.status}`);
       await goto(page, "/settings/company");
-      await tid(page, "select-address-country").getByText(saudi, { exact: true }).waitFor();
+      await tid(page, "select-address-country")
+        .getByText(h.ar ? "أخرى (قيمة قديمة)" : "Other (legacy value)", { exact: false })
+        .waitFor();
       await click(page, "select-address-country");
       expect(
         (await page.getByRole("option", { name: saudi, exact: true }).count()) === 0,

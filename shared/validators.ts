@@ -36,13 +36,6 @@ export const currencyCodeSchema = z
   .string()
   .regex(/^[A-Z]{3}$/, "Currency must be a 3-letter ISO 4217 code");
 
-export const moneySchema = z
-  .number()
-  .finite()
-  .refine((n) => Math.round(n * 100) === n * 100, {
-    message: "Money values must have at most 2 decimal places",
-  });
-
 // ── UAE TRN (Tax Registration Number) ────────────────────────────
 // FTA-issued TRN is 15 digits. Used by company tax setup, contact records,
 // and the customer-facing registration form.

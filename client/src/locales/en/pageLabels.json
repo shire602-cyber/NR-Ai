@@ -995,7 +995,7 @@
   "pageLabels.companySettings.emirate.ras_al_khaimah": "Ras Al Khaimah",
   "pageLabels.companySettings.emirate.fujairah": "Fujairah",
   "pageLabels.companySettings.country.AE": "United Arab Emirates",
-  "pageLabels.companySettings.country.SA": "Saudi Arabia",
+  "pageLabels.companySettings.country.legacy": "Other (legacy value)",
   "pageLabels.companySettings.country.QA": "Qatar",
   "pageLabels.companySettings.country.KW": "Kuwait",
   "pageLabels.companySettings.country.BH": "Bahrain",
