@@ -62,8 +62,8 @@ Field rules:
 - merchant: the exact supplier name as printed (keep Arabic spelling if the name is Arabic).
 - date: transaction date as YYYY-MM-DD. Day-first is normal in the UAE. Convert Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩) and Hijri-looking prefixes carefully; if no date is printed use null.
 - invoiceNumber: invoice / receipt / transaction number, or null.
-- subtotal: amount BEFORE VAT. vatPercentage: VAT rate (5 for standard UAE supplies, 0 for zero-rated/exempt). vatAmount: VAT charged. total: the grand total INCLUDING VAT.
-- If only one amount is shown treat it as the total and compute subtotal = total / 1.05. If subtotal and VAT are shown but no total, total = subtotal + VAT. subtotal + vatAmount must equal total.
+- subtotal: amount BEFORE VAT, only if printed. vatPercentage: VAT rate as printed (5 for standard UAE supplies, 0 for zero-rated/exempt), or null if not printed. vatAmount: the VAT charged, only if printed (use 0 only when the document explicitly shows VAT of 0.00). total: the grand total INCLUDING VAT, as printed.
+- Extract ONLY figures that are printed on the document. NEVER calculate, infer or back out a missing figure: if the subtotal or the VAT amount is not printed, return null for it, even when only a total is shown. Do not divide the total by 1.05 and do not add VAT to a subtotal. Our system reconciles and flags missing figures itself.
 - currency: ISO 4217 code (AED unless clearly otherwise; "د.إ"/"درهم" = AED, "ر.س" = SAR).
 - category: one of ${VALID_RECEIPT_CATEGORIES.join(", ")}.
 - supplierTrn: the supplier's 15-digit UAE Tax Registration Number (labelled TRN / الرقم الضريبي) or null. Do not guess.

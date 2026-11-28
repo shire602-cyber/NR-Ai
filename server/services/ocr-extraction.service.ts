@@ -16,11 +16,13 @@ import { createOcrClients, summarizeOcrProviderError } from "./ocr-provider-clie
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { deriveConfidenceBand, type ValidationIssue } from "../../shared/receipt-confidence";
 import {
+  aiVatRate,
   amountMismatchMessage,
   hasVatFigure,
   reconcileReceiptAmounts,
   vatDerivedMessage,
   vatDerivedSource,
+  vatWithoutTrnMessage,
 } from "../../shared/receipt-amounts";
 import { extractReceipt, RECEIPT_EXTRACTION_PROMPT } from "./ai/receipt-extraction";
 import { normalizeModelConfidence, type ReceiptExtraction } from "./ai/structured-output";
@@ -85,9 +87,11 @@ export function normalizeOcrJson(
   const raw = input as LooseOcrJson | null | undefined;
   const sIn = parseNonNegative(raw?.subtotal);
   const vIn = parseNonNegative(raw?.vatAmount);
-  // A missing rate defaults to 5% (UAE); an explicit 0 means zero-rated.
-  const vatRateDefaulted = raw?.vatPercentage === null || raw?.vatPercentage === undefined;
-  const vatPercentage = vatRateDefaulted ? 5 : parseNonNegative(raw?.vatPercentage);
+  // A missing rate defaults to 5% (UAE); an explicit 0 rate or an explicit VAT amount of 0 means zero-rated.
+  const { vatPercentage, rateDefaulted: vatRateDefaulted } = aiVatRate(
+    raw?.vatAmount,
+    raw?.vatPercentage
+  );
   const tIn = parseNonNegative(raw?.total);
 
   // Same reconciliation as the interactive OCR route (shared/receipt-amounts.ts, integer fils,
@@ -127,6 +131,15 @@ export function normalizeOcrJson(
       message: vatDerivedMessage(derivedVat, vatPercentage, vatDerivedFrom, vatRateDefaulted),
     });
   }
+  const trn = validateUaeTrn(typeof raw?.supplierTrn === "string" ? raw.supplierTrn : null);
+  if (derivedVat > 0 && !trn.trn && !vatDerivedFrom) {
+    // A VAT figure with no valid supplier TRN cannot be trusted as a read tax-invoice figure.
+    reviewIssues.push({
+      code: "VAT_NO_TRN",
+      severity: "warning",
+      message: vatWithoutTrnMessage(derivedVat),
+    });
+  }
 
   const category =
     typeof raw?.category === "string" &&
@@ -144,7 +157,6 @@ export function normalizeOcrJson(
       }))
     : [];
 
-  const trn = validateUaeTrn(typeof raw?.supplierTrn === "string" ? raw.supplierTrn : null);
   // A missing model confidence is LOW (R05-15); the band decides whether intake may auto-post.
   const extractionConfidence = normalizeModelConfidence(raw?.confidence);
   const band = deriveConfidenceBand({ extractionConfidence });

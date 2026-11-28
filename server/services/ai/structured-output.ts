@@ -76,6 +76,20 @@ const amount = z.preprocess((v) => {
   return v;
 }, z.number().finite().min(0));
 
+/**
+ * A printed figure that may be absent: null (or blank) means "not printed on the document" and is
+ * kept as null, NOT coerced to 0, so an explicit "VAT 0.00" (0) stays distinguishable from a VAT
+ * amount that was never shown (null). Downstream reconciliation derives and flags missing figures.
+ */
+const printedAmount = z.preprocess((v) => {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "string") {
+    const n = parseFloat(v.replace(/,/g, ""));
+    return Number.isNaN(n) ? v : n;
+  }
+  return v;
+}, z.number().finite().min(0).nullable());
+
 const lineItemSchema = z.object({
   description: z.string().max(500).catch(""),
   quantity: amount.catch(1),
@@ -87,11 +101,11 @@ export const receiptExtractionSchema = z.object({
   merchant: z.string().min(1).max(300),
   date: z.string().nullable().optional(),
   invoiceNumber: z.string().nullable().optional(),
-  subtotal: amount.optional().default(0),
+  subtotal: printedAmount.optional().default(null),
   vatPercentage: z
     .preprocess((v) => (v === "" ? null : v), z.coerce.number().min(0).max(100).nullable())
     .optional(),
-  vatAmount: amount.optional().default(0),
+  vatAmount: printedAmount.optional().default(null),
   total: amount.optional().default(0),
   currency: z.string().max(10).nullable().optional(),
   category: z.string().nullable().optional(),
@@ -132,9 +146,9 @@ export const RECEIPT_JSON_SCHEMA = {
     merchant: { type: "string" },
     date: nullable("string"),
     invoiceNumber: nullable("string"),
-    subtotal: { type: "number" },
+    subtotal: nullable("number"),
     vatPercentage: nullable("number"),
-    vatAmount: { type: "number" },
+    vatAmount: nullable("number"),
     total: { type: "number" },
     currency: nullable("string"),
     category: { type: "string", enum: [...VALID_RECEIPT_CATEGORIES] },

@@ -294,6 +294,8 @@ describe("R05-19a email-forward capture", () => {
             total: 105,
             subtotal: 100,
             vatAmount: 5,
+            supplierTrn: "100123456700003",
+            // no confidence on purpose
           },
         },
       ],
@@ -305,8 +307,19 @@ describe("R05-19a email-forward capture", () => {
     expect(db.receipts[0].posted).toBe(false);
     // the extractor marks it for human review, which the autopilot gate honours
     const { normalizeOcrJson } = await import("../../server/services/ocr-extraction.service");
-    expect(normalizeOcrJson({ merchant: "Blurry Shop", total: 105 }).needsReview).toBe(true);
-    const clear = { merchant: "Clear Shop", subtotal: 100, vatAmount: 5, total: 105 };
+    // Explicit VAT figures and a valid TRN: the ONLY reason left to hold it is the missing
+    // confidence, so this fails if the missing-confidence rule regresses.
+    const explicit = {
+      merchant: "Blurry Shop",
+      subtotal: 100,
+      vatAmount: 5,
+      total: 105,
+      supplierTrn: "100123456700003",
+    };
+    const blurry = normalizeOcrJson(explicit);
+    expect(blurry.reviewIssues).toEqual([]);
+    expect(blurry.needsReview).toBe(true);
+    const clear = { ...explicit, merchant: "Clear Shop" };
     expect(normalizeOcrJson({ ...clear, confidence: 0.95 }).needsReview).toBe(false);
     expect(normalizeOcrJson({ ...clear, confidence: 0.95 }, { issueCount: 1 }).needsReview).toBe(
       true
@@ -331,6 +344,8 @@ describe("R05-19a email-forward capture", () => {
     expect(db.receipts).toHaveLength(0);
   });
 });
+
+const VALID_TRN = "100123456700003";
 
 describe("email intake: derived VAT never auto-posts", () => {
   /** A company that has Receipt Autopilot on and a trusted rule for the merchant. */
@@ -400,25 +415,140 @@ describe("email intake: derived VAT never auto-posts", () => {
 
   it("a receipt with an explicit positive VAT line still auto-posts when otherwise confident", async () => {
     enableAutopilot();
-    extraction({ subtotal: 100, vatAmount: 5, total: 105, vatPercentage: 5 });
+    extraction({
+      subtotal: 100,
+      vatAmount: 5,
+      total: 105,
+      vatPercentage: 5,
+      supplierTrn: VALID_TRN,
+    });
     const res = await postWebhook(samplePayload, sign(samplePayload));
     expect(res.body).toMatchObject({ autoPosted: 1, queuedForReview: 0 });
     expect(db.postedEntries).toHaveLength(1);
     const { normalizeOcrJson } = await import("../../server/services/ocr-extraction.service");
-    const r = normalizeOcrJson({ subtotal: 100, vatAmount: 5, total: 105, confidence: 0.95 });
+    const r = normalizeOcrJson({
+      subtotal: 100,
+      vatAmount: 5,
+      total: 105,
+      supplierTrn: VALID_TRN,
+      confidence: 0.95,
+    });
     expect(r.reviewIssues).toEqual([]);
   });
 
   it("a mismatching receipt is queued for review, not auto-posted", async () => {
     enableAutopilot();
     // 100 + 5 VAT read, but the total says 130 (service charge / misread)
-    extraction({ subtotal: 100, vatAmount: 5, total: 130 });
+    extraction({ subtotal: 100, vatAmount: 5, total: 130, supplierTrn: VALID_TRN });
     const res = await postWebhook(samplePayload, sign(samplePayload));
     expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
     expect(db.postedEntries).toHaveLength(0);
     const { normalizeOcrJson } = await import("../../server/services/ocr-extraction.service");
-    const r = normalizeOcrJson({ subtotal: 100, vatAmount: 5, total: 130, confidence: 0.95 });
+    // The mock-model run above is held by the upstream sanityCheckReceipt (AMOUNT_MISMATCH) even on
+    // the base; the normalizeOcrJson assertions below are what pin the new reconcile layer.
+    const r = normalizeOcrJson({
+      subtotal: 100,
+      vatAmount: 5,
+      total: 130,
+      supplierTrn: VALID_TRN,
+      confidence: 0.95,
+    });
     expect(r.needsReview).toBe(true);
     expect(r.reviewIssues?.map((i) => i.code)).toEqual(["AMOUNT_MISMATCH"]);
+  });
+
+  it("a model that FOLLOWS THE OLD PROMPT (100 / 5 / 105, no TRN) is queued, never auto-posted", async () => {
+    enableAutopilot();
+    // What a compliant model returned for an unregistered supplier's 105.00 receipt when the
+    // prompt told it to compute subtotal = total / 1.05: it looks like an explicit VAT figure.
+    extraction({ subtotal: 100, vatPercentage: 5, vatAmount: 5, total: 105, supplierTrn: null });
+    const res = await postWebhook(samplePayload, sign(samplePayload));
+    expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
+    expect(db.postedEntries).toHaveLength(0);
+    expect(db.receipts[0]).toMatchObject({ posted: false, autoPosted: false });
+    const { normalizeOcrJson } = await import("../../server/services/ocr-extraction.service");
+    const r = normalizeOcrJson({
+      subtotal: 100,
+      vatPercentage: 5,
+      vatAmount: 5,
+      total: 105,
+      confidence: 0.95,
+    });
+    expect(r.needsReview).toBe(true);
+    expect(r.reviewIssues?.map((i) => i.code)).toEqual(["VAT_NO_TRN"]);
+  });
+
+  it("the same receipt with a valid supplier TRN auto-posts", async () => {
+    enableAutopilot();
+    extraction({
+      subtotal: 100,
+      vatPercentage: 5,
+      vatAmount: 5,
+      total: 105,
+      supplierTrn: VALID_TRN,
+    });
+    const res = await postWebhook(samplePayload, sign(samplePayload));
+    expect(res.body).toMatchObject({ autoPosted: 1, queuedForReview: 0 });
+    expect(db.postedEntries).toHaveLength(1);
+  });
+
+  it("an invalid TRN does not unlock auto-post", async () => {
+    enableAutopilot();
+    extraction({ subtotal: 100, vatPercentage: 5, vatAmount: 5, total: 105, supplierTrn: "12345" });
+    const res = await postWebhook(samplePayload, sign(samplePayload));
+    expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
+  });
+
+  it("a VAT-free receipt (explicit VAT 0.00) still auto-posts without a TRN", async () => {
+    enableAutopilot();
+    extraction({ subtotal: 105, vatAmount: 0, total: 105, supplierTrn: null });
+    const res = await postWebhook(samplePayload, sign(samplePayload));
+    expect(res.body).toMatchObject({ autoPosted: 1, queuedForReview: 0 });
+    expect(db.receipts[0]).toMatchObject({ amount: 105, vatAmount: 0 });
+  });
+
+  it("nullable schema: subtotal null, VAT null, total 105 reaches review as VAT_DERIVED", async () => {
+    enableAutopilot();
+    extraction({ subtotal: null, vatPercentage: null, vatAmount: null, total: 105 });
+    const res = await postWebhook(samplePayload, sign(samplePayload));
+    expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
+    expect(db.postedEntries).toHaveLength(0);
+    const { normalizeOcrJson } = await import("../../server/services/ocr-extraction.service");
+    const r = normalizeOcrJson({ subtotal: null, vatAmount: null, total: 105, confidence: 0.95 });
+    expect(r.reviewIssues?.map((i) => i.code)).toEqual(["VAT_DERIVED"]);
+  });
+
+  it("explicit VAT 0 from the model means zero-rated; null means not printed", async () => {
+    const { normalizeOcrJson } = await import("../../server/services/ocr-extraction.service");
+    const zero = normalizeOcrJson({ merchant: "S", subtotal: null, vatAmount: 0, total: 105 });
+    expect(zero).toMatchObject({ amount: 105, vatAmount: 0, total: 105 });
+    expect(zero.reviewIssues).toEqual([]);
+    const missing = normalizeOcrJson({
+      merchant: "S",
+      subtotal: null,
+      vatAmount: null,
+      total: 105,
+    });
+    expect(missing).toMatchObject({ amount: 100, vatAmount: 5 });
+  });
+
+  it("the prompt tells the model never to derive missing figures", async () => {
+    const { RECEIPT_EXTRACTION_PROMPT } =
+      await import("../../server/services/ai/receipt-extraction");
+    expect(RECEIPT_EXTRACTION_PROMPT).not.toMatch(/total \/ 1\.05/);
+    expect(RECEIPT_EXTRACTION_PROMPT).toMatch(/NEVER calculate/);
+  });
+
+  it("a subtotal + total pair exactly 5% apart is held upstream by the 1% sanity check", async () => {
+    // normalizeOcrJson alone reads {subtotal 100, total 105} as 5% VAT and does not flag it
+    // (gap == rate x subtotal). The real intake path still queues it because extractReceipt's
+    // sanityCheckReceipt raises AMOUNT_MISMATCH (|100 + 0 - 105| > 1% of total) and the poller
+    // passes issueCount. If that upstream check or the issueCount hand-off changes, this
+    // test must fail rather than reopen the hole.
+    enableAutopilot();
+    extraction({ subtotal: 100, vatAmount: null, total: 105, supplierTrn: VALID_TRN });
+    const res = await postWebhook(samplePayload, sign(samplePayload));
+    expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
+    expect(db.postedEntries).toHaveLength(0);
   });
 });

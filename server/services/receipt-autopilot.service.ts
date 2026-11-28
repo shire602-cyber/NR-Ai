@@ -42,6 +42,8 @@ import type { Account } from "../../shared/schema";
 import { DEFAULT_CLASSIFIER_CONFIG } from "../../shared/schema";
 import { evaluateAutoPostGate } from "./classification-feedback.util";
 import { errorMessage } from "../errors";
+import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
+import { vatWithoutTrnMessage } from "../../shared/receipt-amounts";
 
 const log = createLogger("receipt-autopilot");
 
@@ -87,6 +89,8 @@ export interface AutopilotResult {
   queuedForReview: boolean;
   /** The transaction_classifications.id we recorded for ML feedback. */
   classificationId: string;
+  /** Why the receipt was queued although everything else allowed auto-post (shown to the reviewer). */
+  reviewNote?: { code: string; message: string };
 }
 
 // =============================================
@@ -261,8 +265,14 @@ export async function runAutopilot(
     typeof config.autopostThreshold === "number"
       ? config.autopostThreshold
       : DEFAULT_CLASSIFIER_CONFIG.autopostThreshold;
+  // Input VAT needs a tax invoice, which carries the supplier's TRN. A VAT figure with no valid
+  // TRN may have been computed by the model rather than printed (an unregistered supplier's
+  // total), so it is never booked unattended. VAT-free receipts are unaffected. Callers that skip
+  // normalizeOcrJson (POST /api/ai/autopilot/process) are covered too.
+  const vatWithoutTrn = vatAmount > 0 && !validateUaeTrn(ocr.supplierTrn ?? null).valid;
   const shouldAutoPost =
     config.autopilotEnabled &&
+    !vatWithoutTrn &&
     classification.confidence >= autopostThreshold &&
     ruleAcceptedEnough &&
     !!expenseAccountId &&
@@ -280,6 +290,9 @@ export async function runAutopilot(
       autoPosted: false,
       queuedForReview: true,
       classificationId: classificationRow.id,
+      ...(vatWithoutTrn
+        ? { reviewNote: { code: "VAT_NO_TRN", message: vatWithoutTrnMessage(vatAmount) } }
+        : {}),
     };
   }
 
