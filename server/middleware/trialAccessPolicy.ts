@@ -29,6 +29,10 @@ function isTrialRecoveryRequest(method: string, path: string): boolean {
   if (["GET", "HEAD", "OPTIONS"].includes(method) || isSignedProviderCallback(method, path))
     return true;
   if (/^\/companies\/[^/]+\/billing(?:\/|$)/i.test(path)) return true;
+  // Reading your own data out stays possible after the trial: taking a current full backup.
+  // Only the create route is lifted; restore, clone and delete stay locked, and the route keeps
+  // its own auth, backups.manage RBAC and tenant checks.
+  if (method === "POST" && /^\/companies\/[^/]+\/backups$/i.test(path)) return true;
   if (
     /^\/(auth|billing|admin|firm|nra|client-portal|portal-invitations|public|payslips|team-invitations|invitations)(\/|$)/i.test(
       path
