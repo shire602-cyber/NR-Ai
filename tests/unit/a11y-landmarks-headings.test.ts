@@ -107,14 +107,15 @@ describe("landmarks", () => {
     expect(catalogs.en["marketing.trialBannerLabel"]).toBeTruthy();
   });
 
-  it("keeps the sign-in footnote inside the main landmark", async () => {
+  it("puts the sign-in footnote in a complementary landmark, outside main", async () => {
     const { AuthLayout } = await import("../../client/src/components/auth/AuthLayout");
     await act(async () => {
       root.render(createElement(AuthLayout, { variant: "login" }, createElement("form")));
     });
     const foot = container.querySelector(".mk-auth__foot");
     expect(foot).not.toBeNull();
-    expect(foot!.closest("main")).toBe(container.querySelector("main"));
+    expect(foot!.tagName).toBe("ASIDE");
+    expect(foot!.closest("main")).toBeNull();
   });
 });
 
