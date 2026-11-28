@@ -1320,7 +1320,17 @@ async function collectBadDebtRelief(
             (split_part(last.idempotency_key, ':', 3) = 'recover'
               OR (last.reversed_entry_id = c.journal_entry_id AND EXISTS (
                 SELECT 1 FROM journal_lines jl WHERE jl.entry_id = last.id AND jl.system_vat
-              ))) AS recovery_in_ledger
+              ))
+              OR (c.reversal_entry_id IS NULL AND c.reversed_at IS NOT NULL AND (
+                SELECT COALESCE(SUM(ROUND((jl.credit - jl.debit) * 100)), 0)
+                  FROM journal_entries je
+                  JOIN journal_lines jl ON jl.entry_id = je.id AND jl.system_vat
+                 WHERE je.company_id = c.company_id AND je.source = 'vat_bad_debt_relief'
+                   AND je.source_id = c.id AND je.status = 'posted'
+                   AND je.reversed_by_entry_id IS NULL
+                   AND split_part(je.idempotency_key, ':', 3) = 'recover'
+                   AND split_part(je.idempotency_key, ':', 4) <> 'legacy-undo'
+              ) >= ROUND(c.vat_amount * 100))) AS recovery_in_ledger
        FROM bad_debt_relief_claims c JOIN invoices i ON i.id = c.invoice_id
        LEFT JOIN journal_entries last ON last.id = c.reversal_entry_id AND last.company_id = c.company_id
          AND last.source = 'vat_bad_debt_relief' AND last.source_id = c.id AND last.status = 'posted'

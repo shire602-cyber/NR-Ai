@@ -768,6 +768,39 @@ describe("Accounting audit — VAT 201", () => {
     }
   );
 
+  it("does not count a fully recovered legacy claim again when manually reversed", async () => {
+    const t = await vatTenant();
+    const { invoiceId, claimId } = await claimedInvoice(t);
+    const companyId = t.company.id;
+    const bank = await accountByCode(t, "1020");
+    const payment = await t.as.post(`/api/companies/${companyId}/invoices/${invoiceId}/payments`, {
+      amount: 1050,
+      date: "2026-10-05",
+      paymentAccountId: bank.id,
+    });
+    expect(payment.status, payment.text).toBe(201);
+    expect(payment.body.badDebtReliefReversal).toMatchObject({ remainingVatFils: 0 });
+
+    // A legacy claim can still be open even though the recovery journals cover all its VAT.
+    await h.sql(
+      `UPDATE bad_debt_relief_claims
+          SET status = 'claimed', reversed_at = NULL, reversal_entry_id = NULL
+        WHERE id = $1`,
+      [claimId]
+    );
+    const reversal = await t.as.post(
+      `/api/companies/${companyId}/vat/bad-debt-relief/${claimId}/reverse`,
+      { date: "2026-10-06", reason: "Close the fully recovered legacy claim" }
+    );
+    expect(reversal.status, reversal.text).toBe(200);
+    expect(
+      await h.sql("SELECT status, reversal_entry_id FROM bad_debt_relief_claims WHERE id = $1", [
+        claimId,
+      ])
+    ).toEqual([{ status: "reversed", reversal_entry_id: null }]);
+    expect((await vatBoxes(t, "2026-10-01", "2026-12-31")).box1bDubaiAdj).toBe(50);
+  });
+
   it("reopens a fully recovered claim when its AED 105 receipt is reversed and restores VAT on repayment", async () => {
     const t = await vatTenant();
     const { invoiceId, claimId } = await claimedInvoice(t);
