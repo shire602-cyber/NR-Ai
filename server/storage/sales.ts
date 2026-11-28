@@ -786,7 +786,7 @@ export class SalesStorage extends LedgerStorage {
       const { entry } = await postJournal(
         {
           companyId: input.companyId,
-          date: input.date.toISOString().slice(0, 10),
+          date: uaeToday(input.date),
           ...journalMemo("paymentReceived", {
             ref: lockedInvoice.number || input.invoiceId,
             method: input.method,

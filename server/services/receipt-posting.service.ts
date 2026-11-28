@@ -32,6 +32,7 @@ import { has, resolve } from "../platform/service-registry";
 import type { FxGetRate } from "./fx";
 import { recordAudit } from "./audit.service";
 import { companyIsVatRegistered } from "../tax/vat-registration";
+import { uaeToday } from "@shared/uae-date";
 
 /** systemVat (B1: NC1): the VAT line this service derives; the kernel lets it sit on 1050 / 2020. */
 type JournalLineInsert = Omit<InsertJournalLine, "entryId"> & { systemVat?: boolean };
@@ -81,9 +82,11 @@ function assertSupplyType(type: string, vatFils: number, index?: number): string
   return type;
 }
 
-function receiptEntryDate(receipt: Pick<Receipt, "date">): Date {
-  const parsed = new Date(receipt.date ?? new Date());
-  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+export function receiptEntryDate(receipt: Pick<Receipt, "date">): Date {
+  // An undated receipt takes the Dubai business day (UTC midnight), not the raw instant.
+  const today = () => new Date(`${uaeToday()}T00:00:00.000Z`);
+  const parsed = receipt.date ? new Date(receipt.date) : today();
+  return Number.isNaN(parsed.getTime()) ? today() : parsed;
 }
 
 function assertAccountUsable(account: Account | undefined, kind: "expense" | "payment"): Account {

@@ -42,6 +42,7 @@ import {
   writeOffRunningFirmTimers,
   type FirmContext,
 } from "./scope";
+import { uaeToday } from "@shared/uae-date";
 
 export const SERVICE_VAT_RATE = "0.05";
 
@@ -322,7 +323,7 @@ export async function respondToLetter(
       const values = {
         monthlyFee: Number(sent.feeAmount),
         billingCycle: sent.billingCycle ?? "monthly",
-        nextBillingDate: now.toISOString().slice(0, 10),
+        nextBillingDate: uaeToday(now),
         updatedAt: now,
       };
       if (existing) {
@@ -460,7 +461,7 @@ export async function startTimer(
       throw new DomainError("FIRM_PERMISSION_DENIED", 403);
     }
     const now = new Date();
-    const entry = { ...input, entryDate: now.toISOString().slice(0, 10), minutes: 0 };
+    const entry = { ...input, entryDate: uaeToday(now), minutes: 0 };
     const row = await insertScopedTimeEntry(tx, current, entry, now);
     if (row) return row;
 
@@ -776,7 +777,7 @@ export async function runRecurringBilling(
   asOf: Date = new Date()
 ) {
   if (!companyIds.length) return { created: 0, invoices: [] };
-  const today = asOf.toISOString().slice(0, 10);
+  const today = uaeToday(asOf);
   const due = await db
     .select()
     .from(engagements)
