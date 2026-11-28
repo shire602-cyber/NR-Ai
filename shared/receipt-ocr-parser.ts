@@ -258,48 +258,64 @@ const BARE_ZERO_RATE_LINE = new RegExp(
 );
 
 // Non-recoverable fees printed next to VAT on hotel and restaurant bills: tourism dirham/tax,
-// municipality fee/tax, service charge. They are never VAT, so these lines are taken out of the
-// text the VAT, subtotal and total readers see ("Tourism tax 10.00" must not become VAT 10.00).
-const FEE_LABEL = new RegExp(
-  [
-    String.raw`\btourism[ \t]*(?:dirhams?|dhs?|tax(?:es)?|fees?|levy|charges?|chg)\b`,
-    String.raw`\btdf\b`,
-    String.raw`\bmunicipal(?:ity)?[ \t]*(?:tax(?:es)?|fees?|charges?|chg|levy)\b`,
-    String.raw`\bmunic?[ \t.]+(?:tax|fees?)\b`,
-    String.raw`\b(?:service|serv|svc)[ \t.]*(?:charges?|chg|fees?)\b`,
-    String.raw`\bcity[ \t]+tax\b`,
-    String.raw`(?:ضريب[ةه]|درهم|رسوم|رسم)[ \t]+السياح[ةه]`,
-    String.raw`(?:ضريب[ةه]|رسوم|رسم)[ \t]+البلدي[ةه]`,
-    String.raw`(?:رسوم|رسم)[ \t]+الخدم[ةه]`,
-  ].join("|"),
-  "i"
-);
-// A line that starts with a real VAT label ("VAT on service charge 0.50") is a VAT line.
-const REAL_VAT_LINE_START = new RegExp(
-  String.raw`^[ \t*#\-•|:]*(?:(?:total|amount|net|sum|اجمالي|مجموع|المجموع)[ \t]+)?(?:vat|value[ \t]+added[ \t]+tax|ضريب[ةه][ \t]+القيم[ةه][ \t]+المضاف[ةه]|ض\.?[ \t]?ق\.?[ \t]?م\.?)`,
+// municipality fee/tax and the service charge line. They are never VAT, so these lines are taken
+// out of the text the VAT, subtotal and total readers see ("Tourism tax 10.00" must not become VAT
+// 10.00). A fee line is only the label at the start of the line, an optional rate and an amount
+// ("TDF-200 cable 100.00", a store named "City Tax Consultants" or a sold "Service fee" item are
+// not fees). "Service charge" is the fee; a sold "service fee" item is not.
+const FEE_LABEL_SOURCE = [
+  String.raw`tourism[ \t]*(?:dirhams?|dhs?|tax(?:es)?|fees?|levy|charges?|chg)(?![a-z])`,
+  String.raw`tdf(?![a-z])`,
+  String.raw`municipal(?:ity)?[ \t]*(?:tax(?:es)?|fees?|charges?|chg|levy)(?![a-z])`,
+  String.raw`munic?[ \t.]+(?:tax|fees?)(?![a-z])`,
+  String.raw`(?:service|serv|svc)[ \t.]*(?:charges?|chg)(?![a-z])`,
+  String.raw`city[ \t]+tax(?![a-z])`,
+  String.raw`(?:ضريب[ةه]|درهم|رسوم|رسم)[ \t]+السياح[ةه]`,
+  String.raw`(?:ضريب[ةه]|رسوم|رسم)[ \t]+البلدي[ةه]`,
+  String.raw`(?:رسوم|رسم)[ \t]+الخدم[ةه]`,
+].join("|");
+const FEE_LINE = new RegExp(
+  String.raw`^[ \t*#\-•|:]*(?:${FEE_LABEL_SOURCE})(?:[ \t]+(?:fees?|tax(?:es)?|charges?|levy))?[ \t:.@(]*` +
+    String.raw`(?:\d+(?:[.,]\d+)?[ \t]*%\)?)?[ \t:]*(?:${CUR})?[ \t]*(\d[\d,]*(?:\.\d+)?)[ \t]*(?:${CUR})?[ \t]*` +
+    String.raw`(?:(${VAT_LABEL}.*))?$`,
   "i"
 );
 
-function feeLineAmount(line: string): number {
-  const withoutRates = line.replace(/\d+(?:[.,]\d+)?[ \t]*%/g, " ");
+// A line with a fee label anywhere but no digits is a name or address ("City Tax Consultants",
+// "Opp. Municipality Tax Office"): not a fee, but its "tax" must not become the VAT label either.
+const FEE_NAME_LINE = new RegExp(`(?<![a-z])(?:${FEE_LABEL_SOURCE})`, "i");
+
+function lastAmount(text: string): number {
+  const withoutRates = text.replace(/\d+(?:[.,]\d+)?[ \t]*%/g, " ");
   const nums = Array.from(withoutRates.matchAll(/\d[\d,]*(?:\.\d+)?/g));
   return nums.length ? parseAmount(nums[nums.length - 1][0]) : 0;
 }
 
 /** Splits fee lines (tourism, municipality, service charge) from the rest of the receipt. */
-function splitFeeLines(lines: string[]): { rest: string[]; feeTotal: number; feeCount: number } {
+function splitFeeLines(lines: string[]): {
+  rest: string[];
+  feeTotal: number;
+  feeVat: number;
+  feeCount: number;
+} {
   const rest: string[] = [];
   let feeTotal = 0;
+  let feeVat = 0;
   let feeCount = 0;
   for (const line of lines) {
-    if (FEE_LABEL.test(line) && !REAL_VAT_LINE_START.test(line)) {
+    const m = FEE_LINE.exec(line);
+    if (m) {
       feeCount += 1;
-      feeTotal += feeLineAmount(line);
+      feeTotal += parseAmount(m[1]);
+      // "Service charge 10% 10.00 VAT 0.50": the VAT printed on the fee line stays VAT.
+      if (m[2]) feeVat += lastAmount(m[2]);
+    } else if (!/d/.test(line) && FEE_NAME_LINE.test(line)) {
+      continue;
     } else {
       rest.push(line);
     }
   }
-  return { rest, feeTotal: round2(feeTotal), feeCount };
+  return { rest, feeTotal: round2(feeTotal), feeVat: round2(feeVat), feeCount };
 }
 
 function asNumber(raw: string | undefined): number | null {
@@ -432,8 +448,8 @@ export function parseReceiptOcrText(
     .map((line) => line.trim())
     .filter(Boolean);
   // Fee lines never feed the VAT, subtotal or total readers.
-  const { rest: lines, feeTotal, feeCount } = splitFeeLines(allLines);
-  const matchText = feeCount > 0 ? lines.join("\n") : normalizedText;
+  const { rest: lines, feeTotal, feeVat, feeCount } = splitFeeLines(allLines);
+  const matchText = lines.length !== allLines.length ? lines.join("\n") : normalizedText;
   const fallbackDate = options.fallbackDate || uaeToday();
 
   const AMT = `(?:${CUR})?\\s*(-?\\d[\\d,]*\\.?\\d{0,2})`;
@@ -450,9 +466,7 @@ export function parseReceiptOcrText(
     ),
   ]);
   const readTotal = total || findLargestLikelyAmount(lines);
-  // The printed total includes the fees; subtotal + VAT is reconciled against it without them.
   const feesInTotal = feeTotal > 0 && (readTotal === 0 || readTotal > feeTotal) ? feeTotal : 0;
-  const fallbackTotal = readTotal > 0 ? round2(readTotal - feesInTotal) : 0;
   const subtotal = findFirstAmount(matchText, [
     /\b(?:sub\s*total|subtotal|amount\s+before\s+(?:vat|tax)|net\s+amount|taxable\s+amount|excl\.?\s*vat)\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     new RegExp(
@@ -462,7 +476,7 @@ export function parseReceiptOcrText(
   ]);
   // "VAT 0%" ending its line must not read the next line's total as its amount.
   const vatSearchText = matchText.replace(BARE_ZERO_RATE_LINE, "$1 0.00");
-  const vatAmount = findFirstAmount(vatSearchText, [
+  const readVatAmount = findFirstAmount(vatSearchText, [
     // The optional "5%" label must be consumed so the percentage is never read as the VAT amount.
     /\b(?:vat|tax|gst)\b(?:\s*@?\s*\d+(?:\.\d+)?\s*%)?[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     new RegExp(
@@ -475,6 +489,8 @@ export function parseReceiptOcrText(
   // A VAT line that prints zero ("VAT 0% AED 0.00", "VAT 0.00") is a read figure, not a missing
   // one, so VAT stays 0 and is never worked back at 5%. A positive printed rate next to a zero
   // amount ("VAT 5% 0.00") contradicts itself: the rate is kept, VAT stays 0 and it goes to review.
+  // VAT printed on a fee line ("Service charge 10% 10.00 VAT 0.50") is real VAT and is added.
+  const vatAmount = round2(readVatAmount + feeVat);
   const zeroVatRead = vatAmount === 0 ? readZeroVatLines(lines) : null;
   const vatRate =
     zeroVatRead?.kind === "zero" ? 0 : zeroVatRead?.kind === "conflict" ? zeroVatRead.rate : 5;
@@ -482,24 +498,48 @@ export function parseReceiptOcrText(
   // A printed rate next to a zero amount is not worked into VAT: the 0.00 stays as read.
   const reconcileRate = zeroVatRead?.kind === "conflict" ? 0 : vatRate;
 
-  // Integer-fils reconciliation (half-up) so subtotal + VAT === total exactly.
-  const {
-    subtotal: derivedSubtotal,
-    vatAmount: derivedVat,
-    total: derivedTotal,
-    mismatch: amountsMismatch,
-  } = reconcileReceiptAmounts({
-    subtotal,
-    vatAmount,
-    total: fallbackTotal,
-    vatPercentage: reconcileRate,
-  });
+  // Integer-fils reconciliation (half-up) so subtotal + VAT === total exactly. The returned
+  // subtotal is total - VAT, so a non-VAT fee (tourism dirham, municipality fee) is part of the net
+  // expense that gets booked; only the VAT worked back from the total leaves the fee out.
+  const reconcileWith = (sub: number, vat: number, tot: number) =>
+    reconcileReceiptAmounts({
+      subtotal: sub,
+      vatAmount: vat,
+      total: tot,
+      vatPercentage: reconcileRate,
+    });
+  let amountInput = { subtotal, vatAmount, total: readTotal };
+  let reconciled = reconcileWith(subtotal, vatAmount, readTotal);
+  let feeAddedToNet = 0;
+  if (feesInTotal > 0 && readTotal > 0 && reconciled.mismatch) {
+    // Printed subtotal + VAT = total means the fee is already inside the taxable subtotal and
+    // nothing is subtracted (handled by the plain reconciliation above). Otherwise the fee sits
+    // on top of the printed subtotal, or, with no VAT printed, VAT is worked back without it.
+    if (vatAmount > 0 && subtotal > 0) {
+      amountInput = { subtotal: subtotal + feesInTotal, vatAmount, total: readTotal };
+      reconciled = reconcileWith(amountInput.subtotal, vatAmount, readTotal);
+    } else if (vatAmount === 0) {
+      amountInput = { subtotal, vatAmount, total: round2(readTotal - feesInTotal) };
+      reconciled = reconcileWith(subtotal, vatAmount, amountInput.total);
+      feeAddedToNet = feesInTotal;
+    }
+  } else if (feesInTotal > 0 && readTotal > 0 && vatAmount === 0 && subtotal === 0) {
+    // Total only: VAT is worked back from the total without the fee, the fee stays in the net.
+    amountInput = { subtotal, vatAmount, total: round2(readTotal - feesInTotal) };
+    reconciled = reconcileWith(subtotal, vatAmount, amountInput.total);
+    feeAddedToNet = feesInTotal;
+  }
+  const derivedSubtotal = round2(reconciled.subtotal + feeAddedToNet);
+  const derivedVat = reconciled.vatAmount;
+  const derivedTotal = round2(reconciled.total + feeAddedToNet);
+  const amountsMismatch = reconciled.mismatch;
+  const fallbackTotal = amountInput.total;
   const validationIssues: ValidationIssue[] = [];
   if (feeCount > 0) {
     validationIssues.push({
       code: "NON_VAT_FEE",
       severity: "warning",
-      message: `The receipt shows tourism, municipality or service fees${feeTotal > 0 ? ` of ${feeTotal.toFixed(2)}` : ""}. They are not VAT and are not recoverable, so they were kept out of the VAT amount. Check the figures against the receipt.`,
+      message: `The receipt shows a tourism, municipality or service charge line${feeTotal > 0 ? ` of ${feeTotal.toFixed(2)}` : ""}. Tourism dirham and municipality fees are not VAT and cannot be recovered, so they were kept out of the VAT amount and stay in the expense. A service charge is not VAT itself, but VAT may be charged on it. Check the figures against the receipt.`,
     });
   }
   if (zeroVatRead?.kind === "conflict") {
@@ -574,7 +614,7 @@ export function parseReceiptOcrText(
     subtotal: derivedSubtotal,
     vatPercentage: vatRate,
     vatAmount: derivedVat,
-    total: round2(derivedTotal + feesInTotal),
+    total: derivedTotal,
     currency,
     category: "Other",
     lineItems: extractLineItems(lines),
