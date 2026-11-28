@@ -24,7 +24,7 @@ vi.mock("../../client/src/lib/queryClient", async (orig) => {
     ...actual,
     apiRequest: async (_m: string, url: string) => {
       const r = net.respond(url);
-      if (r === "fail") throw new actual.ApiError(500, "Server exploded", {});
+      if (r === "fail") throw new actual.ApiError("Server exploded", 500, {});
       return (r as { ok: unknown }).ok;
     },
   };
@@ -71,9 +71,10 @@ async function mount(
         retry: false,
         queryFn: async ({ queryKey }) => {
           const r = responder(queryKey.filter(Boolean).join("/"));
-          if (r === "fail") throw new ApiError(500, "Server exploded", {});
+          if (r === "fail") throw new ApiError("Server exploded", 500, {});
           if (r === "forbid") throw new ApiError("Forbidden", 403, {});
           if (r === "hang") return new Promise(() => {});
+          if (r instanceof Promise) return r;
           return (r as { ok: unknown }).ok;
         },
       },
@@ -117,6 +118,27 @@ describe.each(["en", "ar"] as const)("App screen load errors (%s)", (locale) => 
     expect(retryButton()).toBeDefined();
   });
 
+  it("needs-you strip: first load shows loading, not the all-clear, until queries settle", async () => {
+    const { NeedsYouStrip } = await import("../../client/src/pages/dashboard/NeedsYouStrip");
+    let release!: (v: unknown) => void;
+    const pending = new Promise((r) => (release = r));
+    await mount(NeedsYouStrip as never, strip, locale, (p) =>
+      p.includes("bank-statements") ? pending : ok({ permissions: [] })
+    );
+    const loading = tid("needs-you-loading");
+    expect(loading).not.toBeNull();
+    expect(loading!.getAttribute("aria-busy")).toBe("true");
+    expect(loading!.getAttribute("aria-label")).toBe(
+      locale === "en" ? "Checking what needs your attention" : "جارٍ التحقق مما يحتاج إلى انتباهك"
+    );
+    expect(tid("needs-you-clear")).toBeNull();
+    expect(tid("needs-you-load-error")).toBeNull();
+    release([]);
+    await settle();
+    expect(tid("needs-you-loading")).toBeNull();
+    expect(tid("needs-you-clear")).not.toBeNull();
+  });
+
   it("needs-you strip: failed access lookup shows an error, never the all-clear", async () => {
     const { NeedsYouStrip } = await import("../../client/src/pages/dashboard/NeedsYouStrip");
     await mount(NeedsYouStrip as never, strip, locale, (p) =>
@@ -132,7 +154,7 @@ describe.each(["en", "ar"] as const)("App screen load errors (%s)", (locale) => 
     const complianceQuery = {
       isError: true,
       isFetching: false,
-      error: new ApiError(500, "Server exploded", {}),
+      error: new ApiError("Server exploded", 500, {}),
       errorUpdatedAt: 5,
       dataUpdatedAt: 0,
       refetch,
@@ -210,7 +232,7 @@ describe.each(["en", "ar"] as const)("App screen load errors (%s)", (locale) => 
     const complianceQuery = {
       isError: true,
       isFetching: false,
-      error: new ApiError(500, "Server exploded", {}),
+      error: new ApiError("Server exploded", 500, {}),
       errorUpdatedAt: 5,
       dataUpdatedAt: 0,
       refetch: vi.fn(),

@@ -119,6 +119,7 @@
   "dashboard.needsLoadFailedTitle": "Some checks could not load",
   "dashboard.needsLoadFailedBody": "We could not check what needs your attention. Try again.",
   "dashboard.loadForbiddenBody": "You do not have access to this. Ask a company owner to grant it.",
+  "dashboard.needsLoading": "Checking what needs your attention",
   "dashboard.needsNothing": "Nothing needs you right now",
   "dashboard.modelHandoffAck": "Handoff gaps acknowledged",
   "dashboard.modelHandoffAckBody": "{title} has {gap}. Click queue again to send with those gaps acknowledged.",
