@@ -1,5 +1,6 @@
 import { T } from "@/components/layout/T";
 import type { CopyDescriptor } from "@shared/server-copy";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
 import { anomalyRuleLabel } from "@/lib/anomaly-rules";
@@ -139,7 +140,14 @@ export function AnomalyChecks({ embedded = false }: { embedded?: boolean }) {
   const [severityFilter, setSeverityFilter] = useState<string>("all");
 
   // Reading the list never scans; "Run scan" is an explicit POST (R13-15).
-  const { data: result, isLoading } = useQuery<AnomalyResult>({
+  const {
+    data: result,
+    isLoading,
+    isError: anomaliesFailed,
+    error: anomaliesError,
+    refetch: refetchAnomalies,
+    isFetching: anomaliesFetching,
+  } = useQuery<AnomalyResult>({
     queryKey: [`/api/companies/${companyId}/anomalies`],
     enabled: !!companyId,
   });
@@ -322,6 +330,13 @@ export function AnomalyChecks({ embedded = false }: { embedded?: boolean }) {
             <Skeleton key={i} className="h-28" />
           ))}
         </div>
+      ) : anomaliesFailed ? (
+        <LoadErrorState
+          error={anomaliesError}
+          onRetry={() => void refetchAnomalies()}
+          retrying={anomaliesFetching}
+          testId="anomaly-load-error"
+        />
       ) : filteredAnomalies.length > 0 ? (
         <div className="space-y-3">
           {filteredAnomalies.map((anomaly) => {

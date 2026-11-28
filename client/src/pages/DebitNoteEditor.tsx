@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { Plus, Trash2 } from "lucide-react";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { EditorShell } from "@/components/ui/editor-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,11 +79,23 @@ export default function DebitNoteEditor() {
   const [error, setError] = useState<string | null>(null);
   const [seededBill, setSeededBill] = useState<string | null>(null);
 
-  const { data: accounts = [] } = useQuery<any[]>({
+  const {
+    data: accounts = [],
+    isError: accountsFailed,
+    error: accountsError,
+    refetch: refetchAccounts,
+    isFetching: accountsFetching,
+  } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "accounts"],
     enabled: !!companyId,
   });
-  const { data: bills = [] } = useQuery<DebitNoteBill[]>({
+  const {
+    data: bills = [],
+    isError: billsFailed,
+    error: billsError,
+    refetch: refetchBills,
+    isFetching: billsFetching,
+  } = useQuery<DebitNoteBill[]>({
     queryKey: ["/api/companies", companyId, "bills"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills`),
     enabled: !!companyId,
@@ -144,8 +157,12 @@ export default function DebitNoteEditor() {
     onError: (e: Error) => setError(e.message),
   });
 
+  // The pickers are empty when these lists fail to load: do not let a note be saved blind.
+  const listsFailed = accountsFailed || billsFailed;
+
   const submit = () => {
     setError(null);
+    if (listsFailed) return;
     if (!vendorName.trim()) return setError(t["forms.errors.vendorNameRequired"]);
     if (!reason.trim()) return setError(t["purchases.debitNote.reasonRequired"]);
     if (lines.some((l) => !l.description.trim() || !(Number(l.amount) > 0)))
@@ -182,7 +199,7 @@ export default function DebitNoteEditor() {
           <Button
             type="button"
             onClick={submit}
-            disabled={save.isPending}
+            disabled={save.isPending || listsFailed}
             {...gate("ledger.post")}
             data-testid="button-save-debit-note"
           >
@@ -191,6 +208,24 @@ export default function DebitNoteEditor() {
         </>
       }
     >
+      {accountsFailed ? (
+        <LoadErrorState
+          error={accountsError}
+          onRetry={() => void refetchAccounts()}
+          retrying={accountsFetching}
+          compact
+          testId="debit-note-accounts-load-error"
+        />
+      ) : null}
+      {billsFailed ? (
+        <LoadErrorState
+          error={billsError}
+          onRetry={() => void refetchBills()}
+          retrying={billsFetching}
+          compact
+          testId="debit-note-bills-load-error"
+        />
+      ) : null}
       <FormSection title={t["purchases.debitNote.sectionSupplier"]}>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
