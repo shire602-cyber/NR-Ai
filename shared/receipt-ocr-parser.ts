@@ -257,6 +257,51 @@ const BARE_ZERO_RATE_LINE = new RegExp(
   "gim"
 );
 
+// Non-recoverable fees printed next to VAT on hotel and restaurant bills: tourism dirham/tax,
+// municipality fee/tax, service charge. They are never VAT, so these lines are taken out of the
+// text the VAT, subtotal and total readers see ("Tourism tax 10.00" must not become VAT 10.00).
+const FEE_LABEL = new RegExp(
+  [
+    String.raw`\btourism[ \t]*(?:dirhams?|dhs?|tax(?:es)?|fees?|levy|charges?|chg)\b`,
+    String.raw`\btdf\b`,
+    String.raw`\bmunicipal(?:ity)?[ \t]*(?:tax(?:es)?|fees?|charges?|chg|levy)\b`,
+    String.raw`\bmunic?[ \t.]+(?:tax|fees?)\b`,
+    String.raw`\b(?:service|serv|svc)[ \t.]*(?:charges?|chg|fees?)\b`,
+    String.raw`\bcity[ \t]+tax\b`,
+    String.raw`(?:ضريب[ةه]|درهم|رسوم|رسم)[ \t]+السياح[ةه]`,
+    String.raw`(?:ضريب[ةه]|رسوم|رسم)[ \t]+البلدي[ةه]`,
+    String.raw`(?:رسوم|رسم)[ \t]+الخدم[ةه]`,
+  ].join("|"),
+  "i"
+);
+// A line that starts with a real VAT label ("VAT on service charge 0.50") is a VAT line.
+const REAL_VAT_LINE_START = new RegExp(
+  String.raw`^[ \t*#\-•|:]*(?:(?:total|amount|net|sum|اجمالي|مجموع|المجموع)[ \t]+)?(?:vat|value[ \t]+added[ \t]+tax|ضريب[ةه][ \t]+القيم[ةه][ \t]+المضاف[ةه]|ض\.?[ \t]?ق\.?[ \t]?م\.?)`,
+  "i"
+);
+
+function feeLineAmount(line: string): number {
+  const withoutRates = line.replace(/\d+(?:[.,]\d+)?[ \t]*%/g, " ");
+  const nums = Array.from(withoutRates.matchAll(/\d[\d,]*(?:\.\d+)?/g));
+  return nums.length ? parseAmount(nums[nums.length - 1][0]) : 0;
+}
+
+/** Splits fee lines (tourism, municipality, service charge) from the rest of the receipt. */
+function splitFeeLines(lines: string[]): { rest: string[]; feeTotal: number; feeCount: number } {
+  const rest: string[] = [];
+  let feeTotal = 0;
+  let feeCount = 0;
+  for (const line of lines) {
+    if (FEE_LABEL.test(line) && !REAL_VAT_LINE_START.test(line)) {
+      feeCount += 1;
+      feeTotal += feeLineAmount(line);
+    } else {
+      rest.push(line);
+    }
+  }
+  return { rest, feeTotal: round2(feeTotal), feeCount };
+}
+
 function asNumber(raw: string | undefined): number | null {
   return raw === undefined ? null : Number(raw.replace(",", "."));
 }
@@ -382,14 +427,17 @@ export function parseReceiptOcrText(
   // diacritics/tatweel removed, alef/yeh variants normalised. Display lines are kept
   // separately so the merchant keeps its original spelling.
   const normalizedText = normalizeForLabelMatching(displayText).replace(/٪/g, "%");
-  const lines = normalizedText
+  const allLines = normalizedText
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+  // Fee lines never feed the VAT, subtotal or total readers.
+  const { rest: lines, feeTotal, feeCount } = splitFeeLines(allLines);
+  const matchText = feeCount > 0 ? lines.join("\n") : normalizedText;
   const fallbackDate = options.fallbackDate || uaeToday();
 
   const AMT = `(?:${CUR})?\\s*(-?\\d[\\d,]*\\.?\\d{0,2})`;
-  const total = findFirstAmount(normalizedText, [
+  const total = findFirstAmount(matchText, [
     /\b(?:grand\s+total|net\s+payable|amount\s+due|total\s+due|balance\s+due|total\s+amount|total)\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     new RegExp(
       `(?:المبلغ الاجمالي|الاجمالي الكلي|المجموع الكلي|المبلغ المستحق|صافي المبلغ|الاجمالي|اجمالي المبلغ|اجمالي)(?!\\s*(?:الفرعي|الضريبه|الضريبة|ضريبة))[^\\d-]{0,30}${AMT}`,
@@ -401,8 +449,11 @@ export function parseReceiptOcrText(
       "g"
     ),
   ]);
-  const fallbackTotal = total || findLargestLikelyAmount(lines);
-  const subtotal = findFirstAmount(normalizedText, [
+  const readTotal = total || findLargestLikelyAmount(lines);
+  // The printed total includes the fees; subtotal + VAT is reconciled against it without them.
+  const feesInTotal = feeTotal > 0 && (readTotal === 0 || readTotal > feeTotal) ? feeTotal : 0;
+  const fallbackTotal = readTotal > 0 ? round2(readTotal - feesInTotal) : 0;
+  const subtotal = findFirstAmount(matchText, [
     /\b(?:sub\s*total|subtotal|amount\s+before\s+(?:vat|tax)|net\s+amount|taxable\s+amount|excl\.?\s*vat)\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     new RegExp(
       `(?:المجموع الفرعي|الاجمالي الفرعي|المبلغ قبل الضريبة|المبلغ الخاضع للضريبة|المبلغ بدون ضريبة)[^\\d-]{0,30}${AMT}`,
@@ -410,7 +461,7 @@ export function parseReceiptOcrText(
     ),
   ]);
   // "VAT 0%" ending its line must not read the next line's total as its amount.
-  const vatSearchText = normalizedText.replace(BARE_ZERO_RATE_LINE, "$1 0.00");
+  const vatSearchText = matchText.replace(BARE_ZERO_RATE_LINE, "$1 0.00");
   const vatAmount = findFirstAmount(vatSearchText, [
     // The optional "5%" label must be consumed so the percentage is never read as the VAT amount.
     /\b(?:vat|tax|gst)\b(?:\s*@?\s*\d+(?:\.\d+)?\s*%)?[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
@@ -444,6 +495,13 @@ export function parseReceiptOcrText(
     vatPercentage: reconcileRate,
   });
   const validationIssues: ValidationIssue[] = [];
+  if (feeCount > 0) {
+    validationIssues.push({
+      code: "NON_VAT_FEE",
+      severity: "warning",
+      message: `The receipt shows tourism, municipality or service fees${feeTotal > 0 ? ` of ${feeTotal.toFixed(2)}` : ""}. They are not VAT and are not recoverable, so they were kept out of the VAT amount. Check the figures against the receipt.`,
+    });
+  }
   if (zeroVatRead?.kind === "conflict") {
     validationIssues.push({
       code: "AMOUNT_MISMATCH",
@@ -516,7 +574,7 @@ export function parseReceiptOcrText(
     subtotal: derivedSubtotal,
     vatPercentage: vatRate,
     vatAmount: derivedVat,
-    total: derivedTotal,
+    total: round2(derivedTotal + feesInTotal),
     currency,
     category: "Other",
     lineItems: extractLineItems(lines),
