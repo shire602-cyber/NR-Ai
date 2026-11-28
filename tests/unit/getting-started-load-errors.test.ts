@@ -184,4 +184,25 @@ describe.each(["en", "ar"] as const)("Getting started load errors (%s)", (locale
     expect(tid("getting-started-unknown-bill")).toBeNull();
     expect(tid("getting-started-minutes-bill")).toBeNull();
   });
+
+  it("cached records plus a failed refetch: the step stays done, not couldn't check", async () => {
+    let failContacts = false;
+    const client = await mount(locale, (p) => {
+      if (p.includes("customer-contacts")) return failContacts ? "fail" : ok([{ id: "k1" }]);
+      return ok([]);
+    });
+    expect(tid("getting-started-unknown-customer")).toBeNull();
+    expect(tid("getting-started-minutes-customer")).toBeNull();
+    failContacts = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["/api/companies", "c1", "customer-contacts"] });
+    });
+    await settle();
+    expect(client.getQueryState(["/api/companies", "c1", "customer-contacts"])?.status).toBe(
+      "error"
+    );
+    expect(tid("getting-started-unknown-customer")).toBeNull();
+    expect(tid("getting-started-minutes-customer")).toBeNull();
+    expect(tid("getting-started-unknown-note")).toBeNull();
+  });
 });

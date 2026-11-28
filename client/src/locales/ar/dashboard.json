@@ -214,6 +214,7 @@
   "dashboard.gsUnknown": "تعذّر التحقق",
   "dashboard.gsUnknownNote": "تعذّر التحقق من {count} من هذه الخطوات، لذا لم تُحتسب. إعداداتك لم تتغير.",
   "dashboard.gsRetry": "إعادة المحاولة",
+  "dashboard.gsChecking": "جارٍ التحقق…",
   "dashboard.clientFallbackName": "العميل",
   "dashboard.clientUrgent": "عاجل",
   "dashboard.clientUpcoming": "قادم",
