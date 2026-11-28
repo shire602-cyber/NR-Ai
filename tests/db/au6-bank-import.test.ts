@@ -50,4 +50,31 @@ describe("AU6 manual bank connection CSV import", () => {
       persistedRows: 0,
     });
   });
+
+  it("refuses a PDF upload with 400 STATEMENT_CSV_REQUIRED and saves no rows", async () => {
+    const result = await importStatement("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n");
+    expect(result).toMatchObject({
+      status: 400,
+      body: { code: "STATEMENT_CSV_REQUIRED" },
+      persistedRows: 0,
+    });
+  });
+
+  it("S05: import-preview refuses PDF and PNG-magic text with 400 STATEMENT_CSV_REQUIRED and accepts a CSV", async () => {
+    const tenant = await h.createTenant({ name: "S05 import-preview" });
+    const path = `/api/companies/${tenant.company.id}/bank-statements/import-preview`;
+    const pdf = "%PDF-1.4\n1 0 obj\n<<>>\nendobj\n";
+    const png = "\u0089PNG\r\n\u001a\n\u0000\u0000IHDR";
+    for (const csvContent of [pdf, png]) {
+      const res = await tenant.as.post(path, { csvContent });
+      expect(res.status, res.text).toBe(400);
+      expect(res.body.code).toBe("STATEMENT_CSV_REQUIRED");
+    }
+    const ok = await tenant.as.post(path, {
+      csvContent:
+        "Date,Description,Debit,Credit\n2026-11-01,Sample,10.00,\n2026-11-02,Deposit,,25.50\n",
+    });
+    expect(ok.status, ok.text).toBe(200);
+    expect(ok.body.transactionCount).toBe(2);
+  });
 });

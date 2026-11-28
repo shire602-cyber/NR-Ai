@@ -65,6 +65,8 @@ describe("migrations", () => {
       const cadence = gaps[e.tag] ?? 10_000;
       expect(e.when - journal.entries[e.idx - 1].when).toBe(cadence);
     }
+    // 0160 is a plain release migration (F02 staging drift), not a wave/sweep workstream file.
+    const vatUniqueDriftTag = "0160_vat_returns_drop_unique_drift";
     for (const e of journal.entries.filter((x) => x.idx >= 89)) {
       const body = sqlFile(e.tag);
       const sqlBody = body.replace(/^--.*$/gm, "").trim();
@@ -80,8 +82,8 @@ describe("migrations", () => {
           expect(body, e.tag).toMatch(
             new RegExp(`^-- ${auditTag}\\b.*\\(accounting audit\\)`, "m")
           );
-        } else if (e.tag === allocationTag) {
-          expect(body, e.tag).toMatch(new RegExp(`^-- ${allocationTag}\\b`, "m"));
+        } else if (e.tag === allocationTag || e.tag === vatUniqueDriftTag) {
+          expect(body, e.tag).toMatch(new RegExp(`^-- ${e.tag}\\b`, "m"));
         } else {
           expect(body, e.tag).toMatch(/^-- \d{4}_\w+\b.*\b(W\d-[A-E]|S\d)\b/m);
         }

@@ -28,7 +28,9 @@ import {
   type,
   unmountPage,
 } from "./helpers/form-harness";
+import { apiRequest } from "../../client/src/lib/queryClient";
 import { loadLocale, useI18n } from "../../client/src/lib/i18n";
+import { failedResponseMessage } from "../../client/src/lib/validation-messages";
 import type { BillCaptureResult } from "../../shared/bill-capture";
 
 vi.mock("../../client/src/lib/queryClient", () => formHarnessQueryClientMock());
@@ -91,7 +93,7 @@ afterEach(async () => {
 
 async function renderAt(Page: any, path: string) {
   const mem = memoryLocation({ path, record: true });
-  await renderPage(() => createElement(Router, { hook: mem.hook }, createElement(Page)));
+  await renderPage(() => createElement(Router, { hook: mem.hook, children: createElement(Page) }));
   return mem;
 }
 
@@ -144,6 +146,196 @@ const capture: BillCaptureResult = {
 };
 
 describe("[WQ2 8.2] bill editor capture", () => {
+  it.each([
+    { supplyType: "reverse_charge", legacyFlag: false, changeTreatment: false },
+    { supplyType: "reverse_charge", legacyFlag: false, changeTreatment: true },
+  ])(
+    "loads $supplyType with legacy flag $legacyFlag and supports an explicit treatment change ($changeTreatment)",
+    async ({ supplyType, legacyFlag, changeTreatment }) => {
+      const url = "/api/bills/vat-bill";
+      setFixtures({
+        [url]: {
+          id: "vat-bill",
+          status: "draft",
+          vendor_name: VENDOR.name,
+          vendor_trn: VENDOR.trn,
+          bill_date: "2026-01-15",
+          withholding_amount: "10.00",
+          line_items: [
+            {
+              id: "domestic-line",
+              description: "Domestic",
+              quantity: "1.00",
+              unit_price: "1000.00",
+              vat_rate: "5.00",
+              vat_supply_type: "standard_rated",
+              amount: "1000.00",
+              vat_amount: "50.00",
+              account_id: null,
+            },
+            {
+              id: "rc-line",
+              description: "Imported service",
+              quantity: "0.00",
+              unit_price: "1000.00",
+              vat_rate: "5.00",
+              vat_supply_type: supplyType,
+              reverse_charge: legacyFlag,
+              amount: "4.00",
+              vat_amount: "0.20",
+              account_id: null,
+            },
+          ],
+          payments: [],
+        },
+      });
+      const { default: BillPay } = await import("../../client/src/pages/BillPay");
+      await renderAt(BillPay, "/bill-pay/vat-bill/edit");
+      await flushUntil(() => !!byTestId("button-submit-bill"));
+      const treatment = [...editorPage().querySelectorAll('[role="combobox"]')].find(
+        (control) => control.textContent === "Reverse charge 5%"
+      );
+      expect(treatment).toBeDefined();
+      expect(editorPage().textContent).toContain("1,044.00");
+      if (changeTreatment) {
+        await act(async () => {
+          treatment!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        });
+        await flushUntil(() => !!document.querySelector('[role="listbox"]'));
+        const exempt = [...document.querySelectorAll('[role="option"]')].find(
+          (option) => option.textContent === "Exempt"
+        );
+        expect(exempt).toBeDefined();
+        await act(async () => {
+          exempt!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        });
+        expect(treatment?.textContent).toBe("Exempt");
+      }
+      await submit(byTestId("button-submit-bill"));
+      await flushUntil(() => apiCalls("PATCH").some((call) => call.url === url));
+      const payload = apiCalls("PATCH").find((call) => call.url === url)!.body;
+      expect(payload).toMatchObject({
+        line_items: [
+          { id: "domestic-line", vat_supply_type: undefined, vat_rate: 5 },
+          {
+            id: "rc-line",
+            quantity: 0,
+            vat_supply_type: changeTreatment ? "exempt" : undefined,
+            vat_rate: changeTreatment ? 0 : 5,
+          },
+        ],
+      });
+    }
+  );
+
+  it.each([
+    ["LEGACY_BILL_RECLASSIFY_REQUIRED", "Legacy bill reclassify required", "Enter a new bill"],
+    ["LEGACY_BILL_IN_FILED_RETURN", "Legacy bill in filed return", "Record the correction"],
+  ])("shows %s in the editor and keeps the attempted notes", async (code, rawMessage, action) => {
+    const url = "/api/bills/legacy-vat";
+    setFixtures({
+      [url]: {
+        id: "legacy-vat",
+        status: "draft",
+        vendor_name: VENDOR.name,
+        vendor_trn: VENDOR.trn,
+        bill_date: "2026-01-15",
+        subtotal: "1000.00",
+        vat_amount: "50.00",
+        total_amount: "1050.00",
+        line_items: [
+          {
+            id: "legacy-domestic",
+            description: "Supplies",
+            quantity: "1.00",
+            unit_price: "1000.00",
+            vat_rate: "5.00",
+            vat_supply_type: "standard_rated",
+            amount: "1000.00",
+            vat_amount: "0.00",
+            account_id: null,
+          },
+        ],
+        payments: [],
+      },
+    });
+    const { default: BillPay } = await import("../../client/src/pages/BillPay");
+    await renderAt(BillPay, "/bill-pay/legacy-vat/edit");
+    await flushUntil(() => !!byTestId("button-submit-bill"));
+    const page = editorPage();
+    expect(page.textContent).toContain("1,050.00");
+    const message = await failedResponseMessage(409, { code, message: rawMessage }, rawMessage);
+    expect(message.startsWith(action)).toBe(true);
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error(message));
+    const notes = page.querySelector<HTMLTextAreaElement>('[name="notes"]')!;
+    await type(notes, "Updated notes");
+    await submit(byTestId("button-submit-bill"));
+    await flushUntil(() => editorPage().textContent?.includes(message) === true);
+    expect(editorPage().querySelector<HTMLTextAreaElement>('[name="notes"]')?.value).toBe(
+      "Updated notes"
+    );
+  });
+
+  it("keeps declared customs VAT when saving notes on an import with an exempt line", async () => {
+    const url = "/api/bills/customs-vat";
+    setFixtures({
+      [url]: {
+        id: "customs-vat",
+        status: "draft",
+        vendor_name: VENDOR.name,
+        vendor_trn: VENDOR.trn,
+        bill_date: "2026-01-15",
+        subtotal: "1000.00",
+        vat_amount: "60.00",
+        total_amount: "1000.00",
+        is_import: true,
+        reverse_charge: true,
+        import_vat_amount: "60.00",
+        line_items: [
+          {
+            id: "exempt-line",
+            description: "Exempt goods",
+            quantity: "1.00",
+            unit_price: "1000.00",
+            vat_rate: "0.00",
+            vat_supply_type: "exempt",
+            amount: "1000.00",
+            vat_amount: "0.00",
+            reverse_charge: false,
+            account_id: null,
+          },
+        ],
+        payments: [],
+      },
+    });
+    const { default: BillPay } = await import("../../client/src/pages/BillPay");
+    await renderAt(BillPay, "/bill-pay/customs-vat/edit");
+    await flushUntil(() => !!byTestId("button-submit-bill"));
+    const notes = editorPage().querySelector<HTMLTextAreaElement>('[name="notes"]')!;
+    await type(notes, "Customs declaration verified");
+    await submit(byTestId("button-submit-bill"));
+    await flushUntil(() => apiCalls("PATCH").some((call) => call.url === url));
+    expect(apiCalls("PATCH").find((call) => call.url === url)?.body).toMatchObject({
+      notes: "Customs declaration verified",
+      reverse_charge: false,
+      is_import: true,
+      import_vat_amount: "60.00",
+      line_items: [{ id: "exempt-line", vat_rate: 0, vat_supply_type: undefined }],
+    });
+  });
+
+  it("shows a two-decimal quantity error before sending a save", async () => {
+    const { default: BillPay } = await import("../../client/src/pages/BillPay");
+    await renderAt(BillPay, "/bill-pay/new");
+    await flushUntil(() => !!byTestId("button-submit-bill"));
+    const page = editorPage();
+    const quantity = page.querySelector<HTMLInputElement>('[name="line_items.0.quantity"]');
+    await type(quantity, "1.234");
+    await submit(byTestId("button-submit-bill"));
+    await flushUntil(() => page.textContent?.includes("up to two decimal places") === true);
+    expect(apiCalls("POST")).toEqual([]);
+  });
+
   it("a dropped invoice fills the form with per-field confidence; saving posts the bill and then the attachment", async () => {
     setFixtures({
       [`${C}/bills/summary`]: null,

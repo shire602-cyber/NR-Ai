@@ -27,8 +27,13 @@ import {
   describeOcrProviders,
   summarizeOcrProviderError,
 } from "../services/ocr-provider-clients";
-import { parseReceiptOcrText, UNKNOWN_RECEIPT_MERCHANT } from "@shared/receipt-ocr-parser";
+import {
+  parseReceiptOcrText,
+  UNKNOWN_RECEIPT_MERCHANT,
+  validateUaeTrn,
+} from "@shared/receipt-ocr-parser";
 import { deriveConfidenceBand, type ValidationIssue } from "@shared/receipt-confidence";
+import { isOwnTrn } from "@shared/bill-capture";
 import { buildLimiter, limiterProfiles } from "../middleware/rateLimit";
 import { extractReceipt, type ExtractionClients } from "../services/ai/receipt-extraction";
 import {
@@ -40,6 +45,15 @@ import { assertAiQuota, type AiContext } from "../services/ai/usage-meter";
 import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
 import { errorCode, errorMessage, errorProperty } from "../errors";
 import { todayDubai } from "@shared/accounting-date";
+import {
+  amountMismatchMessage,
+  aiVatRate,
+  hasVatFigure,
+  reconcileReceiptAmounts,
+  vatDerivedMessage,
+  vatDerivedSource,
+  vatWithoutTrnMessage,
+} from "@shared/receipt-amounts";
 
 const log = createLogger("ocr");
 
@@ -245,8 +259,14 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       ) => {
         result._ocrSource = result._ocrSource || ocrSource;
         await waitForStep(enrichWithInternalClassifier(result));
+        let ownTrn: string | null = null;
+        try {
+          ownTrn = (await waitForStep(storage.getCompany(companyId)))?.trnVatNumber ?? null;
+        } catch (err: unknown) {
+          log.warn({ err: errorMessage(err) || err }, "Company TRN lookup for receipt scan failed");
+        }
         return res.json(
-          buildResult(result, rawText, companyId, sanitizedMessageId, validCategories)
+          buildResult(result, rawText, companyId, sanitizedMessageId, validCategories, ownTrn)
         );
       };
 
@@ -557,30 +577,32 @@ function buildResult(
   rawText: string,
   companyId: string,
   messageId: string | null,
-  validCategories: string[]
+  validCategories: string[],
+  ownTrn: string | null = null
 ) {
   const subtotal = parseNonNegative(aiResult.subtotal);
   const vatAmount = parseNonNegative(aiResult.vatAmount);
   // Treat null/undefined as missing (default to 5% for UAE); explicit 0 means zero-rated
-  const vatPercentage =
-    aiResult.vatPercentage === null || aiResult.vatPercentage === undefined
-      ? 5
-      : parseNonNegative(aiResult.vatPercentage);
-  let total = parseNonNegative(aiResult.total);
+  const { vatPercentage, rateDefaulted: vatRateDefaulted } = aiVatRate(
+    aiResult.vatAmount,
+    aiResult.vatPercentage
+  );
+  const total = parseNonNegative(aiResult.total);
 
-  // Reconcile amounts if any are missing
-  if (total === 0 && subtotal > 0) {
-    total = parseFloat((subtotal + vatAmount).toFixed(2));
-  }
-  const derivedSubtotal =
-    subtotal > 0
-      ? subtotal
-      : total > 0
-        ? parseFloat((total / (1 + vatPercentage / 100)).toFixed(2))
-        : 0;
-  const derivedVat =
-    vatAmount > 0 ? vatAmount : parseFloat(((derivedSubtotal * vatPercentage) / 100).toFixed(2));
-  const derivedTotal = total > 0 ? total : parseFloat((derivedSubtotal + derivedVat).toFixed(2));
+  // Reconcile missing amounts in integer fils (half-up) so subtotal + VAT === total exactly.
+  const {
+    subtotal: derivedSubtotal,
+    vatAmount: derivedVat,
+    total: derivedTotal,
+    mismatch: amountsMismatch,
+  } = reconcileReceiptAmounts({ subtotal, vatAmount, total, vatPercentage });
+  const vatDerivedFrom = vatDerivedSource({ subtotal, vatAmount, total, vatPercentage });
+  // Net and gross printed with no VAT line at all: the reconciler reads the gap as VAT, but that is
+  // an assumption, not a printed figure (same rule as normalizeOcrJson on the email path).
+  const vatNotPrinted =
+    aiResult.vatAmount === null || aiResult.vatAmount === undefined || aiResult.vatAmount === "";
+  const vatGapAssumed =
+    !vatDerivedFrom && vatNotPrinted && derivedVat > 0 && subtotal > 0 && total > 0;
 
   const category =
     typeof aiResult.category === "string" && validCategories.includes(aiResult.category)
@@ -606,7 +628,11 @@ function buildResult(
 
   // Validation: issues the provider path already found, plus checks on the final reconciled
   // figures (so deterministic-parser results are checked too).
-  const issues: ValidationIssue[] = Array.isArray(aiResult._issues) ? [...aiResult._issues] : [];
+  // A note from the raw extraction that the reconciled figures no longer warrant is dropped
+  // (e.g. raw 100 / no VAT / 105 reconciles to 100 / 5 / 105).
+  const issues: ValidationIssue[] = (
+    Array.isArray(aiResult._issues) ? [...aiResult._issues] : []
+  ).filter((i) => !(i.code === "AMOUNT_MISMATCH" && !amountsMismatch));
   const have = new Set(issues.map((i) => i.code));
   const finalIssues = sanityCheckReceipt({
     merchant: aiResult.merchant as string | undefined,
@@ -619,6 +645,54 @@ function buildResult(
     vatPercentage,
   });
   for (const issue of finalIssues) if (!have.has(issue.code)) issues.push(issue);
+  // The figures never silently add up: when the subtotal/total gap is not VAT at the stated rate
+  // (service charge, fee, discount, zero-rated), the user is told. The message is rebuilt from the
+  // final figures so it always matches the form, replacing any note built from the raw extraction.
+  if (amountsMismatch) {
+    const message = amountMismatchMessage(
+      derivedSubtotal,
+      derivedVat,
+      derivedTotal,
+      vatPercentage,
+      hasVatFigure(vatAmount)
+    );
+    const existing = issues.find((i) => i.code === "AMOUNT_MISMATCH");
+    if (existing) existing.message = message;
+    else issues.push({ code: "AMOUNT_MISMATCH", severity: "error", message });
+  }
+  if ((vatDerivedFrom || vatGapAssumed) && !have.has("VAT_DERIVED")) {
+    issues.push({
+      code: "VAT_DERIVED",
+      severity: "warning",
+      message: vatDerivedMessage(
+        derivedVat,
+        vatPercentage,
+        vatDerivedFrom ?? "total",
+        vatRateDefaulted
+      ),
+    });
+  }
+  // VAT read (not derived) with no valid supplier TRN: the reviewer is told before saving, because
+  // saving posts an input-VAT claim and a tax invoice must show the supplier's TRN.
+  // The company's own TRN read as the supplier's counts as no valid supplier TRN. No second note
+  // when VAT_DERIVED already explains why the VAT cannot be trusted.
+  const supplierTrnText = typeof aiResult.supplierTrn === "string" ? aiResult.supplierTrn : null;
+  const supplierTrnUsable =
+    validateUaeTrn(supplierTrnText).valid && !isOwnTrn(supplierTrnText, ownTrn);
+  if (
+    derivedVat > 0 &&
+    !vatDerivedFrom &&
+    !vatGapAssumed &&
+    !supplierTrnUsable &&
+    !have.has("VAT_DERIVED") &&
+    !have.has("VAT_NO_TRN")
+  ) {
+    issues.push({
+      code: "VAT_NO_TRN",
+      severity: "warning",
+      message: vatWithoutTrnMessage(derivedVat),
+    });
+  }
   if (aiResult.supplierTrnIssue && !have.has("TRN_INVALID")) {
     issues.push({
       code: "TRN_INVALID",

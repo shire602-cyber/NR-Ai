@@ -84,6 +84,14 @@ const envSchema = z.object({
     .default("false")
     .transform((v) => v === "true"),
 
+  // === Background jobs ===
+  // On by default. Only the exact value "false" stops the cron scheduler and the
+  // outbox pollers (staging sets it so Railway can sleep the idle service).
+  BACKGROUND_JOBS_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v !== "false"),
+
   // === Email / SMTP (optional — features gracefully degrade if not set) ===
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.string().transform(Number).pipe(z.number().int().min(1).max(65535)).optional(),

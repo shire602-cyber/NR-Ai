@@ -50,6 +50,8 @@ import {
 } from "./vat-boxes";
 import { EMIRATES } from "../../shared/validators/primitives";
 import type { Request } from "express";
+import { createLogger } from "../config/logger";
+import { findPgError } from "../ledger/tx";
 
 export const VAT_RETURN_STATES = [
   "draft",
@@ -749,6 +751,39 @@ export async function submitVatReturn(input: {
   });
 }
 
+const log = createLogger("vat-returns");
+
+type NewVatReturn = typeof vatReturns.$inferInsert;
+
+/**
+ * Insert the amendment draft. A unique violation here means the database carries a unique index
+ * the repo does not declare (an amendment shares company and period with its original): log the
+ * constraint server-side and answer a specific 409 instead of the generic DUPLICATE_VALUE.
+ */
+async function insertAmendmentDraft(
+  tx: LedgerTx,
+  original: VatReturn,
+  values: NewVatReturn
+): Promise<VatReturn> {
+  try {
+    const [created] = await tx.insert(vatReturns).values(values).returning();
+    return created;
+  } catch (err) {
+    const pg = findPgError(err, "23505");
+    if (!pg) throw err;
+    log.error(
+      { constraint: pg.constraint, detail: pg.detail, vatReturnId: original.id },
+      "VAT amendment insert hit a unique violation"
+    );
+    throw new DomainError(
+      "VAT_AMENDMENT_CONFLICT",
+      409,
+      { constraint: pg.constraint ?? null, vatReturnId: original.id },
+      "The amendment could not be created because of a unique database rule on VAT returns."
+    );
+  }
+}
+
 /** Amended return (voluntary disclosure basis): recompute the period, store a diff. */
 export async function amendVatReturn(input: {
   id: string;
@@ -790,33 +825,29 @@ export async function amendVatReturn(input: {
     const to = new Date(original.periodEnd).toISOString().slice(0, 10);
     const computation = await computeVat201({ companyId: original.companyId, from, to }, tx, group);
     const diff = diffReturns(original as unknown as Record<string, unknown>, computation.boxes);
-    const [created] = await tx
-      .insert(vatReturns)
-      .values({
-        companyId: original.companyId,
-        periodStart: original.periodStart,
-        periodEnd: original.periodEnd,
-        dueDate: original.dueDate,
-        status: "draft",
-        vatStagger: original.vatStagger,
-        ...vatReturnColumns(computation.boxes),
-        amendsReturnId: original.id,
-        amendmentDiff: {
-          reason: input.reason,
-          boxes: diff,
-          netChange: filsToAed(
-            computation.boxesFils.box14PayableTax -
-              Math.round(Number(original.box14PayableTax) * 100)
-          ),
-        },
-        reconciliationSnapshot: withFilingVatGroup(reconciliationSnapshot(computation), group),
-        engineVersion: computation.engineVersion,
-        vatGroupId: computation.group?.groupId ?? null,
-        partialExemptionRatio: computation.company.exemptSupplyRatio,
-        notes: `Amendment of return ${original.id}: ${input.reason}`,
-        createdBy: input.userId,
-      })
-      .returning();
+    const created = await insertAmendmentDraft(tx, original, {
+      companyId: original.companyId,
+      periodStart: original.periodStart,
+      periodEnd: original.periodEnd,
+      dueDate: original.dueDate,
+      status: "draft",
+      vatStagger: original.vatStagger,
+      ...vatReturnColumns(computation.boxes),
+      amendsReturnId: original.id,
+      amendmentDiff: {
+        reason: input.reason,
+        boxes: diff,
+        netChange: filsToAed(
+          computation.boxesFils.box14PayableTax - Math.round(Number(original.box14PayableTax) * 100)
+        ),
+      },
+      reconciliationSnapshot: withFilingVatGroup(reconciliationSnapshot(computation), group),
+      engineVersion: computation.engineVersion,
+      vatGroupId: computation.group?.groupId ?? null,
+      partialExemptionRatio: computation.company.exemptSupplyRatio,
+      notes: `Amendment of return ${original.id}: ${input.reason}`,
+      createdBy: input.userId,
+    });
     // Record the amendment now. The predecessor still represents the filing while this draft is open.
     await tx
       .update(vatReturns)

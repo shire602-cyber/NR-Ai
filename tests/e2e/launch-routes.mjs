@@ -134,6 +134,7 @@ export const ALL_AUTH_ROUTES = [
   "/evidence-center",
   "/vat-filing",
   "/vat-autopilot",
+  "/vat-bad-debt-relief",
   "/corporate-tax",
   "/team",
   "/history",

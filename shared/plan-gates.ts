@@ -115,6 +115,7 @@ export const CORE_ROUTE_MODULES: ReadonlyArray<readonly [prefix: string, module:
     ["/auto-reconcile", "auto-reconcile"],
     ["/vat-filing", "vat-returns"],
     ["/vat-autopilot", "vat-returns"],
+    ["/vat-bad-debt-relief", "vat-returns"],
     ["/tax-return-archive", "tax-returns-archive"],
     ["/import", "imports"],
     ["/reminders", "reminders"],

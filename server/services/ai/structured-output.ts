@@ -76,6 +76,20 @@ const amount = z.preprocess((v) => {
   return v;
 }, z.number().finite().min(0));
 
+/**
+ * A printed figure that may be absent: null (or blank) means "not printed on the document" and is
+ * kept as null, NOT coerced to 0, so an explicit "VAT 0.00" (0) stays distinguishable from a VAT
+ * amount that was never shown (null). Downstream reconciliation derives and flags missing figures.
+ */
+const printedAmount = z.preprocess((v) => {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "string") {
+    const n = parseFloat(v.replace(/,/g, ""));
+    return Number.isNaN(n) ? v : n;
+  }
+  return v;
+}, z.number().finite().min(0).nullable());
+
 const lineItemSchema = z.object({
   description: z.string().max(500).catch(""),
   quantity: amount.catch(1),
@@ -87,11 +101,11 @@ export const receiptExtractionSchema = z.object({
   merchant: z.string().min(1).max(300),
   date: z.string().nullable().optional(),
   invoiceNumber: z.string().nullable().optional(),
-  subtotal: amount.optional().default(0),
+  subtotal: printedAmount.optional().default(null),
   vatPercentage: z
     .preprocess((v) => (v === "" ? null : v), z.coerce.number().min(0).max(100).nullable())
     .optional(),
-  vatAmount: amount.optional().default(0),
+  vatAmount: printedAmount.optional().default(null),
   total: amount.optional().default(0),
   currency: z.string().max(10).nullable().optional(),
   category: z.string().nullable().optional(),
@@ -132,9 +146,9 @@ export const RECEIPT_JSON_SCHEMA = {
     merchant: { type: "string" },
     date: nullable("string"),
     invoiceNumber: nullable("string"),
-    subtotal: { type: "number" },
+    subtotal: nullable("number"),
     vatPercentage: nullable("number"),
-    vatAmount: { type: "number" },
+    vatAmount: nullable("number"),
     total: { type: "number" },
     currency: nullable("string"),
     category: { type: "string", enum: [...VALID_RECEIPT_CATEGORIES] },
@@ -204,6 +218,9 @@ export function sanityCheckReceipt(
   const todayMs = Date.parse(`${opts.today ?? todayDubai()}T00:00:00Z`);
   const subtotal = Number(data.subtotal) || 0;
   const vat = Number(data.vatAmount) || 0;
+  // null/undefined VAT means "not printed", not "0": the gap is left to reconcileReceiptAmounts,
+  // which derives and flags it (VAT_DERIVED), instead of asking the model to fill the figure in.
+  const vatPrinted = data.vatAmount !== null && data.vatAmount !== undefined;
   const total = Number(data.total) || 0;
 
   if (total <= 0 && subtotal <= 0) {
@@ -213,7 +230,7 @@ export function sanityCheckReceipt(
       message: "No total or subtotal found",
     });
   }
-  if (subtotal > 0 && total > 0) {
+  if (vatPrinted && subtotal > 0 && total > 0) {
     const tolerance = Math.max(0.05, total * 0.01);
     if (Math.abs(subtotal + vat - total) > tolerance) {
       issues.push({
@@ -318,6 +335,10 @@ export interface StructuredResult<T> {
   /** Issues remaining on the returned data (empty when the output was fully valid). */
   issues: ValidationIssue[];
   attempts: number;
+  /** The first successfully parsed attempt (before any correction retry). */
+  firstData?: T;
+  /** The raw JSON value of attempt 1 (before schema validation); undefined when it did not parse. */
+  firstRaw?: unknown;
 }
 
 export async function runStructured<T>(
@@ -327,15 +348,19 @@ export async function runStructured<T>(
   let feedback: string | undefined;
   let best: { data: T; issues: ValidationIssue[] } | null = null;
   let lastError = "Model output was invalid";
+  let firstData: T | undefined;
+  let firstRaw: unknown;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let parsed: z.ZodSafeParseResult<T>;
     try {
       const raw = await opts.call(feedback);
-      parsed = opts.schema.safeParse(extractJsonValue(raw));
+      const value = extractJsonValue(raw);
+      if (attempt === 0) firstRaw = value;
+      parsed = opts.schema.safeParse(value);
     } catch (err) {
       lastError = (err as Error).message;
-      feedback = `Your previous reply could not be parsed: ${lastError}. Reply with valid JSON only.`;
+      feedback = `Your previous reply could not be parsed: ${lastError}. Reply with valid JSON only. Correct only figures you misread that are PRINTED on the document. Never calculate, estimate or fill in a figure that is not printed (for example VAT): leave it null.`;
       continue;
     }
 
@@ -344,21 +369,23 @@ export async function runStructured<T>(
         .slice(0, 5)
         .map((i) => `${i.path.join(".") || "root"}: ${i.message}`)
         .join("; ");
-      feedback = `Your previous reply failed schema validation (${lastError}). Fix these fields and reply with valid JSON only.`;
+      feedback = `Your previous reply failed schema validation (${lastError}). Fix these fields and reply with valid JSON only. Correct only figures you misread that are PRINTED on the document. Never calculate, estimate or fill in a figure that is not printed (for example VAT): leave it null.`;
       continue;
     }
 
+    if (firstData === undefined) firstData = parsed.data;
     const issues = opts.sanity ? opts.sanity(parsed.data) : [];
     const errors = issues.filter((i) => i.severity === "error");
     // Prefer the attempt with fewer sanity errors.
     if (!best || errors.length < best.issues.filter((i) => i.severity === "error").length) {
       best = { data: parsed.data, issues };
     }
-    if (errors.length === 0) return { data: parsed.data, issues, attempts: attempt + 1 };
-    feedback = `Your previous reply failed validation: ${errors.map((e) => e.message).join("; ")}. Re-read the document and correct these values.`;
+    if (errors.length === 0)
+      return { data: parsed.data, issues, attempts: attempt + 1, firstData, firstRaw };
+    feedback = `Your previous reply failed validation: ${errors.map((e) => e.message).join("; ")}. Re-read the document and correct only figures you misread that are PRINTED on it. Never calculate, estimate or fill in a figure that is not printed (for example VAT): leave it null.`;
   }
 
-  if (best) return { ...best, attempts: maxRetries + 1 };
+  if (best) return { ...best, attempts: maxRetries + 1, firstData, firstRaw };
   throw new StructuredOutputError(lastError, maxRetries + 1);
 }
 

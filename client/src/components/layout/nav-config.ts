@@ -226,6 +226,12 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
         matches: ["/vat-autopilot"],
       },
       {
+        titleKey: "shell.nav.badDebtRelief",
+        url: "/vat-bad-debt-relief",
+        icon: ReceiptText,
+        testId: "vatBadDebtRelief",
+      },
+      {
         titleKey: "shell.nav.corporateTax",
         url: "/corporate-tax",
         icon: Building2,

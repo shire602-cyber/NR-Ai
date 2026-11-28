@@ -14,5 +14,12 @@
     "healthcheckTimeout": 300,
     "preDeployCommand": "node dist/migrate.js",
     "startCommand": "node --enable-source-maps dist/index.js"
+  },
+  "environments": {
+    "staging": {
+      "deploy": {
+        "sleepApplication": true
+      }
+    }
   }
 }

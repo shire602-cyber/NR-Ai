@@ -62,8 +62,8 @@ Field rules:
 - merchant: the exact supplier name as printed (keep Arabic spelling if the name is Arabic).
 - date: transaction date as YYYY-MM-DD. Day-first is normal in the UAE. Convert Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩) and Hijri-looking prefixes carefully; if no date is printed use null.
 - invoiceNumber: invoice / receipt / transaction number, or null.
-- subtotal: amount BEFORE VAT. vatPercentage: VAT rate (5 for standard UAE supplies, 0 for zero-rated/exempt). vatAmount: VAT charged. total: the grand total INCLUDING VAT.
-- If only one amount is shown treat it as the total and compute subtotal = total / 1.05. If subtotal and VAT are shown but no total, total = subtotal + VAT. subtotal + vatAmount must equal total.
+- subtotal: amount BEFORE VAT, only if printed. vatPercentage: VAT rate as printed (5 for standard UAE supplies, 0 for zero-rated/exempt), or null if not printed. vatAmount: the VAT charged, only if printed (use 0 only when the document explicitly shows VAT of 0.00). total: the grand total INCLUDING VAT, as printed.
+- Extract ONLY figures that are printed on the document. NEVER calculate, infer or back out a missing figure: if the subtotal or the VAT amount is not printed, return null for it, even when only a total is shown. Do not divide the total by 1.05 and do not add VAT to a subtotal. Our system reconciles and flags missing figures itself.
 - currency: ISO 4217 code (AED unless clearly otherwise; "د.إ"/"درهم" = AED, "ر.س" = SAR).
 - category: one of ${VALID_RECEIPT_CATEGORIES.join(", ")}.
 - supplierTrn: the supplier's 15-digit UAE Tax Registration Number (labelled TRN / الرقم الضريبي) or null. Do not guess.
@@ -262,7 +262,22 @@ export async function extractReceipt(args: {
     const data = redactor
       ? ({ ...result.data, merchant: redactor.restore(result.data.merchant) } as ReceiptExtraction)
       : result.data;
-    return { data, issues: result.issues, provider, model, attempts: result.attempts };
+    // A correction retry that turns an unprinted/zero VAT into a positive figure has computed it,
+    // not read it: force review (VAT_DERIVED) so it can never auto-post an input-VAT claim.
+    const issues = [...result.issues];
+    // Compare with the RAW first model answer (before schema validation): when the first answer
+    // was unparseable or failed the schema, nothing it said counts as a printed VAT figure.
+    const rawFirst = result.firstRaw as { vatAmount?: unknown } | null | undefined;
+    const firstVat = Number(rawFirst?.vatAmount) || 0;
+    const finalVat = Number(data.vatAmount) || 0;
+    if (result.attempts > 1 && finalVat > 0 && Math.abs(firstVat - finalVat) > 0.005) {
+      issues.push({
+        code: "VAT_DERIVED",
+        severity: "warning",
+        message: `The VAT amount (${data.vatAmount}) appeared only after a correction retry, so it may have been calculated rather than printed on the document. Check it against the receipt.`,
+      });
+    }
+    return { data, issues, provider, model, attempts: result.attempts };
   };
 
   if (clients.anthropic) {

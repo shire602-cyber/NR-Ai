@@ -18,12 +18,14 @@
 // Uncategorised lines post to 5000 General Expenses (created on demand), never 5130 (which the
 // seeded chart uses for Loss on Asset Disposal, R11-04).
 
+import { isBillWideReverseCharge, isLegacyBill } from "@shared/bill-line-edit";
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { sql, type SQL } from "drizzle-orm";
 import { storage } from "../storage";
 import { ACCOUNT_CODES } from "../constants";
 import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
+import { findFiledVatPeriod } from "../ledger/vat-lock";
 import { allocate, fromFils, mulRate, sumFils, toFils } from "../../shared/money";
 import {
   DEFAULT_BASE_CURRENCY,
@@ -134,6 +136,8 @@ export async function txRows<T = Record<string, unknown>>(
 export interface BillLineCalcInput {
   quantity?: number | null;
   unitPriceFils: number;
+  amountFils?: number;
+  vatFils?: number;
   vatRate?: number | null; // 0 | 5 (percent)
   supplyType?: string | null;
 }
@@ -174,13 +178,15 @@ const ZERO_VAT_SUPPLY = new Set(["zero_rated", "exempt", "out_of_scope"]);
  * reach here (validators reject them).
  */
 export function computeBillTotals(input: BillTotalsInput): BillTotals {
-  const billRc = input.reverseCharge === true || input.isImport === true;
+  const billRc = isBillWideReverseCharge(input.reverseCharge, input.isImport);
   const lines: BillLineCalc[] = input.lines.map((l, i) => {
-    const quantity = l.quantity && l.quantity > 0 ? l.quantity : 1;
+    const quantity = l.quantity ?? 1;
     if (!Number.isSafeInteger(l.unitPriceFils) || l.unitPriceFils < 0) {
       throw new DomainError("NEGATIVE_AMOUNT", 400, { line: i }, "Line amounts cannot be negative");
     }
-    const amountFils = l.unitPriceFils === 0 ? 0 : mulRate(l.unitPriceFils, quantity);
+    const amountFils =
+      l.amountFils ??
+      (l.unitPriceFils === 0 || quantity === 0 ? 0 : mulRate(l.unitPriceFils, quantity));
     let supplyType = l.supplyType || (billRc ? "reverse_charge" : "standard_rated");
     if (billRc && supplyType === "standard_rated") supplyType = "reverse_charge";
     const lineRc = billRc || supplyType === "reverse_charge";
@@ -198,7 +204,8 @@ export function computeBillTotals(input: BillTotalsInput): BillTotals {
     } else {
       vatRate = l.vatRate === 0 ? 0 : 5;
     }
-    const vatFils = vatRate === 5 && amountFils > 0 ? mulRate(amountFils, "0.05") : 0;
+    const vatFils =
+      l.vatFils ?? (vatRate === 5 && amountFils > 0 ? mulRate(amountFils, "0.05") : 0);
     return {
       quantity,
       unitPriceFils: l.unitPriceFils,
@@ -209,6 +216,17 @@ export function computeBillTotals(input: BillTotalsInput): BillTotals {
       reverseCharge: lineRc,
     };
   });
+  return { lines, ...sumBillTotals({ ...input, lines }) };
+}
+
+/** Aggregate already-valued lines, including saved lines whose stored quantity was rounded. */
+export function sumBillTotals(
+  input: Omit<BillTotalsInput, "lines"> & {
+    lines: Pick<BillLineCalc, "amountFils" | "vatFils" | "reverseCharge">[];
+  }
+): Omit<BillTotals, "lines"> {
+  const { lines } = input;
+  const billRc = isBillWideReverseCharge(input.reverseCharge, input.isImport);
   const subtotalFils = sumFils(lines.map((l) => l.amountFils));
   let vatFils = sumFils(lines.map((l) => l.vatFils));
   if (input.isImport && input.importVatFils && input.importVatFils > 0) {
@@ -218,7 +236,7 @@ export function computeBillTotals(input: BillTotalsInput): BillTotals {
   const anyRc = billRc || lines.some((l) => l.reverseCharge);
   const rcVat = billRc
     ? vatFils
-    : sumFils(lines.filter((l) => l.reverseCharge).map((l) => l.vatFils));
+    : sumFils(lines.filter((line) => line.reverseCharge).map((line) => line.vatFils));
   const withholdingFils =
     input.withholdingFils && input.withholdingFils > 0 ? input.withholdingFils : 0;
   const gross = subtotalFils + vatFils - rcVat;
@@ -231,7 +249,6 @@ export function computeBillTotals(input: BillTotalsInput): BillTotals {
     );
   }
   return {
-    lines,
     subtotalFils,
     vatFils,
     totalFils: gross - withholdingFils,
@@ -373,6 +390,7 @@ export interface BillRow {
   amount_paid?: string | number | null;
   reverse_charge: boolean;
   is_import?: boolean | null;
+  import_vat_amount?: string | number | null;
   exchange_rate?: string | number | null;
   recoverable_vat_percent?: string | number | null;
   withholding_amount?: string | number | null;
@@ -388,6 +406,7 @@ export interface BillLineRow {
   vat_amount?: string | number | null;
   account_id: string | null;
   reverse_charge?: boolean | null;
+  vat_supply_type?: string | null;
 }
 
 export const filsOf = (v: string | number | null | undefined): number =>
@@ -432,6 +451,23 @@ export function isoDateOf(value: string | Date): string {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   const s = String(value);
   return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : new Date(s).toISOString().slice(0, 10);
+}
+
+export async function legacyBillEditError(tx: LedgerTx, companyId: string, billDate: string) {
+  if (await findFiledVatPeriod(tx, companyId, billDate)) {
+    return new DomainError(
+      "LEGACY_BILL_IN_FILED_RETURN",
+      409,
+      undefined,
+      "Record the correction as an adjustment in an open VAT period, or ask your accountant. This bill is in a VAT return that’s already been submitted, so it can’t be edited."
+    );
+  }
+  return new DomainError(
+    "LEGACY_BILL_RECLASSIFY_REQUIRED",
+    409,
+    undefined,
+    "Enter a new bill with the correct VAT, then record a debit note for this one. This older bill doesn’t have enough VAT detail to edit safely. Need a hand? Contact support."
+  );
 }
 
 async function resolveLineAccount(
@@ -502,13 +538,22 @@ export async function planBillJournal(
   // E3 (J2-r3): a company that is not VAT registered does not self-account reverse-charge VAT
   // (it is not charged at all) and cannot recover the VAT a supplier charged: that VAT is part
   // of the line's cost, nothing goes to Input VAT 1050.
-  let rcVatBase = 0;
-  if (bill.reverse_charge || bill.is_import) {
-    rcVatBase = toBase(vatDoc, rate, foreign);
-  } else {
-    const rcLines = lineItems.filter((l) => l.reverse_charge);
-    rcVatBase = toBase(sumFils(rcLines.map((l) => filsOf(l.vat_amount))), rate, foreign);
-  }
+  const valuedLines = lineItems.map((line) => ({ ...line, vatFils: filsOf(line.vat_amount) }));
+  const legacy = isLegacyBill(vatDoc, valuedLines, {
+    isImport: bill.is_import,
+    reverseCharge: bill.reverse_charge,
+    declaredVatFils: filsOf(bill.import_vat_amount),
+  });
+  const rcVatDoc = isBillWideReverseCharge(bill.reverse_charge, bill.is_import)
+    ? vatDoc
+    : sumFils(
+        valuedLines
+          .filter(
+            (line) => line.reverse_charge || (!legacy && line.vat_supply_type === "reverse_charge")
+          )
+          .map((line) => line.vatFils)
+      );
+  let rcVatBase = toBase(rcVatDoc, rate, foreign);
   const vatBase = vatRegistered
     ? toBase(vatDoc, rate, foreign)
     : Math.max(0, toBase(vatDoc, rate, foreign) - rcVatBase);

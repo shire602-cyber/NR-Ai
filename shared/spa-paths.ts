@@ -115,6 +115,7 @@ export const SPA_PATHS = [
   "/evidence-center",
   "/vat-filing",
   "/vat-autopilot",
+  "/vat-bad-debt-relief",
   "/corporate-tax",
   "/team",
   "/history",
