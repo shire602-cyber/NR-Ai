@@ -105,7 +105,8 @@ export function TrialBanner({
 
   return (
     <div
-      role="note"
+      role="region"
+      aria-label={t["marketing.trialBannerLabel"]}
       data-testid="trial-banner"
       data-trial-state={trial.ended ? "ended" : "active"}
       data-plan-phase={phase.key}

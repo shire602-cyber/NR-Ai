@@ -731,6 +731,7 @@
   "marketing.pricingOrStartTrial": "أو ابدأ الفترة التجريبية المجانية",
   "marketing.trialEndsActivate": "تنتهي فترتك التجريبية في {date}. فعّل {plan} لمواصلة إضافة السجلات.",
   "marketing.trialChooseForAfter": "اختر الخطة التي تريدها بعد الفترة التجريبية ثم فعّلها لتواصل العمل.",
+  "marketing.trialBannerLabel": "حالة الفترة التجريبية",
   "marketing.trialSeePlan": "عرض الخطة",
   "marketing.trialChoosePlan": "اختر خطة",
   "marketing.trialChosenLine": "اخترت {plan}. فعّلها قبل {date} لتواصل العمل.",

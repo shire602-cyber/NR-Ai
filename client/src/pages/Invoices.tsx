@@ -1706,6 +1706,7 @@ export default function Invoices() {
             {!isIssued && (
               <>
                 <FormSection
+                  headingLevel={2}
                   title={t["forms.section.document"]}
                   description={t["forms.section.documentDesc"]}
                 >

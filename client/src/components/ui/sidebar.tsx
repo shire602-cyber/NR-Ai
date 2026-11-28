@@ -158,6 +158,7 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none";
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const { t } = useTranslation();
 
   if (collapsible === "none") {
     return (
@@ -239,13 +240,14 @@ function Sidebar({
         )}
         {...props}
       >
-        <div
+        <aside
+          aria-label={t["components.sidebarTitle"]}
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
           className="bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm"
         >
           {children}
-        </div>
+        </aside>
       </div>
     </div>
   );

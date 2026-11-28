@@ -23,6 +23,8 @@ export interface FormSectionProps extends Omit<React.HTMLAttributes<HTMLElement>
   /** Header-end slot (e.g. "Add line"). */
   actions?: React.ReactNode;
   testId?: string;
+  /** Heading level; h2 when no h2 precedes the section on the page (heading-order). */
+  headingLevel?: 2 | 3;
 }
 
 export function FormSection({
@@ -30,10 +32,12 @@ export function FormSection({
   description,
   actions,
   testId,
+  headingLevel = 3,
   className,
   children,
   ...props
 }: FormSectionProps) {
+  const Heading = headingLevel === 2 ? "h2" : "h3";
   const headingId = React.useId();
   return (
     <section
@@ -50,9 +54,9 @@ export function FormSection({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             {title && (
-              <h3 id={headingId} className="text-h3 font-semibold text-foreground">
+              <Heading id={headingId} className="text-h3 font-semibold text-foreground">
                 {title}
-              </h3>
+              </Heading>
             )}
             {description && <p className="mt-1 text-small text-muted-foreground">{description}</p>}
           </div>

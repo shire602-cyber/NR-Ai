@@ -30,9 +30,26 @@ const CommandDialog = ({
   /** Extra props for the inner cmdk root (e.g. a custom `filter`). */
   commandProps?: Omit<React.ComponentPropsWithoutRef<typeof CommandPrimitive>, "children">;
 }) => {
+  // The palette has no <DialogTrigger> (it opens from a button, a shortcut or an event), so Radix
+  // has nothing to hand focus back to on close. Remember what had focus when it opened (a layout
+  // effect runs before Radix moves focus into the dialog) and restore it on close.
+  const openerRef = React.useRef<Element | null>(null);
+  const isOpen = !!props.open;
+  React.useLayoutEffect(() => {
+    if (isOpen) openerRef.current = document.activeElement;
+  }, [isOpen]);
   return (
     <Dialog {...props}>
-      <DialogContent className="top-[12vh] max-w-xl translate-y-0 gap-0 overflow-hidden p-0 shadow-2xl data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2">
+      <DialogContent
+        onCloseAutoFocus={(event) => {
+          const opener = openerRef.current;
+          if (opener instanceof HTMLElement && opener.isConnected && opener !== document.body) {
+            event.preventDefault();
+            opener.focus();
+          }
+        }}
+        className="top-[12vh] max-w-xl translate-y-0 gap-0 overflow-hidden p-0 shadow-2xl data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2"
+      >
         <DialogTitle className="sr-only">
           <T k="components.commandPaletteTitle" />
         </DialogTitle>

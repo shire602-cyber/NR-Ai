@@ -731,6 +731,7 @@
   "marketing.pricingOrStartTrial": "or start the free trial",
   "marketing.trialEndsActivate": "Your trial ends on {date}. Activate {plan} to keep adding records.",
   "marketing.trialChooseForAfter": "Choose the plan for after your trial, then activate it to keep working.",
+  "marketing.trialBannerLabel": "Trial status",
   "marketing.trialSeePlan": "See plan",
   "marketing.trialChoosePlan": "Choose a plan",
   "marketing.trialChosenLine": "You chose {plan}. Activate it before {date} to keep working.",
