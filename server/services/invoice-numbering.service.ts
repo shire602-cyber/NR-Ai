@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { DomainError } from "../errors";
+import { calendarParts } from "@shared/uae-date";
 
 export type InvoiceDocType = "invoice" | "cash_sale" | "credit_note" | "debit_note" | "quote";
 
@@ -49,7 +50,16 @@ export function defaultNumberingSettings(docType: InvoiceDocType): NumberingSett
 
 /** Year key of the sequence row: the calendar year, or 0 for one continuous sequence. */
 function sequenceYear(s: NumberingSettings, date: Date): number {
-  return s.yearlyReset ? date.getUTCFullYear() : 0;
+  return s.yearlyReset ? numberingYear(date) : 0;
+}
+
+/**
+ * Calendar year a document date numbers in. A date-only value (UTC midnight) keeps its own day;
+ * an ordinary instant such as the default `new Date()` is read on the Dubai calendar, so a
+ * document issued at 21:30Z on 31 Dec already numbers in the new year.
+ */
+function numberingYear(date: Date): number {
+  return calendarParts(date)?.year ?? date.getUTCFullYear();
 }
 
 export function formatDocumentNumber(s: NumberingSettings, year: number, n: number): string {
@@ -140,7 +150,7 @@ export async function allocateInvoiceNumber(
   // this number. Skip past them inside the caller's tx (the upsert holds the sequence row lock),
   // so a number is never issued twice and nothing below an issued number is left open.
   for (let i = 0; i < MAX_COLLISION_SKIPS; i++) {
-    const candidate = formatDocumentNumber(settings, date.getUTCFullYear(), allocated);
+    const candidate = formatDocumentNumber(settings, numberingYear(date), allocated);
     if (!(await numberExists(companyId, docType, candidate, executor))) return candidate;
     const bumped = await executor.execute(sql`
       UPDATE invoice_number_sequences SET last_value = last_value + 1, updated_at = now()
@@ -219,7 +229,7 @@ export async function peekNextInvoiceNumber(
 ): Promise<string> {
   const settings = await getNumberingSettings(companyId, docType, executor);
   const next = (await lastIssued(companyId, docType, sequenceYear(settings, date), executor)) + 1;
-  return formatDocumentNumber(settings, date.getUTCFullYear(), next);
+  return formatDocumentNumber(settings, numberingYear(date), next);
 }
 
 export interface NumberingView extends NumberingSettings {
@@ -241,7 +251,7 @@ export async function numberingView(
     ...settings,
     lastIssued: last,
     nextNumber: last + 1,
-    nextFormatted: formatDocumentNumber(settings, date.getUTCFullYear(), last + 1),
+    nextFormatted: formatDocumentNumber(settings, numberingYear(date), last + 1),
   };
 }
 

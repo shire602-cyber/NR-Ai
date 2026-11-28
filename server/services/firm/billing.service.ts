@@ -710,7 +710,11 @@ async function insertServiceInvoice(
 }
 
 /** Bill every unbilled billable logged entry of a client into one service invoice. */
-export async function billWip(ctx: FirmContext, companyId: string, invoiceDate: Date = new Date()) {
+export async function billWip(
+  ctx: FirmContext,
+  companyId: string,
+  invoiceDate: Date = new Date(`${uaeToday()}T00:00:00.000Z`)
+) {
   return db.transaction(async (tx: typeof db) => {
     const entries = await tx
       .select()
