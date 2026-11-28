@@ -14,6 +14,7 @@
  */
 import "../zod-config";
 import { z } from "zod";
+import { uaeToday } from "../uae-date";
 import { MoneyError, fromFils, toFils, type ToFilsOptions } from "../money";
 
 // ─── Money ────────────────────────────────────────────────────
@@ -90,8 +91,9 @@ export function isRealCalendarDate(y: number, m: number, d: number): boolean {
   return d <= dim;
 }
 
-function todayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
+/** Today's UAE (Asia/Dubai, UTC+4) calendar day: the day a user in Dubai means by "today". */
+function todayUae(): string {
+  return uaeToday();
 }
 
 function addDaysIso(iso: string, days: number): string {
@@ -116,7 +118,7 @@ export function parseIsoDate(value: unknown): string | null {
 export interface DateRangeOptions {
   /** Earliest allowed date, inclusive. Default 1990-01-01. */
   min?: string;
-  /** Latest allowed date as days after today (UTC). Default ≈5 years. */
+  /** Latest allowed date as days after today (Dubai day). Default ≈5 years. */
   maxDaysAhead?: number;
 }
 
@@ -133,7 +135,7 @@ export function zDateIn(opts: DateRangeOptions = {}) {
       });
       return z.NEVER;
     }
-    const max = addDaysIso(todayUtc(), maxDaysAhead);
+    const max = addDaysIso(todayUae(), maxDaysAhead);
     if (iso < min || iso > max) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

@@ -9,10 +9,6 @@ import { dubaiIso, dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const today = () => dubaiToday();
-// UTC day on purpose for recurring-invoice startDate: the scheduler selects due templates with
-// next_run_date <= now() (UTC instant, server/storage/sales.ts), so a Dubai-day start is not due
-// between 20:00 and 24:00 UTC.
-const utcToday = () => new Date().toISOString().slice(0, 10);
 const daysAgo = (n: number) => dubaiIso(new Date(Date.now() - n * 86_400_000));
 
 type Line = Record<string, unknown>;
@@ -527,7 +523,7 @@ describe("W3-A sales cycle", () => {
       const created = await t.as.post(`/api/companies/${t.company.id}/recurring-invoices`, {
         customerName: "Monthly Customer",
         frequency: "monthly",
-        startDate: utcToday(),
+        startDate: today(),
         autoIssue: true,
         lines: [{ description: "Retainer", quantity: 1, unitPrice: 100, vatRate: 5 }],
       });
@@ -574,15 +570,14 @@ describe("W3-A sales cycle", () => {
       fromCurrency: "EUR",
       toCurrency: "AED",
       rate: 4,
-      // UTC day: the scheduler dates the generated invoice by the UTC instant, and the rate must be
-      // effective on that date.
-      effectiveDate: utcToday(),
+      // The scheduler dates the generated invoice by the Dubai day; the rate must be effective then.
+      effectiveDate: today(),
     });
     expect(rate.status, rate.text).toBe(201);
     const bad = await t.as.post(`/api/companies/${t.company.id}/recurring-invoices`, {
       customerName: "Euro GmbH",
       frequency: "monthly",
-      startDate: utcToday(),
+      startDate: today(),
       lines: [{ description: "Licence", quantity: 1, unitPrice: 100, vatRate: 0 }],
     });
     expect(bad.status).toBe(400); // 0% line without supply type
@@ -590,7 +585,7 @@ describe("W3-A sales cycle", () => {
       customerName: "Euro GmbH",
       currency: "EUR",
       frequency: "monthly",
-      startDate: utcToday(),
+      startDate: today(),
       autoIssue: true,
       autoSend: true,
       sendToEmail: "billing@example.com",
@@ -609,7 +604,7 @@ describe("W3-A sales cycle", () => {
     const draftTpl = await t.as.post(`/api/companies/${t.company.id}/recurring-invoices`, {
       customerName: "Draft Co",
       frequency: "monthly",
-      startDate: utcToday(),
+      startDate: today(),
       autoIssue: false,
       lines: [{ description: "Retainer", quantity: 1, unitPrice: 10, vatRate: 5 }],
     });

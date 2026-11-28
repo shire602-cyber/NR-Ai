@@ -4,6 +4,7 @@
 
 import { randomBytes } from "node:crypto";
 import { journalMemo } from "@shared/journal-memo";
+import { uaeToday } from "@shared/uae-date";
 import {
   accounts,
   creditNoteLines,
@@ -411,7 +412,11 @@ export class SalesStorage extends LedgerStorage {
       .select()
       .from(recurringInvoices)
       .where(
-        and(eq(recurringInvoices.isActive, true), lte(recurringInvoices.nextRunDate, new Date()))
+        and(
+          eq(recurringInvoices.isActive, true),
+          // Due on or before today's Dubai day (next_run_date is a timestamp holding a date).
+          sql`${recurringInvoices.nextRunDate}::date <= ${uaeToday()}::date`
+        )
       );
   }
 
@@ -443,7 +448,7 @@ export class SalesStorage extends LedgerStorage {
     const result = await tx.execute(sql`
       SELECT id FROM recurring_invoices
       WHERE is_active = true
-        AND next_run_date <= now()
+        AND next_run_date::date <= ${uaeToday()}::date
         ${exclude}
       ORDER BY next_run_date ASC
       LIMIT 1
