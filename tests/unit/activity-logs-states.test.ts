@@ -102,6 +102,23 @@ async function flush() {
   }
 }
 
+/**
+ * Retry an assertion on async results until it holds. The fixed-count flush above is not enough
+ * on a slow runner (coverage step), so every assertion that depends on a request or re-render
+ * waits here instead of racing it.
+ */
+async function eventually(assertion: () => void) {
+  await vi.waitFor(
+    async () => {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      assertion();
+    },
+    { timeout: 5000, interval: 10 }
+  );
+}
+
 async function mount() {
   const { default: ActivityLogs } = await import("../../client/src/pages/ActivityLogs");
   await act(async () => {
@@ -232,25 +249,32 @@ describe("Activity logs integrity check", () => {
   it("shows the intact verdict, clears it during a repeat check, and reports request failure", async () => {
     await mount();
     await click(verifyButton());
-    expect(byId("text-global-chain")?.textContent).toBe("Chain intact. 1 entry checked.");
+    await eventually(() =>
+      expect(byId("text-global-chain")?.textContent).toBe("Chain intact. 1 entry checked.")
+    );
 
     let respond!: (response: Response) => void;
     verifyChain = () => new Promise((resolve) => (respond = resolve));
     await click(verifyButton());
-    expect(verifyButton().disabled).toBe(true);
-    expect(byId("text-global-chain")).toBeNull();
-    expect(byId("text-global-chain-error")).toBeNull();
-    const statuses = Array.from(container.querySelectorAll('[role="status"]'));
-    expect(statuses.map((status) => status.textContent)).toContain(
-      en["activityLogs.chainChecking"]
-    );
+    await eventually(() => {
+      expect(typeof respond).toBe("function");
+      expect(verifyButton().disabled).toBe(true);
+      expect(byId("text-global-chain")).toBeNull();
+      expect(byId("text-global-chain-error")).toBeNull();
+      const statuses = Array.from(container.querySelectorAll('[role="status"]'));
+      expect(statuses.map((status) => status.textContent)).toContain(
+        en["activityLogs.chainChecking"]
+      );
+    });
 
     await act(async () => respond(json({ message: "raw server error" }, 500)));
-    expect(verifyButton().disabled).toBe(false);
-    expect(byId("text-global-chain")).toBeNull();
-    const error = byId("text-global-chain-error")!;
-    expect(error.getAttribute("role")).toBe("alert");
-    expect(error.textContent).toBe(en["activityLogs.chainCheckFailed"]);
+    await eventually(() => {
+      expect(verifyButton().disabled).toBe(false);
+      expect(byId("text-global-chain")).toBeNull();
+      const error = byId("text-global-chain-error")!;
+      expect(error.getAttribute("role")).toBe("alert");
+      expect(error.textContent).toBe(en["activityLogs.chainCheckFailed"]);
+    });
   });
 
   it("localizes the verified count and chain break reasons in Arabic", async () => {
@@ -259,7 +283,9 @@ describe("Activity logs integrity check", () => {
     verifyChain = () => json({ ok: true, checked: 23, firstBroken: null });
     await mount();
     await click(verifyButton());
-    expect(byId("text-global-chain")?.textContent).toBe("السلسلة سليمة. تم فحص ٢٣ سجلًا.");
+    await eventually(() =>
+      expect(byId("text-global-chain")?.textContent).toBe("السلسلة سليمة. تم فحص ٢٣ سجلًا.")
+    );
 
     for (const [reason, label] of [
       ["hash_mismatch", "بصمة السجل غير مطابقة"],
@@ -270,10 +296,12 @@ describe("Activity logs integrity check", () => {
     ]) {
       verifyChain = () => json({ ok: false, checked: 7, firstBroken: { seq: 7, reason } });
       await click(verifyButton());
-      expect(byId("text-global-chain-error")).toBeNull();
-      expect(byId("text-global-chain")?.textContent).toBe(
-        `السلسلة مكسورة عند المدخل رقم ٧ (${label}).`
-      );
+      await eventually(() => {
+        expect(byId("text-global-chain-error")).toBeNull();
+        expect(byId("text-global-chain")?.textContent).toBe(
+          `السلسلة مكسورة عند المدخل رقم ٧ (${label}).`
+        );
+      });
     }
   });
 });
@@ -296,8 +324,10 @@ describe("Activity logs load states", () => {
       expect(logRequests).toBe(0);
 
       await setOnline(true);
-      expect(byId("status-activity-logs-paused")).toBeNull();
-      expect(byId("row-log-l1")).not.toBeNull();
+      await eventually(() => {
+        expect(byId("status-activity-logs-paused")).toBeNull();
+        expect(byId("row-log-l1")).not.toBeNull();
+      });
     }
   );
 
@@ -316,7 +346,7 @@ describe("Activity logs load states", () => {
 
     server.status = 200;
     await setOnline(true);
-    expect(byId("row-log-l1")).not.toBeNull();
+    await eventually(() => expect(byId("row-log-l1")).not.toBeNull());
   });
 
   it("keeps cached rows and Export after a failed refresh, with a warning and Retry", async () => {
@@ -345,9 +375,11 @@ describe("Activity logs load states", () => {
 
     server.status = 200;
     await setOnline(true);
-    expect(byId("status-activity-logs-refresh-paused")).toBeNull();
-    expect(byId("state-activity-logs-refresh-error")).toBeNull();
-    expect(byId("row-log-l1")).not.toBeNull();
+    await eventually(() => {
+      expect(byId("status-activity-logs-refresh-paused")).toBeNull();
+      expect(byId("state-activity-logs-refresh-error")).toBeNull();
+      expect(byId("row-log-l1")).not.toBeNull();
+    });
   });
 
   it("Retry on the refresh warning requests again and clears the warning", async () => {
@@ -357,8 +389,10 @@ describe("Activity logs load states", () => {
     server.status = 200;
     const before = logRequests;
     await click(byId("button-retry-refresh-logs"));
-    expect(logRequests).toBe(before + 1);
-    expect(byId("state-activity-logs-refresh-error")).toBeNull();
+    await eventually(() => {
+      expect(logRequests).toBe(before + 1);
+      expect(byId("state-activity-logs-refresh-error")).toBeNull();
+    });
   });
 
   it("reports a successful empty load, and keeps saying so when a refresh fails", async () => {
@@ -448,10 +482,11 @@ describe("Activity logs load states", () => {
 
         server.status = 200;
         await act(async () => focusManager.setFocused(true));
-        await flush();
-        expect(logRequests).toBe(2);
-        expect(byId("status-activity-logs-paused")).toBeNull();
-        expect(byId("row-log-l1")).not.toBeNull();
+        await eventually(() => {
+          expect(logRequests).toBe(2);
+          expect(byId("status-activity-logs-paused")).toBeNull();
+          expect(byId("row-log-l1")).not.toBeNull();
+        });
       }
     );
 
@@ -480,11 +515,12 @@ describe("Activity logs load states", () => {
 
         server.status = 200;
         await act(async () => focusManager.setFocused(true));
-        await flush();
-        expect(logRequests).toBe(before + 2);
-        expect(byId("status-activity-logs-refresh-paused")).toBeNull();
-        expect(byId("state-activity-logs-refresh-error")).toBeNull();
-        expect(byId("row-log-l1")).not.toBeNull();
+        await eventually(() => {
+          expect(logRequests).toBe(before + 2);
+          expect(byId("status-activity-logs-refresh-paused")).toBeNull();
+          expect(byId("state-activity-logs-refresh-error")).toBeNull();
+          expect(byId("row-log-l1")).not.toBeNull();
+        });
       }
     );
   });
