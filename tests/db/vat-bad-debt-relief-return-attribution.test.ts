@@ -194,7 +194,13 @@ describe("bad-debt relief list: exact VAT return attribution", () => {
     const rev = await reverse(t, c.id, "2026-10-14");
     expect(rev.status, rev.text).toBe(200);
     expect((await list(t)).body[0].reversalReturns).toEqual([
-      { from: "2026-10-01", to: "2026-10-31", status: "forecast", source: "forecast" },
+      {
+        from: "2026-10-01",
+        to: "2026-10-31",
+        status: "forecast",
+        source: "forecast",
+        addBack: 50,
+      },
     ]);
   });
 
@@ -297,7 +303,7 @@ describe("bad-debt relief list: exact VAT return attribution", () => {
     const rev = await reverse(t, c.id, "2026-09-10");
     expect(rev.status, rev.text).toBe(200);
     expect((await list(t)).body[0].reversalReturns).toEqual([
-      { from: "2026-07-01", to: "2026-09-30", status: "amendment", source: "company" },
+      { from: "2026-07-01", to: "2026-09-30", status: "amendment", source: "company", addBack: 50 },
     ]);
   });
 
@@ -346,7 +352,13 @@ describe("bad-debt relief list: exact VAT return attribution", () => {
     expect(row.reversedAt).toBe("2026-10-01");
     // The add-back sits in the next open quarter, not the filed one the payment date is in.
     expect(row.reversalReturns).toEqual([
-      { from: "2026-10-01", to: "2026-12-31", status: "forecast", source: "forecast" },
+      {
+        from: "2026-10-01",
+        to: "2026-12-31",
+        status: "forecast",
+        source: "forecast",
+        addBack: 50,
+      },
     ]);
     expect(row.claimReturn).toMatchObject({
       from: "2026-07-01",
@@ -379,7 +391,13 @@ describe("bad-debt relief list: exact VAT return attribution", () => {
     const row = (await list(t)).body[0];
     expect(row.reversedAt).toBe(CLAIMED);
     expect(row.reversalReturns).toEqual([
-      { from: "2026-08-01", to: "2026-08-31", status: "forecast", source: "forecast" },
+      {
+        from: "2026-08-01",
+        to: "2026-08-31",
+        status: "forecast",
+        source: "forecast",
+        addBack: 50,
+      },
     ]);
     expect(
       await enginePeriods(
@@ -394,7 +412,7 @@ describe("bad-debt relief list: exact VAT return attribution", () => {
     ).toEqual([["2026-08-01", "2026-08-31"]]);
   });
 
-  it("answers with a bounded number of queries however many claims there are", async () => {
+  it("answers with a bounded number of queries however many claims and distinct dates there are", async () => {
     const { t, invoiceId } = await setup("BDRA-queries");
     const c = await claim(t, invoiceId);
     await insertReturn(t, "2026-01-01", "2026-03-31");
@@ -407,15 +425,23 @@ describe("bad-debt relief list: exact VAT return attribution", () => {
       const spy = vi.spyOn(pool, "query");
       try {
         const rows = await listBadDebtReliefClaimsDetailed(t.company.id);
-        return { n: spy.mock.calls.length, rows: rows.length };
+        const dates = new Set<string>();
+        for (const r of rows) {
+          dates.add(r.claimDate);
+          if (r.reversedAt) dates.add(r.reversedAt);
+        }
+        return { n: spy.mock.calls.length, rows: rows.length, dates: dates.size };
       } finally {
         spy.mockRestore();
       }
     };
-    // Dates spanning the same three returns in both runs, so only the claim count differs.
-    const days = ["2026-02-10", "2026-05-12", "2026-08-14"];
+    // Every added claim has its own claim date and its own reversal date (all inside the same three
+    // returns), so a design that costs a query per date would grow with the claim count.
+    const day = (offset: number) =>
+      new Date(Date.UTC(2026, 0, 1 + offset)).toISOString().slice(0, 10);
+    let next = 0;
     const addClaims = async (n: number) => {
-      for (let i = 0; i < n; i++) {
+      for (let i = 0; i < n; i++, next++) {
         await h.sql(
           `INSERT INTO bad_debt_relief_claims (company_id, invoice_id, claim_date, emirate,
                   outstanding_amount, taxable_amount, vat_amount, written_off, customer_notified,
@@ -423,7 +449,7 @@ describe("bad-debt relief list: exact VAT return attribution", () => {
            SELECT company_id, invoice_id, $2::date, emirate, outstanding_amount, taxable_amount,
                   vat_amount, written_off, customer_notified, 'reversed', $3::date
              FROM bad_debt_relief_claims WHERE id = $1`,
-          [c.id, days[i % 3], days[(i + 1) % 3]]
+          [c.id, day(next * 2), day(next * 2 + 1)]
         );
       }
     };
@@ -433,7 +459,203 @@ describe("bad-debt relief list: exact VAT return attribution", () => {
     const many = await count();
     expect(few.rows).toBe(4);
     expect(many.rows).toBe(34);
+    expect(few.dates).toBe(7); // 3 claims x 2 dates + the original claim date
+    expect(many.dates).toBe(67); // 30 more claims x 2 dates, all different
     expect(many.n).toBe(few.n);
     expect(many.n).toBeLessThan(40);
+  });
+
+  /** Net bad-debt add-back (fils) computeVat201 reports for one period. */
+  async function engineAddBack(companyId: string, from: string, to: string) {
+    const { computeVat201 } = await import("../../server/tax/vat-engine");
+    const v = await computeVat201({ companyId, from, to, allowIncomplete: true });
+    return v.contributions
+      .filter((x) => x.sourceType === "bad_debt_relief_reversal")
+      .reduce((sum, x) => sum + Object.values(x.boxes).reduce((a, b) => a + Number(b), 0), 0);
+  }
+
+  async function paymentIds(invoiceId: string) {
+    const rows = await h.sql<{ id: string }>(
+      `SELECT id FROM invoice_payments WHERE invoice_id = $1 AND method NOT LIKE 'write_off%'
+        ORDER BY created_at`,
+      [invoiceId]
+    );
+    return rows.map((r) => r.id);
+  }
+
+  const Q3: [string, string] = ["2026-07-01", "2026-09-30"];
+  const Q4: [string, string] = ["2026-10-01", "2026-12-31"];
+
+  it("shows the filed return that carries a recovery whose payment was reversed and paid again later", async () => {
+    const { t, invoiceId } = await setup("BDRA-repaid");
+    await h.sql(`UPDATE companies SET vat_filing_frequency = 'quarterly' WHERE id = $1`, [
+      t.company.id,
+    ]);
+    await claim(t, invoiceId);
+    const bank = await accountByCode(t, "1020");
+    const payUrl = `/api/companies/${t.company.id}/invoices/${invoiceId}/payments`;
+    // The customer pays in full in Q3 (still open): the recovery +50 is dated in Q3.
+    const first = await t.as.post(payUrl, {
+      amount: 1050,
+      date: "2026-09-05",
+      paymentAccountId: bank.id,
+    });
+    expect(first.status, first.text).toBe(201);
+    await insertReturn(t, Q3[0], Q3[1]);
+    // The payment is reversed in Q4 (the recovery is reversed on its own date), then paid again.
+    const { reverseInvoicePayment } = await import("../../server/services/invoice-payment.service");
+    const [paymentId] = await paymentIds(invoiceId);
+    await reverseInvoicePayment({
+      companyId: t.company.id,
+      paymentId,
+      actorId: t.user.id,
+      reason: "bounced",
+      date: "2026-10-10",
+    });
+    const second = await t.as.post(payUrl, {
+      amount: 1050,
+      date: "2026-10-15",
+      paymentAccountId: bank.id,
+    });
+    expect(second.status, second.text).toBe(201);
+    // The engine: Q3 carries +50, Q4 nets to 0.
+    expect(await engineAddBack(t.company.id, ...Q3)).toBe(5000);
+    expect(await engineAddBack(t.company.id, ...Q4)).toBe(0);
+    const row = (await list(t)).body[0];
+    expect(row.reversalReturns).toEqual([
+      { from: Q3[0], to: Q3[1], status: "filed", source: "company", addBack: 50 },
+    ]);
+  });
+
+  it("shows partial recoveries on a claim that is still claimed, with the engine's amount", async () => {
+    const { t, invoiceId } = await setup("BDRA-partial");
+    await h.sql(`UPDATE companies SET vat_filing_frequency = 'quarterly' WHERE id = $1`, [
+      t.company.id,
+    ]);
+    await claim(t, invoiceId);
+    const bank = await accountByCode(t, "1020");
+    const pay = await t.as.post(`/api/companies/${t.company.id}/invoices/${invoiceId}/payments`, {
+      amount: 525,
+      date: "2026-09-05",
+      paymentAccountId: bank.id,
+    });
+    expect(pay.status, pay.text).toBe(201);
+    const row = (await list(t)).body[0];
+    expect(row.status).toBe("claimed");
+    expect(row.reversalReturns).toHaveLength(1);
+    expect(row.reversalReturns[0]).toMatchObject({ from: Q3[0], to: Q3[1], status: "forecast" });
+    const engine = await engineAddBack(t.company.id, ...Q3);
+    expect(engine).toBeGreaterThan(0);
+    expect(Math.round(row.reversalReturns[0].addBack * 100)).toBe(engine);
+  });
+
+  it("calls a return that is only finalised in the app submitted, not filed", async () => {
+    const { t, invoiceId } = await setup("BDRA-submitted");
+    await claim(t, invoiceId);
+    await insertReturn(t, Q3[0], Q3[1], { status: "submitted" });
+    expect((await list(t)).body[0].claimReturn).toEqual({
+      from: Q3[0],
+      to: Q3[1],
+      status: "submitted",
+      source: "company",
+    });
+  });
+
+  it("lets an older overlapping return that still locks the date win over a newer one under amendment", async () => {
+    const { t, invoiceId } = await setup("BDRA-overlap");
+    const c = await claim(t, invoiceId);
+    await insertReturn(t, "2026-07-01", "2026-09-30");
+    const newer = await insertReturn(t, "2026-08-15", "2026-10-31", { status: "amended" });
+    await insertReturn(t, "2026-08-15", "2026-10-31", { status: "draft", amends: newer });
+    expect((await list(t)).body[0].claimReturn).toEqual({
+      from: "2026-07-01",
+      to: "2026-09-30",
+      status: "filed",
+      source: "company",
+    });
+    // The lock agrees: the older return still refuses a reversal dated in it.
+    const rev = await reverse(t, c.id, "2026-09-10");
+    expect(rev.status, rev.text).toBe(409);
+  });
+
+  it("shows a date in an unverifiable group return as locked, even with an open draft of its own", async () => {
+    const rep = await h.createTenant({ name: "BDRA-rep-unv", planId: "professional" });
+    const { t, invoiceId } = await setup("BDRA-member-unv");
+    const c = await claim(t, invoiceId);
+    const gid = await createGroup(rep, [t]);
+    // Group evidence exists (an authorising audit record) but the return carries no membership
+    // snapshot and no audit shows who was in the group when it closed.
+    await h.sql(
+      `INSERT INTO audit_logs (company_id, user_id, action, resource_type, resource_id, details,
+                               created_at)
+       VALUES ($1, $2, 'vat.group.upsert', 'vat_group', $3, $4, now() - interval '1 day')`,
+      [
+        rep.company.id,
+        rep.user.id,
+        gid,
+        JSON.stringify({
+          after: {
+            name: "Group",
+            groupTrn: GROUP_TRN,
+            members: [rep.company.id, t.company.id],
+            memberAuthority: "settings.company",
+          },
+        }),
+      ]
+    );
+    await h.sql(
+      `INSERT INTO vat_returns (company_id, period_start, period_end, due_date, status, vat_group_id,
+                                created_by)
+       VALUES ($1, $2::date, $3::date, ($3::date + 28), 'filed', $4, $5)`,
+      [rep.company.id, Q3[0], Q3[1], gid, rep.user.id]
+    );
+    await insertReturn(t, Q3[0], Q3[1], { status: "draft" });
+    expect((await list(t)).body[0].claimReturn).toEqual({
+      from: Q3[0],
+      to: Q3[1],
+      status: "unverified",
+      source: "group",
+    });
+    // The lock agrees: every VAT posting on that date is refused.
+    const rev = await reverse(t, c.id, "2026-09-10");
+    expect(rev.status, rev.text).toBe(409);
+    expect(rev.body.code).toBe("VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED");
+  });
+
+  it("forecasts a current group member's date from the representative's stagger", async () => {
+    const rep = await h.createTenant({ name: "BDRA-rep-fc", planId: "professional" });
+    const { t, invoiceId } = await setup("BDRA-member-fc");
+    await claim(t, invoiceId);
+    await h.sql(`UPDATE companies SET vat_filing_frequency = 'monthly' WHERE id = $1`, [
+      t.company.id,
+    ]);
+    await h.sql(`UPDATE companies SET vat_filing_frequency = 'quarterly' WHERE id = $1`, [
+      rep.company.id,
+    ]);
+    const gid = await createGroup(rep, [t]);
+    // The group's current membership is authorised (settings.company), as a saved group is.
+    await h.sql(
+      `INSERT INTO audit_logs (company_id, user_id, action, resource_type, resource_id, details)
+       VALUES ($1, $2, 'vat.group.upsert', 'vat_group', $3, $4)`,
+      [
+        rep.company.id,
+        rep.user.id,
+        gid,
+        JSON.stringify({
+          after: {
+            name: "Group",
+            groupTrn: GROUP_TRN,
+            members: [rep.company.id, t.company.id].map((id) => id.toLowerCase()).sort(),
+            memberAuthority: "settings.company",
+          },
+        }),
+      ]
+    );
+    expect((await list(t)).body[0].claimReturn).toEqual({
+      from: Q3[0],
+      to: Q3[1],
+      status: "forecast",
+      source: "forecast",
+    });
   });
 });

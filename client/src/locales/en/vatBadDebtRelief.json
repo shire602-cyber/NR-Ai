@@ -55,5 +55,9 @@
   "vatBadDebtRelief.periodStatus.filed": "filed",
   "vatBadDebtRelief.periodStatus.amendment": "under amendment",
   "vatBadDebtRelief.periodStatus.forecast": "forecast, no return recorded yet",
-  "vatBadDebtRelief.reversalRecoveredLead": "Recovered over customer payments, in:"
+  "vatBadDebtRelief.reversalRecoveredLead": "Recovered over customer payments, in:",
+  "vatBadDebtRelief.periodStatus.submitted": "finalised in the app, not yet filed in EmaraTax",
+  "vatBadDebtRelief.periodStatus.unverified": "locked, VAT group membership still to be verified",
+  "vatBadDebtRelief.partialRecoveredLead": "Partly recovered over customer payments, in:",
+  "vatBadDebtRelief.addBackAmount": "net {amount} added back"
 }

@@ -52,8 +52,10 @@ import { uaeToday } from "@shared/uae-date";
 interface ReturnAttribution {
   from: string;
   to: string;
-  status: "open" | "filed" | "amendment" | "forecast";
+  status: "open" | "submitted" | "filed" | "amendment" | "forecast" | "unverified";
   source: "company" | "group" | "forecast";
+  /** Net add-back (AED) the return carries, on add-back lists only. */
+  addBack?: number;
 }
 
 interface ReliefClaim {
@@ -112,9 +114,11 @@ export default function VatBadDebtRelief() {
   // refuses filed periods when something is posted). Without an attribution the neutral line stays.
   const statusText: Record<string, string> = {
     open: t["vatBadDebtRelief.periodStatus.open"],
+    submitted: t["vatBadDebtRelief.periodStatus.submitted"],
     filed: t["vatBadDebtRelief.periodStatus.filed"],
     amendment: t["vatBadDebtRelief.periodStatus.amendment"],
     forecast: t["vatBadDebtRelief.periodStatus.forecast"],
+    unverified: t["vatBadDebtRelief.periodStatus.unverified"],
   };
   const periodLabel = (date: string, period?: ReturnAttribution | null) => {
     if (!period) {
@@ -126,6 +130,13 @@ export default function VatBadDebtRelief() {
       status: statusText[period.status] ?? period.status,
     });
   };
+
+  const addBackText = (period: ReturnAttribution) =>
+    typeof period.addBack === "number"
+      ? ` · ${formatMessage(t["vatBadDebtRelief.addBackAmount"], {
+          amount: formatCurrency(period.addBack, "AED", locale),
+        })}`
+      : "";
 
   const claims = Array.isArray(claimsQuery.data) ? claimsQuery.data : undefined;
 
@@ -307,6 +318,7 @@ export default function VatBadDebtRelief() {
                                   {claim.reversalReturns.map((period) => (
                                     <p key={`${period.from}:${period.to}`}>
                                       {periodLabel(claim.reversedAt as string, period)}
+                                      {addBackText(period)}
                                     </p>
                                   ))}
                                 </div>
@@ -332,6 +344,20 @@ export default function VatBadDebtRelief() {
                                   })}
                                 </p>
                               ) : null}
+                            </div>
+                          ) : claim.reversalReturns?.length ? (
+                            // Part-paid and still claimed: the add-backs already reported.
+                            <div
+                              className="space-y-1 text-small text-muted-foreground"
+                              data-testid={`relief-reversal-period-${claim.id}`}
+                            >
+                              <p>{t["vatBadDebtRelief.partialRecoveredLead"]}</p>
+                              {claim.reversalReturns.map((period) => (
+                                <p key={`${period.from}:${period.to}`}>
+                                  {periodLabel(claim.claimDate, period)}
+                                  {addBackText(period)}
+                                </p>
+                              ))}
                             </div>
                           ) : (
                             "—"

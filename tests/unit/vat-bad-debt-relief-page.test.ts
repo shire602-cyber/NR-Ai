@@ -288,8 +288,37 @@ describe("VAT bad-debt relief screen", () => {
     );
   });
 
+  it.each(["en", "ar"] as const)(
+    "says a submitted return is not yet filed, a locked one needs verification, and shows partial recoveries (%s)",
+    async (lang) => {
+      const SUBMITTED = { ...FILED_Q3, status: "submitted" };
+      const LOCKED = { ...FILED_Q3, status: "unverified", source: "group" };
+      {
+        state.lang = lang;
+        const cat = lang === "en" ? enCompliance : arCompliance;
+        setFixtures({
+          [CLAIMS_URL]: [
+            claim({
+              claimReturn: SUBMITTED,
+              reversalReturns: [{ ...LOCKED, addBack: 25 }],
+            }),
+          ],
+          [ELIGIBLE_URL]: ELIGIBLE,
+        });
+        await renderPage(VatBadDebtRelief);
+        const period = byTestId(`relief-period-${CLAIM_ID}`)!.textContent!;
+        expect(period).toContain(cat["vatBadDebtRelief.periodStatus.submitted"]);
+        expect(period).not.toContain(cat["vatBadDebtRelief.periodStatus.filed"] + ")");
+        const partial = byTestId(`relief-reversal-period-${CLAIM_ID}`)!.textContent!;
+        expect(partial).toContain(cat["vatBadDebtRelief.partialRecoveredLead"]);
+        expect(partial).toContain(cat["vatBadDebtRelief.periodStatus.unverified"]);
+        if (lang === "ar") expect(period).not.toMatch(/[A-Za-z]/);
+      }
+    }
+  );
+
   it("keeps catalogs complete for the status words, with tanween spelled letter, fathatan, alif", () => {
-    for (const key of ["open", "filed", "amendment", "forecast"]) {
+    for (const key of ["open", "submitted", "filed", "amendment", "forecast", "unverified"]) {
       expect(
         enCompliance[`vatBadDebtRelief.periodStatus.${key}` as keyof typeof enCompliance]
       ).toBeTruthy();

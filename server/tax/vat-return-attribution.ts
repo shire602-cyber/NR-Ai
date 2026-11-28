@@ -13,8 +13,13 @@
  *      from current members).
  *   3. Nothing recorded for the date: the period the company's CURRENT stagger would give,
  *      marked "forecast".
- * A date inside a return whose group membership cannot be verified gets no attribution (null)
- * rather than a guess. Cost: one closure read, at most two draft reads and one settings read for
+ * Precedence on a date follows the posting lock (`findFiledVatPeriod`): a closed return that is
+ * not under amendment wins (newest period end first, so an under-amendment return never hides an
+ * older overlapping return that still locks the date); else a return whose group membership
+ * cannot be verified (status "unverified": the lock refuses every posting there, whatever drafts
+ * exist); else a closed return under amendment; then drafts; then the forecast. A "submitted"
+ * return is finalised in the app but not yet filed in EmaraTax, so it is not called "filed".
+ * Forecasts for a current VAT group member use the representative's stagger. Cost: one closure read, at most two draft reads and one settings read for
  * the whole batch of dates, plus the per-return scope checks inside `listVatClosures`.
  */
 import { db, pool } from "../db";
@@ -23,7 +28,13 @@ import { listVatClosures } from "../ledger/vat-lock";
 import { loadVatCompany } from "./vat-engine";
 import { periodContaining } from "./vat-periods";
 
-export type ReturnAttributionStatus = "open" | "filed" | "amendment" | "forecast";
+export type ReturnAttributionStatus =
+  | "open"
+  | "submitted"
+  | "filed"
+  | "amendment"
+  | "forecast"
+  | "unverified";
 
 export interface ReturnAttribution {
   from: string;
@@ -46,16 +57,41 @@ export async function attributeDatesToReturns(
 
   const { closures, unresolvedPeriods } = await listVatClosures(db, companyId, min, max);
 
+  // The lock's own order: the first verified, non-amended return covering the date, else an
+  // unverifiable group return, else a return under amendment (which does not lock).
   const pending = unique.filter((date) => {
-    const hit = closures.find((c) => within(date, c.periodStart, c.periodEnd));
-    if (!hit) return true;
-    out.set(date, {
-      from: hit.periodStart,
-      to: hit.periodEnd,
-      status: hit.underAmendment ? "amendment" : "filed",
-      source: hit.ownReturn ? "company" : "group",
-    });
-    return false;
+    const covering = closures.filter((c) => within(date, c.periodStart, c.periodEnd));
+    const hit = covering.find((c) => !c.underAmendment);
+    if (hit) {
+      out.set(date, {
+        from: hit.periodStart,
+        to: hit.periodEnd,
+        status: hit.status === "submitted" ? "submitted" : "filed",
+        source: hit.ownReturn ? "company" : "group",
+      });
+      return false;
+    }
+    const locked = unresolvedPeriods.find((p) => within(date, p.periodStart, p.periodEnd));
+    if (locked) {
+      out.set(date, {
+        from: locked.periodStart,
+        to: locked.periodEnd,
+        status: "unverified",
+        source: "group",
+      });
+      return false;
+    }
+    const amended = covering[0];
+    if (amended) {
+      out.set(date, {
+        from: amended.periodStart,
+        to: amended.periodEnd,
+        status: "amendment",
+        source: amended.ownReturn ? "company" : "group",
+      });
+      return false;
+    }
+    return true;
   });
   if (!pending.length) return out;
 
@@ -131,15 +167,14 @@ export async function attributeDatesToReturns(
         status: "open",
         source: hits[0].ownerId.toLowerCase() === companyId.toLowerCase() ? "company" : "group",
       });
-    } else if (unresolvedPeriods.some((p) => within(date, p.periodStart, p.periodEnd))) {
-      out.set(date, null);
     } else {
       left.push(date);
     }
   }
   if (!left.length) return out;
 
-  const company = await loadVatCompany(companyId);
+  // A current group member is filed by the representative: its stagger decides the period.
+  const company = await loadVatCompany(repIds.length ? repIds[0] : companyId);
   for (const date of left) {
     const p = periodContaining(date, company.frequency, company.startMonth);
     out.set(date, { from: p.from, to: p.to, status: "forecast", source: "forecast" });
