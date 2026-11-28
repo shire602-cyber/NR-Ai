@@ -1,3 +1,4 @@
+import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 /**
  * A-Cube duplicate-submit and lost-response proofs through the durable queue, with the REAL
  * adapter talking HTTP to the local mock (tests/fixtures/pint-ae/asp/acube/mock-server.ts).
@@ -14,6 +15,7 @@ import {
 import { recordTestAppointment } from "./einvoice-appointment-fixture";
 import { startAcubeMock, type AcubeMock } from "../fixtures/pint-ae/asp/acube/mock-server";
 import { useHarness } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 
@@ -32,7 +34,7 @@ const provider = (timeoutMs = 5000) =>
     EINVOICE_PROVIDER: "acube",
     ACUBE_ENV: "sandbox",
     ACUBE_EMAIL: "sandbox@example.test",
-    ACUBE_PASSWORD: "pw-for-mock-only",
+    ACUBE_PASSWORD: FAKE_PASSWORD,
     ACUBE_BASE_URL: mock.baseUrl,
     ACUBE_LOGIN_URL: mock.loginUrl,
     ACUBE_TIMEOUT_MS: String(timeoutMs),
@@ -65,7 +67,7 @@ async function linkedInvoice() {
     customerName: "Acme Gulf FZ-LLC",
     customerTrn: "100765432100003",
     contactId: contact.body.id,
-    date: new Date().toISOString().slice(0, 10),
+    date: dubaiToday(),
     paymentTerms: "net30",
     lines: [{ description: "Consulting", quantity: 2, unitPrice: 500, vatRate: 5 }],
   });

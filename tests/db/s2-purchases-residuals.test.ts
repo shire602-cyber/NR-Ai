@@ -12,13 +12,14 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
 import { repoRoot } from "./pg-admin";
 import { PINT_AE_FIXTURES, fixtureCompany, type PintAeFixture } from "../fixtures/pint-ae/fixtures";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const TRN = "100000000000003";
 /** WQ2 (4.7): a supplier's TRN differs from the company's own (a self-TRN bill is refused). */
 const SUPPLIER_TRN = "100222333400003";
 const BUYER_TRN = "100555666700003";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 type BillSvc = typeof import("../../server/services/bill-payment.service");
 type Ledger = typeof import("../../server/ledger");

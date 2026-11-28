@@ -1,10 +1,13 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { uaeToday } from "@shared/uae-date";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { canPerform, companyAccessQueryKey, type CompanyAccess } from "@/lib/auth";
 import { useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { Link } from "wouter";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { classifyLoadError } from "@/lib/loadError";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
@@ -17,11 +20,23 @@ import {
   type VatStatusLike,
 } from "./needsYou";
 
+type LoadState = Pick<
+  UseQueryResult,
+  "isError" | "isFetching" | "isLoading" | "error" | "errorUpdatedAt" | "dataUpdatedAt" | "refetch"
+>;
+
 const TONE_DOT: Record<NeedsYouChip["tone"], string> = {
   danger: "bg-destructive",
   warning: "bg-warning",
   info: "bg-info",
 };
+
+/** Last non-null error a query reported (state, adjusted during render; no ref reads). */
+function useRetainedError(error: unknown): unknown {
+  const [last, setLast] = useState<unknown>(error ?? null);
+  if (error && error !== last) setLast(error);
+  return error ?? last;
+}
 
 /**
  * Linked action chips under the period tabs (replaces the one-line insight sentence).
@@ -32,10 +47,13 @@ export function NeedsYouStrip({
   companyId,
   invoices,
   compliance,
+  complianceQuery,
 }: {
   companyId: string | null | undefined;
   invoices: InvoiceLike[] | undefined;
   compliance: { vatStatus?: VatStatusLike | null } | null | undefined;
+  /** State of the compliance (VAT) query; a failure there must not read as "nothing needs you". */
+  complianceQuery?: LoadState;
 }) {
   const stripRef = useRef<HTMLElement>(null);
   const fade = useEdgeFade(stripRef);
@@ -65,7 +83,45 @@ export function NeedsYouStrip({
     retry: false,
     staleTime: 60_000,
   });
+  // A refetch of a query that has no data clears `error`; remember the last settled error so a
+  // 403 stays "forbidden" and a 500 keeps its copy while the retry runs.
+  const retained = {
+    bank: useRetainedError(bank.error),
+    access: useRetainedError(access.error),
+    payroll: useRetainedError(payroll.error),
+    compliance: useRetainedError(complianceQuery?.error),
+  };
   if (!companyId || invoices === undefined) return null;
+  // A list the role cannot read (403) contributes no chip; any other failure (including the
+  // access lookup and the compliance overview, whose failure skips payroll / the VAT chip) means
+  // the strip cannot say "nothing needs you", so it must not show the all-clear. A query that
+  // is refetching after an error counts as still failed, so a retry does not flash the all-clear.
+  const reads: Array<[keyof typeof retained, LoadState]> = [
+    ["bank", bank],
+    ["access", access],
+    ["payroll", payroll],
+    ...(complianceQuery
+      ? ([["compliance", complianceQuery]] as Array<[keyof typeof retained, LoadState]>)
+      : []),
+  ];
+  // Failed = the last settled result is an error: either it is in error now, or it is refetching
+  // and the last settle was an error (errorUpdatedAt newer than dataUpdatedAt). A recovered query
+  // has newer data, so later refetches never count as failed.
+  const failed = reads.filter(
+    ([key, q]) =>
+      (q.isError || (q.isFetching && (q.errorUpdatedAt ?? 0) > (q.dataUpdatedAt ?? 0))) &&
+      classifyLoadError(q.error ?? retained[key]) !== "forbidden"
+  );
+  const failedRead = failed[0]
+    ? { key: failed[0][0], error: failed[0][1].error ?? retained[failed[0][0]] }
+    : undefined;
+  const retryFailed = () => {
+    for (const [, q] of reads) if (q.isError) void q.refetch();
+  };
+  // First load: a contributing query that is fetching with no result yet. Until every one has
+  // settled the strip cannot know there is nothing to do, so it shows a neutral loading state.
+  // A refetch after an error also reports isLoading (the error clears); it has settled before.
+  const loading = reads.some(([, q]) => q.isLoading === true && (q.errorUpdatedAt ?? 0) === 0);
   const chips = buildNeedsYouChips(
     {
       invoices,
@@ -86,7 +142,28 @@ export function NeedsYouStrip({
       className="-mx-gutter flex snap-x items-center gap-3 overflow-x-auto px-gutter pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&>*]:snap-start"
       data-testid="dashboard-needs-you"
     >
-      {chips.length === 0 ? (
+      {chips.length === 0 && failedRead ? (
+        <LoadErrorState
+          compact
+          error={failedRead.error}
+          onRetry={retryFailed}
+          retrying={reads.some(([, q]) => q.isFetching)}
+          title={tt["dashboard.needsLoadFailedTitle"]}
+          description={tt["dashboard.needsLoadFailedBody"]}
+          forbiddenDescription={tt["dashboard.loadForbiddenBody"]}
+          testId="needs-you-load-error"
+        />
+      ) : chips.length === 0 && loading ? (
+        <span
+          role="status"
+          aria-busy="true"
+          aria-label={tt["dashboard.needsLoading"]}
+          className="inline-flex h-10 items-center"
+          data-testid="needs-you-loading"
+        >
+          <Skeleton className="h-10 w-56 rounded-full" />
+        </span>
+      ) : chips.length === 0 ? (
         <span
           className="inline-flex h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-small text-muted-foreground shadow-card-soft"
           data-testid="needs-you-clear"
@@ -114,6 +191,17 @@ export function NeedsYouStrip({
             </Link>
           );
         })
+      )}
+      {chips.length > 0 && failedRead && (
+        <button
+          type="button"
+          onClick={retryFailed}
+          className="inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-warning/30 bg-warning-subtle px-4 text-small text-warning-subtle-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          data-testid="needs-you-partial"
+        >
+          {tt["dashboard.needsPartial"]}
+          <span className="font-medium">{tt["components.errorRetry"]}</span>
+        </button>
       )}
     </nav>
   );

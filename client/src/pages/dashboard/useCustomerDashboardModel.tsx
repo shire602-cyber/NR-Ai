@@ -685,11 +685,12 @@ export function useCustomerDashboardModel() {
     enabled: !!selectedCompanyId,
   });
 
-  const { data: compliance } = useQuery<any>({
+  const complianceQuery = useQuery<any>({
     queryKey: ["/api/companies", selectedCompanyId, "compliance/overview"],
     enabled: !!selectedCompanyId,
     retry: 1,
   });
+  const compliance = complianceQuery.data;
 
   const dashboardReportDeliveryRunsQuery = useQuery<{
     runs: DashboardReportDeliveryRun[];
@@ -1446,6 +1447,7 @@ export function useCustomerDashboardModel() {
     monthlyTrends,
     trendsLoading,
     compliance,
+    complianceQuery,
     dashboardReportDeliveryRunsQuery,
     queueDashboardReportDeliverySubscription,
     retryDashboardReportDeliveryRun,

@@ -5,9 +5,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { useHarness } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 describe("anomaly alerts name their record", () => {
   it("returns relatedLabel for the company's own records and none for another tenant's", async () => {

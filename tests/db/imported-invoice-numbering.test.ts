@@ -4,10 +4,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const YEAR = new Date().getUTCFullYear();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 function openInvoicesCsv(numbers: string[]) {
   const rows = numbers.map(

@@ -33,6 +33,7 @@ import { vatFilingOutstandingFilter } from "../tax/vat-filing-filter";
 import { customerVisibleNotification } from "../storage/notification-visibility";
 import { deliverOutboxMessage, enqueueEmail } from "../outbox/outbox";
 import { DIGEST_WINDOW_MS, renderNotificationDigest } from "./notification-digest";
+import { uaeToday } from "@shared/uae-date";
 
 const log = createLogger("notification-engine");
 
@@ -471,7 +472,7 @@ export function unregisterNotificationEngine(): void {
 
 /** Issued, unpaid invoices whose due date has passed: one notification per invoice. */
 export async function scanOverdueInvoices(now: Date = new Date()): Promise<number> {
-  const today = now.toISOString().slice(0, 10);
+  const today = uaeToday(now);
   const { rows } = await pool.query(
     `SELECT i.id, i.company_id, i.number, i.customer_name, i.currency,
             (i.due_date)::date::text AS due
@@ -517,7 +518,7 @@ export async function scanVatDeadlines(now: Date = new Date()): Promise<number> 
     .where(
       and(
         vatFilingOutstandingFilter,
-        sql`${vatReturns.dueDate}::date <= (${now.toISOString().slice(0, 10)}::date + 14)`
+        sql`${vatReturns.dueDate}::date <= (${uaeToday(now)}::date + 14)`
       )
     );
   for (const r of rows) {
@@ -567,7 +568,7 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
       .orderBy(notifications.createdAt, notifications.id)
       .limit(100);
     if (!rows.length || !u.email) continue;
-    const day = now.toISOString().slice(0, 10);
+    const day = uaeToday(now);
     const { subject, html, textBody } = renderNotificationDigest(day, rows);
     try {
       const queued = await enqueueEmail({

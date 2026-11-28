@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -132,10 +133,12 @@ export function AutomaticEmailRules({ companyId }: { companyId?: string }) {
     queryKey: ["/api/companies", companyId, "email-outbox", "status"],
     enabled: !!companyId,
   });
-  const { data: settings, isLoading } = useQuery<ReminderSetting[]>({
+  const settingsQuery = useQuery<ReminderSetting[]>({
     queryKey: settingsKey(companyId),
     enabled: !!companyId,
   });
+  const { data: settings, isLoading } = settingsQuery;
+  const settingsFailed = settingsQuery.isError && settings === undefined;
 
   const runNow = useMutation({
     mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/reminders/run`),
@@ -193,6 +196,7 @@ export function AutomaticEmailRules({ companyId }: { companyId?: string }) {
             variant="outline"
             size="sm"
             onClick={() => setCreateOpen(true)}
+            disabled={settingsFailed}
             data-testid="button-create-reminder"
           >
             <Plus aria-hidden />
@@ -208,6 +212,13 @@ export function AutomaticEmailRules({ companyId }: { companyId?: string }) {
         )}
         {isLoading ? (
           <Skeleton className="h-24 w-full" />
+        ) : settingsFailed ? (
+          <LoadErrorState
+            error={settingsQuery.error}
+            onRetry={() => void settingsQuery.refetch()}
+            retrying={settingsQuery.isFetching}
+            testId="reminder-rules-load-error"
+          />
         ) : !settings?.length ? (
           <EmptyState size="sm" title={tt["invoices.reminders.noRulesBody"]} />
         ) : (
@@ -477,11 +488,22 @@ function logStatusLabel(status: string, t: Record<string, string>): string {
 export function AutomaticEmailLog({ companyId }: { companyId?: string }) {
   const { t, locale } = useTranslation();
   const tt = t as Record<string, string>;
-  const { data: logs, isLoading } = useQuery<ReminderLog[]>({
+  const logsQuery = useQuery<ReminderLog[]>({
     queryKey: logsKey(companyId),
     enabled: !!companyId,
   });
+  const { data: logs, isLoading } = logsQuery;
   if (isLoading) return <Skeleton className="h-24 w-full" />;
+  if (logsQuery.isError && logs === undefined)
+    return (
+      <LoadErrorState
+        compact
+        error={logsQuery.error}
+        onRetry={() => void logsQuery.refetch()}
+        retrying={logsQuery.isFetching}
+        testId="reminder-log-load-error"
+      />
+    );
   // Nothing has ever been emailed automatically: the section stays out of the way.
   if (!logs?.length) return null;
   return (

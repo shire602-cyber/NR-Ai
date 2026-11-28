@@ -5,7 +5,9 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { StatusBadge as ToneBadge } from "@/components/ui/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
 import { Money } from "@/components/ui/money";
 import { CashBalance } from "@/components/ui/cash-balance";
 import { formatCurrency, formatMonthKey } from "@/lib/format";
@@ -467,7 +469,9 @@ export function BudgetVsActualWidget({
   const tt = t as Record<string, string>;
   const year = asOf ? Number(asOf.slice(0, 4)) : undefined;
   const month = asOf ? Number(asOf.slice(5, 7)) : undefined;
-  const { data, isLoading } = useQuery<BudgetVsActualRow[]>({
+  const { data, isLoading, isLoadingError, isRefetchError, error, refetch, isFetching } = useQuery<
+    BudgetVsActualRow[]
+  >({
     queryKey: ["/api/analytics/budget-vs-actual", companyId, year, month],
     queryFn: () =>
       apiRequest(
@@ -491,8 +495,20 @@ export function BudgetVsActualWidget({
           </Link>
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 pt-0">
-        {rows.length === 0 ? (
+      <CardContent className="flex-1 space-y-3 pt-0">
+        {isRefetchError && (
+          <StaleDataNotice onRetry={() => void refetch()} testId="budget-stale-notice" />
+        )}
+        {isLoadingError ? (
+          <LoadErrorState
+            compact
+            error={error}
+            onRetry={() => void refetch()}
+            retrying={isFetching}
+            forbiddenDescription={tt["dashboard.loadForbiddenBody"]}
+            testId="budget-load-error"
+          />
+        ) : rows.length === 0 ? (
           <p className="text-caption text-muted-foreground">{tt["dashboard.budgetNone"]}</p>
         ) : (
           <table className="mobile-fit w-full table-fixed border-separate border-spacing-0 text-caption tabular-nums sm:text-sm">

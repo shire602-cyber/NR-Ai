@@ -5,6 +5,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const SECRET = "whsec_test_w4d_invoice_payments";
@@ -61,7 +62,7 @@ async function issuedInvoice(t: Tenant) {
   });
   const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
     contactId: c.body.id,
-    date: new Date().toISOString().slice(0, 10),
+    date: dubaiToday(),
     lines: [{ description: "Subscription", quantity: 1, unitPrice: 1000, vatRate: 5 }],
   });
   expect(inv.status, inv.text).toBe(200);

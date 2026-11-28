@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { accountByCode, ledgerTotals, postJournalEntry, useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const TRN = "100000000000003";
@@ -282,7 +283,7 @@ describe("[J1-D4] filing pulse for a brand-new company", () => {
     expect(overview.status, overview.text).toBe(200);
     expect(overview.body.vatStatus.filingStatus).not.toBe("overdue");
     expect(overview.body.corporateTaxStatus.status).not.toBe("overdue");
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dubaiToday();
     if (overview.body.vatStatus.nextDue) {
       expect(overview.body.vatStatus.nextDue >= today).toBe(true);
     }

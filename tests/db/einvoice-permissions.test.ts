@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EInvoiceProvider } from "../../server/services/einvoice-provider";
 import { useHarness, type Tenant } from "./harness";
 import { recordTestAppointment } from "./einvoice-appointment-fixture";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 
@@ -31,7 +32,7 @@ async function issuedInvoice(owner: Tenant): Promise<string> {
     customerTrn: "100765432100003",
     contactId: buyer.body.id,
     paymentTerms: "net30",
-    date: new Date().toISOString().slice(0, 10),
+    date: dubaiToday(),
     lines: [{ description: "Consulting", quantity: 1, unitPrice: 100, vatRate: 5 }],
   });
   expect(invoice.status, invoice.text).toBe(200);

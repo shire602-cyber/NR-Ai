@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { useHarness, accountByCode } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 afterEach(() => vi.unstubAllEnvs());
@@ -26,7 +27,7 @@ async function rentTemplate(t: Awaited<ReturnType<typeof h.createTenant>>, day: 
 async function countThenReceive(countedQty: number) {
   const t = await h.createTenant();
   const base = "/api/companies/" + t.company.id;
-  const day = new Date().toISOString().slice(0, 10);
+  const day = dubaiToday();
   const product = await t.as.post(base + "/products", {
     name: "Counted item",
     unitPrice: 100,
@@ -91,7 +92,7 @@ it("AU7 refuses a variance counted before a later receipt and changes nothing", 
 it("AU7 creates and posts stocktakes that list the same products in opposite orders", async () => {
   const t = await h.createTenant();
   const base = "/api/companies/" + t.company.id;
-  const countDate = new Date().toISOString().slice(0, 10);
+  const countDate = dubaiToday();
   const ids: string[] = [];
   for (const name of ["First item", "Second item"]) {
     const product = await t.as.post(base + "/products", { name, unitPrice: 100, costPrice: 0 });

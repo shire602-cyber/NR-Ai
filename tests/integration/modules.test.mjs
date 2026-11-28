@@ -10,6 +10,7 @@
 
 import { fail as abort, rateLimitRetries, throttledFetch } from "./_http.mjs";
 import { withRegisterLogin } from "./register-compat.mjs";
+import { dubaiToday } from "../helpers/dates.mjs";
 
 const api = withRegisterLogin(apiRaw, { status: "s", body: "j" });
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
@@ -27,7 +28,7 @@ async function apiRaw(m, p, o = {}) {
 }
 const n = (v) => Number(v ?? 0);
 const close = (a, b, tol = 0.02) => Math.abs(n(a) - n(b)) <= tol;
-const today = new Date().toISOString().slice(0, 10);
+const today = dubaiToday();
 // A VAT 201 period is a whole, already finished calendar quarter: date the bill in the last one.
 const qtr = (() => {
   let y = Number(today.slice(0, 4)), q = Math.floor((Number(today.slice(5, 7)) - 1) / 3) - 1;

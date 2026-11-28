@@ -13,6 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { accountByCode, postJournalEntry, useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const TRN = "100000000000003";
@@ -282,7 +283,8 @@ describe("[A4][M11][M14][M12] ADPF, pension payments and payroll control ties", 
     const ok = await t.as.post(`/api/payroll-runs/${current}/approve`, {});
     expect(ok.status, ok.text).toBe(200);
     const [je] = await entryOf(t, "payroll", current);
-    expect(je.date <= now.toISOString().slice(0, 10)).toBe(true);
+    expect(je.date <= dubaiToday()).toBe(true);
+    // `now` is already shifted +4h (Dubai wall clock), so its UTC fields are the Dubai month.
     expect(je.date.slice(0, 7)).toBe(now.toISOString().slice(0, 7));
   });
 });

@@ -37,6 +37,7 @@ import { chromium, devices } from "playwright-core";
 import pg from "pg";
 import { classifyLines } from "./lib/latin-text.mjs";
 import { REPORT_URLS } from "./lib/report-urls.mjs";
+import { dubaiIso } from "../helpers/dates.mjs";
 
 const BASE = (process.env.BASE_URL || "http://localhost:5000").replace(/\/$/, "");
 const SHOT_DIR = process.env.SHOT_DIR || "";
@@ -174,7 +175,7 @@ const DATA_ALLOW = [
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
-const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+const day = (n) => dubaiIso(new Date(Date.now() + n * 86400000));
 
 async function register(name, email, companyName) {
   const reg = await api("POST", "/api/auth/register", null, {

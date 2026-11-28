@@ -19,6 +19,7 @@ import { dueDateFromTerms, prepareSalesLines, termsFromDays } from "./invoice-li
 import { issueInvoice, resolveCustomerHeader } from "./invoice-posting.service";
 import { getRate } from "./fx/rates";
 import { fromFils, mulRate } from "../../shared/money";
+import { uaeToday } from "../../shared/uae-date";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { generateInvoicePDF } from "./pdf-invoice.service";
 import { resolveEmailLanguage } from "./email-layout";
@@ -616,16 +617,16 @@ function advanceByInterval(date: Date, interval: string): Date {
   const next = new Date(date);
   switch (interval) {
     case "weekly":
-      next.setDate(next.getDate() + 7);
+      next.setUTCDate(next.getUTCDate() + 7);
       break;
     case "monthly":
-      next.setMonth(next.getMonth() + 1);
+      next.setUTCMonth(next.getUTCMonth() + 1);
       break;
     case "quarterly":
-      next.setMonth(next.getMonth() + 3);
+      next.setUTCMonth(next.getUTCMonth() + 3);
       break;
     case "yearly":
-      next.setFullYear(next.getFullYear() + 1);
+      next.setUTCFullYear(next.getUTCFullYear() + 1);
       break;
   }
   return next;
@@ -712,7 +713,14 @@ export async function generateDueRecurringInvoices(): Promise<number> {
           return { skipped: true as const };
         };
 
-        if (template.endDate && new Date(template.endDate) < now) {
+        // The end date is a calendar day and INCLUSIVE: a template due on its end date still
+        // issues its last invoice. Compare Dubai days, not instants, so the answer does not
+        // depend on what time of day the job runs.
+        const todayDubai = uaeToday(now);
+        const endDay = template.endDate
+          ? new Date(template.endDate).toISOString().slice(0, 10)
+          : null;
+        if (endDay && endDay < todayDubai) {
           log.info({ templateId: template.id }, "Recurring template past endDate — disabled");
           return note("ended", "End date reached; template disabled", true);
         }
@@ -746,7 +754,7 @@ export async function generateDueRecurringInvoices(): Promise<number> {
           return note("invalid", `Template lines are invalid: ${(err as Error)?.message}`, true);
         }
 
-        const dateIso = now.toISOString().slice(0, 10);
+        const dateIso = uaeToday(now);
         const invoiceDate = new Date(`${dateIso}T00:00:00.000Z`);
         await lockPeriodPolicy(tx, template.companyId, "shared");
         try {
@@ -853,9 +861,12 @@ export async function generateDueRecurringInvoices(): Promise<number> {
           new Date(template.nextRunDate),
           template.frequency
         );
+        // Deactivate once the next run would fall after the (inclusive) end date.
+        const finished = endDay !== null && advancedNextRunDate.toISOString().slice(0, 10) > endDay;
         await tx
           .update(recurringInvoicesTable)
           .set({
+            ...(finished ? { isActive: false } : {}),
             nextRunDate: advancedNextRunDate,
             lastGeneratedInvoiceId: insertedInvoice.id,
             totalGenerated: sql`${recurringInvoicesTable.totalGenerated} + 1`,

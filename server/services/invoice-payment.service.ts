@@ -143,6 +143,9 @@ export interface RecordPaymentInput {
  */
 export async function recordInvoicePayment(input: RecordPaymentInput) {
   const exec: LedgerTx = input.tx ?? db;
+  // One Dubai business day for the journal, the FX rate, the bank rate and any write-off
+  // reinstatement; the invoice_payments row keeps the raw instant.
+  const paymentDay = uaeToday(input.date);
   const loadInvoice = async (): Promise<Invoice | undefined> => {
     if (!input.tx) return storage.getInvoice(input.invoiceId, input.companyId);
     const [row] = await exec
@@ -180,7 +183,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
       await reinstateWriteOffs({
         companyId: input.companyId,
         invoiceId: target.id,
-        date: input.date.toISOString().slice(0, 10),
+        date: paymentDay,
         reason: "Bad debt recovered: payment received",
         userId: input.createdBy,
         neededFils: wanted,
@@ -221,13 +224,9 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
   const currency = documentCurrency(invoice.currency, baseCurrency);
   if (!paymentExchangeRate && currency !== baseCurrency) {
     try {
-      const r = await getRate(
-        input.companyId,
-        currency,
-        baseCurrency,
-        input.date.toISOString().slice(0, 10),
-        { tx: input.tx }
-      );
+      const r = await getRate(input.companyId, currency, baseCurrency, paymentDay, {
+        tx: input.tx,
+      });
       if (!r.stale) paymentExchangeRate = r.rate;
     } catch {
       paymentExchangeRate = null;
@@ -250,7 +249,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
               input.companyId,
               bankCur,
               baseCurrency,
-              input.date.toISOString().slice(0, 10),
+              paymentDay,
               currency,
               input.tx
             ),

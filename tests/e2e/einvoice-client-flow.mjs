@@ -36,6 +36,7 @@ import { createRequire } from "node:module";
 import { chromium, devices } from "playwright-core";
 import pg from "pg";
 import { classifyLines } from "./lib/latin-text.mjs";
+import { dubaiIso } from "../helpers/dates.mjs";
 
 const SHOT_DIR = process.env.SHOT_DIR || "";
 const BASE = (process.env.BASE_URL || "http://localhost:5000").replace(/\/$/, "");
@@ -135,7 +136,7 @@ const DATA_ALLOW = [
   "UAE",
   "AED",
 ];
-const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+const day = (n) => dubaiIso(new Date(Date.now() + n * 86400000));
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 

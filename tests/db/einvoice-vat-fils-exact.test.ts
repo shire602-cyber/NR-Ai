@@ -17,10 +17,11 @@ import { describe, expect, it } from "vitest";
 import { mulRate, toFils } from "../../shared/money";
 import { all, attr, children, first, parseXml, textAt } from "../../server/services/einvoice/dom";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const RATE = "3.6725";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 const fils = (v: string | null) => toFils(v ?? "0");
 /** USD fils -> AED fils at a rate: shared/money half-up, the same rule the generator applies. */

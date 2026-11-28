@@ -5,10 +5,11 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiIso, dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+const today = () => dubaiToday();
+const daysAgo = (n: number) => dubaiIso(new Date(Date.now() - n * 86_400_000));
 
 type Line = Record<string, unknown>;
 
@@ -569,6 +570,7 @@ describe("W3-A sales cycle", () => {
       fromCurrency: "EUR",
       toCurrency: "AED",
       rate: 4,
+      // The scheduler dates the generated invoice by the Dubai day; the rate must be effective then.
       effectiveDate: today(),
     });
     expect(rate.status, rate.text).toBe(201);

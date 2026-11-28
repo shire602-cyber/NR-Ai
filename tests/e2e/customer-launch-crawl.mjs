@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, request } from "playwright-core";
 import { waitForRouteText } from "./lib/route-readiness.mjs";
 import { findBankFeedMention } from "./lib/bank-feed-claims.mjs";
+import { dubaiToday } from "../helpers/dates.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const PUBLIC_ONLY = process.env.CUSTOMER_E2E_PUBLIC_ONLY === "true";
@@ -679,7 +680,7 @@ async function main() {
         method: "POST",
         csrfToken,
         data: {
-          date: new Date().toISOString().slice(0, 10),
+          date: dubaiToday(),
           memo,
           lines: [
             { accountId: debitAccount.id, debit: 150, credit: 0 },
@@ -709,7 +710,7 @@ async function main() {
         csrfToken,
         data: {
           customerName,
-          date: new Date().toISOString().slice(0, 10),
+          date: dubaiToday(),
           currency: "AED",
           lines: [
             { description: "Launch QA services", quantity: 1, unitPrice: 1000, vatRate: 0.05 },

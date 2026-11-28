@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import { insertRow } from "./row-factory";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 
@@ -302,7 +303,7 @@ describe("J4: status transitions need the posting permission", () => {
     const a = await h.createTenant({ name: "StatusGate" });
     const emp = await memberOf(a, "employee", "sg-emp");
     const bk = await memberOf(a, "bookkeeper", "sg-bk");
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dubaiToday();
     const created = await emp.as.post(`/api/companies/${a.company.id}/invoices`, {
       customerName: "Gate Co",
       date: today,

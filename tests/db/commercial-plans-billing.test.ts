@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import type { Queryable } from "../../server/services/connectors/pq";
+import { dubaiToday } from "../helpers/dates";
 
 /**
  * Test-only synchronisation. The usage meter is written by `addUsage` through `pq`, and in some
@@ -110,7 +111,7 @@ function watchUsageWrite(companyId: string, metric: string, delta: number, hold 
 }
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 function setEnforcement(v: "true" | "false" | undefined) {
   if (v === undefined) delete process.env.BILLING_ENFORCEMENT;

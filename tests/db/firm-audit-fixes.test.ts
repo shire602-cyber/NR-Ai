@@ -6,11 +6,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiIso } from "../helpers/dates";
 
 const h = useHarness();
 const DAY = 86_400_000;
-const iso = (offsetDays: number) =>
-  new Date(Date.now() + offsetDays * DAY).toISOString().slice(0, 10);
+const iso = (offsetDays: number) => dubaiIso(new Date(Date.now() + offsetDays * DAY));
 
 async function nrOwner() {
   return h.createTenant({ name: "FirmAuditOwner", firmRole: "firm_owner" });

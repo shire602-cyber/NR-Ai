@@ -30,6 +30,7 @@ import {
 import { ctFigure, ctFigureStatus } from "../../server/routes/corporate-tax.routes";
 import { logoFromDataUrl, loadCompanyLogo } from "../../server/services/pdf-logo";
 import { usesLargeJson } from "../../server/http/body-limits";
+import { dubaiToday } from "../helpers/dates";
 
 const PNG_1X1 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -179,7 +180,7 @@ describe("[R07-15] profit-margin scheme math", () => {
       )
     ).toThrow(/standard-rated/);
     // Contract: margin lines are invoice-only and need a purchase cost.
-    const base = { customerName: "A", date: new Date().toISOString().slice(0, 10) };
+    const base = { customerName: "A", date: dubaiToday() };
     expect(
       createInvoiceSchema.safeParse({
         ...base,

@@ -143,6 +143,7 @@ export function DashboardHero({ m, empty = false }: { m: DashboardModel; empty?:
             companyId={m.selectedCompanyId}
             invoices={m.recentInvoices}
             compliance={m.compliance}
+            complianceQuery={m.complianceQuery}
           />
         </div>
       )}

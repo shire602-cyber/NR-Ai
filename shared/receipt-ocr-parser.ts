@@ -1,4 +1,5 @@
 import { normalizeForLabelMatching } from "./arabic-text";
+import { uaeToday } from "./uae-date";
 
 export const UNKNOWN_RECEIPT_MERCHANT = "Unknown Merchant";
 
@@ -318,7 +319,7 @@ export function parseReceiptOcrText(
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
-  const fallbackDate = options.fallbackDate || new Date().toISOString().slice(0, 10);
+  const fallbackDate = options.fallbackDate || uaeToday();
 
   const AMT = `(?:${CUR})?\\s*(-?\\d[\\d,]*\\.?\\d{0,2})`;
   const total = findFirstAmount(normalizedText, [
