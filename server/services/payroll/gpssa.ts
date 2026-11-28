@@ -12,19 +12,13 @@ import { emitDomainEvent } from "../../platform/domain-events";
 import { emitDomainEventInTx } from "../../platform/event-outbox";
 import { createLogger } from "../../config/logger";
 import { fromFils } from "../../../shared/money";
+import { csvCell } from "../../../shared/csv";
 import { pensionContribution, utcDate, addDays, isoDay } from "./calc";
 import { loadPayrollSettings } from "./context";
 import { pensionCountry, pensionRuleFor } from "./legal-params";
 import { dayOf, fils, q, q1 } from "./sql";
 
 const log = createLogger("payroll-gpssa");
-
-const csvCell = (v: unknown) => {
-  const s = v === null || v === undefined ? "" : String(v);
-  // Neutralise spreadsheet formula injection and quote when needed.
-  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
-  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-};
 
 export async function gpssaContributionCsv(
   companyId: string,

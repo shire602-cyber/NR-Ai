@@ -18,6 +18,7 @@
 import { createHash } from "node:crypto";
 import { pool } from "../db";
 import { sql } from "./security/sql";
+import { csvQuotedCell } from "../../shared/csv";
 
 export const GENESIS_HASH = "0".repeat(64);
 
@@ -299,14 +300,6 @@ export async function exportAuditChain(
   });
 }
 
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const s = typeof value === "string" ? value : JSON.stringify(value);
-  // Neutralise spreadsheet formula injection, then quote.
-  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
-  return `"${safe.replace(/"/g, '""')}"`;
-}
-
 export function auditRowsToCsv(rows: AuditExportRow[]): string {
   const header = [
     "seq",
@@ -343,7 +336,7 @@ export function auditRowsToCsv(rows: AuditExportRow[]): string {
         r.hash,
         r.legacy,
       ]
-        .map(csvCell)
+        .map(csvQuotedCell)
         .join(",")
     );
   }

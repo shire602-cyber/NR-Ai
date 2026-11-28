@@ -24,6 +24,7 @@ import { DomainError } from "../../errors";
 import { postJournal } from "../../ledger";
 import { trialBalance } from "../../reporting";
 import { toFils, tryToFils } from "../../../shared/money";
+import { csvQuotedCell } from "../../../shared/csv";
 import { accounts, companies } from "../../../shared/schema";
 import { zUuid } from "../../../shared/validators/primitives";
 import { accessibleClientCondition, listAccessibleClientIds, type FirmContext } from "./scope";
@@ -499,7 +500,7 @@ export async function buildReportPack(
     files[file] = new Uint8Array(await wb.xlsx.writeBuffer());
     index.push(
       [
-        JSON.stringify(c.name),
+        csvQuotedCell(c.name),
         c.id,
         file,
         tb.isBalanced,

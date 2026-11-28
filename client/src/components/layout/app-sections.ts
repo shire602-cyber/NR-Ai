@@ -85,6 +85,7 @@ export const APP_SECTIONS: ReadonlySet<string> = new Set([
   "tax-return-archive",
   "team",
   "vat-autopilot",
+  "vat-bad-debt-relief",
   "vat-filing",
   "vendors",
   "debit-notes",

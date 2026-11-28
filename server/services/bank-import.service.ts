@@ -18,6 +18,7 @@ import {
   detectBankFileKind,
   fingerprintBytes,
   importSourceFor,
+  looksBinary,
   parseBankCsvText,
   planBankImport,
   type BankFileKind,
@@ -33,6 +34,10 @@ import {
 } from "./bank-reconciliation.service";
 
 export function parseStatementCsv(bytes: Buffer, options: ParseOptions = {}): BankParseResult {
+  const isZip = bytes.length > 3 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+  if (!isZip && looksBinary(bytes)) {
+    throw new DomainError("STATEMENT_CSV_REQUIRED", 400, undefined, "Choose a bank CSV export.");
+  }
   const text = decodeStatementBytes(bytes);
   if (detectBankFileKind(bytes, text) !== "csv") {
     throw new DomainError("STATEMENT_CSV_REQUIRED", 400, undefined, "Choose a bank CSV export.");

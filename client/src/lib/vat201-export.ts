@@ -1,4 +1,5 @@
 // i18n-ignore-file: bilingual FTA VAT 201 export; the English box labels ship next to descriptionAr by design.
+import { csvCell as sharedCsvCell } from "@shared/csv";
 import type { ExportData } from "./export";
 
 export interface Vat201ExportReturn {
@@ -365,10 +366,8 @@ export function vat201PortalRows(vatReturn: Vat201ExportReturn): Vat201PortalRow
   return out;
 }
 
-function csvCell(v: string | number): string {
-  const s = typeof v === "number" ? v.toFixed(2) : v;
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
+const csvCell = (v: string | number): string =>
+  sharedCsvCell(typeof v === "number" ? v.toFixed(2) : v);
 
 /** CSV in portal field order (UTF-8, with Arabic descriptions). */
 export function vat201PortalCsv(
