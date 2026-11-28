@@ -197,20 +197,36 @@ async function hasOpenAmendment(
   });
 }
 
-/** Find a VAT posting lock, or an overlapping effective return when checking filing scope. */
-export async function findFiledVatPeriod(
+interface ClosureCandidate {
+  id: string;
+  status: string;
+  companyId: string;
+  amendsReturnId: string | null;
+  vatGroupId: string | null;
+  authorizedMember: boolean;
+  reconciliationSnapshot: unknown;
+  ps: string;
+  pe: string;
+}
+
+/**
+ * Every submitted / filed return (own, or a group representative's) that overlaps [from, to] and
+ * could cover the company, newest period end first. Shared by the posting lock and the read-only
+ * attribution list so both read the same evidence.
+ */
+async function loadClosureCandidates(
   tx: LedgerTx,
   companyId: string,
   from: string,
-  to = from,
-  options: { excludeReturnIds?: string[]; includePeriodsUnderAmendment?: boolean } = {}
-): Promise<VatPeriodClosure | null> {
+  to: string,
+  excludeReturnIds?: string[]
+): Promise<ClosureCandidate[]> {
   const memberId = companyId.toLowerCase();
   const withMember = sql`jsonb_build_array(${memberId}::text, g.representative_company_id::text)`;
   const auditMembers = sql`jsonb_build_array(${memberId}::text, a.company_id::text)`;
-  const excludeReturns = options.excludeReturnIds?.length
+  const excludeReturns = excludeReturnIds?.length
     ? sql`AND vat_returns.id NOT IN (${sql.join(
-        options.excludeReturnIds.map((id) => sql`${id}::uuid`),
+        excludeReturnIds.map((id) => sql`${id}::uuid`),
         sql`, `
       )})`
     : sql.empty();
@@ -297,17 +313,19 @@ export async function findFiledVatPeriod(
       ) candidate
      ORDER BY period_end DESC
   `);
-  const candidates = rowsOf<{
-    id: string;
-    status: string;
-    companyId: string;
-    amendsReturnId: string | null;
-    vatGroupId: string | null;
-    authorizedMember: boolean;
-    reconciliationSnapshot: unknown;
-    ps: string;
-    pe: string;
-  }>(res);
+  return rowsOf<ClosureCandidate>(res);
+}
+
+/** Find a VAT posting lock, or an overlapping effective return when checking filing scope. */
+export async function findFiledVatPeriod(
+  tx: LedgerTx,
+  companyId: string,
+  from: string,
+  to = from,
+  options: { excludeReturnIds?: string[]; includePeriodsUnderAmendment?: boolean } = {}
+): Promise<VatPeriodClosure | null> {
+  const memberId = companyId.toLowerCase();
+  const candidates = await loadClosureCandidates(tx, companyId, from, to, options.excludeReturnIds);
   let unresolved = false;
   for (const r of candidates) {
     const ownReturn = r.companyId === memberId;
@@ -334,6 +352,60 @@ export async function findFiledVatPeriod(
   // These candidates already have a membership link. An unresolved candidate requires
   // verification, while a verified snapshot decides membership by itself.
   return unresolved ? UNVERIFIED_VAT_GROUP : null;
+}
+
+export interface ListedVatClosure extends FiledVatPeriod {
+  /** An amendment draft is open: the return stays effective but its period is re-opened. */
+  underAmendment: boolean;
+  /** True for the company's own return, false for a VAT group representative's return. */
+  ownReturn: boolean;
+}
+
+/**
+ * Read-only batch of the closed returns that cover the company anywhere in [from, to], decided by
+ * the same candidate evidence and group-scope rules as `findFiledVatPeriod` (membership as at the
+ * return's filing, never today's members), but without stopping at the first hit and without
+ * skipping a return whose amendment is open (that is reported as `underAmendment`). One candidate
+ * read plus the per-return scope checks, so the cost follows the number of returns, not dates.
+ * `unresolvedPeriods` are overlapping returns whose group membership could not be verified.
+ */
+export async function listVatClosures(
+  tx: LedgerTx,
+  companyId: string,
+  from: string,
+  to = from
+): Promise<{
+  closures: ListedVatClosure[];
+  unresolvedPeriods: { periodStart: string; periodEnd: string }[];
+}> {
+  const memberId = companyId.toLowerCase();
+  const candidates = await loadClosureCandidates(tx, companyId, from, to);
+  const closures: ListedVatClosure[] = [];
+  const unresolvedPeriods: { periodStart: string; periodEnd: string }[] = [];
+  for (const r of candidates) {
+    const ownReturn = r.companyId === memberId;
+    const group = await resolveFilingVatGroup(tx, r, null);
+    if (group === UNVERIFIED_VAT_GROUP) {
+      if (ownReturn || r.authorizedMember) {
+        unresolvedPeriods.push({ periodStart: r.ps, periodEnd: r.pe });
+      }
+      continue;
+    }
+    if (
+      ownReturn ||
+      (group?.memberAuthority === "settings.company" && group.memberIds.includes(memberId))
+    ) {
+      closures.push({
+        vatReturnId: r.id,
+        status: r.status,
+        periodStart: r.ps,
+        periodEnd: r.pe,
+        underAmendment: await hasOpenAmendment(tx, r.id, group),
+        ownReturn,
+      });
+    }
+  }
+  return { closures, unresolvedPeriods };
 }
 
 async function touchesVatAccount(

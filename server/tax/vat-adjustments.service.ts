@@ -66,6 +66,7 @@ import { normaliseEmirate, toBaseFils } from "./vat-boxes";
 import { loadVatCompany, returnAdjustmentDelta, type ReturnAdjustmentKind } from "./vat-engine";
 import { appliedReceiptAmountSql, salesTaxPointSql } from "./sales-tax-point";
 import { assertAlignedPeriod } from "./vat-periods";
+import { attributeDatesToReturns, type ReturnAttribution } from "./vat-return-attribution";
 
 const log = createLogger("vat-adjustments");
 const INVOICE_LOCK_RECEIPT_ORDER = "invoice_lock";
@@ -443,9 +444,15 @@ export async function listBadDebtReliefClaims(companyId: string) {
 /**
  * Claims for the screen: the claim row plus invoice number, customer name, the relief still to be
  * added back on reversal (relief not yet recovered through customer part-payments, the same
- * figure `reverseBadDebtReliefClaim` posts). It deliberately carries no VAT return period: which
- * return a date lands in (filed, amended, group) is decided by the server's period lock when a
- * claim or reversal is posted, not predicted here. Read-only; two tenant-scoped queries.
+ * figure `reverseBadDebtReliefClaim` posts), and the VAT return each claim and each add-back lands
+ * in (`claimReturn`, `reversalReturns`). Read-only and informational: the period lock still decides
+ * what may be posted. Attribution follows `collectBadDebtRelief`: the relief goes in by
+ * `claim_date`; a reversal goes in by the date of the ledger entry that carries it (a manual
+ * reversal is dated max(date, claimDate); a recovery after a customer payment is dated by
+ * `openRecoveryDate`, i.e. the next open period when the payment date is in a filed return), or by
+ * `reversed_at` when no entry carries it. Returns come from the recorded returns (see
+ * `attributeDatesToReturns`), batched for all dates at once. Tenant-scoped; a handful of queries
+ * whatever the number of claims.
  */
 export async function listBadDebtReliefClaimsDetailed(companyId: string) {
   const claimsQ = await pool.query(
@@ -454,12 +461,19 @@ export async function listBadDebtReliefClaimsDetailed(companyId: string) {
             c.customer_notified, c.customer_notified_at::text AS customer_notified_at, c.status,
             c.journal_entry_id, c.reversal_entry_id, c.reversed_at::text AS reversed_at,
             c.reversal_reason, c.notes, c.created_by, c.created_at, c.updated_at,
-            i.number AS invoice_number, i.customer_name
+            i.number AS invoice_number, i.customer_name,
+            -- same test as collectBadDebtRelief: a ledger entry (not reversed_at) carries the add-back
+            (split_part(last.idempotency_key, ':', 3) = 'recover'
+              OR (last.reversed_entry_id = c.journal_entry_id AND EXISTS (
+                SELECT 1 FROM journal_lines jl WHERE jl.entry_id = last.id AND jl.system_vat
+              ))) AS recovery_in_ledger
        FROM bad_debt_relief_claims c
        LEFT JOIN invoices i ON i.id = c.invoice_id AND i.company_id = c.company_id
+       LEFT JOIN journal_entries last ON last.id = c.reversal_entry_id AND last.company_id = c.company_id
+         AND last.source = $2 AND last.source_id = c.id AND last.status = 'posted'
       WHERE c.company_id = $1
       ORDER BY c.claim_date DESC, c.created_at DESC`,
-    [companyId]
+    [companyId, BAD_DEBT_SOURCE]
   );
   if (!claimsQ.rows.length) return [];
 
@@ -478,7 +492,49 @@ export async function listBadDebtReliefClaimsDetailed(companyId: string) {
     restoredQ.rows.map((r) => [r.claim_id as string, Number(r.restored)])
   );
 
+  // The ledger entries that add relief back, dated as the VAT engine dates them (UAE entry date).
+  const addBackQ = await pool.query(
+    `SELECT je.source_id::text AS claim_id, (je.date + interval '4 hours')::date::text AS d
+       FROM journal_entries je
+       JOIN journal_lines jl ON jl.entry_id = je.id AND jl.system_vat
+       JOIN bad_debt_relief_claims c ON c.id = je.source_id AND c.company_id = je.company_id
+      WHERE je.company_id = $1 AND je.source = $2 AND je.status = 'posted'
+        AND je.reversed_by_entry_id IS NULL
+        AND (je.reversed_entry_id = c.journal_entry_id
+          OR (je.reversed_entry_id IS NULL AND split_part(je.idempotency_key, ':', 3) = 'recover'))
+      GROUP BY je.source_id, (je.date + interval '4 hours')::date
+     HAVING SUM(jl.credit - jl.debit) > 0`,
+    [companyId, BAD_DEBT_SOURCE]
+  );
+  const addBackDates = new Map<string, Set<string>>();
+  for (const r of addBackQ.rows) {
+    const set = addBackDates.get(r.claim_id) ?? new Set<string>();
+    set.add(r.d);
+    addBackDates.set(r.claim_id, set);
+  }
+  const reversalDates = (c: (typeof claimsQ.rows)[number]): string[] => {
+    if (c.status !== "reversed" || !c.reversed_at) return [];
+    const dates = new Set(addBackDates.get(c.id) ?? []);
+    if (!c.recovery_in_ledger) dates.add(c.reversed_at);
+    return [...dates].sort();
+  };
+
+  const attribution = await attributeDatesToReturns(
+    companyId,
+    claimsQ.rows.flatMap((c) => [c.claim_date, ...reversalDates(c)])
+  );
+
   return claimsQ.rows.map((c) => {
+    let reversalReturns: ReturnAttribution[] = [];
+    for (const date of reversalDates(c)) {
+      const r = attribution.get(date);
+      if (!r) {
+        // One add-back sits in a return that cannot be verified: show none, not a partial list.
+        reversalReturns = [];
+        break;
+      }
+      if (!reversalReturns.some((x) => x.from === r.from && x.to === r.to)) reversalReturns.push(r);
+    }
     const remainingFils =
       c.status === "claimed"
         ? Math.max(toFils(Number(c.vat_amount)) - (restored.get(c.id) ?? 0), 0)
@@ -507,6 +563,9 @@ export async function listBadDebtReliefClaimsDetailed(companyId: string) {
       invoiceNumber: c.invoice_number ?? null,
       customerName: c.customer_name ?? null,
       remainingRelief: remainingFils === null ? null : remainingFils / 100,
+      claimReturn: attribution.get(c.claim_date) ?? null,
+      /** Distinct returns the add-backs land in; empty when unknown or nothing was reversed. */
+      reversalReturns,
     };
   });
 }

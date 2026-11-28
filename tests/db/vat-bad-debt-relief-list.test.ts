@@ -1,7 +1,7 @@
 /**
  * VAT bad-debt relief screen endpoints (FDL 8/2017 Art. 64): the claims list returns invoice number,
- * customer and the relief still to be added back (no exact VAT return period: the server's period
- * lock decides that when a claim or reversal posts), and the eligible invoices list offers
+ * customer and the relief still to be added back (the VAT return each date lands in is covered by
+ * vat-bad-debt-relief-return-attribution.test.ts), and the eligible invoices list offers
  * written-off invoices without an active claim. Both are tenant-scoped.
  */
 import { describe, expect, it } from "vitest";
@@ -73,7 +73,7 @@ describe("bad-debt relief claims list and eligible invoices", () => {
     expect((await eligible(t)).body).toEqual([]);
   });
 
-  it("returns invoice, customer and remaining relief, with no return-period fields", async () => {
+  it("returns invoice, customer and remaining relief, with a forecast return when none is recorded", async () => {
     const { t, invoiceId, number } = await setup("BDR-list");
     const c = await claim(t, invoiceId);
     const r = await list(t);
@@ -85,8 +85,9 @@ describe("bad-debt relief claims list and eligible invoices", () => {
       customerName: "Acme LLC",
       remainingRelief: 50,
     });
-    expect(r.body[0]).not.toHaveProperty("claimReturnPeriod");
-    expect(r.body[0]).not.toHaveProperty("reversalReturnPeriod");
+    // Exact attribution has its own file (vat-bad-debt-relief-return-attribution.test.ts).
+    expect(r.body[0].claimReturn).toMatchObject({ status: "forecast", source: "forecast" });
+    expect(r.body[0].reversalReturns).toEqual([]);
   });
 
   it("refuses a reversal dated in a filed period with the server's VAT_PERIOD_FILED error", async () => {
