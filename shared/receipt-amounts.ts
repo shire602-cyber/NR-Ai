@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Receipt amount reconciliation in integer fils (shared/money.ts policy).
  *
  * OCR/AI extraction often returns only some of subtotal / VAT / total. This fills the gaps so
@@ -153,15 +153,20 @@ export function amountMismatchMessage(
 /**
  * Review note when VAT was calculated from the rate because the receipt gave no VAT figure:
  * from the subtotal (no VAT or total shown) or worked back from a total-only receipt.
+ * `rateDefaulted` is true when no rate was read and the 5% default was applied. The closing
+ * sentence matters: a receipt with no VAT amount is not a tax invoice, so input VAT is not
+ * recoverable on it (a TRN alone does not make it one).
  */
 export function vatDerivedMessage(
   vatAmount: number,
   vatPercentage: number,
-  source: "subtotal" | "total" = "subtotal"
+  source: "subtotal" | "total" = "subtotal",
+  rateDefaulted = false
 ): string {
+  const rate = rateDefaulted ? "the default 5% rate" : `${vatPercentage}%`;
   const how =
     source === "total"
-      ? `worked back from the total at ${vatPercentage}% because the receipt shows no VAT or subtotal`
-      : `calculated at ${vatPercentage}% of the subtotal because the receipt shows no VAT or total`;
-  return `VAT ${money2(vatAmount)} was ${how}. Check it against the receipt and confirm the supplier charged VAT (look for their TRN on it).`;
+      ? `worked back from the total at ${rate} because the receipt shows no VAT amount`
+      : `calculated at ${rate} of the subtotal because the receipt shows no VAT amount`;
+  return `VAT ${money2(vatAmount)} was ${how}. Check before claiming it: input VAT can only be recovered with a valid tax invoice from a VAT-registered supplier that shows the VAT amount.`;
 }
