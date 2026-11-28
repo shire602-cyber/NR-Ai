@@ -17,6 +17,17 @@ import {
 
 export const UNKNOWN_RECEIPT_MERCHANT = "Unknown Merchant";
 
+/** Start of the review note raised when VAT is printed on a fee line and on its own line. */
+const FEE_VAT_AMBIGUOUS_NOTE = "VAT is printed on a fee line";
+
+/**
+ * True for the parser's "VAT on a fee line and on its own line" note. It is an AMOUNT_MISMATCH even
+ * though subtotal + VAT = total, so a caller that re-checks the figures must not drop it.
+ */
+export function isFeeVatAmbiguityIssue(issue: { code: string; message: string }): boolean {
+  return issue.code === "AMOUNT_MISMATCH" && issue.message.startsWith(FEE_VAT_AMBIGUOUS_NOTE);
+}
+
 export type ParsedReceiptLineItem = {
   description: string;
   quantity: number;
@@ -270,12 +281,15 @@ const FEE_LABEL_SOURCE = [
   String.raw`munic?[ \t.]+(?:tax|fees?)(?![a-z])`,
   String.raw`(?:service|serv|svc)[ \t.]*(?:charges?|chg)(?![a-z])`,
   String.raw`city[ \t]+tax(?![a-z])`,
-  String.raw`(?:ضريب[ةه]|درهم|رسوم|رسم)[ \t]+السياح[ةه]`,
-  String.raw`(?:ضريب[ةه]|رسوم|رسم)[ \t]+البلدي[ةه]`,
-  String.raw`(?:رسوم|رسم)[ \t]+الخدم[ةه]`,
+  // Definite ("ضريبة السياحة") and indefinite ("ضريبة سياحية", "رسوم سياحية") Arabic forms.
+  String.raw`(?:ضريب[ةه]|درهم|رسوم|رسم)[ \t]+(?:ال)?سياح(?:ي[ةه]|[ةه])`,
+  String.raw`(?:ضريب[ةه]|رسوم|رسم)[ \t]+(?:ال)?بلدي[ةه]`,
+  String.raw`(?:رسوم|رسم)[ \t]+(?:ال)?خدم[ةه]`,
 ].join("|");
 const FEE_LINE = new RegExp(
-  String.raw`^[ \t*#\-•|:]*(?:${FEE_LABEL_SOURCE})(?:[ \t]+(?:fees?|tax(?:es)?|charges?|levy))?[ \t:.@(]*` +
+  String.raw`^[ \t*#\-•|:]*(?:${FEE_LABEL_SOURCE})(?:[ \t]+(?:fees?|tax(?:es)?|charges?|levy))?` +
+    // "Tourism Dirham (2 nights) 20.00", "Service charge (VAT incl) 10.00", "... 4 nights 80.00"
+    String.raw`(?:[ \t]*\([^)\n]*\))?(?:[ \t]+\d+[ \t]*(?:nights?|nts?)(?![a-z]))?[ \t:.@(]*` +
     String.raw`(?:\d+(?:[.,]\d+)?[ \t]*%\)?)?[ \t:]*(?:${CUR})?[ \t]*(\d[\d,]*(?:\.\d+)?)[ \t]*(?:${CUR})?[ \t]*` +
     String.raw`(?:(${VAT_LABEL}.*))?$`,
   "i"
@@ -470,7 +484,11 @@ export function parseReceiptOcrText(
 
   const AMT = `(?:${CUR})?\\s*(-?\\d[\\d,]*\\.?\\d{0,2})`;
   const total = findFirstAmount(matchText, [
-    /\b(?:grand\s+total|net\s+payable|amount\s+due|total\s+due|balance\s+due|total\s+amount|total)\b(?!\s*(?:vat|tax|gst)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
+    // A Grand Total / Net Payable / Total Due line is the receipt's total even when a Sub Total,
+    // Net Total or plain Total line comes first.
+    /\b(?:grand\s+total|net\s+payable|total\s+due)\b(?!\s*(?:vat|tax|gst)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
+    // "Sub Total", "Net Total" and "Total Before Tax / Excl. VAT" are not the grand total.
+    /(?<!\b(?:sub|net)[ \t]*)\b(?:amount\s+due|balance\s+due|total\s+amount|total)\b(?!\s*(?:vat|tax|gst|before|excl|exclusive)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     new RegExp(
       `(?:المبلغ الاجمالي|الاجمالي الكلي|المجموع الكلي|المبلغ المستحق|صافي المبلغ|الاجمالي|اجمالي المبلغ|اجمالي)(?!\\s*(?:الفرعي|الضريبه|الضريبة|ضريبة))[^\\d-]{0,30}${AMT}`,
       "g"
@@ -484,7 +502,7 @@ export function parseReceiptOcrText(
   const readTotal = total || findLargestLikelyAmount(lines);
   const feesInTotal = feeTotal > 0 && (readTotal === 0 || readTotal > feeTotal) ? feeTotal : 0;
   const subtotal = findFirstAmount(matchText, [
-    /\b(?:sub\s*total|subtotal|amount\s+before\s+(?:vat|tax)|net\s+amount|taxable\s+amount|excl\.?\s*vat)\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
+    /\b(?:sub\s*total|subtotal|(?:amount|total)\s+before\s+(?:vat|tax)|net\s+amount|taxable\s+amount|excl\.?\s*vat)\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     new RegExp(
       `(?:المجموع الفرعي|الاجمالي الفرعي|المبلغ قبل الضريبة|المبلغ الخاضع للضريبة|المبلغ بدون ضريبة)[^\\d-]{0,30}${AMT}`,
       "g"
@@ -494,7 +512,8 @@ export function parseReceiptOcrText(
   const vatSearchText = matchText.replace(BARE_ZERO_RATE_LINE, "$1 0.00");
   const readVatAmount = findFirstAmount(vatSearchText, [
     // The optional "5%" label must be consumed so the percentage is never read as the VAT amount.
-    /\b(?:vat|tax|gst)\b(?:\s*@?\s*\d+(?:\.\d+)?\s*%)?[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
+    // Not "Before Tax" / "Excl. VAT" (a net figure) and not "TAX INVOICE" / "VAT No" headers.
+    /(?<!\b(?:before|excl\.?|excluding|exclusive\s+of)\s+)\b(?:vat|tax|gst)\b(?!\s+(?:invoice|receipt|registration|reg\b|number|no\b|id\b|code))(?:\s*@?\s*\d+(?:\.\d+)?\s*%)?[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     new RegExp(
       `(?:ضريب[ةه]\\s+القيم[ةه]\\s+المضاف[ةه]|(?:ال)?ضريب[ةه])(?:\\s*@?\\s*\\d+(?:\\.\\d+)?\\s*%)?[^\\d-]{0,30}${AMT}`,
       "g"
@@ -541,8 +560,21 @@ export function parseReceiptOcrText(
       total: tot,
       vatPercentage: reconcileRate,
     });
-  let amountInput = { subtotal, vatAmount, total: readTotal };
-  let reconciled = reconcileWith(subtotal, vatAmount, readTotal);
+  // A receipt whose whole total is non-VAT fees ("Tourism dirham 20 / Total 20") has no VAT to work
+  // back: the fees are the expense, VAT is 0 and the rate is 0.
+  const feeOnly =
+    feeTotal > 0 &&
+    readTotal > 0 &&
+    Math.abs(readTotal - feeTotal) < 0.005 &&
+    vatAmount === 0 &&
+    subtotal === 0 &&
+    zeroVatRead?.kind !== "conflict";
+  let amountInput = feeOnly
+    ? { subtotal: readTotal, vatAmount: 0, total: readTotal }
+    : { subtotal, vatAmount, total: readTotal };
+  let reconciled = feeOnly
+    ? { subtotal: readTotal, vatAmount: 0, total: readTotal, mismatch: false }
+    : reconcileWith(subtotal, vatAmount, readTotal);
   let feeAddedToNet = 0;
   if (feesInTotal > 0 && readTotal > 0 && reconciled.mismatch) {
     // Printed subtotal + VAT = total means the fee is already inside the taxable subtotal and
@@ -598,13 +630,13 @@ export function parseReceiptOcrText(
             vatRate,
             hasVatFigure(vatAmount)
           )
-        : `VAT is printed on a fee line (${feeVat.toFixed(2)}) and on its own line (${readVatAmount.toFixed(2)}). The VAT line was used; check whether the fee-line VAT is already included in it.`,
+        : `${FEE_VAT_AMBIGUOUS_NOTE} (${feeVat.toFixed(2)}) and on its own line (${readVatAmount.toFixed(2)}). The VAT line was used; check whether the fee-line VAT is already included in it.`,
     });
   }
   // A total-only receipt has its VAT worked back at 5%; flag it so it goes to review.
   const vatDerivedFrom = vatDerivedSource({
-    subtotal,
-    vatAmount,
+    subtotal: amountInput.subtotal,
+    vatAmount: amountInput.vatAmount,
     total: fallbackTotal,
     vatPercentage: reconcileRate,
   });
@@ -647,7 +679,7 @@ export function parseReceiptOcrText(
     date: parseDate(normalizedText, fallbackDate),
     invoiceNumber: extractInvoiceNumber(normalizedText),
     subtotal: derivedSubtotal,
-    vatPercentage: vatRate,
+    vatPercentage: feeOnly ? 0 : vatRate,
     vatAmount: derivedVat,
     total: derivedTotal,
     currency,
