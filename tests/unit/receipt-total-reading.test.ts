@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseReceiptOcrText } from "../../shared/receipt-ocr-parser";
+import { isTotalNotPrintedIssue, parseReceiptOcrText } from "../../shared/receipt-ocr-parser";
 import { normalizeOcrJson } from "../../server/services/ocr-extraction.service";
 
 // Forward-fix of review 6098131504 on PR #244. Which line is the receipt's total, and which VAT
@@ -44,6 +44,25 @@ describe("Net Total / Sub Total as the only total line", () => {
   it("a Sub Total with VAT and no total line is the net: total = sub total + VAT", () => {
     const r = read("Shop\nSub Total 100.00\nVAT 5.00\nCash 200.00\nChange 95.00");
     expect(r.figures).toEqual([100, 5, 105]);
+  });
+
+  it("a total calculated from Sub Total + VAT is flagged: no total was printed", () => {
+    const r = parseReceiptOcrText("Item 10.00\nSub Total 10.50\nVAT 0.50", {
+      fallbackDate: "2026-01-01",
+    });
+    expect([r.subtotal, r.vatAmount, r.total]).toEqual([10.5, 0.5, 11]);
+    const issue = r.validationIssues.find((i) => i.code === "AMOUNT_MISMATCH");
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toMatch(/^No total is printed/);
+    expect(issue?.message).toMatch(/calculated as subtotal 10\.50 \+ VAT 0\.50/);
+    expect(isTotalNotPrintedIssue(issue!)).toBe(true);
+    expect(r.confidenceBand).not.toBe("high");
+  });
+
+  it("a lone Sub Total is not given an invented 5% VAT: 100 / 0 / 100, flagged", () => {
+    const r = read("Shop\nSub Total 100.00");
+    expect(r.figures).toEqual([100, 0, 100]);
+    expect(r.issues).toEqual(["AMOUNT_MISMATCH"]);
   });
 
   it("a cash / card / change amount is never the total", () => {
@@ -118,16 +137,21 @@ describe("explicit VAT 0 is never worked into a calculated 5", () => {
     );
   const codes = (r: ReturnType<typeof route>) => r.reviewIssues.map((i) => i.code);
 
-  it("subtotal 100 / VAT 0 at a printed 5% / no total stays 100 / 0 / 100 with no VAT_DERIVED", () => {
+  it("subtotal 100 / VAT 0 at a printed 5% / no total stays 100 / 0 / 100, raised for review", () => {
     const r = route({ subtotal: 100 });
     expect([r.amount, r.vatAmount, r.total]).toEqual([100, 0, 100]);
     expect(codes(r)).not.toContain("VAT_DERIVED");
+    expect(codes(r)).toContain("AMOUNT_MISMATCH");
+    expect(r.reviewIssues.find((i) => i.code === "AMOUNT_MISMATCH")?.message).toMatch(
+      /prints a VAT rate of 5% but a VAT amount of 0\.00/
+    );
   });
 
-  it("no subtotal / VAT 0 at a printed 5% / total 105 stays 105 / 0 / 105 with no VAT_DERIVED", () => {
+  it("no subtotal / VAT 0 at a printed 5% / total 105 stays 105 / 0 / 105, raised for review", () => {
     const r = route({ total: 105 });
     expect([r.amount, r.vatAmount, r.total]).toEqual([105, 0, 105]);
     expect(codes(r)).not.toContain("VAT_DERIVED");
+    expect(codes(r)).toContain("AMOUNT_MISMATCH");
   });
 
   it("100 / VAT 0 at 5% / 105 keeps 0 and is an AMOUNT_MISMATCH", () => {
@@ -140,6 +164,82 @@ describe("explicit VAT 0 is never worked into a calculated 5", () => {
     const r = route({ subtotal: 100, vatAmount: null });
     expect([r.amount, r.vatAmount, r.total]).toEqual([100, 5, 105]);
     expect(codes(r)).toContain("VAT_DERIVED");
+  });
+});
+
+// Review 6098431341 (PR #251): "Incl. VAT <amount>" is the VAT line; "Total incl. VAT <amount>" is
+// the gross total.
+describe("incl. / including VAT lines", () => {
+  const TRN = "TRN 100111222300003";
+
+  it.each([
+    ["Total 105.00\nIncl. VAT 3.00", [102, 3, 105]],
+    ["Total AED 210.00\nIncluding VAT 5% 4.00", [206, 4, 210]],
+    ["Total 52.50\nInclusive of VAT 2.50", [50, 2.5, 52.5]],
+    ["Total 105.00\nIncl. VAT 5.00", [100, 5, 105]],
+    ["Total 105.00\nIncluding VAT 5.00", [100, 5, 105]],
+  ])("a VAT-amount line is read as VAT, not worked back: %s", (text, figures) => {
+    const r = read(`Shop\n${TRN}\n${text}`);
+    expect(r.figures).toEqual(figures);
+    expect(r.issues).toEqual([]);
+  });
+
+  it("Arabic 'شامل ضريبة القيمة المضافة 3.00' is the VAT amount", () => {
+    const r = read(`متجر\n${TRN}\nالاجمالي 105.00\nشامل ضريبة القيمة المضافة 3.00`);
+    expect(r.figures).toEqual([102, 3, 105]);
+    expect(r.issues).toEqual([]);
+  });
+
+  it.each([
+    ["Total incl. VAT 105.00\nVAT 5.00"],
+    ["Total (Inc. VAT) 105.00\nVAT 5.00"],
+    ["Total (incl. VAT) 105.00\nVAT 5.00"],
+    ["Total Including VAT 105.00\nVAT 5.00"],
+    ["Grand Total (incl. VAT) 105.00\nVAT 5.00"],
+  ])("a gross total line is the total, not the VAT: %s", (text) => {
+    const r = read(`Shop\n${TRN}\n${text}`);
+    expect(r.figures).toEqual([100, 5, 105]);
+    expect(r.issues).toEqual([]);
+  });
+
+  it("Arabic 'الاجمالي شامل الضريبة 105' is the total, not the VAT", () => {
+    const r = read(`متجر\n${TRN}\nالاجمالي شامل الضريبة 105.00\nالضريبة 5.00`);
+    expect(r.figures).toEqual([100, 5, 105]);
+    expect(r.issues).toEqual([]);
+  });
+
+  it("a printed zero 'Incl. VAT 0.00' is read as VAT 0, not derived at 5%", () => {
+    const r = read(`Shop\n${TRN}\nTotal 50.00\nIncl. VAT 0.00`);
+    expect(r.figures).toEqual([50, 0, 50]);
+    expect(r.issues).not.toContain("VAT_DERIVED");
+  });
+});
+
+describe("payment lines that contain the word Total", () => {
+  it.each([
+    ["Item 100.00\nVAT 5.00\nCash Total 200.00\nTotal 105.00"],
+    ["Total Paid 200.00\nVAT 5.00\nTotal 105.00"],
+    ["Total Tendered 200.00\nTotal 105.00\nVAT 5.00"],
+    ["Grand Total 105.00\nVAT 5.00\nTotal Cash 200.00"],
+    ["Card Total 105.00\nVAT 5.00\nTotal 105.00"],
+  ])("the receipt total is still 105: %s", (text) => {
+    expect(read(`Shop\nTRN 100111222300003\n${text}`).figures).toEqual([100, 5, 105]);
+  });
+
+  it("a card name after the total does not hide the total", () => {
+    expect(
+      read("Shop\nTRN 100111222300003\nSubtotal 100\nVAT 5.00\nTotal 105.00 Visa").figures
+    ).toEqual([100, 5, 105]);
+  });
+});
+
+describe("Arabic taxable amount is the subtotal, not VAT", () => {
+  it("'المبلغ الخاضع للضريبة 60' is the net", () => {
+    const r = read(
+      "متجر\nالرقم الضريبي 100111222300003\nالمبلغ الخاضع للضريبة 60\nضريبة القيمة المضافة 3\nالاجمالي 63"
+    );
+    expect(r.figures).toEqual([60, 3, 63]);
+    expect(r.issues).toEqual([]);
   });
 });
 
@@ -227,7 +327,7 @@ const SWEEP: Row[] = [
     [50, 2.5, 52.5],
     [],
   ],
-  ["subtotal-only", "Shop\nSub Total 100.00\nVAT 5.00", [100, 5, 105], []],
+  ["subtotal-only", "Shop\nSub Total 100.00\nVAT 5.00", [100, 5, 105], ["AMOUNT_MISMATCH"]],
   [
     "sub-hyphen",
     "Shop\nTRN 100111222300003\nSub-Total 100.00\nVAT 5.00\nTotal 105.00",
@@ -481,7 +581,7 @@ const SWEEP: Row[] = [
     "only-subtotal-cash",
     "Store\nItem 10.00\nSub Total 10.50\nVAT 0.50\nCash 100.00",
     [10.5, 0.5, 11],
-    [],
+    ["AMOUNT_MISMATCH"],
   ],
   [
     "ar-before",

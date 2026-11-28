@@ -98,7 +98,7 @@ export function normalizeOcrJson(
   // An explicit VAT 0 next to a printed positive rate with a gap: VAT stays 0 as read (same
   // reading as the interactive route and the parser) and the contradiction is held for review.
   const printedRate = printedRateWithZeroVat(raw?.vatAmount, raw?.vatPercentage);
-  const rateConflict = printedRate !== null && sIn > 0 && tIn > sIn;
+  const rateConflict = printedRate !== null && ((sIn > 0 && tIn > sIn) || sIn > 0 !== tIn > 0);
 
   // Same reconciliation as the interactive OCR route (shared/receipt-amounts.ts, integer fils,
   // half-up) so every path agrees to the fil and subtotal + VAT === total. Intake can AUTO-POST,
@@ -121,7 +121,7 @@ export function normalizeOcrJson(
 
   // Review reasons the person in the queue needs to see (same codes/wording as ocr.routes).
   const reviewIssues: ValidationIssue[] = [];
-  if (amountsMismatch) {
+  if (amountsMismatch || rateConflict) {
     reviewIssues.push({
       code: "AMOUNT_MISMATCH",
       severity: "error",

@@ -122,7 +122,12 @@ function jsonFilesUnder(dir) {
 export function scanLocaleDuplicates(dir) {
   const found = [];
   for (const file of jsonFilesUnder(dir)) {
-    const dupes = findDuplicateKeys(readFileSync(file, "utf8"));
+    let dupes;
+    try {
+      dupes = findDuplicateKeys(readFileSync(file, "utf8"));
+    } catch (err) {
+      throw new Error(`${file}: ${err.message}`);
+    }
     if (dupes.length) found.push({ file, dupes });
   }
   return found;

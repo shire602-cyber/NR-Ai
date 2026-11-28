@@ -469,7 +469,11 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
       });
       expect(res.status).toBe(200);
       expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual(expected);
-      expect(res.body.validationIssues.map((i: any) => i.code)).not.toContain("VAT_DERIVED");
+      const codes = res.body.validationIssues.map((i: any) => i.code);
+      expect(codes).not.toContain("VAT_DERIVED");
+      // A model's 0 next to a printed rate with a figure missing is raised, never auto-posted clean.
+      expect(codes).toContain("AMOUNT_MISMATCH");
+      expect(res.body.confidenceBand).not.toBe("high");
     }
   );
 

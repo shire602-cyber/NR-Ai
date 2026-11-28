@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 // @ts-expect-error plain .mjs guard script without type declarations
@@ -45,8 +45,13 @@ describe("findDuplicateKeys", () => {
     expect(findDuplicateKeys('{ "l": [ { "k": 1, "k": 2 } ] }')).toHaveLength(1);
   });
 
-  it("treats escaped spellings of the same key as a repeat", () => {
-    expect(findDuplicateKeys('{ "a": 1, "\u0061": 2 }')).toHaveLength(1);
+  it("treats escaped spellings of the same key as a repeat (real file with a literal backslash-u escape)", () => {
+    // Written to disk as backslash, u, 0, 0, 6, 1 (not the letter a), so the escape path runs.
+    const dir = fixture({ "en/esc.json": '{ "a": 1, "\\u0061": 2 }' });
+    const body = readFileSync(join(dir, "en", "esc.json"), "utf8");
+    expect(body).toContain(String.fromCharCode(92) + "u0061");
+    expect(findDuplicateKeys(body)).toHaveLength(1);
+    expect(scanLocaleDuplicates(dir)).toHaveLength(1);
   });
 
   it("is not fooled by a key text inside a value or escaped quotes", () => {
@@ -76,6 +81,14 @@ describe("check-locale-duplicate-keys script", () => {
     const res = run(dir);
     expect(res.status).toBe(1);
     expect(res.stderr).toMatch(/common\.json:3\s+"common\.save"/);
+  });
+
+  it("names the file when a catalog is malformed JSON", () => {
+    const dir = fixture({ "en/broken.json": '{ "a": 1,, }' });
+    expect(() => scanLocaleDuplicates(dir)).toThrow(/broken\.json/);
+    const res = run(dir);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(/broken\.json/);
   });
 
   it("passes on a clean tree", () => {

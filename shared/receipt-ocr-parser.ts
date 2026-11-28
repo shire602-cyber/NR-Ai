@@ -28,6 +28,17 @@ export function isFeeVatAmbiguityIssue(issue: { code: string; message: string })
   return issue.code === "AMOUNT_MISMATCH" && issue.message.startsWith(FEE_VAT_AMBIGUOUS_NOTE);
 }
 
+/** Start of the review note raised when the receipt prints no total and one was calculated. */
+const TOTAL_NOT_PRINTED_NOTE = "No total is printed";
+
+/**
+ * True for the parser's "no total printed" note. It is an AMOUNT_MISMATCH even though subtotal +
+ * VAT = total (the total is calculated), so a caller that re-checks the figures must not drop it.
+ */
+export function isTotalNotPrintedIssue(issue: { code: string; message: string }): boolean {
+  return issue.code === "AMOUNT_MISMATCH" && issue.message.startsWith(TOTAL_NOT_PRINTED_NOTE);
+}
+
 export type ParsedReceiptLineItem = {
   description: string;
   quantity: number;
@@ -249,7 +260,8 @@ function findFirstAmount(text: string, patterns: RegExp[]): number {
 // VAT labels only. Generic "tax" (excise, tourism, municipality, "before tax", "Tax 0 items") is
 // deliberately not a VAT label. Arabic teh marbuta and heh spellings are both accepted.
 const VAT_LABEL = String.raw`(?:vat|value[ \t]+added[ \t]+tax|ضريب[ةه][ \t]+القيم[ةه][ \t]+المضاف[ةه]|ض\.?[ \t]?ق\.?[ \t]?م\.?|(?:ال)?ضريب[ةه])`;
-const VAT_LINE_START = String.raw`^[ \t*#\-•|:]*(?:(?:total|amount|net|sum|اجمالي|مجموع|المجموع)[ \t]+)?${VAT_LABEL}[ \t]*`;
+// A line led by "Incl. VAT" / "Including VAT" / "شامل ضريبة" is the VAT amount included in the total.
+const VAT_LINE_START = String.raw`^[ \t*#\-•|:]*(?:(?:total|amount|net|sum|اجمالي|مجموع|المجموع)[ \t]+|(?:incl\.?|including|inclusive[ \t]+of|شامل)[ \t]+)?${VAT_LABEL}[ \t]*`;
 // The whole line is the VAT label with a rate and/or an amount.
 const VAT_LINE = new RegExp(
   VAT_LINE_START +
@@ -490,8 +502,15 @@ export function parseReceiptOcrText(
   const AMT = `(?:${CUR})?\\s*(-?\\d[\\d,]*\\.?\\d{0,2})`;
   // Cash / card / change lines are never read as the total, so the fallbacks skip them.
   const tenderFreeText = lines.filter((line) => !TENDER_LINE.test(line)).join("\n");
+  // A tender word before the amount on the same line ("Cash Total 200", "Total Paid 200") makes it
+  // a payment figure, never the receipt's total ("Total 105 Visa" is still a total).
   const amountsOf = (pattern: RegExp): number[] =>
     Array.from(matchText.matchAll(pattern))
+      .filter((match) => {
+        const index = match.index ?? 0;
+        const lineStart = matchText.lastIndexOf("\n", index) + 1;
+        return !TENDER_LINE.test(matchText.slice(lineStart, index + match[0].length));
+      })
       .map((match) => parseAmount(match[1]))
       .filter((amount) => amount > 0 && amount < 100000000);
   // Document precedence. A Grand Total / Net Payable / Total Due line is the receipt's total even
@@ -531,10 +550,11 @@ export function parseReceiptOcrText(
   const readVatAmount = findFirstAmount(vatSearchText, [
     // The optional "5%" label must be consumed so the percentage is never read as the VAT amount.
     // Not "Before Tax" / "Excl. VAT" (a net figure) and not "TAX INVOICE" / "VAT No" headers.
-    /(?<!\b(?:before|excl\.?|excluding|exclusive\s+of|w\/o|without|ex|incl\.?|including|inclusive\s+of|with)\s+)\b(?:vat|tax|gst)\b(?!\s+(?:invoice|receipt|registration|reg\b|number|no\b|id\b|code))(?:\s*@?\s*\d+(?:\.\d+)?\s*%)?[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
+    // "Incl. VAT 3.00" with no total word is the VAT amount; "Total incl. VAT 105" is the gross total.
+    /(?<!\b(?:before|excl\.?|excluding|exclusive\s+of|w\/o|without|ex)\s+)(?<!\b(?:total|amount|payable|due|sum|price|net)\b[^\n\d]{0,25}\b(?:incl?\.?|including|inclusive\s+of|with)\s*\(?\s*)\b(?:vat|tax|gst)\b(?!\s+(?:invoice|receipt|registration|reg\b|number|no\b|id\b|code))(?:\s*@?\s*\d+(?:\.\d+)?\s*%)?[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     // Not "before tax" / "excluding tax" / "including tax" (a net or gross figure, not the VAT).
     new RegExp(
-      `(?<!(?:قبل|بدون|دون|شامل|شاملة|غير\\s+شامل)\\s+(?:ال)?)(?:ضريب[ةه]\\s+القيم[ةه]\\s+المضاف[ةه]|(?:ال)?ضريب[ةه])(?:\\s*@?\\s*\\d+(?:\\.\\d+)?\\s*%)?[^\\d-]{0,30}${AMT}`,
+      `(?<!(?:قبل|بدون|دون|غير\\s+شامل)\\s+(?:ال)?)(?<!الخاضع\\s+لل?)(?<!(?:الاجمالي|اجمالي|المجموع|المبلغ|السعر|المستحق)[^\\n\\d]{0,25}(?:شامل|شاملة)\\s+(?:ال)?)(?:ضريب[ةه]\\s+القيم[ةه]\\s+المضاف[ةه]|(?:ال)?ضريب[ةه])(?:\\s*@?\\s*\\d+(?:\\.\\d+)?\\s*%)?[^\\d-]{0,30}${AMT}`,
       "g"
     ),
     /\b5\s*%\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
@@ -558,7 +578,7 @@ export function parseReceiptOcrText(
   const totalFromSubtotal =
     printedTotal === 0 && subtotal > 0 && readVatAmount > 0 ? round2(subtotal + readVatAmount) : 0;
   const total = printedTotal || totalFromSubtotal;
-  const readTotal = total || (subtotal > 0 ? 0 : findLargestLikelyAmount(lines));
+  const readTotal = total || findLargestLikelyAmount(lines);
   const feesInTotal = feeTotal > 0 && (readTotal === 0 || readTotal > feeTotal) ? feeTotal : 0;
 
   // A VAT line that prints zero ("VAT 0% AED 0.00", "VAT 0.00") is a read figure, not a missing
@@ -671,6 +691,21 @@ export function parseReceiptOcrText(
             hasVatFigure(vatAmount)
           )
         : `${FEE_VAT_AMBIGUOUS_NOTE} (${feeVat.toFixed(2)}) and on its own line (${readVatAmount.toFixed(2)}). The VAT line was used; check whether the fee-line VAT is already included in it.`,
+    });
+  }
+  // A Sub Total with no printed total: the total is calculated (sub total + VAT) or guessed from
+  // the largest amount, never read, so it always goes to review.
+  if (
+    printedTotal === 0 &&
+    subtotal > 0 &&
+    !validationIssues.some((i) => i.code === "AMOUNT_MISMATCH")
+  ) {
+    validationIssues.push({
+      code: "AMOUNT_MISMATCH",
+      severity: "error",
+      message: totalFromSubtotal
+        ? `${TOTAL_NOT_PRINTED_NOTE}; the total ${derivedTotal.toFixed(2)} was calculated as subtotal ${subtotal.toFixed(2)} + VAT ${readVatAmount.toFixed(2)}. Check the figures: the Sub Total may already include VAT.`
+        : `${TOTAL_NOT_PRINTED_NOTE}; the total ${derivedTotal.toFixed(2)} was not read from the receipt (only a Sub Total ${subtotal.toFixed(2)} is printed). Check the total and whether VAT is included.`,
     });
   }
   // A total-only receipt has its VAT worked back at 5%; flag it so it goes to review.

@@ -29,6 +29,7 @@ import {
 } from "../services/ocr-provider-clients";
 import {
   isFeeVatAmbiguityIssue,
+  isTotalNotPrintedIssue,
   parseReceiptOcrText,
   UNKNOWN_RECEIPT_MERCHANT,
   validateUaeTrn,
@@ -610,7 +611,9 @@ function buildResult(
   // An explicit VAT 0 next to a printed positive rate with a subtotal/total gap: VAT stays 0 as
   // read (never upgraded to the rate x subtotal) and the contradiction is raised for review.
   const printedRate = printedRateWithZeroVat(aiResult.vatAmount, aiResult.vatPercentage);
-  const rateConflict = printedRate !== null && subtotal > 0 && total > subtotal;
+  // Also when the subtotal or the total is missing: a model's 0 next to a printed rate is checked.
+  const rateConflict =
+    printedRate !== null && ((subtotal > 0 && total > subtotal) || subtotal > 0 !== total > 0);
   // A printed 0.00 stays 0 even when the subtotal or the total is missing: it is never worked
   // into rate x subtotal, so no VAT is calculated and no "no VAT amount" note is raised.
   const reconcileRate = printedRate !== null ? 0 : vatPercentage;
@@ -669,7 +672,13 @@ function buildResult(
   const issues: ValidationIssue[] = (
     Array.isArray(aiResult._issues) ? [...aiResult._issues] : []
   ).filter(
-    (i) => !(i.code === "AMOUNT_MISMATCH" && !amountsMismatch && !isFeeVatAmbiguityIssue(i))
+    (i) =>
+      !(
+        i.code === "AMOUNT_MISMATCH" &&
+        !amountsMismatch &&
+        !isFeeVatAmbiguityIssue(i) &&
+        !isTotalNotPrintedIssue(i)
+      )
   );
   const have = new Set(issues.map((i) => i.code));
   const finalIssues = sanityCheckReceipt({
@@ -686,7 +695,7 @@ function buildResult(
   // The figures never silently add up: when the subtotal/total gap is not VAT at the stated rate
   // (service charge, fee, discount, zero-rated), the user is told. The message is rebuilt from the
   // final figures so it always matches the form, replacing any note built from the raw extraction.
-  if (amountsMismatch) {
+  if (amountsMismatch || rateConflict) {
     const message =
       rateConflict && printedRate !== null
         ? vatRateAmountConflictMessage(derivedSubtotal, derivedVat, derivedTotal, printedRate)
