@@ -67,3 +67,7 @@ Formula-leading text (`=`, `+`, `@`, `-`) is prefixed with a single quote; the n
 ## Cleanup
 
 `DELETE /api/accounts/:id` for the five `S05V*` accounts: all 200. The `S05-verify bank` account and its linked GL account `1021` remain (no delete route for bank accounts; it has no transactions).
+
+## Fix for finding 1c
+
+Branch `claude/s05-staging-verify`: the `/bank-statements/import-preview` handler now runs `looksBinary` (on the UTF-8 bytes, and on the Latin-1 bytes when every character fits one byte, so PNG/JPEG magic arriving as a JS string is caught) and throws `DomainError("STATEMENT_CSV_REQUIRED", 400)`, the same shape as `/import`. Test: `tests/db/au6-bank-import.test.ts` (PDF and PNG-magic text give 400 `STATEMENT_CSV_REQUIRED`; a normal 2-row CSV gives 200 with `transactionCount` 2). Awaiting re-verify on staging after deploy; 1c stays FAIL on `70b223cc` until then.
