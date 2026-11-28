@@ -684,5 +684,7 @@
   "activityLog.action.portal.account_revoke": "إزالة الوصول إلى بوابة العملاء",
   "activityLog.entity.customer_portal_invitation": "دعوة بوابة العملاء",
   "activityLog.entity.customer_portal_account": "وصول بوابة العملاء",
-  "activityLog.action.team.firm_access_review": "مراجعة صلاحية وصول المكتب"
+  "activityLog.action.team.firm_access_review": "مراجعة صلاحية وصول المكتب",
+  "activityLog.entity.recurring_invoice": "فاتورة دورية",
+  "activityLog.action.recurring_invoice.catch_up_drafts": "إنشاء مسودات فواتير للفترات الدورية الفائتة"
 }

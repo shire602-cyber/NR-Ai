@@ -57,10 +57,28 @@ describe("recurring end date is inclusive by Dubai day", () => {
     }
   );
 
-  it("issues nothing and disables a template whose end date was yesterday in Dubai", async () => {
+  it("issues the missed end-date period (the current one, dated today) when the job ran a day late", async () => {
+    // 2031-05-14T21:30Z is 01:30 on 15 May in Dubai: the end date (14th) is yesterday, but the
+    // period due on the end date was never issued. It is the latest due period, so it is issued as the
+    // current one, dated today in Dubai (not backdated), and the template ends.
     const { t, id } = await setup("2031-05-14", "2031-05-14");
-    // 2031-05-14T21:30Z is 01:30 on 15 May in Dubai: the end date (14th) is yesterday.
     await runAt("2031-05-14T21:30:00Z");
+    const invoices = await h.sql<{ date: string }>(
+      `SELECT to_char(date, 'YYYY-MM-DD') AS date FROM invoices WHERE company_id = $1`,
+      [t.company.id]
+    );
+    expect(invoices).toEqual([{ date: "2031-05-15" }]);
+    const [row] = await h.sql<{ is_active: boolean }>(
+      `SELECT is_active FROM recurring_invoices WHERE id = $1`,
+      [id]
+    );
+    expect(row.is_active).toBe(false);
+  });
+
+  it("disables without an invoice a template whose next run is already after its end date", async () => {
+    const { t, id } = await setup("2031-05-15", "2031-08-01");
+    await h.sql(`UPDATE recurring_invoices SET end_date = '2031-05-14' WHERE id = $1`, [id]);
+    await runAt("2031-05-15T06:00:00Z");
     const invoices = await h.sql(`SELECT id FROM invoices WHERE company_id = $1`, [t.company.id]);
     expect(invoices).toHaveLength(0);
     const [row] = await h.sql<{ is_active: boolean; last_run_status: string }>(
