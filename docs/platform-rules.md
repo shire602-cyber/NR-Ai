@@ -258,13 +258,24 @@ The owner can list reviewable memberships with `GET /api/companies/:companyId/te
 - The current period (the latest run date at or before today and the end date) behaves as always:
   dated today (Dubai), issued when the template auto-issues, emailed when auto-send is on.
 - Every older missed period becomes a DRAFT dated today, with `supply_date` set to that period and a
-  note naming the template and period. It is not issued, has no journal entry and sends no email, so
+  customer-safe note ("Services for the period starting <date>"; invoice notes reach the UBL
+  `cbc:Note` and the buyer, so no template id or instruction goes there). It is not issued, has no journal entry and sends no email, so
   period locks, filed VAT returns and missing historic FX rates cannot stall the template. (Drafts
   take a number from the current series, like any recurring draft.) The user reviews and issues
-  them; the normal tax-point rules apply at issue.
+  them. The template and period link lives in the audit rows and the template's last-run message.
+- Issuing a catch-up draft later: its tax point is `LEAST(date, supply_date)`, i.e. the supply-date
+  VAT period, not the issue date. If that VAT period is filed the issue is refused with 409
+  `VAT_PERIOD_FILED` (the blocker is `supply_date`, not the invoice date: the user must change the
+  supply date or correct the figures through an Art. 70 correction or voluntary disclosure). If the
+  period is open, the output VAT lands in that period while the revenue entry is dated on the
+  invoice date. Whether a periodic supply should instead take the invoice date (Art. 26) is an
+  open accountant check; the current behaviour never posts silently into a filed period.
 - When drafts were created, the template's last-run message says "Created N draft invoices for
   missed periods <dates> - review and issue them" and `recurring_invoice.catch_up_drafts` is
-  written to the audit log (en/ar labels in `adminConsole.json`).
+  written to the audit log, one row per draft inside that period's transaction (so a crash
+  mid-tick never leaves a draft without its trail; en/ar labels in `adminConsole.json`). The
+  template's summary message is written after the tick, best effort; each draft's own
+  transaction already sets the template's last-run message.
 - Known, pre-existing: `advanceByInterval` month-end drift (31 Jan becomes 3 Mar) is unchanged.
 - Extending the end date of an ended (deactivated) template does not restart it: it stays paused
   until the user resumes it.

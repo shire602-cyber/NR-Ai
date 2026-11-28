@@ -1,8 +1,8 @@
 /**
  * A recurring template that fell behind creates the CURRENT period as before (dated today, issued
  * when the template auto-issues) and every OLDER missed period up to the end date as a DRAFT dated
- * today with supply_date = the period: nothing is backdated, posted, numbered into an old series or
- * emailed, so period locks, filed VAT and missing FX history cannot stall it.
+ * today with supply_date = the period: nothing is backdated, posted, given an old-series number or
+ * emailed (drafts take current-series numbers at creation), so period locks, filed VAT and missing FX history cannot stall it.
  */
 import { describe, expect, it } from "vitest";
 import { freezeTime, useHarness } from "./harness";
@@ -114,8 +114,10 @@ describe("recurring catch-up: drafts for missed periods, the current period as b
     for (const d of drafts) {
       expect(d.date).toBe(TODAY);
       expect(d.status).toBe("draft");
-      expect(d.notes).toContain(id);
-      expect(d.notes).toContain(d.supply!);
+      // Customer-safe: no template id and no internal instruction (the note reaches the UBL).
+      expect(d.notes).toBe(`Services for the period starting ${d.supply}`);
+      expect(d.notes).not.toContain(id);
+      expect(d.notes).not.toContain("Review and issue");
     }
     const current = rows.find((r) => r.supply === null)!;
     expect(current.date).toBe(TODAY);
@@ -139,8 +141,10 @@ describe("recurring catch-up: drafts for missed periods, the current period as b
       `SELECT details FROM audit_logs WHERE company_id = $1 AND action = 'recurring_invoice.catch_up_drafts' AND resource_id = $2`,
       [t.company.id, id]
     );
-    expect(audit).toHaveLength(1);
-    expect(audit[0].details).toContain("2031-04-10");
+    // One audit row per draft, written inside that period's transaction.
+    expect(audit).toHaveLength(2);
+    expect(audit.map((a) => a.details).join(" ")).toContain("2031-04-10");
+    expect(audit.map((a) => a.details).join(" ")).toContain("2031-05-10");
     // A later tick creates nothing more.
     await tickAt("2031-06-11T06:00:00Z");
     expect(await invoiceRows(t.company.id)).toHaveLength(3);
@@ -244,5 +248,93 @@ describe("recurring catch-up: drafts for missed periods, the current period as b
     const { t } = await setup("2031-05-16", "2031-08-31");
     await tickAt("2031-05-15T19:59:00Z");
     expect(await invoiceRows(t.company.id)).toEqual([]);
+  });
+});
+
+describe("issuing a catch-up draft: the tax point is the supply-date VAT period", () => {
+  // The drafts are dated 2031-06-10, so the whole scenario runs with the clock frozen on that
+  // day (tokens are minted after freezing, so they do not expire).
+  const onTheDay = async (fn: () => Promise<void>) => {
+    const thaw = freezeTime(`${TODAY}T06:00:00Z`);
+    try {
+      await fn();
+    } finally {
+      thaw();
+    }
+  };
+  const tickNow = async () => {
+    const { generateDueRecurringInvoices } =
+      await import("../../server/services/scheduler.service");
+    await generateDueRecurringInvoices();
+  };
+  const issue = (t: Awaited<ReturnType<typeof setup>>["t"], invoiceId: string) =>
+    t.as.patch(`/api/invoices/${invoiceId}/status`, { status: "sent" });
+
+  const firstDraft = async (companyId: string) =>
+    (
+      await h.sql<{ id: string }>(
+        `SELECT id FROM invoices WHERE company_id = $1 AND status = 'draft' ORDER BY supply_date LIMIT 1`,
+        [companyId]
+      )
+    )[0].id;
+
+  it("refuses with 409 VAT_PERIOD_FILED when the supply date falls in a filed VAT period", async () => {
+    await onTheDay(async () => {
+      const { t } = await setup("2031-02-15", "2031-04-30", "monthly", { autoIssue: true });
+      await h.sql(
+        `INSERT INTO vat_returns (company_id, period_start, period_end, due_date, status, fta_reference_number, created_by)
+       VALUES ($1, '2031-02-01', '2031-02-28', '2031-03-28', 'filed', 'EMT-FILED', $2)`,
+        [t.company.id, t.user.id]
+      );
+      await tickNow();
+      const id = await firstDraft(t.company.id);
+      const res = await issue(t, id);
+      expect(res.status, res.text).toBe(409);
+      expect(res.body.code).toBe("VAT_PERIOD_FILED");
+      const [row] = await h.sql<{ status: string }>(`SELECT status FROM invoices WHERE id = $1`, [
+        id,
+      ]);
+      expect(row.status).toBe("draft");
+    });
+  });
+
+  it("books the VAT in the supply-date period when that period is open, and the UBL has no internal text", async () => {
+    await onTheDay(async () => {
+      const { t, id: templateId } = await setup("2031-04-10", "2031-06-30", "monthly", {
+        autoIssue: true,
+      });
+      await tickNow();
+      const draft = await firstDraft(t.company.id); // supply 2031-04-10
+      const res = await issue(t, draft);
+      expect(res.status, res.text).toBe(200);
+      const { computeVat201 } = await import("../../server/tax/vat-engine");
+      const april = await computeVat201({
+        companyId: t.company.id,
+        from: "2031-04-01",
+        to: "2031-04-30",
+        allowIncomplete: true,
+      });
+      expect(april.boxesFils.box12TotalDueTax).toBe(500);
+      const may = await computeVat201({
+        companyId: t.company.id,
+        from: "2031-05-01",
+        to: "2031-05-31",
+        allowIncomplete: true,
+      });
+      expect(may.boxesFils.box12TotalDueTax).toBe(0);
+
+      // The UBL is built from the stored rows; the note must be the customer-safe one.
+      const { db } = await import("../../server/db");
+      const { invoices, invoiceLines, companies } = await import("../../shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const { generateEInvoiceXML } = await import("../../server/services/einvoice.service");
+      const [inv] = await db.select().from(invoices).where(eq(invoices.id, draft));
+      const lines = await db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, draft));
+      const [co] = await db.select().from(companies).where(eq(companies.id, t.company.id));
+      const row = { einvoice_xml: generateEInvoiceXML(inv, lines, co).xml };
+      expect(row.einvoice_xml).toContain("Services for the period starting 2031-04-10");
+      expect(row.einvoice_xml).not.toContain(templateId);
+      expect(row.einvoice_xml).not.toContain("Review and issue");
+    });
   });
 });

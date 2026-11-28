@@ -865,9 +865,9 @@ export async function generateDueRecurringInvoices(): Promise<number> {
             placeOfSupplyEmirate: header.placeOfSupplyEmirate,
             date: invoiceDate,
             supplyDate: catchUpPeriod ? new Date(`${catchUpPeriod}T00:00:00.000Z`) : null,
-            notes: catchUpPeriod
-              ? `Catch-up draft for the ${catchUpPeriod} period of recurring template ${template.id}. Review and issue it.`
-              : null,
+            // Customer-safe: invoice notes reach the UBL cbc:Note and the buyer. The template link
+            // and the "review and issue" instruction live only in the audit row and last-run message.
+            notes: catchUpPeriod ? `Services for the period starting ${catchUpPeriod}` : null,
             currency,
             exchangeRate: rate,
             baseCurrencyAmount: Number(fromFils(baseFils)),
@@ -906,11 +906,27 @@ export async function generateDueRecurringInvoices(): Promise<number> {
             totalGenerated: sql`${recurringInvoicesTable.totalGenerated} + 1`,
             lastRunStatus: catchUpPeriod ? "catch_up_draft" : "generated",
             lastRunMessage: catchUpPeriod
-              ? `Created ${newNumber} as a draft for the missed ${catchUpPeriod} period`
+              ? `Created ${newNumber} as a draft for the missed ${catchUpPeriod} period - review and issue it`
               : `Generated ${newNumber} as draft`,
             lastRunAt: now,
           })
           .where(eq(recurringInvoicesTable.id, template.id));
+
+        if (catchUpPeriod) {
+          // One audit row per draft, committed or rolled back with the draft itself, so a crash
+          // mid-tick never leaves a draft without its trail.
+          await recordAudit({
+            companyId: template.companyId,
+            action: "recurring_invoice.catch_up_drafts",
+            entityType: "recurring_invoice",
+            entityId: template.id,
+            after: { period: catchUpPeriod, invoiceId: insertedInvoice.id, number: newNumber },
+            extra: {
+              message: `Created draft ${newNumber} for the missed ${catchUpPeriod} period - review and issue it`,
+            },
+            tx,
+          });
+        }
 
         return {
           skipped: false as const,
@@ -971,7 +987,7 @@ export async function generateDueRecurringInvoices(): Promise<number> {
 
 /**
  * Missed periods were created as drafts: say so on the template (keeping the current period's
- * outcome when one was issued in the same tick) and leave an audit row.
+ * outcome when one was issued in the same tick) and the per-draft audit rows are written inside each period's transaction.
  */
 async function summariseCatchUpDrafts(
   templateId: string,
@@ -995,14 +1011,6 @@ async function summariseCatchUpDrafts(
         lastRunMessage: catchUpOnly || !row?.message ? summary : `${row.message} | ${summary}`,
       })
       .where(eq(recurringInvoicesTable.id, templateId));
-    await recordAudit({
-      companyId: drafts.companyId,
-      action: "recurring_invoice.catch_up_drafts",
-      entityType: "recurring_invoice",
-      entityId: templateId,
-      after: { periods: drafts.periods, invoiceIds: drafts.ids },
-      extra: { message: summary },
-    });
   } catch (err) {
     log.error({ err, templateId }, "Could not record the recurring catch-up draft summary");
   }
