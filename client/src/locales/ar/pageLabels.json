@@ -995,7 +995,7 @@
   "pageLabels.companySettings.emirate.ras_al_khaimah": "رأس الخيمة",
   "pageLabels.companySettings.emirate.fujairah": "الفجيرة",
   "pageLabels.companySettings.country.AE": "الإمارات العربية المتحدة",
-  "pageLabels.companySettings.country.SA": "المملكة العربية السعودية",
+  "pageLabels.companySettings.country.legacy": "أخرى (قيمة قديمة)",
   "pageLabels.companySettings.country.QA": "قطر",
   "pageLabels.companySettings.country.KW": "الكويت",
   "pageLabels.companySettings.country.BH": "البحرين",

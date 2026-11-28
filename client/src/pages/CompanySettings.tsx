@@ -853,7 +853,7 @@ export default function CompanySettings() {
                               <SelectValue
                                 placeholder={
                                   field.value === "SA"
-                                    ? optionLabel(t, "country", "SA", "Saudi Arabia")
+                                    ? `${optionLabel(t, "country", "legacy", "Other (legacy value)")} (${field.value})`
                                     : undefined
                                 }
                               />

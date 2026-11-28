@@ -11,7 +11,7 @@ export interface CompanyAddressLike {
   emirate?: string | null;
 }
 
-const COUNTRY_NAMES: Record<string, string> = { AE: "United Arab Emirates", SA: "Saudi Arabia" };
+const COUNTRY_NAMES: Record<string, string> = { AE: "United Arab Emirates" };
 
 export function companyAddressLine(
   c: CompanyAddressLike | null | undefined,

@@ -124,11 +124,10 @@ describe("STEP2: the catalogs (en, ar and the report overlay)", () => {
     expect(bad.map(([f, k]) => `${f}:${k}`)).toEqual([]);
   });
 
-  it("Saudi appears only for the SAR currency and the legacy stored country", () => {
+  it("Saudi appears only for the SAR currency (no Saudi country label)", () => {
     const allowed = new Set([
       "pageLabels.sARSaudiRiyal",
       "pageLabels.companySettings.currency.SAR",
-      "pageLabels.companySettings.country.SA",
       "adminConsole.curSAR",
     ]);
     const found = rows.filter(([, , v]) => /\bSaudi\b|السعود/.test(v)).map(([, k]) => k);
@@ -275,7 +274,7 @@ describe.each(["en", "ar"] as const)("STEP2 rendered pages (%s)", (lang) => {
     expect(document.body.textContent).not.toMatch(BANNED);
   });
 
-  it("company settings preserves the stored Saudi label while omitting it from the country options", async () => {
+  it("company settings shows a neutral legacy label while omitting Saudi from the country options", async () => {
     const { default: CompanySettings } = await import("../../client/src/pages/CompanySettings");
     setFixtures({
       [`/api/companies/${COMPANY_ID}`]: {
@@ -293,8 +292,9 @@ describe.each(["en", "ar"] as const)("STEP2 rendered pages (%s)", (lang) => {
     expect(vat.join(" ")).not.toMatch(/15|١٥/);
     const country = byTestId("select-address-country");
     expect(country?.textContent).toContain(
-      lang === "ar" ? "المملكة العربية السعودية" : "Saudi Arabia"
+      lang === "ar" ? "أخرى (قيمة قديمة)" : "Other (legacy value)"
     );
+    expect(country?.textContent).not.toMatch(/Saudi|السعود/);
     const countries = await optionsOf(country);
     expect(countries.join("|")).not.toMatch(/Saudi|السعود/);
     expect(document.body.textContent).not.toMatch(BANNED);
