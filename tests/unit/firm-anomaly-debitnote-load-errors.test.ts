@@ -16,6 +16,9 @@ import { ApiError } from "../../client/src/lib/queryClient";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
+const toasts = vi.hoisted(() => ({
+  calls: [] as Array<{ title?: string; description?: string; variant?: string }>,
+}));
 const net = vi.hoisted(() => ({
   respond: (_path: string): unknown => null,
   calls: [] as Array<{ method: string; url: string; body: unknown }>,
@@ -33,6 +36,15 @@ vi.mock("../../client/src/lib/queryClient", async (orig) => {
     },
   };
 });
+vi.mock("../../client/src/hooks/use-toast", () => ({
+  useToast: () => ({
+    toast: (t: { title?: string; description?: string; variant?: string }) => {
+      toasts.calls.push(t);
+    },
+    toasts: [],
+    dismiss: () => {},
+  }),
+}));
 vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
   useDefaultCompany: () => ({ companyId: "c1", companies: [], company: null, isLoading: false }),
 }));
@@ -45,6 +57,7 @@ beforeAll(async () => {
 });
 
 let root: Root | null = null;
+let currentLocation: ReturnType<typeof memoryLocation> | null = null;
 let node: HTMLDivElement | null = null;
 afterEach(async () => {
   if (root) await act(async () => root!.unmount());
@@ -70,6 +83,7 @@ async function mount(
   useI18n.setState({ locale });
   net.respond = responder;
   net.calls = [];
+  toasts.calls = [];
   const client = new QueryClient({
     defaultOptions: {
       queries: {
@@ -88,7 +102,8 @@ async function mount(
   node = document.createElement("div");
   document.body.appendChild(node);
   root = createRoot(node);
-  const { hook, searchHook } = memoryLocation({ path: location });
+  currentLocation = memoryLocation({ path: location, record: true });
+  const { hook, searchHook } = currentLocation;
   await act(async () => {
     root!.render(
       createElement(
@@ -194,9 +209,9 @@ describe.each(["en", "ar"] as const)("Firm, anomaly and debit note load errors (
       ],
     };
     const responder =
-      (over: { bills?: unknown; detail?: unknown } = {}) =>
+      (over: { bills?: unknown; detail?: unknown; apply?: unknown } = {}) =>
       (p: string) => {
-        if (p.endsWith("/debit-notes/n1/apply")) return ok({ bill_status: "paid" });
+        if (p.endsWith("/debit-notes/n1/apply")) return over.apply ?? ok({ bill_status: "paid" });
         if (p.endsWith("/debit-notes")) return ok({ id: "n1", total_amount: "105.00" });
         if (p === "/api/bills/b1") return over.detail ?? ok(bill);
         if (p.endsWith("/bills")) return over.bills ?? ok([bill]);
@@ -261,6 +276,95 @@ describe.each(["en", "ar"] as const)("Firm, anomaly and debit note load errors (
       const alert = tid("debit-note-error");
       expect(alert).not.toBeNull();
       expect(alert!.textContent!.length).toBeGreaterThan(10);
+    });
+
+    it("shows why Save is disabled while loading, and links it with aria-describedby", async () => {
+      const { default: DebitNoteEditor } = await import("../../client/src/pages/DebitNoteEditor");
+      await mount(
+        DebitNoteEditor as never,
+        {},
+        locale,
+        responder({ bills: "hang" }),
+        "/?billId=b1"
+      );
+      const reason = tid("debit-note-save-reason");
+      expect(reason).not.toBeNull();
+      expect(reason!.textContent).toBe(
+        locale === "ar"
+          ? "ما زالت فواتير الموردين والحسابات قيد التحميل. حاول مرة أخرى بعد قليل."
+          : "The supplier bills and accounts are still loading. Try again in a moment."
+      );
+      expect(save().disabled).toBe(true);
+      expect(save().getAttribute("aria-describedby")).toBe(reason!.id);
+    });
+
+    it("shows the load-failed reason beside a disabled Save, and none once everything loaded", async () => {
+      const { default: DebitNoteEditor } = await import("../../client/src/pages/DebitNoteEditor");
+      await mount(
+        DebitNoteEditor as never,
+        {},
+        locale,
+        responder({ bills: "fail" }),
+        "/?billId=b1"
+      );
+      expect(tid("debit-note-save-reason")!.textContent).toBe(
+        locale === "ar"
+          ? "تعذّر تحميل بعض البيانات التي يحتاجها هذا النموذج. استخدم زر أعد المحاولة أعلاه ثم احفظ."
+          : "Some of the data this form needs did not load. Use Try again above, then save."
+      );
+      await act(async () => root!.unmount());
+      node!.remove();
+      root = null;
+      await mount(DebitNoteEditor as never, {}, locale, responder(), "/?billId=b1");
+      expect(save().disabled).toBe(false);
+      expect(tid("debit-note-save-reason")).toBeNull();
+      expect(save().getAttribute("aria-describedby")).toBeNull();
+    });
+
+    it("when applying fails after the note posted: warns it is posted but not applied, goes to the list, creates once", async () => {
+      const { default: DebitNoteEditor } = await import("../../client/src/pages/DebitNoteEditor");
+      await mount(
+        DebitNoteEditor as never,
+        {},
+        locale,
+        responder({ apply: "fail" }),
+        "/?billId=b1"
+      );
+      await fillReason();
+      await clickSave();
+      const sent = posts();
+      expect(sent.filter((c) => /\/debit-notes$/.test(c.url))).toHaveLength(1);
+      expect(sent.filter((c) => /\/apply$/.test(c.url))).toHaveLength(1);
+      expect(toasts.calls).toHaveLength(1);
+      expect(toasts.calls[0].variant).toBe("destructive");
+      expect(toasts.calls[0].title).toBe(
+        locale === "ar"
+          ? "تم ترحيل الإشعار المدين لكن لم يُطبَّق على الفاتورة. طبّقه من صفحة «إشعارات دائنة من الموردين»."
+          : "Debit note posted, but not applied to the bill. Apply it from the Supplier credits page."
+      );
+      expect(currentLocation!.history!.at(-1)).toBe("/debit-notes");
+      // No inline error inviting a retry that would post a second note.
+      expect(tid("debit-note-error")).toBeNull();
+    });
+
+    it("blocks apply-now when the bill has no open balance and posts nothing", async () => {
+      const { default: DebitNoteEditor } = await import("../../client/src/pages/DebitNoteEditor");
+      await mount(
+        DebitNoteEditor as never,
+        {},
+        locale,
+        responder({ bills: ok([{ ...bill, open_balance: 0 }]) }),
+        "/?billId=b1"
+      );
+      await fillReason();
+      await clickSave();
+      expect(posts()).toHaveLength(0);
+      const expected =
+        locale === "ar"
+          ? "لا يوجد رصيد مفتوح في هذه الفاتورة لتطبيق الخصم عليه. ألغِ تحديد خيار التطبيق لحفظ الإشعار المدين دون تطبيقه."
+          : "This bill has no open balance to apply the credit to. Untick the apply option to save the debit note without applying it.";
+      expect(tid("debit-note-error")!.textContent).toBe(expected);
+      expect(toasts.calls.map((c) => c.title)).toEqual([expected]);
     });
 
     it("a failed bill-detail load shows an inline error with retry and blocks saving", async () => {
