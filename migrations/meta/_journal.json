@@ -617,6 +617,517 @@
    "when": 1781430030000,
    "tag": "0088_emirate_no_default",
    "breakpoints": false
+  },
+  {
+   "idx": 88,
+   "version": "7",
+   "when": 1781430040000,
+   "tag": "0089_platform_foundation",
+   "breakpoints": false
+  },
+  {
+   "idx": 89,
+   "version": "7",
+   "when": 1781430050000,
+   "tag": "0090_w2a_ledger_kernel",
+   "breakpoints": false
+  },
+  {
+   "idx": 90,
+   "version": "7",
+   "when": 1781430060000,
+   "tag": "0091_w2b_reporting_close",
+   "breakpoints": false
+  },
+  {
+   "idx": 91,
+   "version": "7",
+   "when": 1781430070000,
+   "tag": "0092_w2c_identity",
+   "breakpoints": false
+  },
+  {
+   "idx": 92,
+   "version": "7",
+   "when": 1781430080000,
+   "tag": "0093_w2d_write_sweep",
+   "breakpoints": false
+  },
+  {
+   "idx": 93,
+   "version": "7",
+   "when": 1781430090000,
+   "tag": "0094_w2e_fx_core",
+   "breakpoints": false
+  },
+  {
+   "idx": 94,
+   "version": "7",
+   "when": 1781430100000,
+   "tag": "0095_w3a_sales",
+   "breakpoints": false
+  },
+  {
+   "idx": 95,
+   "version": "7",
+   "when": 1781430110000,
+   "tag": "0096_w3b_purchases",
+   "breakpoints": false
+  },
+  {
+   "idx": 96,
+   "version": "7",
+   "when": 1781430120000,
+   "tag": "0097_w3c_banking",
+   "breakpoints": false
+  },
+  {
+   "idx": 97,
+   "version": "7",
+   "when": 1781430130000,
+   "tag": "0098_w3d_payroll",
+   "breakpoints": false
+  },
+  {
+   "idx": 98,
+   "version": "7",
+   "when": 1781430140000,
+   "tag": "0099_w3e_dashboard_planning",
+   "breakpoints": false
+  },
+  {
+   "idx": 99,
+   "version": "7",
+   "when": 1781430150000,
+   "tag": "0100_w4a_corporate_tax_compliance",
+   "breakpoints": false
+  },
+  {
+   "idx": 100,
+   "version": "7",
+   "when": 1781430160000,
+   "tag": "0101_w4b_inventory_assets",
+   "breakpoints": false
+  },
+  {
+   "idx": 101,
+   "version": "7",
+   "when": 1781430170000,
+   "tag": "0102_w4c_einvoicing",
+   "breakpoints": false
+  },
+  {
+   "idx": 102,
+   "version": "7",
+   "when": 1781430180000,
+   "tag": "0103_w4d_portals_comms",
+   "breakpoints": false
+  },
+  {
+   "idx": 103,
+   "version": "7",
+   "when": 1781430190000,
+   "tag": "0104_w4e_vat_engine",
+   "breakpoints": false
+  },
+  {
+   "idx": 104,
+   "version": "7",
+   "when": 1781430200000,
+   "tag": "0105_w5a_reports",
+   "breakpoints": false
+  },
+  {
+   "idx": 105,
+   "version": "7",
+   "when": 1781430210000,
+   "tag": "0106_w5b_commercial",
+   "breakpoints": false
+  },
+  {
+   "idx": 106,
+   "version": "7",
+   "when": 1781430220000,
+   "tag": "0107_w5c_multi_entity",
+   "breakpoints": false
+  },
+  {
+   "idx": 107,
+   "version": "7",
+   "when": 1781430230000,
+   "tag": "0108_w5d_firm",
+   "breakpoints": false
+  },
+  {
+   "idx": 108,
+   "version": "7",
+   "when": 1781430240000,
+   "tag": "0109_w5e_security",
+   "breakpoints": false
+  },
+  {
+   "idx": 109,
+   "version": "7",
+   "when": 1781430250000,
+   "tag": "0110_s1_sales_tax",
+   "breakpoints": false
+  },
+  {
+   "idx": 110,
+   "version": "7",
+   "when": 1781430260000,
+   "tag": "0111_s2_purchases",
+   "breakpoints": false
+  },
+  {
+   "idx": 111,
+   "version": "7",
+   "when": 1781430270000,
+   "tag": "0112_s3_banking_ai",
+   "breakpoints": false
+  },
+  {
+   "idx": 112,
+   "version": "7",
+   "when": 1781430280000,
+   "tag": "0113_s5_platform",
+   "breakpoints": false
+  },
+  {
+   "idx": 113,
+   "version": "7",
+   "when": 1781430290000,
+   "tag": "0114_s8_residuals",
+   "breakpoints": false
+  },
+  {
+   "idx": 114,
+   "version": "7",
+   "when": 1781430300000,
+   "tag": "0115_f8_event_outbox",
+   "breakpoints": false
+  },
+  {
+   "idx": 115,
+   "version": "7",
+   "when": 1781430310000,
+   "tag": "0116_e1_einvoice_acube",
+   "breakpoints": false
+  },
+  {
+   "idx": 116,
+   "version": "7",
+   "when": 1781430320000,
+   "tag": "0117_e2_einvoice_complyance",
+   "breakpoints": false
+  },
+  {
+   "idx": 117,
+   "version": "7",
+   "when": 1781430330000,
+   "tag": "0118_x4_payroll",
+   "breakpoints": false
+  },
+  {
+   "idx": 118,
+   "version": "7",
+   "when": 1781430340000,
+   "tag": "0119_a3_chart",
+   "breakpoints": false
+  },
+  {
+   "idx": 119,
+   "version": "7",
+   "when": 1781430350000,
+   "tag": "0120_a2_purchases",
+   "breakpoints": false
+  },
+  {
+   "idx": 120,
+   "version": "7",
+   "when": 1781430360000,
+   "tag": "0121_a1_vat_lock",
+   "breakpoints": false
+  },
+  {
+   "idx": 121,
+   "version": "7",
+   "when": 1781430370000,
+   "tag": "0122_a4_payroll_ct",
+   "breakpoints": false
+  },
+  {
+   "idx": 122,
+   "version": "7",
+   "when": 1781430380000,
+   "tag": "0123_b1_posting_guards",
+   "breakpoints": false
+  },
+  {
+   "idx": 123,
+   "version": "7",
+   "when": 1781430390000,
+   "tag": "0124_e3_invoice_line_income",
+   "breakpoints": false
+  },
+  {
+   "idx": 124,
+   "version": "7",
+   "when": 1781430400000,
+   "tag": "0125_wq7_automations_onboarding_numbering",
+   "breakpoints": false
+  },
+  {
+   "idx": 125,
+   "version": "7",
+   "when": 1781430410000,
+   "tag": "0126_wq3_journal_line_fields",
+   "breakpoints": false
+  },
+  {
+   "idx": 126,
+   "version": "7",
+   "when": 1781430420000,
+   "tag": "0127_wq2_purchases",
+   "breakpoints": false
+  },
+  {
+   "idx": 127,
+   "version": "7",
+   "when": 1781430430000,
+   "tag": "0128_wq5_einvoice_identity",
+   "breakpoints": false
+  },
+  {
+   "idx": 128,
+   "version": "7",
+   "when": 1781430440000,
+   "tag": "0129_wq1_sales_documents",
+   "breakpoints": false
+  },
+  {
+   "idx": 129,
+   "version": "7",
+   "when": 1781430450000,
+   "tag": "0130_cash_sale_numbering",
+   "breakpoints": false
+  },
+  {
+   "idx": 130,
+   "version": "7",
+   "when": 1781430460000,
+   "tag": "0131_journal_memo_keys",
+   "breakpoints": false
+  },
+  {
+   "idx": 131,
+   "version": "7",
+   "when": 1781430470000,
+   "tag": "0132_journal_line_keys",
+   "breakpoints": false
+  },
+  {
+   "idx": 132,
+   "version": "7",
+   "when": 1781430480000,
+   "tag": "0133_step2_remove_zatca",
+   "breakpoints": false
+  },
+  {
+   "idx": 133,
+   "version": "7",
+   "when": 1781430490000,
+   "tag": "0134_step3_remove_price_editor",
+   "breakpoints": false
+  },
+  {
+   "idx": 134,
+   "version": "7",
+   "when": 1781430500000,
+   "tag": "0135_step4_signup_plan_choice",
+   "breakpoints": false
+  },
+  {
+   "idx": 135,
+   "version": "7",
+   "when": 1781430510000,
+   "tag": "0136_step5_portal_invitations",
+   "breakpoints": false
+  },
+  {
+   "idx": 136,
+   "version": "7",
+   "when": 1781430520000,
+   "tag": "0137_combine_portal_invitations_and_settlement_indexes",
+   "breakpoints": false
+  },
+  {
+   "idx": 137,
+   "version": "7",
+   "when": 1781430530000,
+   "tag": "0138_secure_portal_invitations",
+   "breakpoints": false
+  },
+  {
+   "idx": 138,
+   "version": "7",
+   "when": 1781430540000,
+   "tag": "0139_bind_portal_invite_and_verification_lifecycle",
+   "breakpoints": false
+  },
+  {
+   "idx": 139,
+   "version": "7",
+   "when": 1781430550000,
+   "tag": "0140_preserve_reminder_language",
+   "breakpoints": false
+  },
+  {
+   "idx": 140,
+   "version": "7",
+   "when": 1781430560000,
+   "tag": "0141_firm_membership_provenance",
+   "breakpoints": false
+  },
+  {
+   "idx": 141,
+   "version": "7",
+   "when": 1781430565000,
+   "tag": "0144_prepare_preview_firm_membership",
+   "breakpoints": false
+  },
+  {
+   "idx": 142,
+   "version": "7",
+   "when": 1781430570000,
+   "tag": "0142_recover_firm_membership_provenance",
+   "breakpoints": false
+  },
+  {
+   "idx": 143,
+   "version": "7",
+   "when": 1781430580000,
+   "tag": "0143_preserve_firm_grant_review",
+   "breakpoints": false
+  },
+  {
+   "idx": 144,
+   "version": "7",
+   "when": 1781430590000,
+   "tag": "0144_receipt_invoice_number",
+   "breakpoints": false
+  },
+  {
+   "idx": 145,
+   "version": "7",
+   "when": 1781430600000,
+   "tag": "0145_receipt_rate_and_capture",
+   "breakpoints": false
+  },
+  {
+   "idx": 146,
+   "version": "7",
+   "when": 1781430630000,
+   "tag": "0138_repair_bank_gl_links",
+   "breakpoints": false
+  },
+  {
+   "idx": 147,
+   "version": "7",
+   "when": 1781430640000,
+   "tag": "0139_audit_bank_match_links",
+   "breakpoints": false
+  },
+  {
+   "idx": 148,
+   "version": "7",
+   "when": 1781430650000,
+   "tag": "0140_repair_bank_receipt_provenance",
+   "breakpoints": false
+  },
+  {
+   "idx": 149,
+   "version": "7",
+   "when": 1781430660000,
+   "tag": "0141_restore_legacy_invoice_bank_provenance",
+   "breakpoints": false
+  },
+  {
+   "idx": 150,
+   "version": "7",
+   "when": 1781430670000,
+   "tag": "0146_reconcile_preview_portal_migration_slots",
+   "breakpoints": false
+  },
+  {
+   "idx": 151,
+   "version": "7",
+   "when": 1781430680000,
+   "tag": "0147_reconcile_preview_reminder_language",
+   "breakpoints": false
+  },
+  {
+   "idx": 152,
+   "version": "7",
+   "when": 1781430690000,
+   "tag": "0148_reconcile_preview_firm_membership",
+   "breakpoints": false
+  },
+  {
+   "idx": 153,
+   "version": "7",
+   "when": 1781430700000,
+   "tag": "0149_reconcile_preview_receipt_schema",
+   "breakpoints": false
+  },
+  {
+   "idx": 154,
+   "version": "7",
+   "when": 1781430710000,
+   "tag": "0154_postmerge_buyer_billing_payroll",
+   "breakpoints": false
+  },
+  {
+   "idx": 155,
+   "version": "7",
+   "when": 1781430720000,
+   "tag": "0155_cash_sale_buyer_and_checkout_reservation",
+   "breakpoints": false
+  },
+  {
+   "idx": 156,
+   "version": "7",
+   "when": 1781430730000,
+   "tag": "0156_request_throttle_buckets",
+   "breakpoints": false
+  },
+  {
+   "idx": 157,
+   "version": "7",
+   "when": 1795533357303,
+   "tag": "0157_preserve_period_locks_and_repair_cash_sale_numbering",
+   "breakpoints": true
+  },
+  {
+   "idx": 158,
+   "version": "7",
+   "when": 1795533367303,
+   "tag": "0158_s4_einvoice_asp_appointments",
+   "breakpoints": false
+  },
+  {
+   "idx": 159,
+   "version": "7",
+   "when": 1795713570688,
+   "tag": "0159_preserve_invoice_line_document_discounts",
+   "breakpoints": true
+  },
+  {
+   "idx": 160,
+   "version": "7",
+   "when": 1795713580688,
+   "tag": "0160_vat_returns_drop_unique_drift",
+   "breakpoints": false
   }
  ]
 }

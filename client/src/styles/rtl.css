@@ -5,7 +5,7 @@
  * document direction is set to RTL (Arabic mode).
  *
  * Covers:
- *  - Arabic font stack (Google Fonts Cairo)
+ *  - Arabic font stack (self-hosted Noto Sans Arabic via --font-arabic)
  *  - Base directional overrides
  *  - shadcn/ui component adjustments
  *  - Tables, forms, sidebar, dialogs, badges, tooltips
@@ -14,68 +14,43 @@
  *  - Framer Motion sidebar animation fix
  */
 
-/* ── Google Fonts ─────────────────────────────────────────────────────── */
-/* Cairo + Noto Sans Arabic are now preloaded in index.html <head>.        */
-/* This @import is kept as a fallback for environments that skip the HTML  */
-/* preload (e.g. Storybook, standalone CSS consumers).                     */
+/* ── Fonts ───────────────────────────────────────────────────────────── */
+/* Noto Sans Arabic is self-hosted (Fontsource) and loaded on first RTL     */
+/* render by RTLProvider; the stack lives in the --font-arabic token.       */
 
 /* ══════════════════════════════════════════════════════════════════════
    1. BASE / TYPOGRAPHY
    ══════════════════════════════════════════════════════════════════════ */
 
 [dir="rtl"] {
-  font-family:
-    "Cairo",
-    "Noto Sans Arabic",
-    "Segoe UI",
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-arabic);
   text-align: right;
 }
 
 [dir="rtl"] body {
-  font-family:
-    "Cairo",
-    "Noto Sans Arabic",
-    "Segoe UI",
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-arabic);
 }
 
-/* Slightly larger line-height for Arabic readability */
+/* Letter-spacing breaks Arabic joining (letters render disconnected), so the
+   uppercase/tracking-wide label styles used across the shell are neutralised. */
+[dir="rtl"] [class*="tracking-"] {
+  letter-spacing: normal;
+}
+
+/* Slightly larger line-height for Arabic running text. Compact UI (buttons,
+   badges, table cells) keeps the type-scale line-height so rows stay aligned. */
 [dir="rtl"] p,
-[dir="rtl"] span,
-[dir="rtl"] label,
-[dir="rtl"] li,
-[dir="rtl"] td,
-[dir="rtl"] th {
-  line-height: 1.8;
+[dir="rtl"] li {
+  line-height: 1.7;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
    2. NUMBERS — keep LTR even inside RTL context
    ══════════════════════════════════════════════════════════════════════ */
 
-[dir="rtl"] .ltr-num,
-[dir="rtl"] [data-ltr-num],
-[dir="rtl"] input[type="number"],
-[dir="rtl"] input[type="tel"],
-[dir="rtl"] input[inputmode="numeric"],
-[dir="rtl"] input[inputmode="decimal"],
-[dir="rtl"] .tabular-nums {
+[dir="rtl"] :where(.ltr-num, [data-ltr-num], .currency-amount, [data-currency]) {
   direction: ltr;
-  unicode-bidi: embed;
-  text-align: right;
-}
-
-/* Currency and financial figures */
-[dir="rtl"] .currency-amount,
-[dir="rtl"] [data-currency] {
-  direction: ltr;
-  unicode-bidi: embed;
-  text-align: right;
+  unicode-bidi: isolate;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -364,6 +339,20 @@
   border-left: 1px solid hsl(var(--sidebar-border));
 }
 
+/* R18-01: the shadcn sidebar chooses left/right itself from its `side` prop
+   (AppSidebar passes side="right" in RTL). The generic physical `.left-0` /
+   `.right-0` swaps above would flip it a second time and park the fixed
+   container back on the left edge, over the content, leaving a dead strip on
+   the right. Restore the container's own physical anchor. */
+[dir="rtl"] [data-slot="sidebar-container"].right-0 {
+  right: 0;
+  left: auto;
+}
+[dir="rtl"] [data-slot="sidebar-container"].left-0 {
+  left: 0;
+  right: auto;
+}
+
 /* Sidebar active indicator — flip to right edge */
 [dir="rtl"] [data-sidebar="sidebar"] .absolute.left-0 {
   left: auto;
@@ -397,86 +386,69 @@
    5. TABLES
    ══════════════════════════════════════════════════════════════════════ */
 
-[dir="rtl"] table {
-  text-align: right;
-}
+/* Figure typography and cell alignment do not change the table direction. */
+@layer rtl-defaults {
+  :where(th, td):dir(rtl) {
+    text-align: start;
+  }
 
-[dir="rtl"] th {
-  text-align: right;
-}
-
-[dir="rtl"] td {
-  text-align: right;
-}
-
-/* Numeric columns stay LTR-aligned */
-[dir="rtl"] td.numeric,
-[dir="rtl"] th.numeric,
-[dir="rtl"] td[data-numeric],
-[dir="rtl"] th[data-numeric],
-[dir="rtl"] .table-numeric {
-  direction: ltr;
-  unicode-bidi: embed;
-  text-align: left;
-}
-
-/* Table action column (buttons) — flip to left */
-[dir="rtl"] td:last-child,
-[dir="rtl"] th:last-child {
-  text-align: left;
-}
-
-[dir="rtl"] td:first-child,
-[dir="rtl"] th:first-child {
-  text-align: right;
+  :where(th, td):dir(rtl):where(.numeric, [data-numeric], .table-numeric) {
+    text-align: end;
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════════
    6. FORMS & INPUTS
    ══════════════════════════════════════════════════════════════════════ */
 
-[dir="rtl"] input,
-[dir="rtl"] textarea,
-[dir="rtl"] select {
-  text-align: right;
-}
-
-/* Email and URL fields should remain LTR */
-[dir="rtl"] input[type="email"],
-[dir="rtl"] input[type="url"] {
+/* Native controls outside the shared Input also need a stable direction. */
+[dir="rtl"]
+  input:not([dir]):where(
+    [type="email"],
+    [type="url"],
+    [type="tel"],
+    [type="number"],
+    [inputmode="numeric"],
+    [inputmode="decimal"]
+  ) {
   direction: ltr;
-  text-align: left;
 }
 
-/* Search input icon positioning */
-[dir="rtl"] .relative > input + svg,
-[dir="rtl"] .relative > svg + input {
-  /* Search icon flipped to right side */
+@layer rtl-defaults {
+  [dir="rtl"] :where(input, textarea, select, label, [role="alert"], .form-message) {
+    text-align: start;
+  }
+
+  [dir="rtl"]
+    :where(
+      input[data-ltr-num],
+      input[type="number"],
+      input[inputmode="numeric"],
+      input[inputmode="decimal"]
+    ) {
+    text-align: right;
+  }
 }
 
-/* Input with leading icon — swap padding */
-[dir="rtl"] input.pl-10,
+/* Legacy physical-padding utilities on controls with icons. */
 [dir="rtl"] input.pl-8 {
+  padding-left: 0.75rem;
+  padding-right: 2rem;
+}
+
+[dir="rtl"] input.pl-10 {
   padding-left: 0.75rem;
   padding-right: 2.5rem;
 }
 
-/* Input with trailing icon — swap padding */
-[dir="rtl"] input.pr-10,
 [dir="rtl"] input.pr-8 {
   padding-right: 0.75rem;
+  padding-left: 2rem;
+}
+
+[dir="rtl"] input.pr-10 {
+  padding-right: 0.75rem;
   padding-left: 2.5rem;
-}
-
-/* Form labels */
-[dir="rtl"] label {
-  text-align: right;
-}
-
-/* Form error messages */
-[dir="rtl"] [role="alert"],
-[dir="rtl"] .form-message {
-  text-align: right;
 }
 
 /* Checkbox / Radio — label after input in LTR becomes label before input */
@@ -493,10 +465,6 @@
 /* ── Dialog / AlertDialog ───────────────────────────────────────────── */
 [dir="rtl"] [role="dialog"] {
   text-align: right;
-}
-
-[dir="rtl"] [role="dialog"] .flex.justify-end {
-  justify-content: flex-start;
 }
 
 [dir="rtl"] [role="alertdialog"] {
@@ -522,12 +490,6 @@
 
 [dir="rtl"] [role="option"] {
   text-align: right;
-}
-
-/* Select trigger chevron */
-[dir="rtl"] [role="combobox"] svg {
-  margin-left: 0;
-  margin-right: auto;
 }
 
 /* ── Dropdown Menu ──────────────────────────────────────────────────── */
@@ -570,11 +532,6 @@
   text-align: right;
 }
 
-/* Accordion chevron icon — flip rotation direction */
-[dir="rtl"] [data-state="open"] > button svg {
-  transform: rotate(180deg);
-}
-
 /* ── Badge / Chip ───────────────────────────────────────────────────── */
 [dir="rtl"] .badge,
 [dir="rtl"] [data-badge] {
@@ -599,30 +556,14 @@
   direction: rtl;
 }
 
-/* Breadcrumb separator — flip chevron */
-[dir="rtl"] nav[aria-label="breadcrumb"] svg {
-  transform: scaleX(-1);
-}
-
-/* ── Pagination ─────────────────────────────────────────────────────── */
-[dir="rtl"] nav[aria-label="pagination"] svg {
-  transform: scaleX(-1);
-}
-
 /* ── Progress bar ───────────────────────────────────────────────────── */
 [dir="rtl"] [role="progressbar"] > div {
   transform-origin: right;
 }
 
 /* ── Toast / Notification ───────────────────────────────────────────── */
-[dir="rtl"] [data-sonner-toaster],
 [dir="rtl"] [role="status"] {
   text-align: right;
-}
-
-[dir="rtl"] [data-sonner-toast] [data-close-button] {
-  right: auto;
-  left: 0;
 }
 
 /* ── Command palette ────────────────────────────────────────────────── */
@@ -643,23 +584,28 @@
    8. ICONS — flip directional icons
    ══════════════════════════════════════════════════════════════════════ */
 
-/* Flip chevrons, arrows, and directional icons */
-[dir="rtl"] .lucide-chevron-right,
-[dir="rtl"] .lucide-chevron-left,
-[dir="rtl"] .lucide-arrow-right,
-[dir="rtl"] .lucide-arrow-left,
-[dir="rtl"] .lucide-arrow-right-circle,
-[dir="rtl"] .lucide-arrow-left-circle,
-[dir="rtl"] .lucide-move-right,
-[dir="rtl"] .lucide-move-left,
-[dir="rtl"] .lucide-chevrons-right,
-[dir="rtl"] .lucide-chevrons-left,
-[dir="rtl"] .lucide-log-out,
-[dir="rtl"] .lucide-log-in,
-[dir="rtl"] .lucide-external-link,
-[dir="rtl"] .lucide-undo,
-[dir="rtl"] .lucide-redo {
-  transform: scaleX(-1);
+/* Mirror horizontal affordances. Explicit utility classes and embedded LTR
+   controls choose their own direction. Scale separately from position/animation. */
+:is(
+    .lucide-chevron-right,
+    .lucide-chevron-left,
+    .lucide-arrow-right,
+    .lucide-arrow-left,
+    .lucide-arrow-right-circle,
+    .lucide-arrow-left-circle,
+    .lucide-circle-arrow-right,
+    .lucide-circle-arrow-left,
+    .lucide-move-right,
+    .lucide-move-left,
+    .lucide-chevrons-right,
+    .lucide-chevrons-left,
+    .lucide-log-out,
+    .lucide-log-in,
+    .lucide-external-link,
+    .lucide-undo,
+    .lucide-redo
+  ):dir(rtl):not(.rtl-flip, .rtl-preserve, [class*="rtl:rotate-"], [class*="rtl:-scale-x-"]) {
+  scale: -1 1;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -679,18 +625,16 @@
    10. SCROLLBAR POSITIONING
    ══════════════════════════════════════════════════════════════════════ */
 
-/* Move scrollbar to the left in RTL */
+/* R18-01: do NOT reserve a root scrollbar gutter in RTL. `scrollbar-gutter:
+   stable` on <html> shrank the fixed sidebar's containing block by the 10px
+   scrollbar width and left a dead strip beside the right-anchored sidebar.
+   Browsers already place the native scrollbar on the correct side in RTL. */
 [dir="rtl"] {
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
 }
 
 [dir="rtl"] ::-webkit-scrollbar {
   /* Scrollbar on left side — handled natively by RTL direction */
-}
-
-/* Custom scrollbar track — explicit for scroll areas */
-[dir="rtl"] [data-radix-scroll-area-viewport] {
-  direction: rtl;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -720,7 +664,7 @@
 
 @media print {
   [dir="rtl"] {
-    font-family: "Cairo", "Noto Sans Arabic", serif;
+    font-family: var(--font-arabic);
   }
 
   [dir="rtl"] table {

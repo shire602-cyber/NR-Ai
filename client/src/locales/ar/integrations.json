@@ -1,0 +1,22 @@
+{
+  "integrations.title": "التكاملات",
+  "integrations.description": "اربط منصات الدفع والمبيعات لديك، أو أدخل بياناتك عبر الاستيراد.",
+  "integrations.availableTitle": "متاحة",
+  "integrations.availableHelp": "اربط باستخدام بيانات حسابك. تصل السجلات المستوردة كمسودات لتراجعها.",
+  "integrations.byImportTitle": "عبر الاستيراد",
+  "integrations.byImportHelp": "أدخل بياناتك من هذه الأنظمة باستيراد ملف CSV.",
+  "integrations.importCsv": "استيراد ملف CSV",
+  "integrations.connect": "ربط",
+  "integrations.syncNow": "مزامنة الآن",
+  "integrations.syncDone": "اكتملت المزامنة",
+  "integrations.lastSyncFailed": "لم تكتمل آخر مزامنة. حاول مرة أخرى.",
+  "integrations.tabConnectors": "الموصلات",
+  "integrations.importedCount": "المستوردة",
+  "integrations.recentImports": "أحدث الواردات",
+  "integrations.emptyTransactions": "شغّل المزامنة لإحضار أحدث معاملاتك.",
+  "integrations.unnamedCustomer": "عميل بلا اسم",
+  "integrations.typeSale": "بيع",
+  "integrations.typeRefund": "استرداد",
+  "integrations.connectHelp": "أدخل بيانات الحساب من لوحة تحكم {name}.",
+  "integrations.stripeKeyHelp": "في Stripe افتح قسم المطورين ثم مفاتيح API. يكفي مفتاح مقيّد بصلاحية القراءة."
+}

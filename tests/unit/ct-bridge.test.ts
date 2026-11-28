@@ -31,9 +31,10 @@ describe("disallowable expense add-backs", () => {
     });
 
     expect(r.accountingProfit).toBe(300_000);
-    expect(r.totalAddBacks).toBe(25_000);
+    // R08-07: entertainment adds back 50% of the amount entered (10,000 of 20,000).
+    expect(r.totalAddBacks).toBe(15_000);
     expect(r.totalDeductions).toBe(50_000);
-    expect(r.adjustedTaxableIncome).toBe(275_000);
+    expect(r.adjustedTaxableIncome).toBe(265_000);
     // Below the 375k band → no tax.
     expect(r.taxPayable).toBe(0);
 
@@ -43,7 +44,7 @@ describe("disallowable expense add-backs", () => {
     expect(labels).toContain("Fines and penalties");
     expect(labels).toContain("Exempt income (participation/foreign PE)");
     const entertainment = r.bridge.find((l) => l.label.startsWith("Client entertainment"));
-    expect(entertainment?.amount).toBe(20_000);
+    expect(entertainment?.amount).toBe(10_000);
     const exempt = r.bridge.find((l) => l.label.startsWith("Exempt income"));
     expect(exempt?.amount).toBe(-50_000);
   });

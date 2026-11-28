@@ -1,0 +1,3 @@
+﻿Date,Description,Amount,Dr/Cr,Reference
+2026-11-03,"ACME, TRADING LLC - invoice 1,200",1200.00,Cr,"REF,001"
+2026-11-04,"Payment ""special"" order",75.25,Dr,

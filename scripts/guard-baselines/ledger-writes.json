@@ -1,0 +1,5 @@
+{
+  "description": "Ratchet: direct journal writes (insert/update/delete, transitionRow, raw SQL) outside server/ledger/. Kept at 0; regenerate with `node scripts/check-ledger-writes.mjs --update` only after removing call sites.",
+  "total": 0,
+  "files": {}
+}

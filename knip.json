@@ -1,0 +1,25 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "server/index.ts",
+    "server/migrate.ts",
+    "client/src/main.tsx",
+    "scripts/**/*.mjs",
+    "tests/**/*.{ts,mjs}",
+    "tools/**/*.{ts,mjs}"
+  ],
+  "project": [
+    "server/**/*.ts",
+    "shared/**/*.ts",
+    "client/src/**/*.{ts,tsx}",
+    "scripts/**/*.mjs",
+    "tests/**/*.{ts,mjs}"
+  ],
+  "ignore": ["sites/**", "docs/**", "dist/**", "migrations/**", "extensions/**", "brand/**"],
+  "paths": {
+    "@/*": ["client/src/*"],
+    "@shared/*": ["shared/*"]
+  },
+  "vite": { "config": ["vite.config.ts"] },
+  "vitest": { "config": ["vitest.config.ts", "tests/db/vitest.config.ts"] }
+}

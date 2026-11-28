@@ -9,6 +9,9 @@
  *
  * Env:
  *   BASE_URL or first arg          Target app URL.
+ *   REPORT_AUDIT_ARABIC=true      Write the same records with Arabic names and descriptions (the
+ *                                 broken-path sweep's Arabic-data persona: no English user data,
+ *                                 so any English left on a screen in Arabic mode is UI copy).
  *   REPORT_AUDIT_EMAIL            Optional existing/new smoke email.
  *   REPORT_AUDIT_PASSWORD         Optional smoke password.
  *   REPORT_AUDIT_REUSE=true       Login to an existing account instead of registering first.
@@ -20,6 +23,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  BANK_STATEMENT_PROBE,
+  verifiedStatementMatchCount,
+} from "./lib/bank-statement-evidence.mjs";
 
 const BASE = (process.env.BASE_URL || process.argv[2] || "").replace(/\/$/, "");
 if (!BASE) {
@@ -31,10 +38,161 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ARTIFACT_DIR = path.join(__dirname, ".artifacts");
 const ARTIFACT_PATH = path.join(ARTIFACT_DIR, "report-audit-fixture-last-run.json");
 
-const runStamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+const runStamp = new Date()
+  .toISOString()
+  .replace(/[-:.TZ]/g, "")
+  .slice(0, 14);
 const email = process.env.REPORT_AUDIT_EMAIL || `report-audit+${runStamp}@test.local`;
 const password = process.env.REPORT_AUDIT_PASSWORD || "ReportAudit123!";
 const reuseAccount = process.env.REPORT_AUDIT_REUSE === "true";
+const ARABIC = process.env.REPORT_AUDIT_ARABIC === "true";
+
+/** English record text -> Arabic text, applied to every request body when ARABIC is on. */
+const AR_TEXT = {
+  "Report Audit Owner": "مالك التدقيق التجريبي",
+  "Office 1404, Sheikh Zayed Road, Dubai, UAE": "مكتب 1404، شارع الشيخ زايد، دبي، الإمارات",
+  "Sheikh Zayed Road": "شارع الشيخ زايد",
+  "Business Bay": "الخليج التجاري",
+  Dubai: "دبي",
+  "Report Audit Trading LLC": "شركة التدقيق التجارية ذ.م.م",
+  "Blue Palm Services LLC": "شركة النخلة الزرقاء للخدمات ذ.م.م",
+  "Atlas Free Zone FZCO": "أطلس للمنطقة الحرة",
+  "Harbor Design Studio": "استوديو الميناء للتصميم",
+  "FX Export Client Inc": "شركة التصدير بالعملات الأجنبية",
+  "Draft Review Customer": "عميل مراجعة المسودة",
+  "Quote Prospect LLC": "شركة العميل المحتمل ذ.م.م",
+  "Gulf Hosting LLC": "شركة الخليج للاستضافة ذ.م.م",
+  "Al Noor Facilities": "مرافق النور",
+  "Strategy Consultants": "مستشارو الاستراتيجية",
+  "Hardware Supplier LLC": "شركة موردي الأجهزة ذ.م.م",
+  "Automation Starter Kit": "حزمة الأتمتة التمهيدية",
+  "Reporting Dashboard License": "ترخيص لوحة التقارير",
+  "Mariam Al Mansoori": "مريم المنصوري",
+  "Omar Khan": "عمر خان",
+  "Audit Workstation Fleet": "أجهزة محطات عمل التدقيق",
+  "Client Presentation Furniture": "أثاث عرض العملاء",
+  "Report Audit Operating Account": "حساب التدقيق التشغيلي",
+  "Emirates NBD": "بنك الإمارات دبي الوطني",
+  ADCB: "بنك أبوظبي التجاري",
+  "CloudStack FZ LLC": "كلاود ستاك للمنطقة الحرة",
+  "Dubai Office Properties": "عقارات مكاتب دبي",
+  "OfficeMart UAE": "أوفيس مارت الإمارات",
+  "Campaign Labs": "مختبرات الحملات",
+  "Legal Partners": "الشركاء القانونيون",
+  Careem: "كريم",
+  "DIFC Cafe": "مقهى مركز دبي المالي",
+  "Dubai Training Hub": "مركز دبي للتدريب",
+  Advisory: "الاستشارات",
+  Operations: "العمليات",
+  "Accounting advisory subscription": "اشتراك الاستشارات المحاسبية",
+  "Accounting automation workshop": "ورشة أتمتة المحاسبة",
+  "Advisory delivery cost allocation": "توزيع تكلفة تقديم الاستشارات",
+  "Advisory delivery payment clearing": "تسوية مدفوعات تقديم الاستشارات",
+  "Advisory receipts clearing": "تسوية مقبوضات الاستشارات",
+  "Advisory revenue allocation": "توزيع إيرادات الاستشارات",
+  "Audit laptop bundle": "حزمة أجهزة التدقيق المحمولة",
+  "Automation readiness workshop": "ورشة جاهزية الأتمتة",
+  "Automation setup": "إعداد الأتمتة",
+  "Cash sales banked": "مبيعات نقدية مودعة",
+  "Cash sales": "مبيعات نقدية",
+  "Client visit taxi and parking": "سيارة أجرة ومواقف لزيارة عميل",
+  "Client working lunch": "غداء عمل مع عميل",
+  "Cloud hosting": "الاستضافة السحابية",
+  "DEWA utilities": "فواتير الكهرباء والماء",
+  "Design automation review": "مراجعة أتمتة التصميم",
+  "Draft proposal": "مقترح مبدئي",
+  "Export advisory": "استشارات التصدير",
+  "Facilities and utilities": "المرافق والخدمات",
+  "Fractional CFO review": "مراجعة المدير المالي بدوام جزئي",
+  "Monthly bookkeeping": "مسك الدفاتر الشهري",
+  "Office rent": "إيجار المكتب",
+  "Opening bank": "رصيد افتتاحي بنكي",
+  "Opening cash": "رصيد افتتاحي نقدي",
+  "Opening equipment": "معدات افتتاحية",
+  "Opening inventory": "مخزون افتتاحي",
+  "Opening loan": "قرض افتتاحي",
+  "Operations receipts clearing": "تسوية مقبوضات العمليات",
+  "Operations revenue allocation": "توزيع إيرادات العمليات",
+  "Operations software allocation": "توزيع برمجيات العمليات",
+  "Operations software payment clearing": "تسوية مدفوعات برمجيات العمليات",
+  "Overheads paid": "مصروفات عامة مدفوعة",
+  "Owner capital": "رأس مال المالك",
+  "Payroll cost plan": "خطة تكلفة الرواتب",
+  "Point-of-sale integration": "ربط نقاط البيع",
+  "Services revenue target": "مستهدف إيرادات الخدمات",
+  "Software and automation tools": "أدوات البرمجيات والأتمتة",
+  "Synthetic advisory cost center": "مركز تكلفة الاستشارات التجريبي",
+  "Synthetic operations cost center": "مركز تكلفة العمليات التجريبي",
+  "Synthetic report audit expense claim": "مطالبة نفقات تجريبية لتدقيق التقارير",
+  "Synthetic stocked product for report audit": "منتج مخزني تجريبي لتدقيق التقارير",
+  "Synthetic cost-center allocation for report audit":
+    "توزيع مراكز التكلفة التجريبي لتدقيق التقارير",
+  "Synthetic opening balance for report audit": "رصيد افتتاحي تجريبي لتدقيق التقارير",
+  "Synthetic approved queue item": "عنصر تجريبي معتمد في قائمة الانتظار",
+  "Synthetic report audit asset with capitalization attempt":
+    "أصل تجريبي لتدقيق التقارير مع محاولة رسملة",
+  "Synthetic report audit asset": "أصل تجريبي لتدقيق التقارير",
+  "Synthetic report audit bill payment": "دفعة فاتورة تجريبية لتدقيق التقارير",
+  "Synthetic report audit bill": "فاتورة مورد تجريبية لتدقيق التقارير",
+  "Synthetic report audit budget": "موازنة تجريبية لتدقيق التقارير",
+  "USD advisory retainer": "اشتراك استشاري بالدولار الأمريكي",
+  "VAT return support": "دعم إقرار ضريبة القيمة المضافة",
+  "Approved reimbursement queue": "قائمة السداد المعتمدة",
+  "Client travel and training reimbursements": "سداد نفقات سفر وتدريب العملاء",
+  "license pool": "مجمع التراخيص",
+  "stock count": "جرد المخزون",
+  each: "حبة",
+  license: "ترخيص",
+  "Computers & Software": "الحواسيب والبرمجيات",
+  "Furniture & Fixtures": "الأثاث والتجهيزات",
+  Marketing: "التسويق",
+  Meals: "الوجبات",
+  "Office Supplies": "مستلزمات المكتب",
+  Payroll: "الرواتب",
+  "Professional Services": "الخدمات المهنية",
+  Rent: "الإيجار",
+  Revenue: "الإيرادات",
+  Software: "البرمجيات",
+  Technology: "التقنية",
+  Training: "التدريب",
+  Travel: "السفر",
+  Utilities: "المرافق",
+  "Exempt dividend income": "إيرادات أرباح موزعة معفاة",
+  "Traffic fines disallowed": "غرامات مرورية غير مقبولة",
+};
+const AR_PREFIX = [
+  ["Report Audit Trading ", "شركة التدقيق للتجارة "],
+  ["Report Audit Operating Budget ", "موازنة التدقيق التشغيلية "],
+  ["Monthly cash sales and overheads ", "المبيعات النقدية والمصروفات الشهرية "],
+  ["Synthetic report audit movement ", "حركة مخزون تجريبية "],
+];
+
+/** The Arabic text for a record string (identity when the Arabic mode is off). */
+function T(text) {
+  if (!ARABIC || typeof text !== "string") return text;
+  if (AR_TEXT[text]) return AR_TEXT[text];
+  for (const [en, ar] of AR_PREFIX) if (text.startsWith(en)) return ar + text.slice(en.length);
+  // Bank statement CSV: the description column carries English text.
+  if (text.includes("\n")) {
+    return text
+      .replace("Customer payment Blue Palm", "دفعة عميل النخلة الزرقاء")
+      .replace("CloudStack payment", "دفعة كلاود ستاك")
+      .replace("Bank service fee", "رسوم خدمة بنكية")
+      .replace("Customer receipt Atlas Free Zone", "مقبوضات العميل أطلس");
+  }
+  return text;
+}
+
+/** Deep-map every string of a request body through T. */
+function arabize(value) {
+  if (!ARABIC) return value;
+  if (typeof value === "string") return T(value);
+  if (Array.isArray(value)) return value.map(arabize);
+  if (value && typeof value === "object" && !(value instanceof Buffer)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, arabize(v)]));
+  }
+  return value;
+}
 
 const cookieJar = new Map();
 let bearerToken = "";
@@ -103,13 +261,13 @@ async function http(name, route, options = {}) {
   let body = options.body;
   if (body !== undefined && typeof body !== "string" && !(body instanceof Buffer)) {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
-    body = JSON.stringify(body);
+    body = JSON.stringify(arabize(body));
   }
 
   const response = await fetch(`${BASE}${route}`, { ...options, method, headers, body });
   rememberCookies(response.headers);
   const parsed = await parseBody(response);
-  const okStatuses = options.okStatuses || [200, 201, 204];
+  const okStatuses = options.okStatuses || [200, 201, 202, 204];
   if (!okStatuses.includes(response.status)) {
     const detail =
       typeof parsed === "string" ? parsed : parsed ? JSON.stringify(parsed) : response.statusText;
@@ -143,6 +301,11 @@ function monthStart(date, offset = 0) {
 
 function monthEnd(date, offset = 0) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + offset + 1, 0));
+}
+
+function notAfterToday(date) {
+  const now = new Date();
+  return date > now ? now : date;
 }
 
 function safeNumber(value) {
@@ -196,8 +359,9 @@ async function getCompany() {
   }
 
   const preferred =
-    companies.find((company) => String(company.name || "").includes("Report Audit")) ||
-    companies[0];
+    companies.find((company) =>
+      String(company.name || "").match(/Report Audit|شركة التدقيق للتجارة/)
+    ) || companies[0];
   summary.company = { id: preferred.id, name: preferred.name };
 
   await http("company profile", `/api/companies/${preferred.id}`, {
@@ -219,11 +383,10 @@ async function getCompany() {
       taxRegistrationDate: "2026-01-01",
       corporateTaxId: `CT-${runStamp}`,
       emirate: "dubai",
-      mohreEstablishmentId: `MOHRE-${runStamp}`,
+      mohreEstablishmentId: runStamp.slice(-13),
       wpsEmployerBankName: "Emirates NBD",
       wpsEmployerIban: "AE070331234567890123456",
       wpsEmployerRoutingCode: "302620122",
-      onboardingCompleted: true,
     },
   });
   await optional("complete onboarding", () =>
@@ -277,6 +440,8 @@ async function seedOpeningBalances(companyId, account) {
       date: ymd(monthStart(new Date(), -5)),
       status: "posted",
       memo: "Synthetic opening balance for report audit",
+      // A2 (H8): opening inventory is a control account, accepted only as a reasoned adjustment.
+      controlAdjustment: { reason: "QA fixture: synthetic opening balance" },
       lines: [
         { accountId: account.bank.id, debit: 300000, credit: 0, description: "Opening bank" },
         { accountId: account.cash.id, debit: 20000, credit: 0, description: "Opening cash" },
@@ -305,6 +470,95 @@ async function seedOpeningBalances(companyId, account) {
   count("journalEntries");
 }
 
+// Customers and vendors in English and Arabic (the books are bilingual in the UAE).
+const CUSTOMERS = [
+  {
+    name: "Blue Palm Services LLC",
+    trnNumber: "100211110000003",
+    email: "accounts@bluepalm.example",
+  },
+  { name: "Atlas Free Zone FZCO", trnNumber: "100211120000003", email: "finance@atlas.example" },
+  { name: "شركة النور للتجارة", trnNumber: "100211130000003", email: "accounts@alnoor.example" },
+  { name: "مؤسسة الأفق للخدمات", trnNumber: "100211140000003", email: "billing@alofuq.example" },
+  { name: "Harbor Design Studio", trnNumber: "100211150000003", email: "ap@harbor.example" },
+  { name: "FX Export Client Inc", email: "payables@fxexport.example", country: "US" },
+];
+const VENDORS = [
+  { name: "Gulf Hosting LLC", email: "billing@gulfhosting.example" },
+  { name: "مؤسسة الإمارات للمرافق", email: "ap@emirates-facilities.example" },
+];
+
+async function seedContacts(companyId) {
+  const byName = new Map();
+  for (const customer of CUSTOMERS) {
+    const created = await optional(`create customer ${customer.name}`, () =>
+      http("create customer contact", `/api/companies/${companyId}/customer-contacts`, {
+        method: "POST",
+        body: {
+          address: "Business Bay",
+          city: "Dubai",
+          emirate: customer.country ? undefined : "dubai",
+          country: customer.country ?? "AE",
+          phone: "+971 4 555 0100",
+          ...customer,
+        },
+      })
+    );
+    if (created?.id) {
+      byName.set(customer.name, created);
+      count("customerContacts");
+    }
+  }
+  for (const vendor of VENDORS) {
+    const created = await optional(`create vendor ${vendor.name}`, () =>
+      http("create vendor", `/api/companies/${companyId}/vendors`, {
+        method: "POST",
+        body: { country: "AE", emirate: "dubai", ...vendor },
+      })
+    );
+    if (created?.id) count("vendors");
+  }
+  return byName;
+}
+
+// Six months of posted ledger history so trends, comparisons and budgets have shape.
+async function seedJournalHistory(companyId, account) {
+  const now = new Date();
+  for (let offset = -5; offset <= -1; offset++) {
+    const date = ymd(addDays(monthStart(now, offset), 9));
+    const sales = 32000 + (offset + 5) * 2500;
+    const rent = 12000;
+    const utilities = 1800 + (offset + 5) * 120;
+    await http("history journal", `/api/companies/${companyId}/journal`, {
+      method: "POST",
+      body: {
+        date,
+        status: "posted",
+        memo: `Monthly cash sales and overheads ${date.slice(0, 7)}`,
+        reference: `HIST-${date.slice(0, 7)}`,
+        lines: [
+          { accountId: account.bank.id, debit: sales, credit: 0, description: "Cash sales banked" },
+          { accountId: account.revenue.id, debit: 0, credit: sales, description: "Cash sales" },
+          { accountId: account.rentExpense.id, debit: rent, credit: 0, description: "Office rent" },
+          {
+            accountId: account.utilitiesExpense.id,
+            debit: utilities,
+            credit: 0,
+            description: "DEWA utilities",
+          },
+          {
+            accountId: account.bank.id,
+            debit: 0,
+            credit: rent + utilities,
+            description: "Overheads paid",
+          },
+        ],
+      },
+    });
+    count("journalEntries");
+  }
+}
+
 async function seedExchangeRates(companyId, dates) {
   await http("create USD exchange rate", `/api/companies/${companyId}/exchange-rates`, {
     method: "POST",
@@ -319,12 +573,22 @@ async function seedExchangeRates(companyId, dates) {
 }
 
 async function createInvoice(companyId, payload) {
+  const invoiceBody = { ...payload };
+  delete invoiceBody.issue;
+  if (invoiceBody.customerTrn === undefined) delete invoiceBody.customerTrn;
   const invoice = await http("create invoice", `/api/companies/${companyId}/invoices`, {
     method: "POST",
     body: {
       customerTrn: "100987654300003",
       currency: "AED",
-      ...payload,
+      placeOfSupplyEmirate: "dubai",
+      ...invoiceBody,
+      // A 0% line must name its supply type (SUPPLY_TYPE_REQUIRED); exports are zero-rated.
+      lines: payload.lines.map((line) =>
+        Number(line.vatRate) === 0 && !line.vatSupplyType
+          ? { ...line, vatSupplyType: "zero_rated" }
+          : line
+      ),
     },
   });
   count("invoices");
@@ -337,7 +601,13 @@ async function createInvoice(companyId, payload) {
   return { ...invoice, total: safeNumber(invoice.total) };
 }
 
-async function seedInvoices(companyId, account, dates) {
+async function seedInvoices(companyId, account, dates, contacts = new Map()) {
+  const withContact = (payload) => {
+    const contact = contacts.get(payload.customerName);
+    return contact
+      ? { ...payload, contactId: contact.id, customerTrn: contact.trnNumber || undefined }
+      : payload;
+  };
   const lines = [
     {
       description: "Accounting advisory subscription",
@@ -350,100 +620,138 @@ async function seedInvoices(companyId, account, dates) {
 
   const invoices = [];
   invoices.push(
-    await createInvoice(companyId, {
-      customerName: "Blue Palm Services LLC",
-      date: dates.currentMid,
-      dueDate: dates.futureSoon,
-      lines,
-    })
+    await createInvoice(
+      companyId,
+      withContact({
+        customerName: "Blue Palm Services LLC",
+        date: dates.currentMid,
+        dueDate: dates.futureSoon,
+        lines,
+      })
+    )
   );
   invoices.push(
-    await createInvoice(companyId, {
-      customerName: "Atlas Free Zone FZCO",
-      date: dates.currentEarly,
-      dueDate: dates.today,
-      lines: [
-        { description: "Monthly bookkeeping", quantity: 1, unitPrice: 9200, vatRate: 0.05 },
-        { description: "VAT return support", quantity: 1, unitPrice: 2800, vatRate: 0.05 },
-      ],
-    })
+    await createInvoice(
+      companyId,
+      withContact({
+        customerName: "Atlas Free Zone FZCO",
+        date: dates.currentEarly,
+        dueDate: dates.today,
+        lines: [
+          { description: "Monthly bookkeeping", quantity: 1, unitPrice: 9200, vatRate: 0.05 },
+          { description: "VAT return support", quantity: 1, unitPrice: 2800, vatRate: 0.05 },
+        ],
+      })
+    )
   );
   invoices.push(
-    await createInvoice(companyId, {
-      customerName: "Noor Retail Trading",
-      date: dates.priorMid,
-      dueDate: dates.overdue,
-      lines: [
-        { description: "Point-of-sale integration", quantity: 1, unitPrice: 14500, vatRate: 0.05 },
-      ],
-    })
+    await createInvoice(
+      companyId,
+      withContact({
+        customerName: "شركة النور للتجارة",
+        date: dates.priorMid,
+        dueDate: dates.overdue,
+        lines: [
+          {
+            description: "Point-of-sale integration",
+            quantity: 1,
+            unitPrice: 14500,
+            vatRate: 0.05,
+          },
+        ],
+      })
+    )
   );
   invoices.push(
-    await createInvoice(companyId, {
-      customerName: "Harbor Design Studio",
-      date: dates.currentLate,
-      dueDate: dates.futureLater,
-      lines: [
-        { description: "Design automation review", quantity: 3, unitPrice: 1750, vatRate: 0.05 },
-      ],
-    })
+    await createInvoice(
+      companyId,
+      withContact({
+        customerName: "Harbor Design Studio",
+        date: dates.currentLate,
+        dueDate: dates.futureLater,
+        lines: [
+          { description: "Design automation review", quantity: 3, unitPrice: 1750, vatRate: 0.05 },
+        ],
+      })
+    )
   );
   invoices.push(
-    await createInvoice(companyId, {
-      customerName: "Export Advisory Client",
-      date: dates.priorEarly,
-      dueDate: dates.currentLate,
-      lines: [{ description: "Export advisory", quantity: 1, unitPrice: 7800, vatRate: 0 }],
-    })
+    await createInvoice(
+      companyId,
+      withContact({
+        customerName: "مؤسسة الأفق للخدمات",
+        date: dates.priorEarly,
+        dueDate: dates.currentLate,
+        lines: [{ description: "Export advisory", quantity: 1, unitPrice: 7800, vatRate: 0 }],
+      })
+    )
   );
   invoices.push(
-    await createInvoice(companyId, {
-      customerName: "Draft Review Customer",
-      date: dates.currentLate,
-      issue: false,
-      lines: [{ description: "Draft proposal", quantity: 1, unitPrice: 2500, vatRate: 0.05 }],
-    })
+    await createInvoice(
+      companyId,
+      withContact({
+        customerName: "Draft Review Customer",
+        date: dates.currentLate,
+        issue: false,
+        lines: [{ description: "Draft proposal", quantity: 1, unitPrice: 2500, vatRate: 0.05 }],
+      })
+    )
   );
   invoices.push(
-    await createInvoice(companyId, {
-      customerName: "FX Export Client Inc",
-      date: dates.currentMid,
-      dueDate: dates.futureLater,
-      currency: "USD",
-      exchangeRate: 3.67,
-      lines: [{ description: "USD advisory retainer", quantity: 1, unitPrice: 6400, vatRate: 0 }],
-    })
+    await createInvoice(
+      companyId,
+      withContact({
+        customerName: "FX Export Client Inc",
+        date: dates.currentMid,
+        dueDate: dates.futureLater,
+        currency: "USD",
+        exchangeRate: 3.67,
+        lines: [{ description: "USD advisory retainer", quantity: 1, unitPrice: 6400, vatRate: 0 }],
+      })
+    )
   );
 
-  await http("full invoice payment", `/api/companies/${companyId}/invoices/${invoices[1].id}/payments`, {
-    method: "POST",
-    body: {
-      amount: invoices[1].total,
-      date: dates.currentLate,
-      method: "bank",
-      reference: `PAY-${runStamp}-001`,
-      paymentAccountId: account.bank.id,
-    },
-  });
+  await http(
+    "full invoice payment",
+    `/api/companies/${companyId}/invoices/${invoices[1].id}/payments`,
+    {
+      method: "POST",
+      body: {
+        amount: invoices[1].total,
+        date: dates.currentLate,
+        method: "bank",
+        reference: `PAY-${runStamp}-001`,
+        paymentAccountId: account.bank.id,
+      },
+    }
+  );
   count("invoicePayments");
 
-  await http("partial invoice payment", `/api/companies/${companyId}/invoices/${invoices[2].id}/payments`, {
-    method: "POST",
-    body: {
-      amount: Math.round(invoices[2].total * 0.4 * 100) / 100,
-      date: dates.currentEarly,
-      method: "bank",
-      reference: `PAY-${runStamp}-002`,
-      paymentAccountId: account.bank.id,
-    },
-  });
+  await http(
+    "partial invoice payment",
+    `/api/companies/${companyId}/invoices/${invoices[2].id}/payments`,
+    {
+      method: "POST",
+      body: {
+        amount: Math.round(invoices[2].total * 0.4 * 100) / 100,
+        date: dates.currentEarly,
+        method: "bank",
+        reference: `PAY-${runStamp}-002`,
+        paymentAccountId: account.bank.id,
+      },
+    }
+  );
   count("invoicePayments");
 
   await optional("credit note from invoice", () =>
-    http("credit note from invoice", `/api/companies/${companyId}/invoices/${invoices[3].id}/credit-note`, {
-      method: "POST",
-      body: { reason: "Synthetic credit-note audit adjustment" },
-    })
+    http(
+      "credit note from invoice",
+      `/api/companies/${companyId}/invoices/${invoices[3].id}/credit-note`,
+      {
+        method: "POST",
+        body: { reason: "Synthetic credit-note audit adjustment" },
+      }
+    )
   );
 
   return invoices;
@@ -510,7 +818,7 @@ async function seedReceipts(companyId, account, dates) {
         currency: "AED",
         exchangeRate: 1,
         date: receipt.date,
-        notes: "Synthetic report audit receipt",
+        rawText: "Synthetic report audit receipt",
       },
     });
     created.push(createdReceipt);
@@ -589,9 +897,16 @@ async function seedBills(companyId, account, dates) {
 
   const created = [];
   for (const bill of bills) {
+    const billBody = { ...bill };
+    delete billBody.payment;
     const createdBill = await http("create bill", `/api/companies/${companyId}/bills`, {
       method: "POST",
-      body: { ...bill, currency: "AED", exchange_rate: 1, notes: "Synthetic report audit bill" },
+      body: {
+        ...billBody,
+        currency: "AED",
+        exchange_rate: 1,
+        notes: "Synthetic report audit bill",
+      },
     });
     created.push(createdBill);
     count("bills");
@@ -621,7 +936,7 @@ async function seedBills(companyId, account, dates) {
   return created;
 }
 
-async function seedInventory(companyId, dates) {
+async function seedInventory(companyId, dates, account) {
   const products = [
     {
       name: "Automation Starter Kit",
@@ -664,7 +979,12 @@ async function seedInventory(companyId, dates) {
     for (const movement of movements) {
       await http("inventory movement", `/api/products/${createdProduct.id}/movements`, {
         method: "POST",
-        body: { ...movement, notes: `Synthetic report audit movement ${dates.today}` },
+        // D1 (N7): a manual purchase names the account it was paid from.
+        body: {
+          ...movement,
+          ...(movement.type === "purchase" ? { counterAccountId: account.bank.id } : {}),
+          notes: `Synthetic report audit movement ${dates.today}`,
+        },
       });
       count("inventoryMovements");
     }
@@ -672,12 +992,18 @@ async function seedInventory(companyId, dates) {
   return created;
 }
 
-async function seedPayroll(companyId) {
+async function seedPayroll(companyId, account) {
+  // A4 (M10): a payroll run is refused (OPENING_GRATUITY_REQUIRED) until each employee's opening
+  // gratuity provision at go-live is entered. The fixture's first run is two months ago, so
+  // go-live is the day before; 0 records "no provision existed" (the catch-up is expensed in
+  // the first run). The rule itself is unchanged.
+  const openingGratuityAsOf = ymd(addDays(monthStart(new Date(), -2), -1));
   const employees = [
     {
       employeeNumber: `RA-E001-${runStamp}`,
       fullName: "Mariam Al Mansoori",
-      nationality: "UAE",
+      nationality: "AE",
+      molPersonId: `1${runStamp.slice(-13)}`,
       bankName: "Emirates NBD",
       bankAccountNumber: "1234567890",
       iban: "AE070331234567890123456",
@@ -689,15 +1015,17 @@ async function seedPayroll(companyId) {
       housingAllowance: 6500,
       transportAllowance: 1500,
       otherAllowance: 1000,
-      status: "active",
+      openingGratuityProvision: 0,
+      openingGratuityAsOf,
     },
     {
       employeeNumber: `RA-E002-${runStamp}`,
       fullName: "Omar Khan",
-      nationality: "Pakistan",
+      nationality: "PK",
+      molPersonId: `2${runStamp.slice(-13)}`,
       bankName: "ADCB",
       bankAccountNumber: "2345678901",
-      iban: "AE090331234567890123457",
+      iban: "AE220261011223344556677",
       routingCode: "302620122",
       department: "Operations",
       designation: "Bookkeeper",
@@ -706,7 +1034,8 @@ async function seedPayroll(companyId) {
       housingAllowance: 3000,
       transportAllowance: 900,
       otherAllowance: 500,
-      status: "active",
+      openingGratuityProvision: 0,
+      openingGratuityAsOf,
     },
   ];
 
@@ -718,18 +1047,17 @@ async function seedPayroll(companyId) {
     count("employees");
   }
 
+  // Payroll history (run status is server-owned): two months ago paid, last month approved with
+  // a WPS SIF, this month calculated and waiting for approval.
   const now = new Date();
-  const runPeriods = [
-    { periodMonth: now.getUTCMonth() + 1, periodYear: now.getUTCFullYear(), approve: false },
-    {
-      periodMonth: monthStart(now, -1).getUTCMonth() + 1,
-      periodYear: monthStart(now, -1).getUTCFullYear(),
-      approve: true,
-    },
-  ];
+  const runPeriods = [-2, -1, 0].map((offset) => ({
+    offset,
+    periodMonth: monthStart(now, offset).getUTCMonth() + 1,
+    periodYear: monthStart(now, offset).getUTCFullYear(),
+  }));
 
   const runs = [];
-  for (const period of runPeriods) {
+  for (const { offset, ...period } of runPeriods) {
     const run = await http("create payroll run", `/api/companies/${companyId}/payroll-runs`, {
       method: "POST",
       body: period,
@@ -740,14 +1068,32 @@ async function seedPayroll(companyId) {
       body: {},
     });
     runs.push(calculated);
-    if (period.approve) {
-      await optional("approve payroll run", () =>
+    if (offset < 0) {
+      const approved = await optional("approve payroll run", () =>
         http("approve payroll run", `/api/payroll-runs/${run.id}/approve`, {
           method: "POST",
           body: {},
         })
       );
-      await optional("generate WPS SIF", () => http("generate WPS SIF", `/api/payroll-runs/${run.id}/generate-sif`));
+      if (approved) count("payrollRunsApproved");
+      await optional("generate WPS SIF", () =>
+        http("generate WPS SIF", `/api/payroll-runs/${run.id}/generate-sif`, {
+          method: "POST",
+          body: {},
+        })
+      );
+    }
+    if (offset === -2) {
+      const paid = await optional("pay payroll run", () =>
+        http("pay payroll run", `/api/payroll-runs/${run.id}/pay`, {
+          method: "POST",
+          body: {
+            paymentAccountId: account.bank.id,
+            paymentDate: ymd(notAfterToday(addDays(monthEnd(now, -2), 1))),
+          },
+        })
+      );
+      if (paid) count("payrollRunsPaid");
     }
   }
   return runs;
@@ -795,14 +1141,27 @@ async function seedAssets(companyId, account, dates) {
     if (!asset && payload.paymentAccountId) {
       const fallbackPayload = { ...payload };
       delete fallbackPayload.paymentAccountId;
-      asset = await http("create fixed asset fallback", `/api/companies/${companyId}/fixed-assets`, {
-        method: "POST",
-        body: fallbackPayload,
-      });
+      asset = await http(
+        "create fixed asset fallback",
+        `/api/companies/${companyId}/fixed-assets`,
+        {
+          method: "POST",
+          body: fallbackPayload,
+        }
+      );
     }
     if (asset?.id) {
       created.push(asset);
       count("fixedAssets");
+      const capitalised = await optional("capitalise fixed asset", () =>
+        http("capitalise fixed asset", `/api/fixed-assets/${asset.id}/capitalize`, {
+          method: "POST",
+          body: { paymentAccountId: account.bank.id },
+          // Assets created with a payment account are already on the ledger.
+          okStatuses: [200, 201, 409],
+        })
+      );
+      if (capitalised) count("fixedAssetsCapitalised");
       await optional("post depreciation", () =>
         http("post depreciation", `/api/fixed-assets/${asset.id}/depreciate`, {
           method: "POST",
@@ -934,23 +1293,27 @@ async function seedExpenseClaims(companyId, dates) {
     body: {},
   });
 
-  const approved = await http("create approved expense claim", `/api/companies/${companyId}/expense-claims`, {
-    method: "POST",
-    body: {
-      title: "Approved reimbursement queue",
-      currency: "AED",
-      items: [
-        {
-          expense_date: dates.currentMid,
-          category: "Meals",
-          description: "Client working lunch",
-          amount: 380,
-          vat_amount: 19,
-          merchant_name: "DIFC Cafe",
-        },
-      ],
-    },
-  });
+  const approved = await http(
+    "create approved expense claim",
+    `/api/companies/${companyId}/expense-claims`,
+    {
+      method: "POST",
+      body: {
+        title: "Approved reimbursement queue",
+        currency: "AED",
+        items: [
+          {
+            expense_date: dates.currentMid,
+            category: "Meals",
+            description: "Client working lunch",
+            amount: 380,
+            vat_amount: 19,
+            merchant_name: "DIFC Cafe",
+          },
+        ],
+      },
+    }
+  );
   count("expenseClaims");
   await http("submit approved expense claim", `/api/expense-claims/${approved.id}/submit`, {
     method: "POST",
@@ -964,61 +1327,81 @@ async function seedExpenseClaims(companyId, dates) {
 }
 
 async function seedBank(companyId, account, dates, invoices, receipts) {
-  const bankAccount = await http("create bank account", `/api/companies/${companyId}/bank-accounts`, {
-    method: "POST",
-    body: {
-      nameEn: "Report Audit Operating Account",
-      bankName: "Emirates NBD",
-      accountNumber: `RA${runStamp}`,
-      iban: "AE070331234567890123456",
-      currency: "AED",
-      glAccountId: account.bank.id,
-    },
-  });
+  const bankAccount = await http(
+    "create bank account",
+    `/api/companies/${companyId}/bank-accounts`,
+    {
+      method: "POST",
+      body: {
+        nameEn: "Report Audit Operating Account",
+        bankName: "Emirates NBD",
+        accountNumber: `RA${runStamp}`,
+        iban: "AE070331234567890123456",
+        currency: "AED",
+        glAccountId: account.bank.id,
+      },
+    }
+  );
   count("bankAccounts");
 
+  const invoiceReference = `BANK-${runStamp}-001`;
+  const receiptReference = `BANK-${runStamp}-002`;
   const rows = [
     "date,description,debit,credit,balance,reference",
-    `${dates.currentLate},Customer payment Blue Palm,,25000,325000,BANK-${runStamp}-001`,
-    `${dates.currentLate},CloudStack payment,4410,,320590,BANK-${runStamp}-002`,
+    `${dates.currentLate},Customer payment Blue Palm,,25000,325000,${invoiceReference}`,
+    `${dates.currentLate},CloudStack payment,4410,,320590,${receiptReference}`,
     `${dates.currentMid},Bank service fee,95,,320495,BANK-${runStamp}-003`,
-    `${dates.futureSoon},Expected customer receipt,,15000,335495,BANK-${runStamp}-004`,
+    `${dates.today},Customer receipt Atlas Free Zone,,15000,335495,BANK-${runStamp}-004`,
   ];
-  await http("import bank statement", `/api/companies/${companyId}/bank-statements/import`, {
-    method: "POST",
-    body: { bankAccountId: bankAccount.id, csvContent: rows.join("\n") },
-  });
-  count("bankStatementImports");
-
-  const transactions = await http(
-    "bank transactions",
-    `/api/companies/${companyId}/bank-statements/transactions`
+  const imported = await http(
+    "import bank statement",
+    `/api/companies/${companyId}/bank-statements/import`,
+    {
+      method: "POST",
+      body: { bankAccountId: bankAccount.id, csvContent: rows.join("\n") },
+    }
   );
-  const creditTxn = Array.isArray(transactions)
-    ? transactions.find((txn) => safeNumber(txn.amount) > 0)
-    : null;
-  const targetInvoice = invoices.find((invoice) => invoice.customerName === "Blue Palm Services LLC");
-  if (creditTxn?.id && targetInvoice?.id) {
-    await optional("manual bank match invoice", () =>
-      http("manual bank match invoice", `/api/companies/${companyId}/bank-statements/${creditTxn.id}/match`, {
+  if (imported.imported > 0) count("bankStatementImports");
+
+  const transactionsPath = `/api/companies/${companyId}/bank-statements/transactions?bankAccountId=${bankAccount.id}`;
+  const transactions = await http("bank transactions", transactionsPath);
+  const targets = [
+    {
+      reference: invoiceReference,
+      type: "invoice",
+      targetId: invoices.find((invoice) => invoice.customerName === T("Blue Palm Services LLC"))
+        ?.id,
+    },
+    {
+      reference: receiptReference,
+      type: "receipt",
+      targetId: receipts.find((receipt) => receipt.merchant === T("CloudStack FZ LLC"))?.id,
+    },
+  ];
+  for (const { reference, type, targetId } of targets) {
+    const transaction = Array.isArray(transactions)
+      ? transactions.find((txn) => txn.reference === reference)
+      : null;
+    if (!transaction?.id || !targetId) continue;
+    const name = `manual bank match ${type}`;
+    await optional(name, () =>
+      http(name, `/api/companies/${companyId}/bank-statements/${transaction.id}/match`, {
         method: "POST",
-        body: { matchedType: "invoice", matchedId: targetInvoice.id },
+        body: { matchedType: type, matchedId: targetId },
       })
     );
   }
 
-  const debitTxn = Array.isArray(transactions)
-    ? transactions.find((txn) => safeNumber(txn.amount) < 0)
-    : null;
-  const postedReceipt = receipts.find((receipt) => receipt.posted === true) || receipts[0];
-  if (debitTxn?.id && postedReceipt?.id) {
-    await optional("manual bank match receipt", () =>
-      http("manual bank match receipt", `/api/companies/${companyId}/bank-statements/${debitTxn.id}/match`, {
-        method: "POST",
-        body: { matchedType: "receipt", matchedId: postedReceipt.id },
-      })
-    );
-  }
+  const matched = await optional("verify reconciled statement rows", () =>
+    http("verify reconciled statement rows", transactionsPath)
+  );
+  const reconciledRows = verifiedStatementMatchCount(matched, targets);
+  if (reconciledRows > 0) count("bankMatches", reconciledRows);
+  summary.probes.push({
+    name: BANK_STATEMENT_PROBE,
+    passed: imported.imported > 0 && reconciledRows === targets.length,
+    detail: { imported: imported.imported, reconciledRows },
+  });
 }
 
 async function seedCommercialDocs(companyId, dates) {
@@ -1026,16 +1409,27 @@ async function seedCommercialDocs(companyId, dates) {
     const quote = await http("create quote", `/api/companies/${companyId}/quotes`, {
       method: "POST",
       body: {
-        number: `Q-${runStamp}-001`,
         customerName: "Quote Prospect LLC",
         date: dates.currentMid,
         expiryDate: dates.futureLater,
         currency: "AED",
-        status: "sent",
-        lines: [{ description: "Automation readiness workshop", quantity: 1, unitPrice: 9500, vatRate: 0.05 }],
+        lines: [
+          {
+            description: "Automation readiness workshop",
+            quantity: 1,
+            unitPrice: 9500,
+            vatRate: 0.05,
+          },
+        ],
       },
     });
     count("quotes");
+    await optional("send quote", () =>
+      http("send quote", `/api/quotes/${quote.id}/status`, {
+        method: "PATCH",
+        body: { status: "sent" },
+      })
+    );
     await optional("convert quote to invoice", () =>
       http("convert quote to invoice", `/api/quotes/${quote.id}/convert-to-invoice`, {
         method: "POST",
@@ -1048,13 +1442,13 @@ async function seedCommercialDocs(companyId, dates) {
     const po = await http("create purchase order", `/api/companies/${companyId}/purchase-orders`, {
       method: "POST",
       body: {
-        number: `PO-${runStamp}-001`,
         vendorName: "Hardware Supplier LLC",
         date: dates.currentMid,
         expectedDeliveryDate: dates.futureLater,
         currency: "AED",
-        status: "draft",
-        lines: [{ description: "Audit laptop bundle", quantity: 3, unitPrice: 4200, vatRate: 0.05 }],
+        lines: [
+          { description: "Audit laptop bundle", quantity: 3, unitPrice: 4200, vatRate: 0.05 },
+        ],
       },
     });
     count("purchaseOrders");
@@ -1083,48 +1477,86 @@ async function seedTaxAndClose(companyId, dates) {
   await optional("generate VAT return", () =>
     http("generate VAT return", `/api/companies/${companyId}/vat-returns/generate`, {
       method: "POST",
-      body: {
-        periodStart: ymd(monthStart(new Date(), -2)),
-        periodEnd: ymd(monthEnd(new Date(), 0)),
-        dueDate: ymd(addDays(new Date(), 28)),
-      },
+      body: (() => {
+        const now = new Date();
+        const quarterStart = new Date(
+          Date.UTC(now.getUTCFullYear(), Math.floor(now.getUTCMonth() / 3) * 3 - 3, 1)
+        );
+        return { periodStart: ymd(quarterStart), periodEnd: ymd(monthEnd(quarterStart, 2)) };
+      })(),
     })
   );
 
   await optional("create corporate tax return", async () => {
-    const ctReturn = await http("create corporate tax return", `/api/companies/${companyId}/corporate-tax/returns`, {
-      method: "POST",
-      body: {
-        taxPeriodStart: `${new Date(dates.today).getUTCFullYear()}-01-01`,
-        taxPeriodEnd: `${new Date(dates.today).getUTCFullYear()}-12-31`,
-        totalRevenue: 760000,
-        totalExpenses: 455000,
-        totalDeductions: 12000,
-        exemptionThreshold: 375000,
-        taxRate: 0.09,
-        status: "draft",
-      },
-    });
+    const ctReturn = await http(
+      "create corporate tax return",
+      `/api/companies/${companyId}/corporate-tax/returns`,
+      {
+        method: "POST",
+        body: {
+          taxPeriodStart: `${new Date(dates.today).getUTCFullYear()}-01-01`,
+          taxPeriodEnd: `${new Date(dates.today).getUTCFullYear()}-12-31`,
+          totalRevenue: 760000,
+          totalExpenses: 455000,
+          totalDeductions: 12000,
+        },
+      }
+    );
     count("corporateTaxReturns");
-    await http("compute corporate tax return", `/api/corporate-tax/returns/${ctReturn.id}/compute`, {
-      method: "POST",
-      body: {
-        adjustments: [
-          { label: "Entertainment disallowance", amount: 4200, direction: "add_back" },
-          { label: "Small equipment deduction", amount: 1800, direction: "deduction" },
-        ],
-        smallBusinessReliefElected: false,
-        relatedPartyNotes: "Synthetic audit run has no related-party balances.",
-      },
-    });
+    await http(
+      "compute corporate tax return",
+      `/api/corporate-tax/returns/${ctReturn.id}/compute`,
+      {
+        method: "POST",
+        body: {
+          adjustments: [
+            {
+              id: "fines",
+              category: "fines_penalties",
+              label: "Traffic fines disallowed",
+              amount: 4200,
+            },
+            {
+              id: "exempt-dividend",
+              category: "exempt_income",
+              label: "Exempt dividend income",
+              amount: 1800,
+            },
+          ],
+          smallBusinessReliefElected: false,
+          relatedPartyNotes: "Synthetic audit run has no related-party balances.",
+        },
+      }
+    );
   });
 
   await optional("month-end checklist", () =>
-    http("month-end checklist", `/api/companies/${companyId}/month-end/checklist?period=${dates.period}`)
+    http(
+      "month-end checklist",
+      `/api/companies/${companyId}/month-end/checklist?period=${dates.period}`
+    )
   );
   await optional("month-end AI validation", () =>
-    http("month-end AI validation", `/api/companies/${companyId}/month-end/ai-validation?period=${dates.period}`)
+    http(
+      "month-end AI validation",
+      `/api/companies/${companyId}/month-end/ai-validation?period=${dates.period}`
+    )
   );
+  // Close history: soft-lock everything up to the end of the month three months back (the
+  // checklist for that synthetic month is incomplete, so the lock records an audited override).
+  const locked = await optional("lock closed periods", () =>
+    http("lock closed periods", `/api/companies/${companyId}/month-end/lock-period`, {
+      method: "POST",
+      body: {
+        periodEnd: ymd(monthEnd(new Date(), -3)),
+        lockType: "soft",
+        lockScope: "through",
+        overrideChecklist: true,
+        reason: "Synthetic report audit: months closed and reviewed",
+      },
+    })
+  );
+  if (locked) count("periodLocks");
 }
 
 async function seedCostCenters(companyId) {
@@ -1169,7 +1601,7 @@ async function seedCostCenterAllocations(companyId, account, dates, costCenters)
       date: dates.currentMid,
       status: "posted",
       memo: "Synthetic cost-center allocation for report audit",
-      source: "report-audit-fixture",
+      reference: "report-audit-fixture",
       lines: [
         {
           accountId: account.bank.id,
@@ -1233,21 +1665,32 @@ async function probeReports(companyId, dates, budgetId) {
   const start = ymd(monthStart(new Date(), -5));
   const end = ymd(monthEnd(new Date(), 0));
 
-  const pl = await http("P&L report", `/api/companies/${companyId}/reports/pl?startDate=${start}&endDate=${end}`);
-  assertProbe("P&L has revenue and expenses", safeNumber(pl.totalRevenue) > 0 && safeNumber(pl.totalExpenses) > 0, {
-    totalRevenue: pl.totalRevenue,
-    totalExpenses: pl.totalExpenses,
-  });
+  const pl = await http(
+    "P&L report",
+    `/api/companies/${companyId}/reports/pl?startDate=${start}&endDate=${end}`
+  );
+  assertProbe(
+    "P&L has revenue and expenses",
+    safeNumber(pl.totalRevenue) > 0 && safeNumber(pl.totalExpenses) > 0,
+    {
+      totalRevenue: pl.totalRevenue,
+      totalExpenses: pl.totalExpenses,
+    }
+  );
 
   const balance = await http(
     "balance sheet report",
     `/api/companies/${companyId}/reports/balance-sheet?startDate=${start}&endDate=${end}`
   );
-  assertProbe("Balance sheet has asset and equity/liability rows", safeNumber(balance.totalAssets) > 0, {
-    totalAssets: balance.totalAssets,
-    totalLiabilities: balance.totalLiabilities,
-    totalEquity: balance.totalEquity,
-  });
+  assertProbe(
+    "Balance sheet has asset and equity/liability rows",
+    safeNumber(balance.totalAssets) > 0,
+    {
+      totalAssets: balance.totalAssets,
+      totalLiabilities: balance.totalLiabilities,
+      totalEquity: balance.totalEquity,
+    }
+  );
 
   const aging = await http("aging report", `/api/reports/${companyId}/aging`);
   const agingRows = Array.isArray(aging)
@@ -1277,7 +1720,8 @@ async function probeReports(companyId, dates, budgetId) {
   assertProbe(
     "Trial balance returns account activity",
     trialBalanceRows.some(
-      (row) => Math.abs(safeNumber(row?.totalDebit)) > 0 || Math.abs(safeNumber(row?.totalCredit)) > 0
+      (row) =>
+        Math.abs(safeNumber(row?.totalDebit)) > 0 || Math.abs(safeNumber(row?.totalCredit)) > 0
     ),
     { rows: trialBalanceRows.length }
   );
@@ -1296,7 +1740,9 @@ async function probeReports(companyId, dates, budgetId) {
   );
   assertProbe(
     "Sales by product/service has rows",
-    Array.isArray(salesProduct?.rows) ? salesProduct.rows.length > 0 : Array.isArray(salesProduct) && salesProduct.length > 0,
+    Array.isArray(salesProduct?.rows)
+      ? salesProduct.rows.length > 0
+      : Array.isArray(salesProduct) && salesProduct.length > 0,
     { rows: salesProduct?.rows?.length || salesProduct?.length || 0 }
   );
 
@@ -1309,9 +1755,13 @@ async function probeReports(companyId, dates, budgetId) {
     : Array.isArray(comparison?.metrics)
       ? comparison.metrics
       : [];
-  assertProbe("Period comparison exposes metrics", comparisonRows.some((row) => row?.metric), {
-    metrics: comparisonRows.length,
-  });
+  assertProbe(
+    "Period comparison exposes metrics",
+    comparisonRows.some((row) => row?.metric),
+    {
+      metrics: comparisonRows.length,
+    }
+  );
 
   const fxGainsLosses = await http(
     "FX gains/losses report",
@@ -1327,18 +1777,38 @@ async function probeReports(companyId, dates, budgetId) {
   });
 
   await optional("financial statement P&L", () =>
-    http("financial statement P&L", `/api/companies/${companyId}/financial-statements/profit-loss?startDate=${start}&endDate=${end}`)
+    http(
+      "financial statement P&L",
+      `/api/companies/${companyId}/financial-statements/profit-loss?startDate=${start}&endDate=${end}`
+    )
   );
   await optional("financial statement balance sheet", () =>
-    http("financial statement balance sheet", `/api/companies/${companyId}/financial-statements/balance-sheet?asOfDate=${end}&startDate=${start}&endDate=${end}`)
+    http(
+      "financial statement balance sheet",
+      `/api/companies/${companyId}/financial-statements/balance-sheet?asOfDate=${end}&startDate=${start}&endDate=${end}`
+    )
   );
-  await optional("cash-flow forecast", () => http("cash-flow forecast", `/api/reports/${companyId}/cash-flow/month`));
-  await optional("VAT summary", () => http("VAT summary", `/api/companies/${companyId}/reports/vat-summary`));
-  await optional("inventory movements", () => http("inventory movements", `/api/companies/${companyId}/inventory-movements`));
-  await optional("fixed assets list", () => http("fixed assets list", `/api/companies/${companyId}/fixed-assets`));
-  await optional("payroll runs", () => http("payroll runs", `/api/companies/${companyId}/payroll-runs`));
-  await optional("expense claims summary", () => http("expense claims summary", `/api/companies/${companyId}/expense-claims/summary`));
-  await optional("bank statement report", () => http("bank statement report", `/api/companies/${companyId}/bank-statements/report`));
+  await optional("cash-flow forecast", () =>
+    http("cash-flow forecast", `/api/reports/${companyId}/cash-flow/month`)
+  );
+  await optional("VAT summary", () =>
+    http("VAT summary", `/api/companies/${companyId}/reports/vat-summary`)
+  );
+  await optional("inventory movements", () =>
+    http("inventory movements", `/api/companies/${companyId}/inventory-movements`)
+  );
+  await optional("fixed assets list", () =>
+    http("fixed assets list", `/api/companies/${companyId}/fixed-assets`)
+  );
+  await optional("payroll runs", () =>
+    http("payroll runs", `/api/companies/${companyId}/payroll-runs`)
+  );
+  await optional("expense claims summary", () =>
+    http("expense claims summary", `/api/companies/${companyId}/expense-claims/summary`)
+  );
+  await optional("bank statement report", () =>
+    http("bank statement report", `/api/companies/${companyId}/bank-statements/report`)
+  );
   const costCenterProfitability = await http(
     "cost-center profitability",
     `/api/companies/${companyId}/cost-centers/profitability?startDate=${start}&endDate=${end}`
@@ -1355,7 +1825,9 @@ async function probeReports(companyId, dates, budgetId) {
     }
   );
   if (budgetId) {
-    await optional("budget variance", () => http("budget variance", `/api/budget-plans/${budgetId}/variance`));
+    await optional("budget variance", () =>
+      http("budget variance", `/api/budget-plans/${budgetId}/variance`)
+    );
   }
 }
 
@@ -1370,12 +1842,14 @@ async function main() {
   const account = await loadAccounts(companyId);
 
   const now = new Date();
+  // Document and rate dates must not be in the future (FUTURE_RATE_DATE, posting guards):
+  // in-month anchors are clamped to today so the fixture runs on any day of the month.
   const dates = {
     today: ymd(now),
     period: ymd(monthStart(now, 0)).slice(0, 7),
-    currentEarly: ymd(addDays(monthStart(now, 0), 4)),
-    currentMid: ymd(addDays(monthStart(now, 0), 12)),
-    currentLate: ymd(addDays(monthStart(now, 0), 18)),
+    currentEarly: ymd(notAfterToday(addDays(monthStart(now, 0), 4))),
+    currentMid: ymd(notAfterToday(addDays(monthStart(now, 0), 12))),
+    currentLate: ymd(notAfterToday(addDays(monthStart(now, 0), 18))),
     priorEarly: ymd(addDays(monthStart(now, -1), 5)),
     priorMid: ymd(addDays(monthStart(now, -1), 14)),
     overdue: ymd(addDays(now, -45)),
@@ -1384,14 +1858,16 @@ async function main() {
   };
 
   await seedOpeningBalances(companyId, account);
+  await seedJournalHistory(companyId, account);
+  const contacts = await seedContacts(companyId);
   await seedExchangeRates(companyId, dates);
   const costCenters = await seedCostCenters(companyId);
   await seedCostCenterAllocations(companyId, account, dates, costCenters);
-  const invoices = await seedInvoices(companyId, account, dates);
+  const invoices = await seedInvoices(companyId, account, dates, contacts);
   const receipts = await seedReceipts(companyId, account, dates);
   await seedBills(companyId, account, dates);
-  await seedInventory(companyId, dates);
-  await seedPayroll(companyId);
+  await seedInventory(companyId, dates, account);
+  await seedPayroll(companyId, account);
   await seedAssets(companyId, account, dates);
   const budget = await seedBudgets(companyId, account, dates);
   await seedExpenseClaims(companyId, dates);

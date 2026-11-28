@@ -1,13 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { Request, Response, NextFunction } from "express";
 import { AppError, globalErrorHandler, asyncHandler } from "../../server/middleware/errorHandler";
 import { ZodError } from "zod";
 
 // Mock logger
+const logWarn = vi.hoisted(() => vi.fn());
 vi.mock("../../server/config/logger", () => ({
   createLogger: () => ({
     info: vi.fn(),
-    warn: vi.fn(),
+    warn: logWarn,
     error: vi.fn(),
     debug: vi.fn(),
     fatal: vi.fn(),
@@ -137,9 +138,60 @@ describe("Error Handler Middleware", () => {
       globalErrorHandler(pgError, req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(409);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ code: "DUPLICATE_VALUE" })
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "DUPLICATE_VALUE" }));
+    });
+
+    it("logs PostgreSQL metadata with a sanitized route and redacts sensitive values", () => {
+      const invitationToken = "a1".repeat(32);
+      const querySecret = "private-query-secret";
+      const route = "/api/portal-invitations/:legacyToken/record";
+      const originalUrl = `/api/portal-invitations/${invitationToken}/record?key=${querySecret}`;
+      const req = createMockReq({
+        id: "req-1",
+        method: "POST",
+        route: { path: route },
+        url: originalUrl,
+        originalUrl,
+      });
+      const res = createMockRes();
+      const next = vi.fn() as NextFunction;
+      const pgError = Object.assign(new Error("duplicate key"), {
+        code: "23505",
+        constraint: "uniq_audit_logs_chain_seq",
+        table: "audit_logs",
+        detail: "Key (chain_key, seq)=(abc, 7) already exists.",
+      });
+      const wrapped = Object.assign(new Error("Failed query"), { cause: pgError });
+      logWarn.mockClear();
+
+      globalErrorHandler(wrapped, req, res, next);
+
+      expect(logWarn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestId: "req-1",
+          pgCode: "23505",
+          constraint: "uniq_audit_logs_chain_seq",
+          table: "audit_logs",
+          route,
+        }),
+        expect.any(String)
       );
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith({
+        code: "DUPLICATE_VALUE",
+        message: "A record with this value already exists",
+        requestId: "req-1",
+      });
+      for (const output of [
+        JSON.stringify(logWarn.mock.calls),
+        JSON.stringify(vi.mocked(res.json).mock.calls),
+      ]) {
+        expect(output).not.toMatch(/"(?:detail|originalUrl)"\s*:/);
+        expect(output).not.toContain(pgError.detail);
+        expect(output).not.toContain(querySecret);
+        expect(output).not.toContain(invitationToken);
+        expect(output).not.toContain(originalUrl);
+      }
     });
 
     it("maps a Drizzle-wrapped 22P02 (code in cause chain) to 400", () => {

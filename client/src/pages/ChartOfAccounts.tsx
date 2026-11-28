@@ -1,21 +1,58 @@
+import { T } from "@/components/layout/T";
+import { matchesAccountQuery } from "@/lib/account-search";
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { motion, AnimatePresence } from "framer-motion";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useTranslation } from "@/lib/i18n";
+import { ListQueryTable } from "@/components/ui/list-query-table";
+import { Money, MoneyCell } from "@/components/ui/money";
+import { CashBalanceCell } from "@/components/ui/cash-balance";
+import { isCashOrBankAccount } from "@/lib/cash-balance";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { formatCurrency } from "@/lib/format";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { apiUrl } from "@/lib/api";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import {
+  orderByHierarchy,
+  parentCandidates,
+  parentIds,
+  parentLocked,
+  rollUpTotals,
+} from "@/lib/account-hierarchy";
+import { AccountDrawer } from "@/components/accounts/AccountDrawer";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { Account } from "@shared/schema";
 import {
   ChevronDown,
-  ChevronRight,
   Search,
   Plus,
   Wallet,
@@ -24,8 +61,12 @@ import {
   TrendingUp,
   Receipt,
   BookOpen,
-  ArrowRight,
+  Download,
+  Upload,
+  GitBranch,
+  Pencil,
 } from "lucide-react";
+import { accountDisplayName } from "@/lib/account-name";
 
 interface AccountWithBalance {
   account: Account;
@@ -35,6 +76,13 @@ interface AccountWithBalance {
 }
 
 const ACCOUNT_TYPE_ORDER = ["asset", "liability", "equity", "income", "expense"];
+
+/** WQ3 (9.1): the level toggle shows accounts down to this depth (1 = top level only). */
+const LEVELS = [1, 2, 3, 4] as const;
+type Level = (typeof LEVELS)[number] | "all";
+
+/** Select value for "no parent" (Radix Select items cannot use an empty string). */
+const NO_PARENT = "__none__";
 
 const ACCOUNT_TYPE_CONFIG: Record<
   string,
@@ -64,8 +112,8 @@ const ACCOUNT_TYPE_CONFIG: Record<
     label: "Equity",
     labelAr: "حقوق الملكية",
     icon: PiggyBank,
-    colorClass: "text-chart-5 ",
-    bgClass: "bg-chart-5/10 ",
+    colorClass: "text-accent",
+    bgClass: "bg-brand-50",
   },
   income: {
     label: "Revenue",
@@ -85,31 +133,40 @@ const ACCOUNT_TYPE_CONFIG: Record<
 
 export default function ChartOfAccounts() {
   const { t, locale } = useTranslation();
+  const { gate } = useCompanyPermission();
   const [, navigate] = useLocation();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(ACCOUNT_TYPE_ORDER));
+  const { toast } = useToast();
+  const [parentFor, setParentFor] = useState<Account | null>(null);
+  const [parentChoice, setParentChoice] = useState<string>(NO_PARENT);
+  // WQ3 (9.3): the account drawer (create when `drawerAccount` is null).
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerAccount, setDrawerAccount] = useState<Account | null>(null);
+  const [drawerKey, setDrawerKey] = useState(0);
+  const [level, setLevel] = useState<Level>("all");
 
-  const { data: accountsWithBalances, isLoading } = useQuery<AccountWithBalance[]>({
+  const accountsQuery = useQuery<AccountWithBalance[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
     enabled: !!selectedCompanyId,
   });
+  const accountsWithBalances = accountsQuery.data;
 
   const groupedAccounts = useMemo(() => {
     if (!accountsWithBalances) return {};
 
-    const filtered = accountsWithBalances.filter((item) => {
-      if (!searchQuery) return true;
-      const query = searchQuery.toLowerCase();
-      return (
-        item.account.nameEn.toLowerCase().includes(query) ||
-        item.account.nameAr?.toLowerCase().includes(query)
-      );
-    });
+    // Sweep: accountants search by account code too ("6100" found nothing before).
+    const filtered = accountsWithBalances.filter((item) =>
+      matchesAccountQuery(item.account, searchQuery)
+    );
 
-    const grouped: Record<string, AccountWithBalance[]> = {};
+    const grouped: Record<string, Array<AccountWithBalance & { depth: number }>> = {};
     ACCOUNT_TYPE_ORDER.forEach((type) => {
-      const accounts = filtered.filter((item) => item.account.type === type);
+      const accounts = orderByHierarchy(
+        filtered.filter((item) => item.account.type === type),
+        (item) => item.account
+      );
       if (accounts.length > 0) {
         grouped[type] = accounts;
       }
@@ -117,6 +174,16 @@ export default function ChartOfAccounts() {
 
     return grouped;
   }, [accountsWithBalances, searchQuery]);
+
+  // Parent rows carry their sub-accounts' figures, so a collapsed level still adds up.
+  const rolled = useMemo(
+    () => rollUpTotals(accountsWithBalances ?? [], (item) => item.account),
+    [accountsWithBalances]
+  );
+  const headers = useMemo(
+    () => parentIds((accountsWithBalances ?? []).map((i) => i.account)),
+    [accountsWithBalances]
+  );
 
   const typeTotals = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -140,232 +207,371 @@ export default function ChartOfAccounts() {
     navigate(`/accounts/${accountId}/ledger`);
   };
 
+  const allAccounts = useMemo(
+    () => (accountsWithBalances ?? []).map((item) => item.account),
+    [accountsWithBalances]
+  );
+  const candidates = useMemo(
+    () => (parentFor ? parentCandidates(allAccounts, parentFor.id) : []),
+    [allAccounts, parentFor]
+  );
+
+  const openParentDialog = (account: Account) => {
+    setParentFor(account);
+    setParentChoice(account.parentId ?? NO_PARENT);
+  };
+
+  const saveParent = useMutation({
+    mutationFn: () =>
+      apiRequest("PUT", `/api/accounts/${parentFor!.id}`, {
+        parentId: parentChoice === NO_PARENT ? null : parentChoice,
+      }),
+    onSuccess: () => {
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "accounts-with-balances"]);
+      refreshAfterWrite(["/api/companies", selectedCompanyId, "accounts"]);
+      toast({ title: t["journal.coaParentSaved"] });
+      setParentFor(null);
+    },
+    onError: (e: unknown) =>
+      toast({
+        title: t["journal.coaParentFailed"],
+        description: (e as Error)?.message,
+        variant: "destructive",
+      }),
+  });
+
   if (!selectedCompanyId) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6">
         <BookOpen className="h-16 w-16 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Set up your company</h2>
+        <h2 className="text-xl font-semibold mb-2">
+          <T k="pageLabels.setUpYourCompany" />
+        </h2>
         <p className="text-muted-foreground text-center max-w-md mb-4">
-          You need a company before you can configure your Chart of Accounts.
+          {t["chartOfAccounts.youNeedACompanyBefore"]}
         </p>
         <Button onClick={() => navigate("/onboarding")} data-testid="button-create-company">
-          Create your company
+          <T k="pages.createYourCompany" />
         </Button>
       </div>
     );
   }
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6">
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={t["shell.nav.accounting"]}
         title={t.chartOfAccounts}
         description={t.chartOfAccountsDescription}
         actions={
-          <Button
-            size="default"
-            data-testid="button-add-account"
-            onClick={() => navigate("/journal")}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            {t.addAccount}
-          </Button>
+          <>
+            <Button variant="outline" asChild data-testid="button-export-coa-csv">
+              <a
+                href={apiUrl(
+                  `/api/companies/${selectedCompanyId}/imports/chart-of-accounts/export`
+                )}
+              >
+                <Download aria-hidden />
+                <T k="journal.coaExportCsv" />
+              </a>
+            </Button>
+            <Button
+              variant="outline"
+              data-testid="button-import-coa-csv"
+              onClick={() => navigate("/import?kind=chart_of_accounts")}
+              {...gate("ledger.post")}
+            >
+              <Upload aria-hidden />
+              <T k="journal.coaImportCsv" />
+            </Button>
+            <Button
+              data-testid="button-add-account"
+              onClick={() => {
+                setDrawerAccount(null);
+                setDrawerKey((k) => k + 1);
+                setDrawerOpen(true);
+              }}
+              {...gate("ledger.post")}
+            >
+              <Plus aria-hidden />
+              {t.addAccount}
+            </Button>
+          </>
         }
       />
 
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder={t.searchAccounts}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10"
-          data-testid="input-search-accounts"
-        />
+      {/* Spec 3.10: the per-type balance strip is gone (the balance sheet says the same). */}
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-sm">
+          <Search
+            className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            placeholder={t.searchAccounts}
+            aria-label={t.searchAccounts}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-9 ps-9"
+            data-testid="input-search-accounts"
+          />
+        </div>
+        <div
+          role="group"
+          aria-label={t["journal.coaLevels"]}
+          aria-describedby="coa-levels-help"
+          className="inline-flex w-fit items-center gap-1 rounded-lg bg-surface-sunken p-1"
+          data-testid="coa-level-toggle"
+        >
+          {[...LEVELS, "all" as const].map((l) => (
+            <Button
+              key={l}
+              type="button"
+              size="sm"
+              variant={level === l ? "default" : "ghost"}
+              aria-pressed={level === l}
+              className="h-7 px-2.5"
+              onClick={() => setLevel(l)}
+              data-testid={`button-level-${l}`}
+            >
+              {l === "all"
+                ? t["journal.coaLevelAll"]
+                : formatMessage(t["journal.coaLevelN"], { n: l })}
+            </Button>
+          ))}
+          <span id="coa-levels-help" className="sr-only">
+            {t["journal.coaLevelsHelp"]}
+          </span>
+        </div>
       </div>
 
-      {isLoading ? (
-        <div className="space-y-4">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <Card key={i}>
-              <CardHeader className="py-4">
-                <Skeleton className="h-6 w-32" />
-              </CardHeader>
-              <CardContent className="py-2">
-                <div className="space-y-2">
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-10 w-full" />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : Object.keys(groupedAccounts).length === 0 ? (
-        <Card className="p-8 text-center">
-          <div className="flex flex-col items-center">
-            <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">
-              {searchQuery ? t.noResultsFound : t.noAccountsYet}
-            </h3>
-            <p className="text-muted-foreground">
-              {searchQuery ? t.tryDifferentKeywords : t.addAccountsToStart}
-            </p>
-          </div>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          <AnimatePresence>
-            {ACCOUNT_TYPE_ORDER.map((type) => {
-              const accounts = groupedAccounts[type];
-              if (!accounts || accounts.length === 0) return null;
-
-              const config = ACCOUNT_TYPE_CONFIG[type];
-              const Icon = config.icon;
-              const isExpanded = expandedTypes.has(type);
-
-              return (
-                <motion.div
-                  key={type}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Card className="overflow-hidden">
-                    <Collapsible open={isExpanded} onOpenChange={() => toggleType(type)}>
-                      <CollapsibleTrigger asChild>
-                        <CardHeader
-                          className={`py-4 cursor-pointer hover-elevate ${config.bgClass}`}
-                          data-testid={`button-toggle-${type}`}
+      <ListQueryTable
+        query={accountsQuery}
+        rowCount={Object.keys(groupedAccounts).length}
+        loadErrorTestId="coa-load-error"
+        columnLabels={[t["screens.code"], t["screens.account"], t["screens.balance"]]}
+        empty={{
+          icon: BookOpen,
+          title: searchQuery ? t.noResultsFound : t.noAccountsYet,
+          description: searchQuery ? t.tryDifferentKeywords : t.addAccountsToStart,
+        }}
+      >
+        <Table className="row-cards">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t["screens.code"]}</TableHead>
+              <TableHead className="w-full">{t["screens.account"]}</TableHead>
+              <TableHead data-numeric="">{t["screens.debit"]}</TableHead>
+              <TableHead data-numeric="">{t["screens.credit"]}</TableHead>
+              <TableHead data-numeric="">{t["screens.balance"]}</TableHead>
+              <TableHead>
+                <span className="sr-only">{t.actions}</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          {ACCOUNT_TYPE_ORDER.map((type) => {
+            const accounts = groupedAccounts[type];
+            if (!accounts || accounts.length === 0) return null;
+            const config = ACCOUNT_TYPE_CONFIG[type];
+            const Icon = config.icon;
+            const isExpanded = expandedTypes.has(type);
+            return (
+              <TableBody key={type}>
+                <TableRow className="bg-surface-sunken/70 hover:bg-surface-sunken">
+                  <TableCell colSpan={6} className="p-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleType(type)}
+                      aria-expanded={isExpanded}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      data-testid={`button-toggle-${type}`}
+                    >
+                      {/* Expand chevrons never mirror (CTO 12). */}
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-fast",
+                          !isExpanded && "-rotate-90"
+                        )}
+                        aria-hidden
+                      />
+                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                      <span className="text-sm font-semibold text-foreground">
+                        {locale === "ar" ? config.labelAr : config.label}
+                      </span>
+                      <span className="text-caption text-muted-foreground">
+                        {formatMessage(t["accounts.groupCount"], { count: accounts.length })}
+                      </span>
+                      <Money
+                        amount={Math.abs(typeTotals[type])}
+                        className={cn(
+                          "ms-auto text-sm font-semibold",
+                          typeTotals[type] < 0 && "text-negative"
+                        )}
+                      />
+                    </button>
+                  </TableCell>
+                </TableRow>
+                {isExpanded &&
+                  accounts
+                    .filter((item) => level === "all" || item.depth < level)
+                    .map((item) => {
+                      const figures = rolled.get(item.account.id) ?? item;
+                      const isHeader = headers.has(item.account.id);
+                      return (
+                        <TableRow
+                          key={item.account.id}
+                          className="group cursor-pointer"
+                          onClick={() => handleAccountClick(item.account.id)}
+                          data-testid={`row-account-${item.account.id}`}
                         >
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3">
-                              <div className={`p-2 rounded-lg ${config.bgClass}`}>
-                                <Icon className={`h-5 w-5 ${config.colorClass}`} />
-                              </div>
-                              <div>
-                                <CardTitle className="text-lg font-semibold">
-                                  {locale === "ar" ? config.labelAr : config.label}
-                                </CardTitle>
-                                <CardDescription>
-                                  {accounts.length} {t.accountsCount}
-                                </CardDescription>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <div className="text-right">
-                                <p className="text-sm text-muted-foreground">{t.total}</p>
-                                <p
-                                  className={`text-lg font-mono font-semibold ${
-                                    typeTotals[type] >= 0 ? "text-foreground" : "text-destructive"
-                                  }`}
-                                >
-                                  {formatCurrency(Math.abs(typeTotals[type]))}
-                                </p>
-                              </div>
-                              {isExpanded ? (
-                                <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                              ) : (
-                                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                          <TableCell
+                            data-nowrap=""
+                            data-cell="meta"
+                            className="tabular-nums text-muted-foreground"
+                          >
+                            {item.account.code}
+                          </TableCell>
+                          <TableCell
+                            data-truncate=""
+                            data-cell="title"
+                            style={
+                              item.depth > 0
+                                ? { paddingInlineStart: `${1 + item.depth * 1.25}rem` }
+                                : undefined
+                            }
+                          >
+                            <span dir="auto" className="font-medium">
+                              {accountDisplayName(item.account, locale)}
+                            </span>
+                            {!item.account.isActive && (
+                              <Badge variant="neutral" className="ms-2">
+                                {t.inactive}
+                              </Badge>
+                            )}
+                            {isHeader && (
+                              <span className="ms-2 text-caption text-muted-foreground">
+                                {t["journal.coaIncludesSub"]}
+                              </span>
+                            )}
+                          </TableCell>
+                          <MoneyCell
+                            amount={figures.debitTotal}
+                            showCurrency={false}
+                            className="text-muted-foreground"
+                          />
+                          <MoneyCell
+                            amount={figures.creditTotal}
+                            showCurrency={false}
+                            className="text-muted-foreground"
+                          />
+                          {isCashOrBankAccount(item.account) ? (
+                            // P2: an overdrawn cash or bank account keeps its sign and says so.
+                            <CashBalanceCell
+                              amount={figures.balance}
+                              className={isHeader ? "font-semibold" : "font-medium"}
+                              data-cell="amount"
+                            />
+                          ) : (
+                            <MoneyCell
+                              amount={Math.abs(figures.balance)}
+                              className={cn(
+                                isHeader ? "font-semibold" : "font-medium",
+                                figures.balance < 0 && "text-negative"
                               )}
-                            </div>
-                          </div>
-                        </CardHeader>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <CardContent className="p-0">
-                          <div className="divide-y">
-                            {accounts.map((item, index) => (
-                              <motion.div
-                                key={item.account.id}
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                transition={{ delay: index * 0.05 }}
-                                className="flex items-center justify-between p-4 hover-elevate cursor-pointer group"
-                                onClick={() => handleAccountClick(item.account.id)}
-                                data-testid={`row-account-${item.account.id}`}
-                              >
-                                <div className="flex items-center gap-3 min-w-0 flex-1">
-                                  <div className="min-w-0">
-                                    <p className="font-medium truncate">
-                                      {locale === "ar" && item.account.nameAr
-                                        ? item.account.nameAr
-                                        : item.account.nameEn}
-                                    </p>
-                                  </div>
-                                  {!item.account.isActive && (
-                                    <Badge variant="secondary" className="shrink-0">
-                                      {t.inactive}
-                                    </Badge>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-4">
-                                  <div className="text-right">
-                                    <p
-                                      className={`font-mono font-medium ${
-                                        item.balance >= 0 ? "text-foreground" : "text-destructive"
-                                      }`}
-                                    >
-                                      {formatCurrency(Math.abs(item.balance))}
-                                    </p>
-                                    <div className="flex gap-2 text-xs text-muted-foreground">
-                                      <span>Dr: {formatCurrency(item.debitTotal)}</span>
-                                      <span>Cr: {formatCurrency(item.creditTotal)}</span>
-                                    </div>
-                                  </div>
-                                  <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </div>
-                              </motion.div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  </Card>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </div>
-      )}
+                              data-cell="amount"
+                            />
+                          )}
+                          <TableCell data-cell="actions" className="w-px">
+                            <RowActions>
+                              <RowActionButton
+                                label={t["journal.coaEditAccount"]}
+                                icon={Pencil}
+                                data-testid={`button-edit-account-${item.account.id}`}
+                                {...gate("ledger.post")}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setDrawerAccount(item.account);
+                                  setDrawerKey((k) => k + 1);
+                                  setDrawerOpen(true);
+                                }}
+                              />
+                              <RowActionButton
+                                label={
+                                  parentLocked(item.account, allAccounts)
+                                    ? t["journal.coaParentLocked"]
+                                    : t["journal.coaSetParent"]
+                                }
+                                icon={GitBranch}
+                                disabled={parentLocked(item.account, allAccounts)}
+                                data-testid={`button-set-parent-${item.account.id}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openParentDialog(item.account);
+                                }}
+                              />
+                            </RowActions>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+              </TableBody>
+            );
+          })}
+        </Table>
+      </ListQueryTable>
 
-      <Card className="mt-6">
-        <CardHeader className="py-4">
-          <CardTitle className="text-lg">{t.balanceSummary}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            {ACCOUNT_TYPE_ORDER.map((type) => {
-              const config = ACCOUNT_TYPE_CONFIG[type];
-              const Icon = config.icon;
-              const total = typeTotals[type] || 0;
+      <AccountDrawer
+        key={drawerKey}
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        companyId={selectedCompanyId}
+        accounts={allAccounts}
+        account={drawerAccount}
+      />
 
-              return (
-                <div
-                  key={type}
-                  className={`p-4 rounded-lg ${config.bgClass}`}
-                  data-testid={`summary-${type}`}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <Icon className={`h-4 w-4 ${config.colorClass}`} />
-                    <span className="text-sm font-medium">
-                      {locale === "ar" ? config.labelAr : config.label}
-                    </span>
-                  </div>
-                  <p
-                    className={`font-mono font-semibold text-lg ${
-                      total >= 0 ? "text-foreground" : "text-destructive"
-                    }`}
-                  >
-                    {formatCurrency(Math.abs(total))}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+      <Dialog open={!!parentFor} onOpenChange={(open) => !open && setParentFor(null)}>
+        <DialogContent data-testid="dialog-set-parent">
+          <DialogHeader>
+            <DialogTitle>
+              <T k="journal.coaSetParent" />
+            </DialogTitle>
+            <DialogDescription>
+              {parentFor ? `${parentFor.code} · ${accountDisplayName(parentFor, locale)}` : null}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            <T k="journal.coaParentHelp" />
+          </p>
+          <Select value={parentChoice} onValueChange={setParentChoice}>
+            <SelectTrigger data-testid="select-parent-account">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_PARENT}>
+                <T k="journal.coaNoParent" />
+              </SelectItem>
+              {candidates.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.code} · {accountDisplayName(a, locale)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setParentFor(null)}>
+              <T k="pages.cancel" />
+            </Button>
+            <Button
+              data-testid="button-save-parent"
+              disabled={saveParent.isPending}
+              onClick={() => saveParent.mutate()}
+            >
+              <T k="journal.coaSaveParent" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

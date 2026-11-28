@@ -3,8 +3,15 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
+import { withNotificationCopy } from "../../shared/server-copy";
+import { registerNotificationEngine } from "../services/notification-engine.service";
+import { registerOutboxJob } from "../outbox";
 
 export function registerNotificationRoutes(app: Express) {
+  // W4-D: domain events → notifications, daily scans, and the email outbox worker.
+  registerNotificationEngine();
+  registerOutboxJob();
+
   // =====================================
   // NOTIFICATIONS & SMART REMINDERS
   // =====================================
@@ -14,10 +21,10 @@ export function registerNotificationRoutes(app: Express) {
     "/api/notifications",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const notifications = await storage.getNotificationsByUserId(userId);
       const unreadCount = await storage.getUnreadNotificationCount(userId);
-      res.json({ notifications, unreadCount });
+      res.json({ notifications: notifications.map(withNotificationCopy), unreadCount });
     })
   );
 
@@ -37,12 +44,14 @@ export function registerNotificationRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const notification = await storage.markNotificationAsRead(id, userId);
       if (!notification) {
-        return res.status(404).json({ message: "Notification not found" });
+        return res
+          .status(404)
+          .json({ message: "Notification not found", code: "NOTIFICATION_NOT_FOUND" });
       }
-      res.json(notification);
+      res.json(withNotificationCopy(notification));
     })
   );
 
@@ -51,7 +60,7 @@ export function registerNotificationRoutes(app: Express) {
     "/api/notifications/read-all",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       await storage.markAllNotificationsAsRead(userId);
       res.json({ message: "All notifications marked as read" });
     })
@@ -63,12 +72,14 @@ export function registerNotificationRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const notification = await storage.dismissNotification(id, userId);
       if (!notification) {
-        return res.status(404).json({ message: "Notification not found" });
+        return res
+          .status(404)
+          .json({ message: "Notification not found", code: "NOTIFICATION_NOT_FOUND" });
       }
-      res.json(notification);
+      res.json(withNotificationCopy(notification));
     })
   );
 
@@ -77,18 +88,18 @@ export function registerNotificationRoutes(app: Express) {
     "/api/notifications",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
 
       // Validate input with comprehensive schema
       const validationSchema = z.object({
-        companyId: z.string().uuid().optional(),
+        companyId: z.string().guid().optional(),
         type: z.enum(["deadline", "payment_due", "overdue", "regulatory", "referral", "system"]),
         title: z.string().min(1).max(200),
         message: z.string().min(1).max(2000),
         priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
         actionUrl: z.string().url().optional().nullable(),
         relatedEntityType: z.string().max(50).optional().nullable(),
-        relatedEntityId: z.string().uuid().optional().nullable(),
+        relatedEntityId: z.string().guid().optional().nullable(),
       });
 
       const validated = validationSchema.parse(req.body);
@@ -97,7 +108,9 @@ export function registerNotificationRoutes(app: Express) {
       if (validated.companyId) {
         const hasAccess = await storage.hasCompanyAccess(userId, validated.companyId);
         if (!hasAccess) {
-          return res.status(403).json({ message: "Access denied to this company" });
+          return res
+            .status(403)
+            .json({ message: "Access denied to this company", code: "COMPANY_ACCESS_DENIED" });
         }
       }
 
@@ -108,7 +121,7 @@ export function registerNotificationRoutes(app: Express) {
         isRead: false,
         isDismissed: false,
       });
-      res.json(notification);
+      res.json(withNotificationCopy(notification));
     })
   );
 }

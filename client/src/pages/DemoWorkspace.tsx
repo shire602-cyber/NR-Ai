@@ -1,20 +1,12 @@
 import { Link } from "wouter";
-import {
-  ArrowRight,
-  Banknote,
-  Building2,
-  CheckCircle2,
-  Download,
-  FileText,
-  Landmark,
-  Receipt,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
+import { ArrowRight, CheckCircle2, Download, Receipt, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Money, MoneyCell } from "@/components/ui/money";
 import { Progress } from "@/components/ui/progress";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import { StatCard } from "@/components/ui/stat-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -24,216 +16,226 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { T } from "@/components/layout/T";
+import { MarketingLayout } from "@/components/marketing/MarketingLayout";
+import { formatDate } from "@/lib/format";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 
-const money = (value: number) =>
-  `AED ${value.toLocaleString("en-AE", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-
+// Sample data only (the same fictional company as the landing page previews).
+// Names, TRN and bank narratives are sample records, so they are marked
+// translate="no"; every label around them comes from the marketing catalog.
 const sampleCompany = {
   name: "Pearl Trading LLC",
   trn: "100000000000003",
   period: "Q2 2026",
 };
 
-const invoices = [
+type InvoiceStatus = "paid" | "sent" | "draft";
+
+const STATUS_TONE: Record<InvoiceStatus, StatusTone> = {
+  paid: "success",
+  sent: "info",
+  draft: "neutral",
+};
+
+const invoices: {
+  number: string;
+  customer: string;
+  date: string;
+  vat: number;
+  total: number;
+  status: InvoiceStatus;
+}[] = [
   {
     number: "INV-1042",
     customer: "Al Noor Retail FZCO",
-    date: "12 Jun 2026",
-    subtotal: 18500,
+    date: "2026-06-12",
     vat: 925,
     total: 19425,
-    status: "Paid",
+    status: "paid",
   },
   {
     number: "INV-1043",
     customer: "Dhow Logistics LLC",
-    date: "14 Jun 2026",
-    subtotal: 9200,
+    date: "2026-06-14",
     vat: 460,
     total: 9660,
-    status: "Sent",
+    status: "sent",
   },
   {
     number: "INV-1044",
     customer: "Palm Office Supplies",
-    date: "15 Jun 2026",
-    subtotal: 6300,
+    date: "2026-06-15",
     vat: 315,
     total: 6615,
-    status: "Draft",
+    status: "draft",
   },
 ];
 
 const bankLines = [
   {
-    date: "15 Jun",
+    date: "2026-06-15",
     description: "AL NOOR RETAIL FZCO",
     amount: 19425,
-    match: "INV-1042",
+    match: { kind: "invoice", ref: "INV-1042" },
     confidence: 96,
   },
   {
-    date: "14 Jun",
+    date: "2026-06-14",
     description: "ETISALAT UAE",
     amount: -1260,
-    match: "Receipt RC-338",
+    match: { kind: "receipt", ref: "RC-338" },
     confidence: 91,
   },
   {
-    date: "13 Jun",
+    date: "2026-06-13",
     description: "ADCB BANK CHARGE",
     amount: -42,
-    match: "Suggested expense",
+    match: { kind: "expense", ref: "" },
     confidence: 78,
   },
-];
+] as const;
 
 const vatRows = [
-  { box: "1b", label: "Dubai standard-rated supplies", amount: 340000, vat: 17000 },
-  { box: "9", label: "Recoverable standard-rated expenses", amount: 118000, vat: 5900 },
-  { box: "14", label: "Net VAT payable", amount: 0, vat: 11100 },
+  { box: "1b", key: "marketing.demoVatRow1b", amount: 340000, vat: 17000 },
+  { box: "9", key: "marketing.demoVatRow9", amount: 118000, vat: 5900 },
+  { box: "14", key: "marketing.demoVatRow14", amount: null, vat: 11100 },
 ];
 
-const closeChecklist = [
-  "Chart of accounts seeded",
-  "Opening bank account added",
-  "Sample invoices and receipts reviewed",
-  "Bank statement imported by CSV",
-  "VAT 201 workbook ready for export",
-];
+const CHECKLIST = [1, 2, 3, 4, 5];
 
 export default function DemoWorkspace() {
+  const { t, locale } = useTranslation();
+  const statusLabel = (status: InvoiceStatus) =>
+    t[`marketing.status${status[0].toUpperCase()}${status.slice(1)}`];
+  const matchLabel = (match: (typeof bankLines)[number]["match"]) =>
+    match.kind === "invoice"
+      ? match.ref
+      : match.kind === "receipt"
+        ? formatMessage(t["marketing.demoMatchReceipt"], { number: match.ref })
+        : t["marketing.demoMatchExpense"];
+
   return (
-    <main className="min-h-screen bg-[#FAFAF6] text-[#131820]">
-      <header className="border-b border-black/10 bg-[#FAFAF6]/95 sticky top-0 z-20">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0D5C3D]">
-              <Building2 className="h-4 w-4 text-white" />
-            </div>
-            <span className="font-semibold">Muhasib.ai</span>
-          </Link>
-          <div className="flex items-center gap-2">
-            <Link href="/pricing">
-              <Button variant="ghost" size="sm">
-                Pricing
-              </Button>
-            </Link>
-            <Link href="/register">
-              <Button size="sm" className="bg-[#0D5C3D] text-white hover:bg-[#0A4A31]">
-                Start Free
-              </Button>
+    <MarketingLayout
+      titleKey="marketing.seoDemoTitle"
+      descriptionKey="marketing.seoDemoDescription"
+    >
+      <header className="mk-pagehead mk-pagehead--split">
+        <div className="mk-container">
+          <div>
+            <p className="mk-eyebrow">{t["marketing.demoEyebrow"]}</p>
+            <h1 className="mk-h1">{t["marketing.demoTitle"]}</h1>
+            <p className="mk-lead">{t["marketing.demoLead"]}</p>
+          </div>
+          <div className="mk-actions">
+            <Button asChild size="lg">
+              <Link href="/register" data-testid="button-demo-start">
+                <T k="pageLabels.createMyWorkspace" />
+                <ArrowRight className="rtl:-scale-x-100" aria-hidden="true" />
+              </Link>
+            </Button>
+            <Link href="/help" className="mk-link">
+              <T k="pageLabels.viewHelpDocs" />
             </Link>
           </div>
         </div>
       </header>
-
-      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl space-y-3">
-            <Badge className="bg-[#E6F1EC] text-[#0D5C3D] hover:bg-[#E6F1EC]">
-              Sample company workspace
-            </Badge>
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              See the SaaS product with real accounting context.
-            </h1>
-            <p className="max-w-2xl text-sm leading-6 text-black/65 sm:text-base">
-              Explore a launch-ready UAE SME workflow using sample invoices, receipts, bank imports,
-              reconciliation suggestions, VAT 201 figures, and corporate tax workpaper totals.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/register">
-              <Button className="bg-[#0D5C3D] text-white hover:bg-[#0A4A31]">
-                Create My Workspace
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
-            <Link href="/help">
-              <Button variant="outline">View Help Docs</Button>
-            </Link>
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-4 md:grid-cols-4">
+      <section className="mk-container mk-inner-section">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {[
-            { label: "Receivables", value: money(16275), icon: FileText },
-            { label: "Bank matched", value: "89%", icon: Landmark },
-            { label: "VAT payable", value: money(11100), icon: ShieldCheck },
-            { label: "CT estimate", value: money(7425), icon: Banknote },
-          ].map(({ label, value, icon: Icon }) => (
-            <Card key={label} className="border-black/10 bg-card">
-              <CardContent className="flex items-center justify-between p-4">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-black/50">
-                    {label}
-                  </p>
-                  <p className="mt-1 font-mono text-xl font-semibold">{value}</p>
-                </div>
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#E6F1EC]">
-                  <Icon className="h-5 w-5 text-[#0D5C3D]" />
-                </div>
-              </CardContent>
-            </Card>
+            { key: "marketing.demoKpiReceivables", amount: 16275 },
+            { key: "marketing.demoKpiBankMatched", percent: 89 },
+            { key: "marketing.demoKpiVat", amount: 11100 },
+            { key: "marketing.demoKpiCt", amount: 7425 },
+          ].map(({ key, amount, percent }) => (
+            <StatCard
+              key={key}
+              label={t[key]}
+              value={
+                amount !== undefined ? (
+                  <Money amount={amount} />
+                ) : (
+                  <span className="money">{`${percent}%`}</span>
+                )
+              }
+            />
           ))}
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="rounded-lg border border-black/10 bg-card">
-            <div className="border-b border-black/10 p-4 sm:p-5">
+          <section className="rounded-xl border bg-card">
+            <div className="border-b p-4 sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold">{sampleCompany.name}</p>
-                  <p className="text-xs text-black/55">
-                    TRN {sampleCompany.trn} · {sampleCompany.period}
+                  <p className="text-sm font-semibold" translate="no">
+                    {sampleCompany.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    <span className="tabular-nums">
+                      {formatMessage(t["marketing.demoTrn"], {
+                        trn: sampleCompany.trn,
+                        period: sampleCompany.period,
+                      })}
+                    </span>
                   </p>
                 </div>
                 <Badge variant="outline" className="w-fit">
-                  Demo data
+                  <T k="pageLabels.demoData" />
                 </Badge>
               </div>
             </div>
 
             <Tabs defaultValue="invoices" className="p-4 sm:p-5">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="invoices">Invoices</TabsTrigger>
-                <TabsTrigger value="banking">Banking</TabsTrigger>
-                <TabsTrigger value="vat">VAT</TabsTrigger>
-                <TabsTrigger value="ct">CT</TabsTrigger>
+              <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
+                <TabsTrigger value="invoices">
+                  <T k="pages.invoices" />
+                </TabsTrigger>
+                <TabsTrigger value="banking">
+                  <T k="pageLabels.banking" />
+                </TabsTrigger>
+                <TabsTrigger value="vat">{t["marketing.demoTabVat"]}</TabsTrigger>
+                <TabsTrigger value="ct">{t["marketing.demoTabCt"]}</TabsTrigger>
               </TabsList>
 
               <TabsContent value="invoices" className="mt-5 space-y-4">
-                <div className="hidden overflow-x-auto rounded-md border md:block">
+                <div className="hidden overflow-x-auto rounded-lg border md:block">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Invoice</TableHead>
-                        <TableHead>Customer</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead className="text-right">VAT</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead>
+                          <T k="invoices.publicInvoice" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.customer" />
+                        </TableHead>
+                        <TableHead>{t["marketing.demoColDate"]}</TableHead>
+                        <TableHead data-numeric="" className="text-end">
+                          {t["marketing.demoColVat"]}
+                        </TableHead>
+                        <TableHead data-numeric="" className="text-end">
+                          <T k="pages.total2" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="banking.common.status" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {invoices.map((invoice) => (
                         <TableRow key={invoice.number}>
-                          <TableCell className="font-mono">{invoice.number}</TableCell>
-                          <TableCell>{invoice.customer}</TableCell>
-                          <TableCell>{invoice.date}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {money(invoice.vat)}
+                          <TableCell className="whitespace-nowrap tabular-nums" dir="ltr">
+                            {invoice.number}
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {money(invoice.total)}
+                          <TableCell translate="no">{invoice.customer}</TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            {formatDate(invoice.date, locale)}
                           </TableCell>
+                          <MoneyCell amount={invoice.vat} />
+                          <MoneyCell amount={invoice.total} />
                           <TableCell>
-                            <Badge variant={invoice.status === "Paid" ? "default" : "secondary"}>
-                              {invoice.status}
-                            </Badge>
+                            <StatusBadge tone={STATUS_TONE[invoice.status]}>
+                              {statusLabel(invoice.status)}
+                            </StatusBadge>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -242,70 +244,66 @@ export default function DemoWorkspace() {
                 </div>
                 <div className="grid gap-3 md:hidden">
                   {invoices.map((invoice) => (
-                    <Card key={invoice.number} className="border-black/10">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-mono text-sm font-semibold">{invoice.number}</p>
-                            <p className="text-sm">{invoice.customer}</p>
-                            <p className="text-xs text-black/55">{invoice.date}</p>
-                          </div>
-                          <Badge variant={invoice.status === "Paid" ? "default" : "secondary"}>
-                            {invoice.status}
-                          </Badge>
-                        </div>
-                        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                          <div>
-                            <p className="text-xs text-black/50">VAT</p>
-                            <p className="font-mono">{money(invoice.vat)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-black/50">Total</p>
-                            <p className="font-mono font-semibold">{money(invoice.total)}</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <div key={invoice.number} className="rounded-lg border p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="min-w-0 truncate text-sm font-medium" translate="no">
+                          {invoice.customer}
+                        </p>
+                        <Money amount={invoice.total} className="text-sm font-semibold" />
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <p className="text-xs text-muted-foreground">
+                          <span dir="ltr" className="tabular-nums">
+                            {invoice.number}
+                          </span>
+                          {" · "}
+                          {formatDate(invoice.date, locale)}
+                        </p>
+                        <StatusBadge tone={STATUS_TONE[invoice.status]}>
+                          {statusLabel(invoice.status)}
+                        </StatusBadge>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </TabsContent>
 
               <TabsContent value="banking" className="mt-5 space-y-4">
-                <div className="rounded-lg border border-[#C19E50]/30 bg-[#FFF8E6] p-4">
+                <div className="rounded-lg border bg-warning-subtle p-4 text-warning-subtle-foreground">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-[#9A762A]" />
-                    <p className="text-sm font-medium">CSV statement import, no live feed needed</p>
+                    <Sparkles className="h-4 w-4" aria-hidden="true" />
+                    <p className="text-sm font-medium">
+                      <T k="pageLabels.bankCsvStatementImport" />
+                    </p>
                   </div>
-                  <p className="mt-1 text-sm text-black/60">
-                    Sample bank lines are matched against invoices, receipts, and expenses with
-                    confidence scores before posting.
-                  </p>
+                  <p className="mt-1 text-sm">{t["marketing.bankBody"]}</p>
                 </div>
-                <div className="space-y-3">
+                <div className="divide-hairline rounded-lg border">
                   {bankLines.map((line) => (
-                    <div
-                      key={`${line.date}-${line.description}`}
-                      className="rounded-md border border-black/10 p-4"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="font-medium">{line.description}</p>
-                          <p className="text-xs text-black/55">
-                            {line.date} · Suggested match: {line.match}
+                    <div key={`${line.date}-${line.description}`} className="p-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium" translate="no" dir="ltr">
+                            {line.description}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDate(line.date, locale)}
+                            {" · "}
+                            {formatMessage(t["marketing.demoSuggestedMatch"], {
+                              match: matchLabel(line.match),
+                            })}
                           </p>
                         </div>
-                        <p
-                          className={`font-mono font-semibold ${
-                            line.amount >= 0 ? "text-[#0D5C3D]" : "text-[#B5392B]"
-                          }`}
-                        >
-                          {money(line.amount)}
-                        </p>
+                        <Money amount={line.amount} tone="auto" className="font-semibold" />
                       </div>
                       <div className="mt-3 flex items-center gap-3">
-                        <Progress value={line.confidence} className="h-2" />
-                        <span className="w-12 text-right font-mono text-xs">
-                          {line.confidence}%
+                        <Progress
+                          value={line.confidence}
+                          className="h-1.5"
+                          aria-label={t["marketing.demoConfidence"]}
+                        />
+                        <span className="money w-10 text-end text-xs text-muted-foreground">
+                          {`${line.confidence}%`}
                         </span>
                       </div>
                     </div>
@@ -314,95 +312,92 @@ export default function DemoWorkspace() {
               </TabsContent>
 
               <TabsContent value="vat" className="mt-5 space-y-4">
-                <div className="grid gap-3">
+                <div className="divide-hairline rounded-lg border">
                   {vatRows.map((row) => (
                     <div
                       key={row.box}
-                      className="grid gap-3 rounded-md border border-black/10 p-4 sm:grid-cols-[72px_minmax(0,1fr)_160px_160px]"
+                      className="grid items-center gap-2 p-4 sm:grid-cols-[88px_minmax(0,1fr)_140px_140px]"
                     >
                       <Badge variant="outline" className="w-fit">
-                        Box {row.box}
+                        {formatMessage(t["marketing.demoBox"], { box: row.box })}
                       </Badge>
-                      <p className="text-sm font-medium">{row.label}</p>
-                      <p className="font-mono text-sm sm:text-right">{money(row.amount)}</p>
-                      <p className="font-mono text-sm font-semibold sm:text-right">
-                        {money(row.vat)}
+                      <p className="text-sm font-medium">{t[row.key]}</p>
+                      <p className="text-sm sm:text-end">
+                        {row.amount === null ? "" : <Money amount={row.amount} />}
+                      </p>
+                      <p className="text-sm font-semibold sm:text-end">
+                        <Money amount={row.vat} />
                       </p>
                     </div>
                   ))}
                 </div>
-                <Button variant="outline" className="gap-2">
-                  <Download className="h-4 w-4" />
-                  Export VAT 201 workbook
+                <Button variant="outline">
+                  <Download aria-hidden="true" />
+                  {t["marketing.demoVatExport"]}
                 </Button>
               </TabsContent>
 
               <TabsContent value="ct" className="mt-5">
                 <div className="grid gap-4 sm:grid-cols-3">
                   {[
-                    ["Revenue", money(612000)],
-                    ["Expenses", money(154500)],
-                    ["Taxable above threshold", money(82500)],
-                  ].map(([label, value]) => (
-                    <Card key={label} className="border-black/10">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm text-black/55">{label}</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="font-mono text-xl font-semibold">{value}</p>
-                      </CardContent>
-                    </Card>
+                    ["marketing.demoCtRevenue", 612000],
+                    ["marketing.demoCtExpenses", 154500],
+                    ["marketing.demoCtTaxable", 82500],
+                  ].map(([key, amount]) => (
+                    <div key={key} className="rounded-lg border p-4">
+                      <p className="text-small text-muted-foreground">{t[key as string]}</p>
+                      <p className="mt-1 text-h2 font-semibold">
+                        <Money amount={amount as number} />
+                      </p>
+                    </div>
                   ))}
                 </div>
-                <div className="mt-4 rounded-md border border-black/10 p-4">
-                  <p className="text-sm font-medium">Corporate tax support schedule</p>
-                  <p className="mt-1 text-sm text-black/60">
-                    Revenue and expense rows roll into a draft CT estimate and can be exported as an
-                    Excel workpaper for accountant review.
+                <div className="mt-4 rounded-lg border bg-surface-sunken p-4">
+                  <p className="text-sm font-medium">
+                    <T k="pageLabels.corporateTaxSupportSchedule" />
                   </p>
+                  <p className="mt-1 text-sm text-muted-foreground">{t["marketing.demoCtBody"]}</p>
                 </div>
               </TabsContent>
             </Tabs>
           </section>
 
           <aside className="space-y-4">
-            <Card className="border-black/10 bg-card">
+            <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <CheckCircle2 className="h-5 w-5 text-[#0D5C3D]" />
-                  Launch checklist
+                  <CheckCircle2 className="h-5 w-5 text-success" aria-hidden="true" />
+                  <T k="pageLabels.launchChecklist" />
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {closeChecklist.map((item) => (
-                  <div key={item} className="flex items-start gap-2 text-sm">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#0D5C3D]" />
-                    <span>{item}</span>
+                {CHECKLIST.map((n) => (
+                  <div key={n} className="flex items-start gap-2 text-sm">
+                    <CheckCircle2
+                      className="mt-0.5 h-4 w-4 shrink-0 text-success"
+                      aria-hidden="true"
+                    />
+                    <span>{t[`marketing.demoCheck${n}`]}</span>
                   </div>
                 ))}
               </CardContent>
             </Card>
 
-            <Card className="border-black/10 bg-[#0E1320] text-white">
-              <CardContent className="space-y-4 p-5">
-                <Receipt className="h-8 w-8 text-[#C19E50]" />
-                <div>
-                  <p className="font-semibold">Want your own books in this shape?</p>
-                  <p className="mt-1 text-sm text-white/65">
-                    Register, create a company, then use express onboarding to seed the UAE chart of
-                    accounts and start with guided setup.
-                  </p>
-                </div>
+            <div className="mk-demo-cta rounded-xl p-5">
+              <Receipt className="h-6 w-6" aria-hidden="true" />
+              <p className="mt-4 font-semibold">
+                <T k="pageLabels.wantYourOwnBooksInThisShape" />
+              </p>
+              <p className="mt-1 text-sm">{t["marketing.demoOwnBody"]}</p>
+              <Button asChild variant="outline" className="mt-4">
                 <Link href="/register">
-                  <Button className="w-full bg-card text-[#0E1320] hover:bg-card/90">
-                    Start setup
-                  </Button>
+                  <T k="pageLabels.startSetup" />
                 </Link>
-              </CardContent>
-            </Card>
+              </Button>
+            </div>
           </aside>
         </div>
       </section>
-    </main>
+    </MarketingLayout>
   );
 }

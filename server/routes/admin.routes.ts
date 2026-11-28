@@ -1,8 +1,7 @@
+import { assertUploadSize } from "../http/upload-errors";
 import type { Request, Response } from "express";
 import { Router } from "express";
 import type { Express } from "express";
-import bcrypt from "bcryptjs";
-import { z } from "zod";
 import crypto from "crypto";
 
 import { storage } from "../storage";
@@ -11,9 +10,37 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { db } from "../db";
-import { eq, and, desc, gte, lte, like } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql, type SQL } from "drizzle-orm";
 import { activityLogs } from "../../shared/schema";
 import { createSpreadsheetBuffer, parseSpreadsheet } from "../services/spreadsheet.service";
+import { errorMessage } from "../errors";
+import { z } from "zod";
+import { strictBody } from "../http/strict-body";
+import { adminIntegrationStatus } from "../services/admin-integrations";
+import * as googleSheets from "../integrations/googleSheets";
+import { parsedBody } from "../http/parsed-body";
+import {
+  adminCreateClientBody,
+  adminCreateClientDocumentBody,
+  adminCreateInvitationBody,
+  adminImportClientsBody,
+  adminImportPreviewBody,
+  adminUpdateCompanyBody,
+  adminUpdateUserBody,
+  createClientNoteBody,
+  updateClientNoteBody,
+  upsertAdminSettingBody,
+  type AdminCreateClientBody,
+  type AdminCreateClientDocumentBody,
+  type AdminCreateInvitationBody,
+  type AdminImportClientsBody,
+  type AdminImportPreviewBody,
+  type AdminUpdateCompanyBody,
+  type AdminUpdateUserBody,
+  type CreateClientNoteBody,
+  type UpdateClientNoteBody,
+  type UpsertAdminSettingBody,
+} from "../../shared/validators/admin";
 
 const logger = createLogger("admin-routes");
 
@@ -36,18 +63,30 @@ async function seedChartOfAccounts(
   const defaultAccounts = createDefaultAccountsForCompany(companyId);
 
   try {
-    const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
+    const createdAccounts = await storage.createBulkAccounts(defaultAccounts);
     logger.info({ companyId, count: createdAccounts.length }, "Created chart of accounts");
     return { created: createdAccounts.length, alreadyExisted: false };
-  } catch (error: any) {
-    if (error.message?.includes("PARTIAL_INSERT")) {
-      logger.error({ companyId, err: error.message }, "Partial insert detected during COA seed");
+  } catch (error: unknown) {
+    if (errorMessage(error)?.includes("PARTIAL_INSERT")) {
+      logger.error(
+        { companyId, err: errorMessage(error) },
+        "Partial insert detected during COA seed"
+      );
       throw new Error(
         "PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support."
       );
     }
     throw error;
   }
+}
+
+/** Defined, storable company fields from a parsed admin body (drops the legacy no-op flag). */
+function companyUpdates(body: AdminUpdateCompanyBody): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (value !== undefined && key !== "vatRegistered") out[key] = value;
+  }
+  return out;
 }
 
 // =============================================
@@ -58,8 +97,8 @@ export function registerAdminRoutes(app: Express): void {
   const router = Router();
 
   // Apply auth + admin middleware only to /admin/* paths (not all /api/*)
-  router.use("/admin", authMiddleware as any);
-  router.use("/admin", adminMiddleware as any);
+  router.use("/admin", authMiddleware);
+  router.use("/admin", adminMiddleware);
 
   // =====================================
   // ADMIN SETTINGS
@@ -77,11 +116,9 @@ export function registerAdminRoutes(app: Express): void {
   // Update admin setting
   router.put(
     "/admin/settings",
+    strictBody(upsertAdminSettingBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { key, value } = req.body;
-      if (!key || value === undefined) {
-        return res.status(400).json({ message: "Key and value required" });
-      }
+      const { key, value } = parsedBody<UpsertAdminSettingBody>(req);
 
       const existing = await storage.getAdminSettingByKey(key);
       if (existing) {
@@ -99,48 +136,6 @@ export function registerAdminRoutes(app: Express): void {
   );
 
   // =====================================
-  // SUBSCRIPTION PLANS
-  // =====================================
-
-  // Get subscription plans
-  router.get(
-    "/admin/plans",
-    asyncHandler(async (req: Request, res: Response) => {
-      const plans = await storage.getSubscriptionPlans();
-      res.json(plans);
-    })
-  );
-
-  // Create subscription plan
-  router.post(
-    "/admin/plans",
-    asyncHandler(async (req: Request, res: Response) => {
-      const plan = await storage.createSubscriptionPlan(req.body);
-      res.status(201).json(plan);
-    })
-  );
-
-  // Update subscription plan
-  router.put(
-    "/admin/plans/:id",
-    asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const plan = await storage.updateSubscriptionPlan(id, req.body);
-      res.json(plan);
-    })
-  );
-
-  // Delete subscription plan
-  router.delete(
-    "/admin/plans/:id",
-    asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      await storage.deleteSubscriptionPlan(id);
-      res.status(204).send();
-    })
-  );
-
-  // =====================================
   // COMPANIES
   // =====================================
 
@@ -153,17 +148,42 @@ export function registerAdminRoutes(app: Express): void {
     })
   );
 
+  // G4: companies the signed-in admin can store documents for. Uploading goes through the
+  // document vault, which needs company access (membership or NR firm-client access); a platform
+  // admin without it would be refused, so the Documents page offers only these companies.
+  router.get(
+    "/admin/documents/companies",
+    asyncHandler(async (req: Request, res: Response) => {
+      const user = req.user!;
+      const all = await storage.getAllCompanies();
+      const writable: typeof all = [];
+      const BATCH = 25;
+      for (let i = 0; i < all.length; i += BATCH) {
+        const batch = all.slice(i, i + BATCH);
+        const flags = await Promise.all(
+          batch.map((c) => storage.hasCompanyAccess(user.id, c.id, user.firmRole ?? null))
+        );
+        batch.forEach((c, j) => {
+          if (flags[j]) writable.push(c);
+        });
+      }
+      res.json(writable);
+    })
+  );
+
   // Update company (admin)
   router.patch(
     "/admin/companies/:companyId",
+    strictBody(adminUpdateCompanyBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const updates = req.body;
+      const updates = companyUpdates(parsedBody<AdminUpdateCompanyBody>(req));
 
       const company = await storage.getCompany(companyId);
       if (!company) {
         return res.status(404).json({ message: "Company not found" });
       }
+      if (Object.keys(updates).length === 0) return res.json(company);
 
       const updatedCompany = await storage.updateCompany(companyId, updates);
       res.json(updatedCompany);
@@ -185,6 +205,32 @@ export function registerAdminRoutes(app: Express): void {
   );
 
   // =====================================
+  // ADMIN PANEL - INTEGRATIONS (STEP1 F6)
+  // =====================================
+
+  // Which platform credentials are configured. Secrets live in the server environment and are
+  // never entered through the UI.
+  router.get(
+    "/admin/integrations/status",
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json(adminIntegrationStatus());
+    })
+  );
+
+  // Real Google Sheets connectivity check (creates and removes a scratch spreadsheet).
+  router.post(
+    "/admin/integrations/google-sheets/test",
+    strictBody(z.object({}).strict()),
+    asyncHandler(async (_req: Request, res: Response) => {
+      if (!adminIntegrationStatus().googleSheets.configured) {
+        return res.json({ ok: false, code: "not_configured" });
+      }
+      const ok = await googleSheets.isGoogleSheetsConnected();
+      res.json({ ok, code: ok ? "connected" : "failed" });
+    })
+  );
+
+  // =====================================
   // ADMIN PANEL - DASHBOARD & STATS
   // =====================================
 
@@ -198,12 +244,22 @@ export function registerAdminRoutes(app: Express): void {
       const activityLogs = await storage.getActivityLogs(10);
 
       const pendingInvitations = invitations.filter((i) => i.status === "pending").length;
-      const activeClients = companies.length;
+      // "Active companies": not deleted (getAllCompanies) and not switched off by an admin.
+      const activeClients = companies.filter((c) => c.isActive !== false).length;
       const totalUsers = users.length;
       const adminUsers = users.filter((u) => u.isAdmin).length;
 
+      // AI calls this calendar month (the "AI credits used" tile; one metered call is one credit).
+      const aiUsed = await db.execute(
+        sql`SELECT count(*)::int AS n FROM ai_usage_events WHERE created_at >= date_trunc('month', now())`
+      );
+      const aiCreditsUsed = Number((aiUsed.rows[0] as { n?: number } | undefined)?.n ?? 0);
+
       res.json({
         totalClients: activeClients,
+        totalCompanies: companies.length,
+        activeCompanies: activeClients,
+        aiCreditsUsed,
         totalUsers,
         adminUsers,
         clientUsers: totalUsers - adminUsers,
@@ -304,26 +360,28 @@ export function registerAdminRoutes(app: Express): void {
   // Create new client (company) - Admin only
   router.post(
     "/admin/clients",
+    strictBody(adminCreateClientBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
+      const body = parsedBody<AdminCreateClientBody>(req);
 
       const company = await storage.createCompany({
-        name: req.body.name,
-        baseCurrency: req.body.baseCurrency || "AED",
-        locale: req.body.locale || "en",
-        companyType: req.body.companyType || "client", // 'client' for NR-managed, 'customer' for SaaS
-        legalStructure: req.body.legalStructure,
-        industry: req.body.industry,
-        registrationNumber: req.body.registrationNumber,
-        businessAddress: req.body.businessAddress,
-        contactPhone: req.body.contactPhone,
-        contactEmail: req.body.contactEmail,
-        websiteUrl: req.body.websiteUrl,
-        logoUrl: req.body.logoUrl,
-        trnVatNumber: req.body.trnVatNumber,
-        taxRegistrationType: req.body.taxRegistrationType,
-        vatFilingFrequency: req.body.vatFilingFrequency,
-        corporateTaxId: req.body.corporateTaxId,
+        name: body.name,
+        baseCurrency: body.baseCurrency || "AED",
+        locale: body.locale || "en",
+        companyType: body.companyType || "client", // 'client' for NR-managed, 'customer' for SaaS
+        legalStructure: body.legalStructure,
+        industry: body.industry,
+        registrationNumber: body.registrationNumber,
+        businessAddress: body.businessAddress,
+        contactPhone: body.contactPhone,
+        contactEmail: body.contactEmail,
+        websiteUrl: body.websiteUrl,
+        logoUrl: body.logoUrl,
+        trnVatNumber: body.trnVatNumber,
+        taxRegistrationType: body.taxRegistrationType,
+        vatFilingFrequency: body.vatFilingFrequency,
+        corporateTaxId: body.corporateTaxId,
       });
 
       // Seed chart of accounts for the new company
@@ -346,11 +404,16 @@ export function registerAdminRoutes(app: Express): void {
   // Update client (company) - Admin only
   router.patch(
     "/admin/clients/:clientId",
+    strictBody(adminUpdateCompanyBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
+      const updates = companyUpdates(parsedBody<AdminUpdateCompanyBody>(req));
 
-      const company = await storage.updateCompany(clientId, req.body);
+      const existing = await storage.getCompany(clientId);
+      if (!existing) return res.status(404).json({ message: "Client not found" });
+      if (Object.keys(updates).length === 0) return res.json(existing);
+      const company = await storage.updateCompany(clientId, updates);
 
       // Log activity
       await storage.createActivityLog({
@@ -371,7 +434,7 @@ export function registerAdminRoutes(app: Express): void {
     "/admin/clients/:clientId",
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const company = await storage.getCompany(clientId);
       if (!company) {
@@ -403,8 +466,22 @@ export function registerAdminRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const users = await storage.getAllUsers();
 
+      // Per-user company memberships (live companies only), for the Users tab.
+      const counts = await db.execute(
+        sql`SELECT cu.user_id AS user_id, count(*)::int AS n
+            FROM company_users cu
+            JOIN companies c ON c.id = cu.company_id AND c.deleted_at IS NULL
+            GROUP BY cu.user_id`
+      );
+      const companyCount = new Map(
+        (counts.rows as { user_id: string; n: number }[]).map((r) => [r.user_id, Number(r.n)])
+      );
+
       // Return users without password hashes
-      const safeUsers = users.map(({ passwordHash, ...user }) => user);
+      const safeUsers = users.map(({ passwordHash: _passwordHash, ...user }) => ({
+        ...user,
+        companyCount: companyCount.get(user.id) ?? 0,
+      }));
       res.json(safeUsers);
     })
   );
@@ -412,14 +489,16 @@ export function registerAdminRoutes(app: Express): void {
   // Update user (admin can promote to admin, change details) - Admin only
   router.patch(
     "/admin/users/:userId",
+    strictBody(adminUpdateUserBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { userId: targetUserId } = req.params;
-      const adminUserId = (req as any).user.id;
+      const adminUserId = req.user!.id;
+      const body = parsedBody<AdminUpdateUserBody>(req);
 
-      const updates: any = {};
-      if (req.body.name) updates.name = req.body.name;
-      if (req.body.email) updates.email = req.body.email;
-      if (typeof req.body.isAdmin === "boolean") updates.isAdmin = req.body.isAdmin;
+      const updates: { name?: string; email?: string; isAdmin?: boolean } = {};
+      if (body.name) updates.name = body.name;
+      if (body.email) updates.email = body.email;
+      if (typeof body.isAdmin === "boolean") updates.isAdmin = body.isAdmin;
 
       const user = await storage.updateUser(targetUserId, updates);
 
@@ -433,7 +512,7 @@ export function registerAdminRoutes(app: Express): void {
         metadata: JSON.stringify({ changes: Object.keys(updates) }),
       });
 
-      const { passwordHash, ...safeUser } = user;
+      const { passwordHash: _passwordHash, ...safeUser } = user;
       res.json(safeUser);
     })
   );
@@ -443,7 +522,7 @@ export function registerAdminRoutes(app: Express): void {
     "/admin/users/:userId",
     asyncHandler(async (req: Request, res: Response) => {
       const { userId: targetUserId } = req.params;
-      const adminUserId = (req as any).user.id;
+      const adminUserId = req.user!.id;
 
       // Prevent admin from deleting themselves
       if (targetUserId === adminUserId) {
@@ -486,11 +565,13 @@ export function registerAdminRoutes(app: Express): void {
   // Create invitation - Admin only
   router.post(
     "/admin/invitations",
+    strictBody(adminCreateInvitationBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const adminUserId = (req as any).user.id;
+      const adminUserId = req.user!.id;
+      const body = parsedBody<AdminCreateInvitationBody>(req);
 
       // Check if email already has pending invitation
-      const existing = await storage.getInvitationByEmail(req.body.email);
+      const existing = await storage.getInvitationByEmail(body.email);
       if (existing && existing.status === "pending") {
         return res
           .status(400)
@@ -503,10 +584,10 @@ export function registerAdminRoutes(app: Express): void {
       expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
 
       const invitation = await storage.createInvitation({
-        email: req.body.email,
-        companyId: req.body.companyId || null,
-        role: req.body.role || "client",
-        userType: req.body.userType || "client", // admin | client | customer
+        email: body.email,
+        companyId: body.companyId || null,
+        role: body.role || "client",
+        userType: body.userType || "client", // admin | client | customer
         token,
         invitedBy: adminUserId,
         status: "pending",
@@ -516,11 +597,11 @@ export function registerAdminRoutes(app: Express): void {
       // Log activity
       await storage.createActivityLog({
         userId: adminUserId,
-        companyId: req.body.companyId || null,
+        companyId: body.companyId || null,
         action: "invite",
         entityType: "invitation",
         entityId: invitation.id,
-        description: `Sent invitation to ${req.body.email}`,
+        description: `Sent invitation to ${body.email}`,
       });
 
       res.status(201).json(invitation);
@@ -532,7 +613,7 @@ export function registerAdminRoutes(app: Express): void {
     "/admin/invitations/:invitationId/revoke",
     asyncHandler(async (req: Request, res: Response) => {
       const { invitationId } = req.params;
-      const adminUserId = (req as any).user.id;
+      const adminUserId = req.user!.id;
 
       const invitation = await storage.updateInvitation(invitationId, { status: "revoked" });
 
@@ -554,7 +635,7 @@ export function registerAdminRoutes(app: Express): void {
     "/admin/invitations/:invitationId/resend",
     asyncHandler(async (req: Request, res: Response) => {
       const { invitationId } = req.params;
-      const adminUserId = (req as any).user.id;
+      const adminUserId = req.user!.id;
 
       // Generate new token and extend expiry
       const token = crypto.randomBytes(32).toString("hex");
@@ -632,15 +713,17 @@ export function registerAdminRoutes(app: Express): void {
   // Create note for a client - Admin only
   router.post(
     "/admin/clients/:clientId/notes",
+    strictBody(createClientNoteBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
-      const authorId = (req as any).user.id;
+      const authorId = req.user!.id;
+      const body = parsedBody<CreateClientNoteBody>(req);
 
       const note = await storage.createClientNote({
         companyId: clientId,
         authorId,
-        content: req.body.content,
-        isPinned: req.body.isPinned || false,
+        content: body.content,
+        isPinned: body.isPinned || false,
       });
 
       res.status(201).json(note);
@@ -650,9 +733,11 @@ export function registerAdminRoutes(app: Express): void {
   // Update note - Admin only
   router.patch(
     "/admin/notes/:noteId",
+    strictBody(updateClientNoteBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { noteId } = req.params;
-      const note = await storage.updateClientNote(noteId, req.body);
+      const note = await storage.updateClientNote(noteId, parsedBody<UpdateClientNoteBody>(req));
+      if (!note) return res.status(404).json({ message: "Note not found" });
       res.json(note);
     })
   );
@@ -674,8 +759,12 @@ export function registerAdminRoutes(app: Express): void {
   // Import clients from Excel - Admin only
   router.post(
     "/admin/import/clients",
+    strictBody(adminImportClientsBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { data, createInvitations, sendEmails } = req.body;
+      const { createInvitations } = parsedBody<AdminImportClientsBody>(req);
+      // Spreadsheet rows are free-form records; the loop below reads the known columns defensively.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = parsedBody<AdminImportClientsBody>(req).data as any[];
 
       if (!data || !Array.isArray(data)) {
         return res
@@ -683,11 +772,11 @@ export function registerAdminRoutes(app: Express): void {
           .json({ message: "Invalid data format. Expected array of client records." });
       }
 
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
       const results = {
-        success: [] as any[],
-        errors: [] as any[],
-        invitations: [] as any[],
+        success: [] as Array<Record<string, unknown>>,
+        errors: [] as Array<Record<string, unknown>>,
+        invitations: [] as Array<Record<string, unknown>>,
       };
 
       for (const row of data) {
@@ -744,7 +833,7 @@ export function registerAdminRoutes(app: Express): void {
               const expiresAt = new Date();
               expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
 
-              const invitation = await storage.createInvitation({
+              const _invitation = await storage.createInvitation({
                 email: row.email.trim(),
                 companyId: company.id,
                 role: "client",
@@ -760,16 +849,16 @@ export function registerAdminRoutes(app: Express): void {
                 companyName: company.name,
                 inviteLink: `/register?invite=${token}`,
               });
-            } catch (invErr: any) {
+            } catch (invErr: unknown) {
               // Don't fail the whole import if invitation fails
               logger.error(
-                { email: row.email, err: invErr.message },
+                { email: row.email, err: errorMessage(invErr) },
                 "Failed to create invitation"
               );
             }
           }
-        } catch (rowError: any) {
-          results.errors.push({ row, error: rowError.message });
+        } catch (rowError: unknown) {
+          results.errors.push({ row, error: errorMessage(rowError) });
         }
       }
 
@@ -783,8 +872,9 @@ export function registerAdminRoutes(app: Express): void {
   // Parse Excel file and return preview - Admin only
   router.post(
     "/admin/import/preview",
+    strictBody(adminImportPreviewBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const { fileData, fileName } = req.body;
+      const { fileData, fileName } = parsedBody<AdminImportPreviewBody>(req);
 
       if (!fileData) {
         return res.status(400).json({ message: "No file data provided" });
@@ -792,20 +882,21 @@ export function registerAdminRoutes(app: Express): void {
 
       // Convert base64 to buffer
       const buffer = Buffer.from(fileData, "base64");
+      assertUploadSize(buffer.length);
 
       let parsed;
       try {
         parsed = await parseSpreadsheet(buffer, fileName);
-      } catch (err: any) {
-        return res.status(400).json({ message: `Could not parse file: ${err.message}` });
+      } catch (err: unknown) {
+        return res.status(400).json({ message: `Could not parse file: ${errorMessage(err)}` });
       }
       const jsonData = parsed.rows;
       const headers = parsed.headers;
 
       // Map data to expected format based on column headers
-      const mappedData = jsonData.map((row: any) => {
+      const mappedData = jsonData.map((row) => {
         // Try to intelligently map columns
-        const mapped: any = {};
+        const mapped: Record<string, unknown> = {};
 
         // Name mapping (look for various name columns)
         mapped.name =
@@ -954,24 +1045,26 @@ export function registerAdminRoutes(app: Express): void {
   // Admin upload document for client
   router.post(
     "/admin/clients/:clientId/documents",
+    strictBody(adminCreateClientDocumentBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
+      const body = parsedBody<AdminCreateClientDocumentBody>(req);
 
       const documentData = {
         companyId: clientId,
-        name: req.body.name,
-        nameAr: req.body.nameAr || null,
-        category: req.body.category,
-        description: req.body.description || null,
-        fileUrl: req.body.fileUrl || "/uploads/placeholder.pdf",
-        fileName: req.body.fileName || "document.pdf",
-        fileSize: req.body.fileSize || null,
-        mimeType: req.body.mimeType || "application/pdf",
-        expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
-        reminderDays: req.body.reminderDays || 30,
+        name: body.name,
+        nameAr: body.nameAr || null,
+        category: body.category,
+        description: body.description || null,
+        fileUrl: body.fileUrl || "/uploads/placeholder.pdf",
+        fileName: body.fileName || "document.pdf",
+        fileSize: body.fileSize || null,
+        mimeType: body.mimeType || "application/pdf",
+        expiryDate: body.expiryDate ? new Date(body.expiryDate) : null,
+        reminderDays: body.reminderDays || 30,
         reminderSent: false,
-        tags: req.body.tags || null,
+        tags: body.tags || null,
         isArchived: false,
         uploadedBy: userId,
       };
@@ -1012,7 +1105,7 @@ export function registerAdminRoutes(app: Express): void {
       const limit = Math.min(parseInt(limitParam ?? "50", 10), 500);
       const offset = (Math.max(parseInt(page ?? "1", 10), 1) - 1) * limit;
 
-      const conditions: any[] = [];
+      const conditions: SQL[] = [];
       if (filterUserId) conditions.push(eq(activityLogs.userId, filterUserId));
       if (action) conditions.push(eq(activityLogs.action, action));
       if (entityType) conditions.push(eq(activityLogs.entityType, entityType));

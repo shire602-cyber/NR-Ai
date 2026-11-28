@@ -1,9 +1,24 @@
--- One-time owner access repair requested for the existing production account.
--- This does not create a user and does not set password material.
-UPDATE users
-SET
-  is_admin = true,
-  user_type = 'admin',
-  firm_role = 'firm_owner',
-  email_verified = true
-WHERE lower(email) = 'shire602@gmail.com';
+-- 0054_promote_shire602_firm_owner: NEUTRALISED (no-op). Audit finding S-H3.
+--
+-- This file used to promote one hardcoded personal account to all-tenant admin
+-- (is_admin, user_type 'admin', firm_role 'firm_owner') in EVERY database that ran
+-- the migration chain: fresh installs, staging, demo and third-party deployments.
+--
+-- Why editing an applied file is safe here:
+--   * drizzle-orm's migrator (0.45.x, `npm run db:migrate` and runMigrations) picks
+--     the files to run by comparing each journal entry's `when` (folderMillis) with
+--     the newest `created_at` in drizzle.__drizzle_migrations. It never re-reads or
+--     verifies the stored hash, so a database that already applied 0054 does not
+--     re-run it and is not rejected; the old promotion stays exactly as it was.
+--     tests/db/platform-owner.test.ts pins that behaviour.
+--   * Fresh databases (and any database whose ledger is still before 0054) now get
+--     no promotion at all.
+--   * The journal entry, tag and `when` are unchanged (never edit meta/_journal.json);
+--     the legacy-baseline cutoff in server/db.ts keys off this entry's `when`, not
+--     its content.
+--
+-- Granting the production owner admin is now explicit and opt-in, per environment:
+--   DATABASE_URL=... npx tsx scripts/ops/platform-owner.ts --email <owner email> --grant --confirm <owner email>
+-- Environments that already applied the old 0054 and must NOT have that admin run the
+-- same command with --revoke. See docs/release/PLATFORM-OWNER.md.
+SELECT 1;

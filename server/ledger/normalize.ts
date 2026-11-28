@@ -1,0 +1,440 @@
+/**
+ * Pure input normalisation for the ledger kernel. No database access, so the
+ * rules here are unit-testable on their own (tests/unit/ledger-*.test.ts).
+ *
+ * Every amount becomes integer fils (shared/money.ts). Rules (frozen):
+ *   - each line has exactly one strictly positive side (debit XOR credit),
+ *     with an explicit opt-in for document-currency-only invoice residuals;
+ *   - more than 2 decimal places is an error (no silent rounding), unless the
+ *     legacy adapter opts in with amountRounding: "halfUp" (per-line ROUND_HALF_UP,
+ *     the same thing numeric(15,2) did on insert);
+ *   - total debit must equal total credit exactly (difference 0 fils);
+ *   - NaN, Infinity, exponent strings, values outside numeric(15,2) -> 422;
+ *   - dates must be real calendar dates in 1900..9999 and, unless allowed,
+ *     not after today (UTC).
+ */
+import Decimal from "decimal.js";
+import { MAX_FILS, MoneyError, RATE_DECIMALS, toFils, type Rounding } from "../../shared/money";
+import { DomainError } from "../errors";
+import type {
+  EntryKind,
+  JournalLineAttributes,
+  LedgerAmount,
+  NormalizedEntry,
+  NormalizedLine,
+  PostJournalInput,
+  PostJournalLineInput,
+} from "./types";
+import { ENTRY_KINDS } from "./types";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ISO_DATE_RE =
+  /^(\d{4})-(\d{2})-(\d{2})(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+const CURRENCY_RE = /^[A-Z]{3}$/;
+const RATE_RE = /^\d{1,9}(?:\.\d{1,6})?$/;
+export const MAX_LINES = 5000;
+
+export function isUuid(v: unknown): v is string {
+  return typeof v === "string" && UUID_RE.test(v);
+}
+
+function fail(code: string, message: string, details?: unknown): never {
+  throw new DomainError(code, 422, details, message);
+}
+
+/**
+ * Today's posting date: the UAE calendar date (UTC+4, no DST), the same day the reports
+ * (`uaeToday`) and the entry-local-date SQL use. A UTC date here refused, between 00:00 and
+ * 04:00 in the UAE, an entry dated the local today as FUTURE_DATE (e.g. a payroll accrual
+ * dated today by A4 L6).
+ */
+export function todayIso(now: Date = new Date()): string {
+  return new Date(now.getTime() + 4 * 3600_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Parse a journal date. Strings may be "YYYY-MM-DD" or an ISO datetime (the
+ * calendar date part is the posting date). Date objects represent instants.
+ * Use their UAE calendar date for posting rules and store the original timestamp.
+ */
+export function parseLedgerDate(value: unknown, field = "date"): { iso: string; at: Date } {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) fail("INVALID_DATE", `${field} is not a valid date`);
+    const iso = todayIso(value);
+    assertYear(iso, field);
+    return { iso, at: value };
+  }
+  if (typeof value !== "string") fail("INVALID_DATE", `${field} is required (YYYY-MM-DD)`);
+  const s = value.trim();
+  const m = ISO_DATE_RE.exec(s);
+  if (!m) fail("INVALID_DATE", `${field} must be a date in YYYY-MM-DD format`);
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const dim = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  if (mo < 1 || mo > 12 || d < 1 || d > dim) fail("INVALID_DATE", `${field} is not a real date`);
+  const iso = `${m[1]}-${m[2]}-${m[3]}`;
+  assertYear(iso, field);
+  return { iso, at: new Date(`${iso}T00:00:00.000Z`) };
+}
+
+function assertYear(iso: string, field: string): void {
+  const y = Number(iso.slice(0, 4));
+  if (y < 1900 || y > 9999) fail("INVALID_DATE", `${field} must be between 1900 and 9999`);
+}
+
+export function assertNotFuture(iso: string, now: Date = new Date()): void {
+  if (iso > todayIso(now)) {
+    fail(
+      "FUTURE_DATE",
+      `Cannot post an entry dated in the future (${iso}). Posting dates must be on or before today.`,
+      { date: iso }
+    );
+  }
+}
+
+/** Parse one amount field into fils; null/undefined/"" -> 0. */
+export function amountToFils(
+  value: LedgerAmount | null | undefined,
+  field: string,
+  rounding: Rounding = "reject"
+): number {
+  if (value === null || value === undefined || value === "") return 0;
+  if (typeof value !== "number" && typeof value !== "string") {
+    fail("INVALID_AMOUNT", `${field} must be a number or decimal string`, { field });
+  }
+  try {
+    return toFils(value, { rounding });
+  } catch (err) {
+    const reason = err instanceof MoneyError ? err.code : "MONEY_INVALID";
+    fail("INVALID_AMOUNT", `${field}: ${(err as Error).message}`, { field, reason });
+  }
+}
+
+function filsField(value: unknown, field: string): number {
+  if (value === undefined || value === null) return 0;
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    fail("INVALID_AMOUNT", `${field} must be an integer number of fils`, { field });
+  }
+  if (Math.abs(value) > MAX_FILS) {
+    fail("INVALID_AMOUNT", `${field} exceeds the numeric(15,2) range`, {
+      field,
+      reason: "MONEY_OUT_OF_RANGE",
+    });
+  }
+  return value;
+}
+
+export function normalizeRate(
+  value: LedgerAmount | null | undefined,
+  field: string
+): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const s = typeof value === "number" ? value.toString() : String(value).trim();
+  if (!RATE_RE.test(s) || Number(s) <= 0) {
+    fail("INVALID_EXCHANGE_RATE", `${field} must be a positive rate with at most 6 decimals`, {
+      field,
+    });
+  }
+  return s;
+}
+
+/** Legacy rates (floats) are rounded half-up to 6dp, as numeric(15,6) did. */
+function legacyRate(value: LedgerAmount | null | undefined): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const rate = new Decimal(typeof value === "string" ? value.trim() : value);
+  const rounded = rate.toFixed(RATE_DECIMALS, Decimal.ROUND_HALF_UP).replace(/\.?0+$/, "");
+  return rounded === "0" ? null : rounded;
+}
+
+export function normalizeLine(
+  line: PostJournalLineInput,
+  index: number,
+  rounding: Rounding,
+  allowForeignOnly = false
+): NormalizedLine {
+  const p = `lines[${index}]`;
+  if (!line || typeof line !== "object") fail("INVALID_LINE", `${p} must be an object`);
+  if (!isUuid(line.accountId)) {
+    fail("ACCOUNT_NOT_FOUND", `${p}.accountId must be an account id of this company`, {
+      line: index,
+    });
+  }
+  const debit = filsField(
+    amountToFils(line.debit, `${p}.debit`, rounding) + filsField(line.debitFils, `${p}.debitFils`),
+    `${p}.debit`
+  );
+  const credit = filsField(
+    amountToFils(line.credit, `${p}.credit`, rounding) +
+      filsField(line.creditFils, `${p}.creditFils`),
+    `${p}.credit`
+  );
+  if (debit < 0 || credit < 0) {
+    fail(
+      "NEGATIVE_JOURNAL_AMOUNT",
+      "Journal line amounts cannot be negative. Put the amount in the opposite column.",
+      { line: index }
+    );
+  }
+  if (debit > 0 && credit > 0) {
+    fail("LINE_HAS_BOTH_SIDES", "A journal line is a debit or a credit, never both.", {
+      line: index,
+    });
+  }
+  const foreignDebit = amountToFils(line.foreignDebit, `${p}.foreignDebit`, rounding);
+  const foreignCredit = amountToFils(line.foreignCredit, `${p}.foreignCredit`, rounding);
+  const foreignOnly =
+    allowForeignOnly &&
+    debit === 0 &&
+    credit === 0 &&
+    ((foreignDebit > 0 && foreignCredit === 0) || (foreignCredit > 0 && foreignDebit === 0));
+  if (debit === 0 && credit === 0 && !foreignOnly) {
+    fail("ZERO_AMOUNT_LINE", `${p} has no amount. Remove empty lines.`, { line: index });
+  }
+
+  if (foreignDebit < 0 || foreignCredit < 0) {
+    fail("NEGATIVE_JOURNAL_AMOUNT", `${p} foreign amounts cannot be negative`, { line: index });
+  }
+  if (!foreignOnly && ((foreignDebit > 0 && debit === 0) || (foreignCredit > 0 && credit === 0))) {
+    fail(
+      "FOREIGN_SIDE_MISMATCH",
+      `${p} foreign amount must be on the same side as the base amount`,
+      {
+        line: index,
+      }
+    );
+  }
+  let foreignCurrency: string | null = null;
+  if (
+    line.foreignCurrency !== undefined &&
+    line.foreignCurrency !== null &&
+    line.foreignCurrency !== ""
+  ) {
+    const c = String(line.foreignCurrency).trim().toUpperCase();
+    if (!CURRENCY_RE.test(c)) {
+      fail("INVALID_CURRENCY", `${p}.foreignCurrency must be an ISO 4217 code`, { line: index });
+    }
+    foreignCurrency = c;
+  }
+  const exchangeRate =
+    rounding === "halfUp"
+      ? legacyRate(line.exchangeRate)
+      : normalizeRate(line.exchangeRate, `${p}.exchangeRate`);
+  if (foreignOnly && (!foreignCurrency || !exchangeRate)) {
+    fail("FOREIGN_SIDE_MISMATCH", `${p} requires a foreign currency and exchange rate`, {
+      line: index,
+    });
+  }
+
+  let costCenterId: string | null = null;
+  if (line.costCenterId !== undefined && line.costCenterId !== null && line.costCenterId !== "") {
+    if (!isUuid(line.costCenterId)) {
+      fail("COST_CENTER_NOT_FOUND", `${p}.costCenterId is not a cost centre of this company`, {
+        line: index,
+      });
+    }
+    costCenterId = line.costCenterId.toLowerCase();
+  }
+
+  return {
+    accountId: line.accountId.toLowerCase(),
+    debitFils: debit,
+    creditFils: credit,
+    description: line.description == null ? null : String(line.description),
+    ...(line.lineKey
+      ? {
+          lineKey: String(line.lineKey).slice(0, 80),
+          lineParams: line.lineParams ?? null,
+        }
+      : {}),
+    costCenterId,
+    foreignCurrency,
+    foreignDebitFils: foreignDebit,
+    foreignCreditFils: foreignCredit,
+    exchangeRate,
+    ...(line.systemVat === true ? { systemVat: true } : {}),
+    ...(line.controlLeg ? { controlLeg: line.controlLeg } : {}),
+    ...(line.attributes ? { attributes: normalizeAttributes(line.attributes, p, index) } : {}),
+  };
+}
+
+const VAT_TREATMENTS = new Set(["standard", "zero_rated", "exempt", "out_of_scope"]);
+const CT_TREATMENTS = new Set(["deductible", "non_deductible", "exempt_income"]);
+const PCT_RE = /^\d{1,3}(\.\d{1,2})?$/;
+
+/** WQ3: validate the descriptive per-line attributes (enums, a uuid contact, a 0-100 share). */
+function normalizeAttributes(
+  a: JournalLineAttributes,
+  p: string,
+  index: number
+): JournalLineAttributes {
+  const out: JournalLineAttributes = {};
+  if (a.contactId) {
+    if (!isUuid(a.contactId) || (a.contactType !== "customer" && a.contactType !== "vendor")) {
+      fail("CONTACT_NOT_FOUND", `${p}.contactId is not a customer or supplier of this company`, {
+        line: index,
+      });
+    }
+    out.contactType = a.contactType;
+    out.contactId = a.contactId.toLowerCase();
+  }
+  if (a.vatTreatment) {
+    if (!VAT_TREATMENTS.has(a.vatTreatment)) {
+      fail("INVALID_VAT_TREATMENT", `${p}.vatTreatment is not a known VAT treatment`, {
+        line: index,
+      });
+    }
+    out.vatTreatment = a.vatTreatment;
+  }
+  if (a.ctTreatment) {
+    if (!CT_TREATMENTS.has(a.ctTreatment)) {
+      fail("INVALID_CT_TREATMENT", `${p}.ctTreatment is not a known corporate-tax treatment`, {
+        line: index,
+      });
+    }
+    out.ctTreatment = a.ctTreatment;
+    if (a.ctTreatment === "non_deductible") {
+      const raw = a.ctDisallowedPct == null || a.ctDisallowedPct === "" ? "100" : a.ctDisallowedPct;
+      const s = String(raw).trim();
+      if (!PCT_RE.test(s) || Number(s) <= 0 || Number(s) > 100) {
+        fail("INVALID_CT_SHARE", `${p}.ctDisallowedPct must be more than 0 and at most 100`, {
+          line: index,
+        });
+      }
+      out.ctDisallowedPct = s;
+    }
+  }
+  return out;
+}
+
+/** Totals + the exact-balance and same-account rules over normalised lines. */
+export function assertLinesBalanced(
+  lines: NormalizedLine[],
+  opts: { allowSameAccount?: boolean; allowForeignOnly?: boolean } = {}
+): { debitFils: number; creditFils: number } {
+  if (lines.length < 2) {
+    fail("TOO_FEW_LINES", "A journal entry needs at least one debit and one credit line");
+  }
+  let debitFils = 0;
+  let creditFils = 0;
+  for (const [index, l] of lines.entries()) {
+    if (l.debitFils < 0 || l.creditFils < 0) {
+      fail("NEGATIVE_JOURNAL_AMOUNT", "Journal line amounts cannot be negative", { line: index });
+    }
+    if (l.debitFils > 0 && l.creditFils > 0) {
+      fail("LINE_HAS_BOTH_SIDES", "A journal line can only have one positive side", {
+        line: index,
+      });
+    }
+    debitFils += l.debitFils;
+    creditFils += l.creditFils;
+  }
+  if (!Number.isSafeInteger(debitFils) || !Number.isSafeInteger(creditFils)) {
+    fail("INVALID_AMOUNT", "Journal totals exceed the supported range", {
+      reason: "MONEY_OUT_OF_RANGE",
+    });
+  }
+  if (debitFils !== creditFils) {
+    fail(
+      "ENTRY_UNBALANCED",
+      `Debits (${(debitFils / 100).toFixed(2)}) must equal credits (${(creditFils / 100).toFixed(2)}) exactly`,
+      { debitFils, creditFils, differenceFils: debitFils - creditFils }
+    );
+  }
+  const foreignOnly = opts.allowForeignOnly && debitFils === 0;
+  if (foreignOnly) {
+    const byCurrency = new Map<string | null, number>();
+    for (const l of lines) {
+      const movement = l.foreignDebitFils - l.foreignCreditFils;
+      byCurrency.set(l.foreignCurrency, (byCurrency.get(l.foreignCurrency) ?? 0) + movement);
+    }
+    if ([...byCurrency.values()].some((amount) => amount !== 0)) {
+      fail("ENTRY_UNBALANCED", "A foreign-only entry must balance in each currency");
+    }
+  }
+  if (!opts.allowSameAccount) {
+    const net = new Map<string, number>();
+    for (const l of lines) {
+      const movement = foreignOnly
+        ? l.foreignDebitFils - l.foreignCreditFils
+        : l.debitFils - l.creditFils;
+      net.set(l.accountId, (net.get(l.accountId) ?? 0) + movement);
+    }
+    if ([...net.values()].every((n) => n === 0)) {
+      fail(
+        "SAME_ACCOUNT_ENTRY",
+        "Every account in this entry nets to zero, so it would not change the books",
+        { accounts: [...net.keys()] }
+      );
+    }
+  }
+  return { debitFils, creditFils };
+}
+
+export function normalizeEntry(
+  input: PostJournalInput,
+  opts: { now?: Date } = {}
+): NormalizedEntry {
+  if (!input || typeof input !== "object") fail("INVALID_ENTRY", "Journal input is required");
+  if (!isUuid(input.companyId)) fail("INVALID_COMPANY", "companyId must be a UUID");
+  const status = input.status;
+  if (status !== "draft" && status !== "posted") {
+    fail("INVALID_STATUS", "status must be 'draft' or 'posted'");
+  }
+  const kind: EntryKind = input.kind ?? "standard";
+  if (!ENTRY_KINDS.includes(kind))
+    fail("INVALID_KIND", `kind must be one of ${ENTRY_KINDS.join(", ")}`);
+  const { iso, at } = parseLedgerDate(input.date);
+  if (!input.allowFutureDate) assertNotFuture(iso, opts.now);
+
+  if (!Array.isArray(input.lines) || input.lines.length === 0) {
+    fail("TOO_FEW_LINES", "A journal entry needs at least one debit and one credit line");
+  }
+  if (input.lines.length > MAX_LINES) fail("TOO_MANY_LINES", `At most ${MAX_LINES} lines`);
+  const rounding: Rounding = input.amountRounding === "halfUp" ? "halfUp" : "reject";
+  const allowForeignOnly =
+    input.allowForeignOnlyLines && input.source === "invoice" && status === "posted";
+  const lines = input.lines.map((l, i) => normalizeLine(l, i, rounding, allowForeignOnly));
+  const totals = assertLinesBalanced(lines, {
+    allowSameAccount: input.allowSameAccount,
+    allowForeignOnly,
+  });
+
+  let autoReverseOn: string | null = null;
+  if (input.autoReverseOn) {
+    autoReverseOn = parseLedgerDate(input.autoReverseOn, "autoReverseOn").iso;
+    if (autoReverseOn <= iso) {
+      fail("INVALID_AUTO_REVERSE_DATE", "autoReverseOn must be after the entry date");
+    }
+  }
+  if (input.sourceId != null && input.sourceId !== "" && !isUuid(input.sourceId)) {
+    fail("INVALID_SOURCE_ID", "sourceId must be a UUID");
+  }
+  const idempotencyKey =
+    input.idempotencyKey == null || input.idempotencyKey === ""
+      ? null
+      : String(input.idempotencyKey);
+  if (idempotencyKey && idempotencyKey.length > 200) {
+    fail("INVALID_IDEMPOTENCY_KEY", "idempotencyKey must be at most 200 characters");
+  }
+
+  return {
+    companyId: input.companyId.toLowerCase(),
+    dateIso: iso,
+    dateAt: at,
+    memo: input.memo == null ? null : String(input.memo),
+    memoKey: input.memoKey ? String(input.memoKey).slice(0, 80) : null,
+    memoParams: input.memoKey && input.memoParams ? input.memoParams : null,
+    reference: input.reference == null || input.reference === "" ? null : String(input.reference),
+    source: input.source || "manual",
+    sourceId: input.sourceId ? input.sourceId.toLowerCase() : null,
+    idempotencyKey,
+    status,
+    kind,
+    autoReverseOn,
+    lines,
+    totalDebitFils: totals.debitFils,
+    totalCreditFils: totals.creditFils,
+    ...(input.reportsVat === true ? { reportsVat: true } : {}),
+  };
+}

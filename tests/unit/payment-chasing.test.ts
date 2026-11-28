@@ -36,6 +36,7 @@ function inv(overrides: Partial<ChaseInvoice> = {}): ChaseInvoice {
     chaseLevel: overrides.chaseLevel ?? 0,
     lastChasedAt: overrides.lastChasedAt ?? null,
     doNotChase: overrides.doNotChase ?? false,
+    invoiceType: overrides.invoiceType ?? "invoice",
   };
 }
 
@@ -120,6 +121,22 @@ describe("isOverdueAndChaseable", () => {
   it("rejects draft invoices", () => {
     const row = buildAgingRow(inv({ status: "draft" }), [], today);
     expect(isOverdueAndChaseable(row)).toBe(false);
+  });
+
+  it("rejects cancelled, void and unknown statuses (only issued unpaid invoices are chased)", () => {
+    for (const status of ["cancelled", "void", "refunded", "written_off"]) {
+      const row = buildAgingRow(inv({ status }), [], today);
+      expect(isOverdueAndChaseable(row), status).toBe(false);
+    }
+  });
+
+  it("rejects credit notes even when overdue", () => {
+    const row = buildAgingRow(inv({ invoiceType: "credit_note" }), [], today);
+    expect(isOverdueAndChaseable(row)).toBe(false);
+  });
+
+  it("accepts posted invoices", () => {
+    expect(isOverdueAndChaseable(buildAgingRow(inv({ status: "posted" }), [], today))).toBe(true);
   });
 
   it("rejects do-not-chase invoices", () => {

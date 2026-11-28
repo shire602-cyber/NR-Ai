@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import { getEnv, isProduction } from "../config/env";
 import { createLogger } from "../config/logger";
 import { authCookieBaseOptions } from "../config/cookies";
+import { errorCode, errorMessage } from "../errors";
 
 const log = createLogger("csrf");
 
@@ -16,11 +17,31 @@ const CSRF_BEARER_EXEMPT = [
   /^\/api\/auth\/refresh-token$/,
   /^\/api\/auth\/forgot-password$/,
   /^\/api\/auth\/reset-password$/,
-  /^\/api\/portal\//,
+  // W5-E: pre-session steps authenticated by their own single-use token.
+  /^\/api\/auth\/mfa\/verify-login$/,
+  /^\/api\/auth\/verify-email$/,
+  // Customer-facing portal endpoints only (the token in the path, or the OTP sign-in). The
+  // cookie-authenticated STAFF routes under /api/portal/ (generate-access, revoke-access,
+  // contacts/*) are NOT exempt and need X-CSRF-Token.
+  /^\/api\/portal\/login\/(request|verify)$/,
+  /^\/api\/portal\/[0-9a-f]{64}(\/|$)/i,
+  // Other single-purpose public links: the signed token is in the path (e-invoicing approver,
+  // hosted payment link).
+  /^\/api\/portal\/einvoicing-approve\/[^/]+(\/|$)/,
+  /^\/api\/portal\/pay\/[^/]+$/,
+  /^\/api\/portal\/public-invoices\/[^/]+\/pay$/,
   // Provider webhooks are authenticated by their own HMAC signature, not a CSRF
   // token (the caller is an external service, not the browser).
   /^\/api\/webhooks\/email-intake$/,
   /^\/api\/webhooks\/stripe$/,
+  /^\/api\/webhooks\/einvoice\/[^/]+\/inbound$/, // W4-C: HMAC-signed ASP delivery
+  /^\/api\/webhooks\/einvoice\/acube\/(sandbox|production)(?:\/[0-9a-f-]{36})?$/i, // E1: Ed25519-signed A-Cube events
+  /^\/api\/webhooks\/einvoice\/complyance\/(sandbox|production)(?:\/[0-9a-f-]{36})?$/i, // E2: HMAC-signed Complyance events
+  // W4-D: invoice payment gateways and email delivery events (signed by the provider).
+  /^\/api\/webhooks\/invoice-payments\/[a-z]+$/,
+  /^\/api\/webhooks\/email-events\/[a-z-]+$/,
+  // W5-B: the public API authenticates by API key only (never cookies).
+  /^\/api\/v1\//,
   // Client-side error telemetry sink: a fire-and-forget endpoint that returns
   // 204 and takes no state-changing action. It MUST accept reports even when
   // the app is broken (e.g. a chunk failed to load before a CSRF token was
@@ -28,6 +49,11 @@ const CSRF_BEARER_EXEMPT = [
   // when we most need them.
   /^\/api\/client-errors$/,
 ];
+
+/** True when a state-changing request to `path` skips the CSRF check (public or signed endpoints). */
+export function isCsrfExemptPath(path: string): boolean {
+  return CSRF_BEARER_EXEMPT.some((rx) => rx.test(path));
+}
 
 function hasBearerAuth(req: Request): boolean {
   const auth = req.headers.authorization;
@@ -66,24 +92,25 @@ function readCookieFromHeader(req: Request, name: string): string | undefined {
   return undefined;
 }
 
-function readCsrfIdentifierCookie(req: Request): string | undefined {
+export function readCsrfIdentifierCookie(req: Request): string | undefined {
   const name = csrfIdentifierCookieName();
-  const parsed = normalizeCookieValue((req as any).cookies?.[name]);
+  const parsed = normalizeCookieValue(req.cookies?.[name]);
   return parsed || readCookieFromHeader(req, name);
 }
 
 export function resolveCsrfIdentifier(req: Request, res?: Response): string {
-  const existingRequestId = normalizeCookieValue((req as any)[csrfClientIdRequestKey]);
+  const slots = req as unknown as Record<symbol, string | undefined>;
+  const existingRequestId = normalizeCookieValue(slots[csrfClientIdRequestKey]);
   if (existingRequestId) return existingRequestId;
 
   const existingCookieId = readCsrfIdentifierCookie(req);
   if (existingCookieId) {
-    (req as any)[csrfClientIdRequestKey] = existingCookieId;
+    slots[csrfClientIdRequestKey] = existingCookieId;
     return existingCookieId;
   }
 
   const generated = randomUUID();
-  (req as any)[csrfClientIdRequestKey] = generated;
+  slots[csrfClientIdRequestKey] = generated;
 
   if (res) {
     res.cookie(csrfIdentifierCookieName(), generated, authCookieBaseOptions());
@@ -106,7 +133,7 @@ const { generateCsrfToken, doubleCsrfProtection, invalidCsrfTokenError } = doubl
     (req.headers["x-xsrf-token"] as string | undefined),
   skipCsrfProtection: (req) => {
     if (hasBearerAuth(req)) return true;
-    return CSRF_BEARER_EXEMPT.some((rx) => rx.test(req.path));
+    return isCsrfExemptPath(req.path);
   },
 });
 
@@ -118,13 +145,18 @@ export function csrfTokenHandler(req: Request, res: Response): void {
   res.json({ csrfToken: token });
 }
 
-export function csrfErrorHandler(err: any, _req: Request, res: Response, next: NextFunction): void {
+export function csrfErrorHandler(
+  err: unknown,
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): void {
   if (
     err === invalidCsrfTokenError ||
-    err?.code === "EBADCSRFTOKEN" ||
-    err?.code === invalidCsrfTokenError.code
+    errorCode(err) === "EBADCSRFTOKEN" ||
+    errorCode(err) === invalidCsrfTokenError.code
   ) {
-    log.warn({ msg: err?.message }, "CSRF token validation failed");
+    log.warn({ msg: errorMessage(err) }, "CSRF token validation failed");
     res.status(403).json({
       message: "Invalid or missing CSRF token",
       code: "CSRF_INVALID",

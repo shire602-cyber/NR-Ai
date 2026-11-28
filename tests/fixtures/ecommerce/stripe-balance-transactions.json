@@ -1,0 +1,32 @@
+{
+  "object": "list",
+  "has_more": false,
+  "data": [
+    {
+      "id": "txn_1Charge",
+      "object": "balance_transaction",
+      "amount": 10500,
+      "fee": 336,
+      "net": 10164,
+      "currency": "aed",
+      "type": "charge",
+      "created": 1767945600,
+      "description": "Order 1001",
+      "status": "available",
+      "source": "ch_1"
+    },
+    {
+      "id": "txn_1Payout",
+      "object": "balance_transaction",
+      "amount": -10164,
+      "fee": 0,
+      "net": -10164,
+      "currency": "aed",
+      "type": "payout",
+      "created": 1768118400,
+      "description": "STRIPE PAYOUT",
+      "status": "available",
+      "source": "po_1"
+    }
+  ]
+}

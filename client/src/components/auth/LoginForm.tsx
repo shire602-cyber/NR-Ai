@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -13,29 +13,25 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
-import { LogIn } from "lucide-react";
+import { serverErrorMessage, VALIDATION_NAMESPACES } from "@/lib/validation-messages";
 import { OAuthButtons } from "./OAuthButtons";
+import { AUTH_BUTTON, AUTH_INPUT, AuthAlert, AuthHeader, AuthSwitch } from "./AuthBlocks";
 
 const loginSchema = z.object({
-  email: z.string().email("Please enter a valid email"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  email: z.string().email("components.validation.emailInvalid"),
+  password: z.string().min(6, "components.validation.passwordMin6"),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
 interface LoginFormProps {
-  onSuccess: (user: any) => void | Promise<void>;
+  /** W5-E: `result` is the full login body (it may be an MFA challenge without a user). */
+  onSuccess: (user: any, result?: Record<string, unknown>) => void | Promise<void>;
+  /** A page-level error to show inline above the form (e.g. a failed social sign-in). */
+  notice?: { title: string; body: string } | null;
 }
 
 function currentEpochMs(): number {
@@ -45,17 +41,25 @@ function currentEpochMs(): number {
   return new Date().getTime();
 }
 
-export function LoginForm({ onSuccess }: LoginFormProps) {
-  const { t } = useTranslation();
+function initialEmail(): string {
+  if (typeof window === "undefined") return "";
+  const value = new URLSearchParams(window.location.search).get("email") ?? "";
+  return value.length <= 254 && /^[^\s@]+@[^\s@]+$/.test(value) ? value : "";
+}
+
+export function LoginForm({ onSuccess, notice }: LoginFormProps) {
+  const { t } = useTranslation(VALIDATION_NAMESPACES);
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
   const form = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
+      // A portal invitation sends an existing account here with its address filled in.
+      email: initialEmail(),
       password: "",
     },
   });
@@ -80,6 +84,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     if (isCoolingDown) return;
 
     setIsLoading(true);
+    setError(null);
     try {
       const response = await fetch(apiUrl("/api/auth/login"), {
         method: "POST",
@@ -99,121 +104,138 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           setCooldownUntil(currentEpochMs() + seconds * 1000);
           setCooldownSeconds(seconds);
         }
-        throw new Error(error?.message || "Login failed");
+        const failure = new Error(
+          error?.code === "INVALID_CREDENTIALS"
+            ? t["components.authInvalidCredentials"]
+            : serverErrorMessage(error, t["components.authLoginFailed"])
+        );
+        throw failure;
       }
 
       const result = await response.json();
-      await onSuccess(result.user);
+      await onSuccess(result.user, result);
+      if (result?.mfaRequired) return; // the page asks for the second factor
 
       toast({
-        title: "Welcome back!",
-        description: "You have successfully logged in.",
+        title: translateNow("shell.toastWelcomeBack"),
+        description: translateNow("shell.toastYouHaveSuccessfullyLoggedIn"),
       });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Login failed",
-        description: error?.message || "Please check your credentials and try again.",
-      });
+    } catch (failure: any) {
+      // Spec 3.2: wrong credentials appear inline above the form, not as a corner toast.
+      setError(failure?.message || t["components.authInvalidCredentials"]);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <Card className="w-full max-w-md border-border/60 shadow-xl">
-      <CardHeader className="space-y-1.5">
-        <CardTitle className="font-display text-[30px] font-normal leading-none tracking-tight">
-          Welcome back<span className="text-accent">.</span>
-        </CardTitle>
-        <CardDescription>Enter your credentials to access your account</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t.email}</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      type="email"
-                      placeholder="you@example.com"
-                      disabled={isLoading || isCoolingDown}
-                      data-testid="input-email"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <div className="flex items-center justify-between">
-                    <FormLabel>{t.password}</FormLabel>
-                    <Link
-                      href="/forgot-password"
-                      className="text-xs text-primary hover:underline"
-                      data-testid="link-forgot-password"
-                    >
-                      Forgot password?
-                    </Link>
-                  </div>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      type="password"
-                      placeholder="••••••••"
-                      disabled={isLoading || isCoolingDown}
-                      data-testid="input-password"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={isLoading || isCoolingDown}
-              data-testid="button-login"
-            >
-              <LogIn className="w-4 h-4 mr-2" />
-              {isLoading
-                ? t.loading
-                : isCoolingDown
-                  ? `Try again in ${cooldownSeconds}s`
-                  : t.signIn}
-            </Button>
-            {isCoolingDown && (
-              <p className="text-center text-sm text-muted-foreground" role="status">
-                Too many failed attempts for this email. Try again in {cooldownSeconds} seconds.
-              </p>
+    <div className="w-full">
+      <AuthHeader
+        title={t["components.authWelcomeBack"]}
+        description={t["components.authLoginDescription"]}
+      />
+      {error ? (
+        <AuthAlert tone="danger" title={t["components.authLoginFailed"]} testId="login-error">
+          {error}
+        </AuthAlert>
+      ) : notice ? (
+        <AuthAlert tone="danger" title={notice.title} testId="login-notice">
+          {notice.body}
+        </AuthAlert>
+      ) : null}
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5" noValidate>
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t.email}</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    type="email"
+                    // "username" is what password managers key a saved login on (the e-mail is it).
+                    autoComplete="username"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    enterKeyHint="next"
+                    ltr
+                    placeholder="you@example.com"
+                    className={AUTH_INPUT}
+                    disabled={isLoading || isCoolingDown}
+                    data-testid="input-email"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
             )}
-          </form>
-        </Form>
-        <div className="mt-4">
-          <OAuthButtons />
-        </div>
-      </CardContent>
-      <CardFooter className="flex flex-col space-y-4">
-        <div className="text-sm text-muted-foreground text-center">
-          {t.dontHaveAccount}{" "}
-          <Link
-            href="/register"
-            className="text-primary hover:underline font-medium"
-            data-testid="link-register"
+          />
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <div className="flex items-center justify-between gap-3">
+                  <FormLabel>{t.password}</FormLabel>
+                  <Link
+                    href="/forgot-password"
+                    className="inline-flex min-h-11 items-center text-small font-medium text-accent hover:underline md:min-h-0"
+                    data-testid="link-forgot-password"
+                  >
+                    {t["components.authForgotPassword"]}
+                  </Link>
+                </div>
+                <FormControl>
+                  <Input
+                    {...field}
+                    type="password"
+                    autoComplete="current-password"
+                    enterKeyHint="go"
+                    placeholder="••••••••"
+                    className={AUTH_INPUT}
+                    disabled={isLoading || isCoolingDown}
+                    data-testid="input-password"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <Button
+            type="submit"
+            className={AUTH_BUTTON}
+            disabled={isLoading || isCoolingDown}
+            data-testid="button-login"
           >
-            {t.signUp}
-          </Link>
-        </div>
-      </CardFooter>
-    </Card>
+            {isLoading
+              ? t.loading
+              : isCoolingDown
+                ? formatMessage(t["marketing.authTryAgainIn"], { seconds: cooldownSeconds })
+                : t["marketing.authSignIn"]}
+          </Button>
+          {isCoolingDown && (
+            <p className="text-small text-muted-foreground" role="status">
+              {formatMessage(t["marketing.authCooldown"], { seconds: cooldownSeconds })}
+            </p>
+          )}
+        </form>
+      </Form>
+      <div className="mt-6">
+        <OAuthButtons />
+      </div>
+      <AuthSwitch>
+        {t.dontHaveAccount}{" "}
+        <Link
+          href="/register"
+          className="inline-flex min-h-11 items-center font-medium text-accent hover:underline md:min-h-0"
+          data-testid="link-register"
+        >
+          {t["marketing.authCreateAccount"]}
+        </Link>
+      </AuthSwitch>
+    </div>
   );
 }

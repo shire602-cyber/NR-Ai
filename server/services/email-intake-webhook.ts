@@ -62,8 +62,9 @@ interface RawPayloadAttachment {
  * provider should be configured to deliver base64 attachment content.
  * Returns [] for anything unparseable.
  */
-export function parseInboundEmail(payload: any): RawInboundMessage[] {
-  if (!payload || typeof payload !== "object") return [];
+export function parseInboundEmail(input: unknown): RawInboundMessage[] {
+  if (!input || typeof input !== "object") return [];
+  const payload = input as Record<string, unknown>;
 
   const fromHeader = firstString(payload.from, payload.sender, payload.From, payload["from_email"]);
   if (!fromHeader) return [];
@@ -83,10 +84,13 @@ export function parseInboundEmail(payload: any): RawInboundMessage[] {
   // DKIM pass can arrive as a boolean, a verdict object, or an SPF/DKIM string.
   let dkimPass: boolean | undefined;
   if (typeof payload.dkimPass === "boolean") dkimPass = payload.dkimPass;
-  else if (payload.dkim && typeof payload.dkim === "object") dkimPass = payload.dkim.pass === true;
+  else if (payload.dkim && typeof payload.dkim === "object")
+    dkimPass = (payload.dkim as { pass?: unknown }).pass === true;
   else if (typeof payload.dkim === "string") dkimPass = /pass/i.test(payload.dkim);
 
-  const rawAtts: RawPayloadAttachment[] = Array.isArray(payload.attachments) ? payload.attachments : [];
+  const rawAtts: RawPayloadAttachment[] = Array.isArray(payload.attachments)
+    ? (payload.attachments as RawPayloadAttachment[])
+    : [];
   const attachments: RawAttachment[] = rawAtts
     .map((a): RawAttachment | null => {
       const content = firstString(a.content, a.contentBase64, a.data);

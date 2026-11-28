@@ -1,27 +1,63 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { getAuthHeaders, refreshSession } from "./auth";
+import { getAuthHeaders, hasAuthHint, refreshSession } from "./auth";
 import { apiUrl } from "./api";
+import { takeBootFetch } from "./bootFetch";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
-import { isOnline, queueForSync } from "./pwa";
+import { isOnline } from "./pwa";
+import {
+  localizeApiError,
+  localizeApiErrorByStatus,
+  SERVER_ERROR_NAMESPACES,
+} from "./validation-messages";
+import { loadNamespaces, useI18n } from "./i18n";
+import offlineAr from "../locales/offline/ar.json";
+import offlineEn from "../locales/offline/en.json";
+import { announcePlanLimit } from "./plan-limit";
+import { createQueryCache } from "./queryReadState";
+import {
+  clearRevokedPortalSelection,
+  getPortalAccountSelection,
+  portalRequestHeaders,
+} from "./portal-state";
+import {
+  PERIOD_LOCK_REASON_HEADER,
+  askLockReason,
+  encodeLockReason,
+  isOverridableSoftLock,
+} from "./period-lock-reason";
 
 /** Error that carries the HTTP status code — used to decide retry behaviour. */
 export class ApiError extends Error {
   constructor(
     message: string,
-    public readonly status: number
+    public readonly status: number,
+    /** Parsed JSON error body (code, issues, details, ...) when the server sent one. */
+    public readonly body?: Record<string, unknown>,
+    /** The server's own message, unchanged (`message` is Arabic for known errors in Arabic mode). */
+    public readonly rawMessage: string = message
   ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
-async function throwIfResNotOk(res: Response) {
+/** Preparation failed before the mutation was submitted. */
+export class ApiRequestNotSentError extends ApiError {
+  constructor(message: string) {
+    super(message, 0);
+    this.name = "ApiRequestNotSentError";
+  }
+}
+
+async function throwIfResNotOk(res: Response, portalSelection?: string | null) {
   if (!res.ok) {
     let errorMessage = res.statusText;
+    let body: Record<string, unknown> | undefined;
     try {
       const contentType = res.headers.get("content-type");
       if (contentType && contentType.includes("application/json")) {
         const json = await res.json();
+        if (json && typeof json === "object") body = json;
         errorMessage = json.message || json.error || JSON.stringify(json);
       } else {
         const text = await res.text();
@@ -35,7 +71,28 @@ async function throwIfResNotOk(res: Response) {
     } catch {
       errorMessage = res.statusText;
     }
-    throw new ApiError(errorMessage, res.status);
+    if (
+      portalSelection !== undefined &&
+      res.status === 403 &&
+      body?.code === "PORTAL_ACCESS_REVOKED"
+    ) {
+      clearRevokedPortalSelection(
+        portalSelection,
+        typeof body.supplierName === "string" ? body.supplierName : null
+      );
+    }
+    // E3 (J2-r3): the localised error copy lives in `forms`, which public routes do not load.
+    await loadNamespaces(useI18n.getState().locale, SERVER_ERROR_NAMESPACES).catch(() => undefined);
+    // WQ7: a plan refusal (402/403 with a plan code) also opens the upgrade prompt.
+    announcePlanLimit(body);
+    // Arabic never shows the server's English: a known code has catalog copy, anything else a
+    // sentence for its status.
+    throw new ApiError(
+      localizeApiError(body) ?? localizeApiErrorByStatus(res.status, errorMessage) ?? errorMessage,
+      res.status,
+      body,
+      errorMessage
+    );
   }
 }
 
@@ -65,15 +122,20 @@ async function isCsrfInvalidResponse(res: Response): Promise<boolean> {
   }
 }
 
-/** Mutating methods are eligible for offline queueing. */
+/** Writes are refused while offline: nothing stores or replays them. */
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/** Imported eagerly: an offline client cannot fetch a lazy namespace chunk. */
+const offlineWriteMessage = () =>
+  (useI18n.getState().locale === "ar" ? offlineAr : offlineEn)["offline.writeNotSent"];
 
 async function buildRequestHeaders(
   method: string,
-  data?: unknown
+  data: unknown,
+  authHeaders: Record<string, string>
 ): Promise<Record<string, string>> {
   let headers: Record<string, string> = {
-    ...getAuthHeaders(),
+    ...authHeaders,
   };
 
   if (data !== undefined) {
@@ -88,42 +150,102 @@ async function buildRequestHeaders(
   return headers;
 }
 
-export async function apiRequest(
+/** Multipart and binary portal requests use the same selection and revocation handling. */
+export async function fetchPortalResource(path: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers ?? portalRequestHeaders());
+  const res = await fetch(apiUrl(path), { ...init, credentials: "include", headers });
+  await throwIfResNotOk(res, headers.get("X-Portal-Account"));
+  return res;
+}
+
+const PORTAL_API_PREFIX = /^\/api\/client-portal\//;
+
+/** The cache and request use the same supplier even if a retry runs after a selection change. */
+export function portalQuery<T = any>(
+  path: `/api/client-portal/${string}`,
+  selection = getPortalAccountSelection()
+) {
+  return {
+    queryKey: [path.replace(PORTAL_API_PREFIX, "portal-"), selection] as const,
+    // Reading `signal` lets React Query abort the request once its last observer leaves.
+    queryFn: ({ signal }: { signal?: AbortSignal } = {}): Promise<T> =>
+      requestWithHeaders("GET", path, undefined, portalRequestHeaders(selection), undefined, {
+        signal,
+      }),
+  };
+}
+
+export function apiRequest(
   method: string,
   url: string,
-  data?: unknown | undefined
+  data?: unknown | undefined,
+  /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
+  extraHeaders?: Record<string, string>,
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean; signal?: AbortSignal }
 ): Promise<any> {
-  let headers = await buildRequestHeaders(method, data);
+  const authHeaders = PORTAL_API_PREFIX.test(url) ? portalRequestHeaders() : getAuthHeaders();
+  return requestWithHeaders(method, url, data, authHeaders, extraHeaders, options);
+}
+
+async function requestWithHeaders(
+  method: string,
+  url: string,
+  data: unknown,
+  authHeaders: Record<string, string>,
+  extraHeaders?: Record<string, string>,
+  options?: { queueWhenOffline?: boolean; keepalive?: boolean; signal?: AbortSignal }
+): Promise<any> {
+  const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
+  const upperMethod = method.toUpperCase();
+  const isMutation = MUTATING_METHODS.has(upperMethod);
+  const immediateOnly = isMutation && options?.queueWhenOffline === false;
+  if (immediateOnly && !isOnline()) throw new ApiRequestNotSentError(offlineWriteMessage());
+
+  // The connection can drop while headers are prepared: a write is then refused, not sent; reads
+  // go to the network and surface its error. Call this synchronously just before a send, with no
+  // await in between, so nothing queued can run between the check and the dispatch.
+  const throwIfOffline = () => {
+    if (!isMutation || isOnline()) return;
+    if (immediateOnly) throw new ApiRequestNotSentError(offlineWriteMessage());
+    throw new ApiError(offlineWriteMessage(), 0);
+  };
+
+  // The catch covers preparation only, never a send.
+  const prepareHeaders = async (prepare: () => Promise<Record<string, string>>) => {
+    try {
+      return await prepare();
+    } catch (error) {
+      throwIfOffline();
+      if (immediateOnly) throw new ApiRequestNotSentError("Could not prepare the request.");
+      throw error;
+    }
+  };
+
+  let headers = await prepareHeaders(async () =>
+    withExtra(await buildRequestHeaders(method, data, authHeaders))
+  );
 
   const fullUrl = apiUrl(url);
-  const upperMethod = method.toUpperCase();
   const body = data !== undefined ? JSON.stringify(data) : undefined;
 
-  // If we're offline and this is a mutation, queue it for the service worker
-  // to replay once connectivity returns. Reads are not queued — they should
-  // surface a clear error so the UI can render its offline state.
-  if (!isOnline() && MUTATING_METHODS.has(upperMethod)) {
-    await queueForSync({ url: fullUrl, method: upperMethod, headers, body });
-    throw new ApiError("You are offline. This change will sync when you reconnect.", 0);
-  }
+  const send = (requestHeaders: Record<string, string>) =>
+    fetch(fullUrl, {
+      method,
+      headers: requestHeaders,
+      body,
+      credentials: "include",
+      keepalive: options?.keepalive,
+      signal: options?.signal,
+    });
 
-  let res = await fetch(fullUrl, {
-    method,
-    headers,
-    body,
-    credentials: "include",
-  });
+  throwIfOffline();
+  let res = await send(headers);
 
   if (res.status === 401) {
     const refreshed = await refreshSession();
     if (refreshed) {
-      headers = await buildRequestHeaders(method, data);
-      res = await fetch(fullUrl, {
-        method,
-        headers,
-        body,
-        credentials: "include",
-      });
+      headers = withExtra(await buildRequestHeaders(method, data, authHeaders));
+      res = await send(headers);
     }
   }
 
@@ -132,39 +254,77 @@ export async function apiRequest(
   // recover without making the user refresh the whole app.
   if (await isCsrfInvalidResponse(res)) {
     clearCsrfToken();
-    const retryHeaders = await withCsrfHeader(method, { ...headers });
-    res = await fetch(fullUrl, {
-      method,
-      headers: retryHeaders,
-      body,
-      credentials: "include",
-    });
+    const retryHeaders = await prepareHeaders(() => withCsrfHeader(method, { ...headers }));
+    throwIfOffline();
+    res = await send(retryHeaders);
     if (await isCsrfInvalidResponse(res)) {
       clearCsrfToken();
     }
   }
 
-  await throwIfResNotOk(res);
+  // X5 (J1 D3): a soft-locked period the user may override: ask for a reason, replay once.
+  if (res.status === 403 && MUTATING_METHODS.has(upperMethod)) {
+    const lockBody = await softLockBody(res);
+    if (lockBody) {
+      const reason = await askLockReason(lockBody);
+      if (reason) {
+        const lockHeaders = withExtra(await buildRequestHeaders(method, data, authHeaders));
+        lockHeaders[PERIOD_LOCK_REASON_HEADER] = encodeLockReason(reason);
+        res = await send(lockHeaders);
+      }
+    }
+  }
+
+  await throwIfResNotOk(
+    res,
+    PORTAL_API_PREFIX.test(url) ? new Headers(headers).get("X-Portal-Account") : undefined
+  );
   return parseResponseBody(res);
 }
+
+async function softLockBody(res: Response): Promise<Record<string, unknown> | undefined> {
+  try {
+    const json = await res.clone().json();
+    return isOverridableSoftLock(json) ? json : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const ANONYMOUS_SKIP_KEYS = new Set(["/api/companies", "/api/auth/me"]);
 
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
+  async (context) => {
+    const { queryKey } = context;
     const url = apiUrl(queryKey.join("/") as string);
-    let res = await fetch(url, {
-      credentials: "include",
-      headers: getAuthHeaders(),
-    });
+    // R18-04: anonymous visitors have no session, so skip the bootstrap probes
+    // that would only produce 401 console noise. This resolves exactly as the
+    // 401 would have (null / thrown 401) WITHOUT caching a successful empty
+    // result, so the first query after sign-in still fetches the real data.
+    if (!hasAuthHint() && ANONYMOUS_SKIP_KEYS.has(queryKey.join("/") as string)) {
+      if (unauthorizedBehavior === "returnNull") return null as never;
+      throw new ApiError("Not signed in", 401);
+    }
+    // `context.signal` is read only where it is needed: reading it tells react-query to abort the
+    // query when its last observer leaves, which would waste an adopted boot response.
+    const send = () =>
+      fetch(url, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+        signal: context.signal,
+      });
+    let res = (await takeBootFetch(url)) ?? (await send());
 
     if (res.status === 401) {
+      // The refresh is shared by every caller, so cancelling this query must not cancel it.
       const refreshed = await refreshSession();
       if (refreshed) {
-        res = await fetch(url, {
-          credentials: "include",
-          headers: getAuthHeaders(),
-        });
+        if (context.signal?.aborted) {
+          throw new DOMException("The request was cancelled.", "AbortError");
+        }
+        res = await send();
       }
     }
 
@@ -175,6 +335,15 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
     await throwIfResNotOk(res);
     return await parseResponseBody(res);
   };
+
+/**
+ * After a write: cancel in-flight reads for the affected queries (a GET that started before the
+ * write must not land afterwards), then invalidate so they refetch. Not awaited: the caller closes
+ * its dialog and toasts straight away.
+ */
+export function refreshAfterWrite(queryKey: readonly unknown[]): void {
+  void queryClient.cancelQueries({ queryKey }).then(() => queryClient.invalidateQueries({ queryKey }));
+}
 
 // Don't retry client errors (4xx) — only retry network failures and 5xx
 function shouldRetry(failureCount: number, error: unknown): boolean {
@@ -195,6 +364,7 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
 // Mutations still call queryClient.invalidateQueries to force-refresh after
 // writes, so freshness guarantees don't depend on the timer alone.
 export const queryClient = new QueryClient({
+  queryCache: createQueryCache(),
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),

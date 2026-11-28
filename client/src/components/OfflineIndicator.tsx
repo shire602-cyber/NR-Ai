@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Wifi, WifiOff, CloudOff } from "lucide-react";
 import { isOnline, onConnectivityChange } from "@/lib/pwa";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 interface OfflineIndicatorProps {
   className?: string;
@@ -15,6 +16,7 @@ interface OfflineIndicatorProps {
  * confirmation pill appears.
  */
 export function OfflineIndicator({ className, showReconnect = true }: OfflineIndicatorProps) {
+  const { t } = useTranslation();
   const [online, setOnline] = useState(() => isOnline());
   const [justReconnected, setJustReconnected] = useState(false);
 
@@ -48,7 +50,7 @@ export function OfflineIndicator({ className, showReconnect = true }: OfflineInd
         )}
       >
         <WifiOff className="w-3 h-3" />
-        <span>Offline</span>
+        <span>{t["components.offlineLabel"]}</span>
       </div>
     );
   }
@@ -69,7 +71,7 @@ export function OfflineIndicator({ className, showReconnect = true }: OfflineInd
       )}
     >
       <Wifi className="w-3 h-3" />
-      <span>Back online</span>
+      <span>{t["components.offlineBackOnline"]}</span>
     </div>
   );
 }
@@ -79,6 +81,7 @@ export function OfflineIndicator({ className, showReconnect = true }: OfflineInd
  * pages where lack of connectivity will block primary user flows.
  */
 export function OfflineBanner({ className }: { className?: string }) {
+  const { t } = useTranslation();
   const [online, setOnline] = useState(() => isOnline());
 
   useEffect(() => {
@@ -97,7 +100,7 @@ export function OfflineBanner({ className }: { className?: string }) {
       )}
     >
       <CloudOff className="w-4 h-4 shrink-0" />
-      <p>You&apos;re offline. Changes will be queued and synced when you reconnect.</p>
+      <p>{t["components.offlineBannerQueued"]}</p>
     </div>
   );
 }

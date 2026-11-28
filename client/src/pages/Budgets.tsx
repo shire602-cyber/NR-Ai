@@ -1,9 +1,25 @@
-import { useState, useCallback } from "react";
+import { DatePicker } from "@/components/ui/date-picker";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PiggyBank, Search } from "lucide-react";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { T } from "@/components/layout/T";
+import { monthName } from "@/pages/payroll/shared";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  FormTotals,
+  formSpanFull,
+  lineLabelClass,
+} from "@/components/ui/form-layout";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
+import { dateFnsOptions } from "@/lib/date-locale";
 import {
   Wallet,
   Plus,
@@ -13,14 +29,17 @@ import {
   FileSpreadsheet,
   BarChart3,
   ArrowLeft,
-  TrendingUp,
-  TrendingDown,
+  Copy,
+  Download,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/ui/page-header";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -60,13 +79,35 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
+import { budgetCategoryLabel } from "@/lib/budget-categories";
+import { budgetScopeChange, type BudgetScopeChange } from "@/lib/budget-scope";
+import { BudgetScopeChangeDialog } from "@/components/budgets/BudgetScopeChangeDialog";
+import type { VarianceData } from "@/components/budgets/BudgetVarianceResults";
+import { OnDemandDialogStatus } from "@/components/team/onDemandDialog";
+import { useOnDemandDialog } from "@/components/team/useOnDemandDialog";
+import { freshChunkUrl } from "@/lib/dialogChunk";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import { useIsOnline } from "@/hooks/useIsOnline";
+import { apiRequest, refreshAfterWrite } from "@/lib/queryClient";
+import { getAuthHeaders } from "@/lib/auth";
+import { apiUrl } from "@/lib/api";
+import { Money } from "@/components/ui/money";
+import {
+  budgetAccountOptions,
+  planMonths,
+  signedLineTotals,
+  type PlanMonth,
+} from "@/lib/budget-summary";
+import { isControlAccount } from "@shared/control-accounts";
+import { accountDisplayName } from "@/lib/account-name";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { fiscalYearContaining } from "@/lib/fiscal-year";
+import { calendarDayKey, parseCalendarDate } from "@/lib/format-date";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -81,6 +122,7 @@ interface BudgetPlan {
   notes: string | null;
   created_at: string;
   total_budget?: string;
+  version?: number;
 }
 
 interface BudgetLine {
@@ -105,53 +147,48 @@ interface BudgetLine {
   created_at: string;
 }
 
-interface VarianceMonth {
-  budget: number;
-  actual: number;
-  variance: number;
-  variancePercent: number;
-}
-
-interface VarianceLine {
+interface LedgerAccount {
   id: string;
-  category: string;
-  description: string | null;
-  accountId: string | null;
-  months: Record<string, VarianceMonth>;
-  totals: {
-    budget: number;
-    actual: number;
-    variance: number;
-    variancePercent: number;
-  };
-}
-
-interface VarianceData {
-  budget: {
-    id: string;
-    name: string;
-    fiscalYear: number;
-    startDate: string;
-    endDate: string;
-    status: string;
-  };
-  varianceLines: VarianceLine[];
+  code: string;
+  nameEn?: string | null;
+  nameAr?: string | null;
+  type: string;
+  isActive?: boolean | null;
+  isVatAccount?: boolean | null;
 }
 
 // ─── Schemas ─────────────────────────────────────────────
 
-const budgetFormSchema = z.object({
-  name: z.string().min(1, "Budget name is required"),
-  fiscalYear: z.coerce.number().int().min(2000).max(2100),
-  startDate: z.string().min(1, "Start date is required"),
-  endDate: z.string().min(1, "End date is required"),
-  notes: z.string().optional().nullable(),
-});
+const budgetFormSchema = z
+  .object({
+    name: z.string().min(1, "forms.errors.budgetNameRequired"),
+    fiscalYear: z.coerce.number().int().min(2000).max(2100),
+    startDate: z.string().min(1, "forms.errors.startDateRequired"),
+    endDate: z.string().min(1, "forms.errors.endDateRequired"),
+    notes: z.string().optional().nullable(),
+  })
+  .refine((v) => !v.startDate || !v.endDate || v.endDate >= v.startDate, {
+    path: ["endDate"],
+    message: "forms.errors.endDateBeforeStart",
+  })
+  .refine(
+    (v) => {
+      if (!v.startDate || !v.endDate || v.endDate < v.startDate) return true;
+      const months =
+        (Number(v.endDate.slice(0, 4)) - Number(v.startDate.slice(0, 4))) * 12 +
+        (Number(v.endDate.slice(5, 7)) - Number(v.startDate.slice(5, 7))) +
+        1;
+      return months <= 12;
+    },
+    { path: ["endDate"], message: "forms.errors.budgetMax12Months" }
+  );
 
 type BudgetFormData = z.infer<typeof budgetFormSchema>;
 
 const budgetLineFormSchema = z.object({
-  category: z.string().min(1, "Category is required"),
+  // E2 (J3-r2): the account decides the actuals and whether the line is income or expense.
+  accountId: z.string().min(1, "forms.errors.accountRequired"),
+  category: z.string().min(1, "forms.errors.categoryRequired"),
   description: z.string().optional().nullable(),
   jan: z.coerce.number().min(0).optional(),
   feb: z.coerce.number().min(0).optional(),
@@ -183,20 +220,6 @@ const MONTH_KEYS = [
   "nov",
   "dec",
 ] as const;
-const MONTH_LABELS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
 
 const BUDGET_CATEGORIES = [
   "Revenue",
@@ -216,12 +239,132 @@ const BUDGET_CATEGORIES = [
 
 // ─── Component ───────────────────────────────────────────
 
+const tr = (locale: string, en: string, ar: string) => (locale === "ar" ? ar : en);
+
+/** A plan date as YYYY-MM-DD in local time (the API may send a timestamp). */
+function isoDay(v: string | null | undefined): string {
+  if (!v) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  return calendarDayKey(v) || String(v).slice(0, 10);
+}
+
+/** Stable empty values: a missing read never gets a fresh `[]` on every render. */
+const NO_PLANS: BudgetPlan[] = [];
+const NO_LINES: BudgetLine[] = [];
+
+const loadVarianceResults = (
+  retry: string | null
+): Promise<typeof import("@/components/budgets/BudgetVarianceResults")> => {
+  if (retry === null) return import("@/components/budgets/BudgetVarianceResults");
+
+  const path = import.meta.env.DEV
+    ? "../components/budgets/BudgetVarianceResults.tsx"
+    : "__MUHASIB_DIALOG_CHUNK__BudgetVarianceResults__";
+  return import(/* @vite-ignore */ freshChunkUrl(new URL(path, import.meta.url), retry));
+};
+
+type ReadView = "loading" | "paused" | "error" | "ready";
+
+/** A paused read replaces the empty state, while cached rows can stay visible. */
+function readView(
+  q: { data: unknown; isLoadingError: boolean; fetchStatus: string },
+  hasRows: boolean
+): ReadView {
+  if (q.fetchStatus === "paused" && !hasRows) return "paused";
+  if (q.data !== undefined) return "ready";
+  if (q.isLoadingError) return "error";
+  return "loading";
+}
+
+/** Shows the read status above cached rows or in place of the empty state. */
+function ReadStatus({
+  view,
+  errorText,
+  error,
+  onRetry,
+  testId,
+  refresh,
+}: {
+  view: ReadView;
+  refresh?: { fetchStatus: string; isRefetchError: boolean };
+  errorText: string;
+  error?: Error | null;
+  onRetry: () => void;
+  testId: string;
+}) {
+  const { t } = useTranslation();
+  const online = useIsOnline();
+  const waitingText = t[online ? "budgets.loadWaiting" : "budgets.readPaused"];
+  if (view === "ready") {
+    const paused = refresh?.fetchStatus === "paused";
+    return paused || refresh?.isRefetchError ? (
+      <RefreshNotice paused={paused} waitingText={waitingText} onRetry={onRetry} />
+    ) : null;
+  }
+  if (view === "error") {
+    if (error) {
+      return <LoadErrorState error={error} title={errorText} onRetry={onRetry} testId={testId} />;
+    }
+    return (
+      <div
+        className="flex flex-col items-center gap-3 py-8 text-center"
+        role="alert"
+        data-testid={testId}
+      >
+        <p className="text-sm text-muted-foreground">{errorText}</p>
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          {t.tryAgain}
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="py-8 text-center text-muted-foreground"
+      role="status"
+      data-testid={`${testId}-${view}`}
+    >
+      {view === "paused" ? waitingText : t.loading}
+    </div>
+  );
+}
+
+/** Shown above cached rows while a refresh is paused or has failed. */
+function RefreshNotice({
+  paused,
+  waitingText,
+  onRetry,
+}: {
+  paused: boolean;
+  waitingText: string;
+  onRetry: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted px-3 py-2 text-sm text-foreground"
+      role="status"
+      data-testid={paused ? "budgets-refresh-paused" : "budgets-refresh-failed"}
+    >
+      <span>{paused ? waitingText : t["budgets.refreshFailed"]}</span>
+      {!paused && (
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          {t.tryAgain}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function Budgets() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { company, companyId, companyListState, retryCompanyList } = useDefaultCompany();
+  const fyStartMonth = (company as { fiscalYearStartMonth?: number } | null | undefined)
+    ?.fiscalYearStartMonth;
 
   const [activeTab, setActiveTab] = useState("budgets");
+  const [budgetSearch, setBudgetSearch] = useState("");
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<BudgetPlan | null>(null);
   const [selectedBudget, setSelectedBudget] = useState<BudgetPlan | null>(null);
@@ -229,25 +372,73 @@ export default function Budgets() {
   const [editingLine, setEditingLine] = useState<BudgetLine | null>(null);
   const [budgetToDelete, setBudgetToDelete] = useState<string | null>(null);
   const [lineToDelete, setLineToDelete] = useState<string | null>(null);
+  const [scopeChange, setScopeChange] = useState<BudgetScopeChange | null>(null);
+  // E2 (J4-r2): a viewer is not offered writes the server refuses (403).
+  const { gate } = useCompanyPermission();
 
   // ─── Queries ────────────────────────────────────────────
 
-  const { data: budgetPlans = [], isLoading: isLoadingBudgets } = useQuery<BudgetPlan[]>({
-    queryKey: [`/api/companies/${companyId}/budget-plans`],
+  // The default query function forwards react-query's AbortSignal to fetch. `data` is kept
+  // undefined until a response arrives so "not loaded" is never read as "no rows".
+  const budgetPlansKey = [`/api/companies/${companyId}/budget-plans`];
+  const budgetsQuery = useQuery<BudgetPlan[]>({
+    queryKey: budgetPlansKey,
     enabled: !!companyId,
   });
+  const budgetPlans = budgetsQuery.data ?? NO_PLANS;
+  const budgetsView = readView(budgetsQuery, budgetPlans.length > 0);
+  const refetchBudgets = budgetsQuery.refetch;
 
-  const { data: budgetLines = [], isLoading: isLoadingLines } = useQuery<BudgetLine[]>({
+  const linesQuery = useQuery<BudgetLine[]>({
     queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
     enabled: !!selectedBudget?.id,
   });
+  const budgetLines = linesQuery.data ?? NO_LINES;
+  const linesView = readView(linesQuery, budgetLines.length > 0);
 
-  const { data: varianceData, isLoading: isLoadingVariance } = useQuery<VarianceData>({
+  const varianceQuery = useQuery<VarianceData>({
     queryKey: [`/api/budget-plans/${selectedBudget?.id}/variance`],
     enabled: !!selectedBudget?.id && activeTab === "variance",
   });
+  const varianceData = varianceQuery.data;
+  const hasVarianceRows = (varianceData?.varianceLines.length ?? 0) > 0;
+  const varianceView = readView(varianceQuery, hasVarianceRows);
+  const {
+    Component: VarianceResults,
+    status: varianceResultsStatus,
+    request: requestVarianceResults,
+  } = useOnDemandDialog(loadVarianceResults, "BudgetVarianceResults");
+  useEffect(() => {
+    if (activeTab === "variance" && hasVarianceRows) requestVarianceResults();
+  }, [activeTab, hasVarianceRows, requestVarianceResults]);
+
+  // E2 (J3-r2): every line budgets one P&L account (not a control account), so actuals come
+  // from the ledger and income is never added to expenses.
+  const { data: accounts = [] } = useQuery<LedgerAccount[]>({
+    queryKey: [`/api/companies/${companyId}/accounts`],
+    enabled: !!companyId,
+  });
+  const accountOptions = budgetAccountOptions(accounts, (a) => isControlAccount(a));
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+  const lineAccountType = (line: { account_id?: string | null }) =>
+    line.account_id ? (accountById.get(line.account_id)?.type ?? null) : null;
+
+  // E2 (J3-r2): the months the selected plan covers (a Sep-Nov plan has three columns).
+  const selectedPlanMonths: PlanMonth[] = selectedBudget
+    ? planMonths(isoDay(selectedBudget.start_date), isoDay(selectedBudget.end_date))
+    : [];
+  const varianceMonths: PlanMonth[] = varianceData?.periods?.length
+    ? planMonths(
+        `${varianceData.periods[0]}-01`,
+        `${varianceData.periods[varianceData.periods.length - 1]}-01`
+      )
+    : selectedPlanMonths;
+  const planMonthLabel = (m: PlanMonth) =>
+    format(new Date(m.year, m.month - 1, 1), "MMM yyyy", dateFnsOptions(locale));
 
   // ─── Forms ──────────────────────────────────────────────
+
+  const monthLabel = (idx: number) => monthName(idx + 1, locale);
 
   const budgetForm = useForm<BudgetFormData>({
     resolver: zodResolver(budgetFormSchema),
@@ -263,6 +454,7 @@ export default function Budgets() {
   const lineForm = useForm<BudgetLineFormData>({
     resolver: zodResolver(budgetLineFormSchema),
     defaultValues: {
+      accountId: "",
       category: "",
       description: "",
       jan: 0,
@@ -282,108 +474,271 @@ export default function Budgets() {
 
   // ─── Mutations ──────────────────────────────────────────
 
+  const refreshBudgets = () => refreshAfterWrite(budgetPlansKey);
+  const refreshAfterLineWrite = (planId: string) => {
+    refreshAfterWrite([`/api/budget-plans/${planId}/lines`]);
+    refreshAfterWrite([`/api/budget-plans/${planId}/variance`]);
+    refreshBudgets();
+  };
+
   const createBudgetMutation = useMutation({
     mutationFn: (data: BudgetFormData) =>
       apiRequest("POST", `/api/companies/${companyId}/budget-plans`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
+      refreshBudgets();
       toast({
-        title: "Budget Created",
-        description: "The budget plan has been created successfully.",
+        title: translateNow("toasts.budgetCreated"),
+        description: translateNow("toasts.theBudgetPlanHasBeenCreatedSuccessfully"),
       });
       setBudgetDialogOpen(false);
       budgetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
   const updateBudgetMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<BudgetFormData> }) =>
       apiRequest("PATCH", `/api/budget-plans/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Budget Updated", description: "The budget plan has been updated." });
+    onSuccess: (_, { id }) => {
+      refreshBudgets();
+      refreshAfterWrite([`/api/budget-plans/${id}/variance`]);
+      toast({
+        title: translateNow("toasts.budgetUpdated"),
+        description: translateNow("toasts.theBudgetPlanHasBeenUpdated"),
+      });
       setBudgetDialogOpen(false);
       setEditingBudget(null);
       budgetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
   const deleteBudgetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/budget-plans/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Budget Deleted", description: "The budget plan has been deleted." });
+      refreshBudgets();
+      toast({
+        title: translateNow("toasts.budgetDeleted"),
+        description: translateNow("toasts.theBudgetPlanHasBeenDeleted"),
+      });
       if (selectedBudget) setSelectedBudget(null);
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
   const approveBudgetMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/approve`, {}),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Budget Approved", description: "The budget has been approved." });
+      refreshBudgets();
+      toast({
+        title: translateNow("toasts.budgetApproved"),
+        description: translateNow("toasts.theBudgetHasBeenApproved"),
+      });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
-  const addLineMutation = useMutation({
-    mutationFn: (data: BudgetLineFormData) =>
-      apiRequest("POST", `/api/budget-plans/${selectedBudget?.id}/lines`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
+  const toastNewVersionCreated = () =>
+    toast({
+      title: tr(locale, "New draft version created", "تم إنشاء نسخة مسودة جديدة"),
+      description: tr(
+        locale,
+        "Edit the draft, then have a different approver approve it.",
+        "عدّل المسودة ثم اطلب اعتمادها من معتمد آخر."
+      ),
+    });
+
+  const toastBudgetCopied = () =>
+    toast({
+      title: tr(locale, "Budget copied", "تم نسخ الموازنة"),
+      description: tr(
+        locale,
+        "A draft for the next year was created.",
+        "تم إنشاء مسودة للسنة التالية."
+      ),
+    });
+
+  /** Success is held back until the user acknowledges a changed cost-centre scope. */
+  const acknowledgeScopeChange = () => {
+    const action = scopeChange?.action;
+    setScopeChange(null);
+    if (action === "copy") toastBudgetCopied();
+    else if (action === "newVersion") toastNewVersionCreated();
+  };
+
+  const newVersionMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/new-version`, {}),
+    onSuccess: (result: unknown) => {
+      refreshBudgets();
+      const change = budgetScopeChange("newVersion", result);
+      if (change) setScopeChange(change);
+      else toastNewVersionCreated();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
       });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Line Added", description: "Budget line has been added." });
+    },
+  });
+
+  const copyBudgetMutation = useMutation({
+    mutationFn: ({ id, fiscalYear }: { id: string; fiscalYear: number }) =>
+      apiRequest("POST", `/api/budget-plans/${id}/copy`, { fiscalYear }),
+    onSuccess: (result: unknown) => {
+      refreshBudgets();
+      const change = budgetScopeChange("copy", result);
+      if (change) setScopeChange(change);
+      else toastBudgetCopied();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const importLinesMutation = useMutation({
+    mutationFn: ({ id, csv }: { id: string; csv: string }) =>
+      apiRequest("POST", `/api/budget-plans/${id}/import`, { csv }),
+    onSuccess: (result: { imported: number }, { id }) => {
+      refreshAfterLineWrite(id);
+      toast({
+        title: tr(locale, "Import complete", "اكتمل الاستيراد"),
+        description: `${result.imported} ${tr(locale, "lines imported", "سطر تم استيراده")}`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const downloadBudgetExport = async (budget: BudgetPlan, format: "xlsx" | "csv") => {
+    try {
+      const response = await fetch(
+        apiUrl(`/api/budget-plans/${budget.id}/export?format=${format}`),
+        {
+          headers: getAuthHeaders(),
+        }
+      );
+      if (!response.ok)
+        throw new Error(
+          (await response.json().catch(() => null))?.message ||
+            tr(locale, "Export failed", "تعذر التصدير")
+        );
+      const url = URL.createObjectURL(await response.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `budget-${budget.name}-v${budget.version ?? 1}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast({
+        title: translateNow("toasts.error"),
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleImportFile = async (file: File | undefined) => {
+    if (!file || !selectedBudget) return;
+    importLinesMutation.mutate({ id: selectedBudget.id, csv: await file.text() });
+  };
+
+  const addLineMutation = useMutation({
+    mutationFn: ({ planId, data }: { planId: string; data: BudgetLineFormData }) =>
+      apiRequest("POST", `/api/budget-plans/${planId}/lines`, data),
+    onSuccess: (_, { planId }) => {
+      refreshAfterLineWrite(planId);
+      toast({
+        title: translateNow("toasts.lineAdded"),
+        description: translateNow("toasts.budgetLineHasBeenAdded"),
+      });
       setAddLineDialogOpen(false);
       setEditingLine(null);
       lineForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
   const updateLineMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<BudgetLineFormData> }) =>
+    mutationFn: ({ id, data }: { id: string; planId: string; data: Partial<BudgetLineFormData> }) =>
       apiRequest("PATCH", `/api/budget-lines/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
+    onSuccess: (_, { planId }) => {
+      refreshAfterLineWrite(planId);
+      toast({
+        title: translateNow("toasts.lineUpdated"),
+        description: translateNow("toasts.budgetLineHasBeenUpdated"),
       });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Line Updated", description: "Budget line has been updated." });
       setAddLineDialogOpen(false);
       setEditingLine(null);
       lineForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
   const deleteLineMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/budget-lines/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
+    mutationFn: ({ id }: { id: string; planId: string }) =>
+      apiRequest("DELETE", `/api/budget-lines/${id}`),
+    onSuccess: (_, { planId }) => {
+      refreshAfterLineWrite(planId);
+      toast({
+        title: translateNow("toasts.lineDeleted"),
+        description: translateNow("toasts.budgetLineHasBeenRemoved"),
       });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Line Deleted", description: "Budget line has been removed." });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -391,12 +746,13 @@ export default function Budgets() {
 
   const handleOpenCreateBudget = () => {
     setEditingBudget(null);
-    const year = new Date().getFullYear();
+    // X4 (J3): default to the company's fiscal year (fiscalYearStartMonth), not Jan-Dec.
+    const fy = fiscalYearContaining(fyStartMonth);
     budgetForm.reset({
       name: "",
-      fiscalYear: year,
-      startDate: `${year}-01-01`,
-      endDate: `${year}-12-31`,
+      fiscalYear: fy.fiscalYear,
+      startDate: fy.start,
+      endDate: fy.end,
       notes: "",
     });
     setBudgetDialogOpen(true);
@@ -407,8 +763,10 @@ export default function Budgets() {
     budgetForm.reset({
       name: budget.name,
       fiscalYear: budget.fiscal_year,
-      startDate: budget.start_date ? format(new Date(budget.start_date), "yyyy-MM-dd") : "",
-      endDate: budget.end_date ? format(new Date(budget.end_date), "yyyy-MM-dd") : "",
+      startDate: budget.start_date
+        ? format(parseCalendarDate(budget.start_date), "yyyy-MM-dd")
+        : "",
+      endDate: budget.end_date ? format(parseCalendarDate(budget.end_date), "yyyy-MM-dd") : "",
       notes: budget.notes || "",
     });
     setBudgetDialogOpen(true);
@@ -435,6 +793,7 @@ export default function Budgets() {
   const handleOpenAddLine = () => {
     setEditingLine(null);
     lineForm.reset({
+      accountId: "",
       category: "",
       description: "",
       jan: 0,
@@ -456,6 +815,7 @@ export default function Budgets() {
   const handleOpenEditLine = (line: BudgetLine) => {
     setEditingLine(line);
     lineForm.reset({
+      accountId: line.account_id ?? "",
       category: line.category,
       description: line.description || "",
       jan: parseFloat(line.jan || "0"),
@@ -475,10 +835,12 @@ export default function Budgets() {
   };
 
   const handleLineSubmit = (data: BudgetLineFormData) => {
+    if (!selectedBudget) return;
+    const planId = selectedBudget.id;
     if (editingLine) {
-      updateLineMutation.mutate({ id: editingLine.id, data });
+      updateLineMutation.mutate({ id: editingLine.id, planId, data });
     } else {
-      addLineMutation.mutate(data);
+      addLineMutation.mutate({ planId, data });
     }
   };
 
@@ -494,106 +856,224 @@ export default function Budgets() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "draft":
-        return <Badge variant="secondary">Draft</Badge>;
+        return (
+          <Badge variant="secondary">
+            <T k="pages.draft" />
+          </Badge>
+        );
       case "approved":
-        return <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">Approved</Badge>;
+        return (
+          <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
+            <T k="pages.approved" />
+          </Badge>
+        );
       case "closed":
-        return <Badge className="bg-muted text-foreground hover:bg-muted">Closed</Badge>;
+        return (
+          <Badge className="bg-muted text-foreground hover:bg-muted">
+            <T k="pages.closed" />
+          </Badge>
+        );
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
   };
 
-  const getVarianceColor = (variance: number) => {
-    if (variance > 0) return "text-success";
-    if (variance < 0) return "text-destructive";
-    return "";
+  // Plain-text status for the page header (X4/J3: the badge element printed "[object Object]").
+  const statusLabel = (status: string | null | undefined): string => {
+    switch (status) {
+      case "draft":
+        return t["pages.draft"];
+      case "approved":
+        return t["pages.approved"];
+      case "closed":
+        return t["pages.closed"];
+      default:
+        return status ?? "";
+    }
   };
 
-  // Compute totals row for budget lines
-  const lineTotals = useCallback(() => {
-    const totals: Record<string, number> = {};
-    MONTH_KEYS.forEach((key) => {
-      totals[key] = 0;
-    });
-    totals.annual = 0;
-
-    budgetLines.forEach((line) => {
-      MONTH_KEYS.forEach((key) => {
-        totals[key] += parseFloat((line as any)[key] || "0");
-      });
-      totals.annual += parseFloat(line.annual_total || "0");
-    });
-
-    return totals;
-  }, [budgetLines]);
+  // E2 (J3-r2): income and expenses are totalled separately; net = income - expenses.
+  const lineTotals = useCallback(
+    () => signedLineTotals(budgetLines, lineAccountType),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [budgetLines, accounts]
+  );
 
   // ─── Loading State ─────────────────────────────────────
 
-  if (isLoadingCompany) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">{t.loading || "Loading..."}</div>
-      </div>
-    );
-  }
+  const budgetQuery = budgetSearch.trim().toLowerCase();
+  const visibleBudgets = budgetQuery
+    ? budgetPlans.filter((b) =>
+        [b.name, String(b.fiscal_year ?? ""), statusLabel(b.status)]
+          .join(" ")
+          .toLowerCase()
+          .includes(budgetQuery)
+      )
+    : budgetPlans;
 
+  // Only a successful empty company list may ask the user to create a company; a pending,
+  // paused or failed read says so instead.
   if (!companyId) {
+    if (companyListState === "empty") {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-muted-foreground">
+            <T k="pages.pleaseCreateACompanyFirst" />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Please create a company first.</div>
+        <ReadStatus
+          view={
+            companyListState === "error"
+              ? "error"
+              : companyListState === "waiting"
+                ? "paused"
+                : "loading"
+          }
+          errorText={t["budgets.companyLoadError"]}
+          onRetry={retryCompanyList}
+          testId="budgets-company-state"
+        />
       </div>
     );
   }
 
   // ─── Render ─────────────────────────────────────────────
 
+  // One copy / new-version at a time: a second click would create a second draft.
+  const copyOrVersionPending = copyBudgetMutation.isPending || newVersionMutation.isPending;
+
+  /** Row actions shared by the table and the phone cards. */
+  const budgetActions = (budget: BudgetPlan) => (
+    <RowActions
+      menu={
+        <>
+          {budget.status !== "draft" && (
+            <DropdownMenuItem
+              disabled={copyOrVersionPending}
+              onSelect={() => {
+                if (!copyOrVersionPending) newVersionMutation.mutate(budget.id);
+              }}
+              data-testid={`button-new-version-${budget.id}`}
+            >
+              <Plus aria-hidden />
+              {tr(locale, "New version", "نسخة جديدة")}
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            disabled={copyOrVersionPending}
+            onSelect={() => {
+              if (!copyOrVersionPending)
+                copyBudgetMutation.mutate({
+                  id: budget.id,
+                  fiscalYear: budget.fiscal_year + 1,
+                });
+            }}
+          >
+            <Copy aria-hidden />
+            {tr(locale, "Copy to next year", "نسخ إلى السنة التالية")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => downloadBudgetExport(budget, "xlsx")}>
+            <FileSpreadsheet aria-hidden />
+            {tr(locale, "Export Excel", "تصدير Excel")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => downloadBudgetExport(budget, "csv")}>
+            <Download aria-hidden />
+            {tr(locale, "Export CSV", "تصدير CSV")}
+          </DropdownMenuItem>
+          {budget.status === "draft" && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => setBudgetToDelete(budget.id)}
+              >
+                <Trash2 aria-hidden />
+                {tr(locale, "Delete", "حذف")}
+              </DropdownMenuItem>
+            </>
+          )}
+        </>
+      }
+    >
+      {budget.status === "draft" && (
+        <>
+          <RowActionButton
+            icon={CheckCircle}
+            label={tr(locale, "Approve", "اعتماد")}
+            onClick={() => approveBudgetMutation.mutate(budget.id)}
+            data-testid={`button-approve-budget-${budget.id}`}
+            {...gate("documents.approve")}
+          />
+          <RowActionButton
+            icon={Edit}
+            label={tr(locale, "Edit", "تعديل")}
+            onClick={() => handleOpenEditBudget(budget)}
+            {...gate("documents.write")}
+          />
+        </>
+      )}
+    </RowActions>
+  );
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          {selectedBudget && (
-            <Button variant="ghost" size="sm" onClick={handleBackToBudgets}>
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
+      <BudgetScopeChangeDialog
+        change={scopeChange}
+        locale={locale}
+        onAcknowledge={acknowledgeScopeChange}
+      />
+      {selectedBudget && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ms-2 -mb-2 text-muted-foreground"
+          onClick={handleBackToBudgets}
+        >
+          <ArrowLeft className="h-4 w-4 me-1 rtl:-scale-x-100" aria-hidden />
+          {tr(locale, "Back to budgets", "العودة إلى الموازنات")}
+        </Button>
+      )}
+      <PageHeader
+        eyebrow={t["shell.nav.accounting"]}
+        title={selectedBudget ? selectedBudget.name : tr(locale, "Budgets", "الموازنات")}
+        description={
+          selectedBudget
+            ? `${tr(locale, "FY", "السنة المالية")} ${selectedBudget.fiscal_year} · ${statusLabel(selectedBudget.status)}`
+            : tr(locale, "Plan, track, and analyze your budgets", "خطط موازناتك وتابعها وحللها")
+        }
+        actions={
+          !selectedBudget ? (
+            <Button
+              onClick={handleOpenCreateBudget}
+              data-testid="button-new-budget"
+              {...gate("documents.write")}
+            >
+              <Plus className="h-4 w-4 me-2" aria-hidden />
+              <T k="pages.newBudget" />
             </Button>
-          )}
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-              <Wallet className="w-8 h-8" />
-              {selectedBudget ? selectedBudget.name : "Budgets"}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {selectedBudget
-                ? `FY ${selectedBudget.fiscal_year} - ${getStatusBadge(selectedBudget.status).props.children}`
-                : "Plan, track, and analyze your budgets"}
-            </p>
-          </div>
-        </div>
-        {!selectedBudget && (
-          <Button onClick={handleOpenCreateBudget} className="flex items-center gap-2">
-            <Plus className="w-4 h-4" />
-            New Budget
-          </Button>
-        )}
-      </div>
+          ) : undefined
+        }
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="budgets" className="flex items-center gap-2">
-            <Wallet className="w-4 h-4" />
-            Budgets
+        <TabsList className={selectedBudget ? undefined : "hidden"}>
+          <TabsTrigger value="budgets">
+            <Wallet aria-hidden />
+            <T k="pages.budgets" />
           </TabsTrigger>
           {selectedBudget && (
             <>
-              <TabsTrigger value="detail" className="flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4" />
-                Budget Detail
+              <TabsTrigger value="detail">
+                <FileSpreadsheet aria-hidden />
+                <T k="pages.budgetDetail" />
               </TabsTrigger>
-              <TabsTrigger value="variance" className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4" />
-                Variance
+              <TabsTrigger value="variance">
+                <BarChart3 aria-hidden />
+                <T k="pages.variance" />
               </TabsTrigger>
             </>
           )}
@@ -603,94 +1083,172 @@ export default function Budgets() {
         <TabsContent value="budgets">
           <Card>
             <CardHeader>
-              <CardTitle>Budget Plans</CardTitle>
-              <CardDescription>
-                {budgetPlans.length} budget plan{budgetPlans.length !== 1 ? "s" : ""}
-              </CardDescription>
+              <CardTitle>
+                <T k="pages.budgetPlans" />
+              </CardTitle>
+              {/* The count is shown only once it is known (never "0" while loading or failed). */}
+              {budgetsView === "ready" && (
+                <CardDescription data-testid="budgets-count">
+                  {formatMessage(t["budgets.planCount"], { count: budgetPlans.length })}
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent>
-              {isLoadingBudgets ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {t.loading || "Loading..."}
-                </div>
-              ) : budgetPlans.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No budget plans yet. Create your first budget to get started.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Year</TableHead>
-                        <TableHead>Period</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Total Budget</TableHead>
-                        <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {budgetPlans.map((budget) => (
-                        <TableRow
-                          key={budget.id}
-                          className="cursor-pointer hover:bg-muted/50"
-                          onClick={() => handleSelectBudget(budget)}
-                        >
-                          <TableCell className="font-medium">{budget.name}</TableCell>
-                          <TableCell>{budget.fiscal_year}</TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {budget.start_date
-                              ? format(new Date(budget.start_date), "MMM yyyy")
-                              : "-"}
-                            {" - "}
-                            {budget.end_date ? format(new Date(budget.end_date), "MMM yyyy") : "-"}
-                          </TableCell>
-                          <TableCell>{getStatusBadge(budget.status)}</TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(parseFloat(budget.total_budget || "0"), "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div
-                              className="flex items-center justify-end gap-1"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {budget.status === "draft" && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => approveBudgetMutation.mutate(budget.id)}
-                                  title="Approve"
-                                  className="text-success hover:text-success"
-                                >
-                                  <CheckCircle className="w-4 h-4" />
-                                </Button>
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenEditBudget(budget)}
-                                title="Edit"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setBudgetToDelete(budget.id)}
-                                title="Delete"
-                                className="text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+              <ReadStatus
+                view={budgetsView}
+                refresh={budgetsQuery}
+                errorText={t["budgets.listLoadError"]}
+                error={budgetsQuery.error}
+                onRetry={() => void refetchBudgets()}
+                testId="budgets-load-error"
+              />
+              {budgetPlans.length > 0 && (
+                <div className="relative mb-4 max-w-sm">
+                  <Search
+                    className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <Input
+                    type="search"
+                    value={budgetSearch}
+                    onChange={(e) => setBudgetSearch(e.target.value)}
+                    placeholder={t["budgets.searchBudgets"]}
+                    aria-label={t["budgets.searchBudgets"]}
+                    className="ps-9"
+                    data-testid="input-search-budgets"
+                  />
                 </div>
               )}
+              {budgetsView === "ready" && budgetPlans.length > 0 && (
+                <div role="status">
+                  {visibleBudgets.length === 0 && (
+                    <EmptyState
+                      icon={Search}
+                      title={t["budgets.noSearchMatches"]}
+                      testId="budgets-no-match"
+                    />
+                  )}
+                </div>
+              )}
+              {budgetsView !== "ready" ? null : budgetPlans.length === 0 ? (
+                <EmptyState
+                  icon={PiggyBank}
+                  title={t["pages.noBudgetPlansYetCreateYourFirstBudgetToGetStarte"]}
+                  testId="budgets-empty"
+                />
+              ) : visibleBudgets.length > 0 ? (
+                <>
+                  {/* Below 768px: stacked row-cards (line 1 name + total, line 2 year/period + status, actions). */}
+                  <ul className="divide-hairline md:hidden" data-testid="mobile-budget-list">
+                    {visibleBudgets.map((budget) => (
+                      <li
+                        key={budget.id}
+                        className="flex cursor-pointer items-start gap-2 py-3 first:pt-0 last:pb-0"
+                        onClick={() => handleSelectBudget(budget)}
+                      >
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <p dir="auto" className="min-w-0 truncate text-sm font-medium">
+                              {budget.name}
+                            </p>
+                            <Money
+                              amount={parseFloat(budget.total_budget || "0")}
+                              currency={"AED"}
+                              className="shrink-0 text-sm font-semibold"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="min-w-0 truncate text-caption text-muted-foreground">
+                              {budget.fiscal_year}
+                              {" · "}
+                              {budget.start_date
+                                ? format(
+                                    parseCalendarDate(budget.start_date),
+                                    "MMM yyyy",
+                                    dateFnsOptions(locale)
+                                  )
+                                : "-"}
+                              {" - "}
+                              {budget.end_date
+                                ? format(
+                                    parseCalendarDate(budget.end_date),
+                                    "MMM yyyy",
+                                    dateFnsOptions(locale)
+                                  )
+                                : "-"}
+                            </p>
+                            {getStatusBadge(budget.status)}
+                          </div>
+                        </div>
+                        <div className="-me-2 -mt-1" onClick={(e) => e.stopPropagation()}>
+                          {budgetActions(budget)}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="hidden overflow-x-auto md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{tr(locale, "Name", "الاسم")}</TableHead>
+                          <TableHead>{tr(locale, "Year", "السنة")}</TableHead>
+                          <TableHead>
+                            <T k="pages.period" />
+                          </TableHead>
+                          <TableHead>
+                            <T k="pages.status" />
+                          </TableHead>
+                          <TableHead data-numeric>
+                            <T k="pages.totalBudget" />
+                          </TableHead>
+                          <TableHead data-numeric>{t.actions}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visibleBudgets.map((budget) => (
+                          <TableRow
+                            key={budget.id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => handleSelectBudget(budget)}
+                          >
+                            <TableCell className="font-medium">{budget.name}</TableCell>
+                            <TableCell>{budget.fiscal_year}</TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {budget.start_date
+                                ? format(
+                                    parseCalendarDate(budget.start_date),
+                                    "MMM yyyy",
+                                    dateFnsOptions(locale)
+                                  )
+                                : "-"}
+                              {" - "}
+                              {budget.end_date
+                                ? format(
+                                    parseCalendarDate(budget.end_date),
+                                    "MMM yyyy",
+                                    dateFnsOptions(locale)
+                                  )
+                                : "-"}
+                            </TableCell>
+                            <TableCell>{getStatusBadge(budget.status)}</TableCell>
+                            <TableCell data-numeric>
+                              <Money
+                                amount={parseFloat(budget.total_budget || "0")}
+                                currency={"AED"}
+                              />
+                            </TableCell>
+                            <TableCell data-numeric>
+                              <div onClick={(e) => e.stopPropagation()}>
+                                {budgetActions(budget)}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              ) : null}
             </CardContent>
           </Card>
         </TabsContent>
@@ -702,44 +1260,81 @@ export default function Budgets() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Budget Lines - {selectedBudget.name}</CardTitle>
+                    <CardTitle>
+                      {formatMessage(t["budgets.detailHeading"], { name: selectedBudget.name })}
+                    </CardTitle>
                     <CardDescription>
-                      Monthly budget allocation by category. Click a row to edit.
+                      <T k="pages.monthlyBudgetAllocationByCategoryClickARowToEdit" />
                     </CardDescription>
                   </div>
-                  <Button onClick={handleOpenAddLine} className="flex items-center gap-2">
-                    <Plus className="w-4 h-4" />
-                    Add Line
-                  </Button>
+                  {selectedBudget.status === "draft" ? (
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm text-accent cursor-pointer">
+                        {tr(locale, "Import CSV", "استيراد CSV")}
+                        <input
+                          type="file"
+                          accept=".csv,text/csv"
+                          className="sr-only"
+                          data-testid="input-import-budget"
+                          onChange={(e) => {
+                            void handleImportFile(e.target.files?.[0]);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                      <Button
+                        onClick={handleOpenAddLine}
+                        className="flex items-center gap-2"
+                        data-testid="button-add-budget-line"
+                        {...gate("documents.write")}
+                      >
+                        <Plus className="w-4 h-4" />
+                        <T k="pages.addLine" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Badge variant="secondary" data-testid="badge-budget-frozen">
+                      {tr(
+                        locale,
+                        "Locked after approval. Create a new version to change it.",
+                        "مقفلة بعد الاعتماد. أنشئ نسخة جديدة لتعديلها."
+                      )}
+                    </Badge>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
-                {isLoadingLines ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    {t.loading || "Loading..."}
-                  </div>
-                ) : budgetLines.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    No budget lines yet. Add categories and monthly allocations.
-                  </div>
+                <ReadStatus
+                  view={linesView}
+                  refresh={linesQuery}
+                  errorText={t["budgets.linesLoadError"]}
+                  error={linesQuery.error}
+                  onRetry={() => void linesQuery.refetch()}
+                  testId="budget-lines-load-error"
+                />
+                {linesView !== "ready" ? null : budgetLines.length === 0 ? (
+                  <EmptyState
+                    size="sm"
+                    title={t["pages.noBudgetLinesYetAddCategoriesAndMonthlyAllocatio"]}
+                  />
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
-                            Category
+                          <TableHead className="sticky start-0 bg-background z-10 min-w-[160px]">
+                            <T k="pages.category" />
                           </TableHead>
-                          {MONTH_LABELS.map((label) => (
-                            <TableHead key={label} className="text-right min-w-[90px]">
-                              {label}
+                          {selectedPlanMonths.map((m) => (
+                            <TableHead data-numeric key={m.key} className=" min-w-[90px]">
+                              {planMonthLabel(m)}
                             </TableHead>
                           ))}
-                          <TableHead className="text-right min-w-[110px] font-bold">
-                            Annual Total
+                          <TableHead data-numeric className=" min-w-[110px] font-bold">
+                            <T k="pages.annualTotal" />
                           </TableHead>
-                          <TableHead className="text-right min-w-[80px]">
-                            {t.actions || "Actions"}
+                          <TableHead data-numeric className=" min-w-[80px]">
+                            {t.actions}
                           </TableHead>
                         </TableRow>
                       </TableHeader>
@@ -750,9 +1345,14 @@ export default function Budgets() {
                             className="cursor-pointer hover:bg-muted/50"
                             onClick={() => handleOpenEditLine(line)}
                           >
-                            <TableCell className="sticky left-0 bg-background z-10 font-medium">
+                            <TableCell className="sticky start-0 bg-background z-10 font-medium">
                               <div>
-                                {line.category}
+                                {budgetCategoryLabel(t, line.category)}
+                                <div className="text-xs text-muted-foreground">
+                                  {line.account_id && accountById.get(line.account_id)
+                                    ? `${accountById.get(line.account_id)!.code} · ${accountDisplayName(accountById.get(line.account_id), locale)}`
+                                    : t["forms.budget.noAccount"]}
+                                </div>
                                 {line.description && (
                                   <div className="text-xs text-muted-foreground">
                                     {line.description}
@@ -760,44 +1360,65 @@ export default function Budgets() {
                                 )}
                               </div>
                             </TableCell>
-                            {MONTH_KEYS.map((key) => (
-                              <TableCell key={key} className="text-right font-mono text-sm">
-                                {formatCurrency(
-                                  parseFloat((line as any)[key] || "0"),
-                                  "AED",
-                                  locale
-                                )}
+                            {selectedPlanMonths.map(({ key, column }) => (
+                              <TableCell data-numeric key={key} className=" text-sm">
+                                <Money
+                                  amount={parseFloat((line as any)[column] || "0")}
+                                  currency={"AED"}
+                                />
                               </TableCell>
                             ))}
-                            <TableCell className="text-right font-mono font-bold text-sm">
-                              {formatCurrency(parseFloat(line.annual_total || "0"), "AED", locale)}
+                            <TableCell data-numeric className=" font-bold text-sm">
+                              <Money
+                                amount={parseFloat(line.annual_total || "0")}
+                                currency={"AED"}
+                              />
                             </TableCell>
-                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            <TableCell data-numeric onClick={(e) => e.stopPropagation()}>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => setLineToDelete(line.id)}
-                                title="Delete"
-                                className="text-destructive hover:text-destructive"
+                                title={t["hr.delete"]}
+                                aria-label={t["hr.delete"]}
+                                {...gate("documents.write")}
+                                className="text-muted-foreground hover:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </TableCell>
                           </TableRow>
                         ))}
-                        {/* Totals Row */}
-                        <TableRow className="bg-muted/50 font-bold">
-                          <TableCell className="sticky left-0 bg-muted/50 z-10">TOTAL</TableCell>
-                          {MONTH_KEYS.map((key) => (
-                            <TableCell key={key} className="text-right font-mono text-sm">
-                              {formatCurrency(lineTotals()[key], "AED", locale)}
-                            </TableCell>
-                          ))}
-                          <TableCell className="text-right font-mono text-sm">
-                            {formatCurrency(lineTotals().annual, "AED", locale)}
-                          </TableCell>
-                          <TableCell />
-                        </TableRow>
+                        {/* Totals (E2/J3-r2): income, expenses and net, never income + expenses */}
+                        {(
+                          [
+                            ["income", t["forms.budget.totalIncome"]],
+                            ["expense", t["forms.budget.totalExpenses"]],
+                            ["net", t["forms.budget.netTotal"]],
+                          ] as const
+                        ).map(([group, label]) => {
+                          const totals = lineTotals()[group];
+                          return (
+                            <TableRow
+                              key={group}
+                              className="bg-muted/50 font-bold"
+                              data-testid={`budget-total-${group}`}
+                            >
+                              <TableCell className="sticky start-0 bg-muted/50 z-10">
+                                {label}
+                              </TableCell>
+                              {selectedPlanMonths.map(({ key, column }) => (
+                                <TableCell data-numeric key={key} className=" text-sm">
+                                  <Money amount={totals[column]} currency={"AED"} />
+                                </TableCell>
+                              ))}
+                              <TableCell data-numeric className=" text-sm">
+                                <Money amount={totals.annual} currency={"AED"} />
+                              </TableCell>
+                              <TableCell />
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -812,167 +1433,39 @@ export default function Budgets() {
           <TabsContent value="variance">
             <Card>
               <CardHeader>
-                <CardTitle>Budget vs Actual Variance - {selectedBudget.name}</CardTitle>
+                <CardTitle>
+                  {formatMessage(t["budgets.varianceHeading"], { name: selectedBudget.name })}
+                </CardTitle>
                 <CardDescription>
-                  Comparing budgeted amounts against actual journal entries. Green = under budget,
-                  Red = over budget.
+                  <T k="budgets.varianceDescription" />
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {isLoadingVariance ? (
+                <ReadStatus
+                  view={varianceView}
+                  refresh={varianceQuery}
+                  errorText={t["budgets.varianceLoadError"]}
+                  error={varianceQuery.error}
+                  onRetry={() => void varianceQuery.refetch()}
+                  testId="budget-variance-load-error"
+                />
+                {varianceView !== "ready" ? null : !varianceData ||
+                  varianceData.varianceLines.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    {t.loading || "Loading..."}
+                    {t["budgets.noVarianceDataAvailableAdd"]}
                   </div>
-                ) : !varianceData || varianceData.varianceLines.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    No variance data available. Add budget lines with account links to compare
-                    against actuals.
-                  </div>
+                ) : VarianceResults ? (
+                  <VarianceResults
+                    varianceLines={varianceData.varianceLines}
+                    varianceMonths={varianceMonths}
+                    planMonthLabel={planMonthLabel}
+                  />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="sticky left-0 bg-background z-10 min-w-[160px]">
-                            Category
-                          </TableHead>
-                          {MONTH_LABELS.map((label) => (
-                            <TableHead key={label} className="text-center min-w-[200px]">
-                              <div>{label}</div>
-                              <div className="flex text-xs text-muted-foreground mt-1">
-                                <span className="flex-1 text-right pr-1">Budget</span>
-                                <span className="flex-1 text-right pr-1">Actual</span>
-                                <span className="flex-1 text-right">Var</span>
-                              </div>
-                            </TableHead>
-                          ))}
-                          <TableHead className="text-center min-w-[200px]">
-                            <div>Annual</div>
-                            <div className="flex text-xs text-muted-foreground mt-1">
-                              <span className="flex-1 text-right pr-1">Budget</span>
-                              <span className="flex-1 text-right pr-1">Actual</span>
-                              <span className="flex-1 text-right">Var %</span>
-                            </div>
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {varianceData.varianceLines.map((line) => (
-                          <TableRow key={line.id}>
-                            <TableCell className="sticky left-0 bg-background z-10 font-medium">
-                              <div>
-                                {line.category}
-                                {line.description && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {line.description}
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                            {MONTH_KEYS.map((key) => {
-                              const m = line.months[key];
-                              return (
-                                <TableCell key={key} className="text-right">
-                                  <div className="flex text-xs font-mono">
-                                    <span className="flex-1 text-right pr-1">
-                                      {m.budget.toFixed(0)}
-                                    </span>
-                                    <span className="flex-1 text-right pr-1">
-                                      {m.actual.toFixed(0)}
-                                    </span>
-                                    <span
-                                      className={`flex-1 text-right font-semibold ${getVarianceColor(m.variance)}`}
-                                    >
-                                      {m.variance >= 0 ? "+" : ""}
-                                      {m.variance.toFixed(0)}
-                                    </span>
-                                  </div>
-                                </TableCell>
-                              );
-                            })}
-                            <TableCell className="text-right">
-                              <div className="flex text-xs font-mono">
-                                <span className="flex-1 text-right pr-1">
-                                  {line.totals.budget.toFixed(0)}
-                                </span>
-                                <span className="flex-1 text-right pr-1">
-                                  {line.totals.actual.toFixed(0)}
-                                </span>
-                                <span
-                                  className={`flex-1 text-right font-bold ${getVarianceColor(line.totals.variance)}`}
-                                >
-                                  {line.totals.variancePercent >= 0 ? "+" : ""}
-                                  {line.totals.variancePercent.toFixed(1)}%
-                                </span>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-
-                {/* Variance Summary Cards */}
-                {varianceData && varianceData.varianceLines.length > 0 && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">Total Budget</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">
-                          {formatCurrency(
-                            varianceData.varianceLines.reduce((s, l) => s + l.totals.budget, 0),
-                            "AED",
-                            locale
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">Total Actual</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">
-                          {formatCurrency(
-                            varianceData.varianceLines.reduce((s, l) => s + l.totals.actual, 0),
-                            "AED",
-                            locale
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">Total Variance</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {(() => {
-                          const totalVar = varianceData.varianceLines.reduce(
-                            (s, l) => s + l.totals.variance,
-                            0
-                          );
-                          return (
-                            <div
-                              className={`text-2xl font-bold flex items-center gap-2 ${getVarianceColor(totalVar)}`}
-                            >
-                              {totalVar >= 0 ? (
-                                <TrendingUp className="w-5 h-5" />
-                              ) : (
-                                <TrendingDown className="w-5 h-5" />
-                              )}
-                              {formatCurrency(Math.abs(totalVar), "AED", locale)}
-                              <span className="text-sm font-normal">
-                                {totalVar >= 0 ? "under budget" : "over budget"}
-                              </span>
-                            </div>
-                          );
-                        })()}
-                      </CardContent>
-                    </Card>
-                  </div>
+                  <OnDemandDialogStatus
+                    status={varianceResultsStatus === "idle" ? "loading" : varianceResultsStatus}
+                    onRetry={requestVarianceResults}
+                    testId="budget-variance-results"
+                  />
                 )}
               </CardContent>
             </Card>
@@ -982,103 +1475,130 @@ export default function Budgets() {
 
       {/* ─── Budget Create/Edit Dialog ─────────────────── */}
       <Dialog open={budgetDialogOpen} onOpenChange={setBudgetDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent size="md" data-testid="dialog-budget-form">
           <DialogHeader>
-            <DialogTitle>{editingBudget ? "Edit Budget Plan" : "Create Budget Plan"}</DialogTitle>
+            <DialogTitle>
+              {editingBudget ? t["forms.budget.editTitle"] : t["forms.budget.newTitle"]}
+            </DialogTitle>
             <DialogDescription>
-              {editingBudget ? "Update budget details." : "Create a new annual budget plan."}
+              {editingBudget ? t["forms.budget.editDesc"] : t["forms.budget.newDesc"]}
             </DialogDescription>
           </DialogHeader>
 
           <Form {...budgetForm}>
-            <form onSubmit={budgetForm.handleSubmit(handleBudgetSubmit)} className="space-y-4">
-              <FormField
-                control={budgetForm.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Budget Name *</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., FY 2026 Operating Budget" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <form
+              onSubmit={budgetForm.handleSubmit(handleBudgetSubmit)}
+              noValidate
+              className="space-y-6"
+            >
+              <FormErrorSummary />
+              <FormSection title={t["forms.section.plan"]}>
+                <FormGrid>
+                  <FormField
+                    control={budgetForm.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem className={formSpanFull}>
+                        <FormLabel required>{t["forms.budget.name"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            dir="auto"
+                            placeholder={t["forms.budget.namePlaceholder"]}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={budgetForm.control}
+                    name="fiscalYear"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["forms.budget.fiscalYear"]}</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="2000" max="2100" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={budgetForm.control}
+                    name="startDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["forms.budget.startDate"]}</FormLabel>
+                        <FormControl>
+                          <DatePicker
+                            value={field.value ?? ""}
+                            onChange={field.onChange}
+                            data-testid="input-budget-start-date"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={budgetForm.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["forms.budget.endDate"]}</FormLabel>
+                        <FormControl>
+                          <DatePicker
+                            value={field.value ?? ""}
+                            onChange={field.onChange}
+                            data-testid="input-budget-end-date"
+                          />
+                        </FormControl>
+                        <FormDescription>{t["forms.budget.periodHelp"]}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={budgetForm.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem className={formSpanFull}>
+                        <FormLabel>
+                          <T k="pages.notes" />
+                        </FormLabel>
+                        <FormControl>
+                          <Textarea
+                            dir="auto"
+                            rows={2}
+                            placeholder={t["forms.budget.notesPlaceholder"]}
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
 
-              <FormField
-                control={budgetForm.control}
-                name="fiscalYear"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Fiscal Year *</FormLabel>
-                    <FormControl>
-                      <Input type="number" min="2000" max="2100" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={budgetForm.control}
-                  name="startDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Start Date *</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={budgetForm.control}
-                  name="endDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>End Date *</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={budgetForm.control}
-                name="notes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Notes</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Optional notes" {...field} value={field.value || ""} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="flex justify-end gap-2 pt-4">
+              <FormActions sticky>
                 <Button type="button" variant="outline" onClick={() => setBudgetDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={createBudgetMutation.isPending || updateBudgetMutation.isPending}
                 >
                   {createBudgetMutation.isPending || updateBudgetMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t["forms.saving"]
                     : editingBudget
-                      ? t.save || "Save"
-                      : "Create Budget"}
+                      ? t.save
+                      : t["forms.budget.create"]}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>
@@ -1086,107 +1606,164 @@ export default function Budgets() {
 
       {/* ─── Budget Line Add/Edit Dialog ───────────────── */}
       <Dialog open={addLineDialogOpen} onOpenChange={setAddLineDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg" data-testid="dialog-budget-line-form">
           <DialogHeader>
-            <DialogTitle>{editingLine ? "Edit Budget Line" : "Add Budget Line"}</DialogTitle>
+            <DialogTitle>
+              {editingLine ? t["forms.budget.editLineTitle"] : t["forms.budget.addLineTitle"]}
+            </DialogTitle>
             <DialogDescription>
-              {editingLine
-                ? "Update monthly allocations."
-                : "Add a category with monthly budget amounts."}
+              {editingLine ? t["forms.budget.editLineDesc"] : t["forms.budget.addLineDesc"]}
             </DialogDescription>
           </DialogHeader>
 
           <Form {...lineForm}>
-            <form onSubmit={lineForm.handleSubmit(handleLineSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={lineForm.control}
-                  name="category"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Category *</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select category" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {BUDGET_CATEGORIES.map((cat) => (
-                            <SelectItem key={cat} value={cat}>
-                              {cat}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={lineForm.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Description</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Optional detail" {...field} value={field.value || ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="border rounded-lg p-4">
-                <h4 className="font-medium mb-3">Monthly Amounts (AED)</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {MONTH_KEYS.map((key, idx) => (
-                    <FormField
-                      key={key}
-                      control={lineForm.control}
-                      name={key}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs">{MONTH_LABELS[idx]}</FormLabel>
+            <form
+              onSubmit={lineForm.handleSubmit(handleLineSubmit)}
+              noValidate
+              className="space-y-6"
+            >
+              <FormErrorSummary />
+              <FormSection title={t["forms.section.details"]}>
+                <FormGrid>
+                  <FormField
+                    control={lineForm.control}
+                    name="accountId"
+                    render={({ field }) => (
+                      <FormItem className={formSpanFull}>
+                        <FormLabel required>{t["forms.budget.account"]}</FormLabel>
+                        <Select
+                          onValueChange={(v) => {
+                            field.onChange(v);
+                            const acc = accountById.get(v);
+                            if (acc?.type === "income" && !lineForm.getValues("category")) {
+                              lineForm.setValue("category", "Revenue");
+                            }
+                          }}
+                          value={field.value}
+                        >
                           <FormControl>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              {...field}
-                              className="text-sm"
-                            />
+                            <SelectTrigger data-testid="select-budget-line-account">
+                              <SelectValue placeholder={t["forms.journal.selectAccount"]} />
+                            </SelectTrigger>
                           </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  ))}
+                          <SelectContent>
+                            {accountOptions.map((acc) => (
+                              <SelectItem key={acc.id} value={acc.id}>
+                                <span className="me-2 inline-block tabular-nums text-muted-foreground">
+                                  {acc.code}
+                                </span>
+                                {accountDisplayName(acc, locale)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>{t["forms.budget.accountHelp"]}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={lineForm.control}
+                    name="category"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["forms.claim.category"]}</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t["screens.selectCategory"]} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {BUDGET_CATEGORIES.map((cat) => (
+                              <SelectItem key={cat} value={cat}>
+                                {t[`forms.budget.cat.${cat}`] || cat}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={lineForm.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.description" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            dir="auto"
+                            placeholder={t["forms.optional"]}
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
+              <FormSection title={t["forms.budget.monthly"]}>
+                <div className="rounded-lg bg-surface-sunken/60 p-4">
+                  <div className="mobile-keep-cols grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {(selectedPlanMonths.length
+                      ? selectedPlanMonths.map((pm) => ({
+                          key: pm.key,
+                          column: pm.column,
+                          label: planMonthLabel(pm),
+                        }))
+                      : MONTH_KEYS.map((column, idx) => ({
+                          key: column,
+                          column,
+                          label: monthLabel(idx),
+                        }))
+                    ).map((pm) => (
+                      <FormField
+                        key={pm.key}
+                        control={lineForm.control}
+                        name={pm.column}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className={lineLabelClass}>{pm.label}</FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.01" min="0" {...field} />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    ))}
+                  </div>
+                  <FormTotals
+                    rows={[]}
+                    total={{
+                      label: t["forms.budget.annualTotal"],
+                      value: <Money amount={computedAnnualTotal} currency={"AED"} />,
+                    }}
+                  />
                 </div>
-                <div className="mt-3 pt-3 border-t flex justify-between items-center">
-                  <span className="font-medium text-sm">Annual Total:</span>
-                  <span className="font-bold text-lg">
-                    {formatCurrency(computedAnnualTotal, "AED", locale)}
-                  </span>
-                </div>
-              </div>
+              </FormSection>
 
-              <div className="flex justify-end gap-2 pt-4">
+              <FormActions sticky>
                 <Button type="button" variant="outline" onClick={() => setAddLineDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={addLineMutation.isPending || updateLineMutation.isPending}
                 >
                   {addLineMutation.isPending || updateLineMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t["forms.saving"]
                     : editingLine
-                      ? t.save || "Save"
-                      : "Add Line"}
+                      ? t.save
+                      : t["forms.budget.addLine"]}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>
@@ -1200,14 +1777,17 @@ export default function Budgets() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Budget Plan?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pages.deleteBudgetPlan" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this budget plan and all its lines. This action cannot be
-              undone.
+              {t["budgets.thisWillPermanentlyDeleteThis"]}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (budgetToDelete) {
@@ -1217,7 +1797,7 @@ export default function Budgets() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              <T k="pages.delete" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1231,23 +1811,27 @@ export default function Budgets() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Budget Line?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pages.deleteBudgetLine" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this budget line. This action cannot be undone.
+              {t["budgets.thisWillPermanentlyDeleteThis2"]}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (lineToDelete) {
-                  deleteLineMutation.mutate(lineToDelete);
+                if (lineToDelete && selectedBudget) {
+                  deleteLineMutation.mutate({ id: lineToDelete, planId: selectedBudget.id });
                   setLineToDelete(null);
                 }
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              <T k="pages.delete" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

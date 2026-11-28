@@ -45,7 +45,34 @@ vi.mock("../../server/services/socket.service", () => ({
   })),
 }));
 
+// W5-A (R12-01): queue/retry now render and email through the executor; its behaviour is
+// covered end-to-end in tests/db/report-delivery-outbox.test.ts.
+vi.mock("../../server/services/report-render/delivery", () => ({
+  executeReportDeliveryRun: vi.fn(async ({ runId }: any) => ({
+    id: runId,
+    status: "sent",
+    recipientAddresses: ["owner@example.com"],
+    errorMessage: null,
+    blockedReason: null,
+  })),
+  setRunNotification: vi.fn(async (_companyId: string, runId: string, notificationId: string) => ({
+    id: runId,
+    status: "sent",
+    notificationId,
+  })),
+  refreshReportDeliveryRuns: vi.fn(async (runs: any[]) => runs),
+  cancelPendingRunEmails: vi.fn(async () => undefined),
+  parseRecipientEmails: (value: string) =>
+    (value.match(/[^\s,;]+@[^\s,;]+\.[^\s,;]+/g) ?? []).map((e) => e.toLowerCase()),
+  listRunArtifacts: vi.fn(async () => []),
+  getRunArtifact: vi.fn(async () => undefined),
+}));
+
 import { registerReportDeliveryRoutes } from "../../server/routes/report-delivery.routes";
+import {
+  executeReportDeliveryRun,
+  setRunNotification,
+} from "../../server/services/report-render/delivery";
 import { createAndEmitNotification } from "../../server/services/socket.service";
 import { storage } from "../../server/storage";
 import {
@@ -107,6 +134,7 @@ describe("report delivery subscriptions", () => {
     vi.mocked(storage.getReportDeliverySchedulerScans).mockResolvedValue([]);
     vi.mocked(storage.createReportDeliveryRun).mockClear();
     vi.mocked(createAndEmitNotification).mockClear();
+    vi.mocked(executeReportDeliveryRun).mockClear();
   });
 
   it("builds persona delivery plans with schedules and deep links", () => {
@@ -165,7 +193,8 @@ describe("report delivery subscriptions", () => {
       status: "paused",
       settingsSource: "company",
       cadence: "Daily at 8:00 AM",
-      channel: "Email only",
+      // R12-01: the channel label is what the server really does (no Sheets unless live).
+      channel: "Email with PDF and Excel attachments",
       format: "PDF digest",
       recipients: "Owner",
       deliveryGuardrail: "Manual approval required",
@@ -500,7 +529,7 @@ describe("report delivery subscriptions", () => {
       {
         enabled: false,
         cadence: "Daily at 8:00 AM",
-        channel: "Email and Google Sheets",
+        channel: "Email only",
         format: "Executive PDF pack",
         recipients: "Owner and accountant",
         deliveryGuardrail: "Manual approval required",
@@ -514,7 +543,7 @@ describe("report delivery subscriptions", () => {
         subscriptionId: "owner-weekly-executive-delivery",
         enabled: false,
         cadenceOverride: "Daily at 8:00 AM",
-        channelOverride: "Email and Google Sheets",
+        channelOverride: "Email only",
         formatOverride: "Executive PDF pack",
         recipientsOverride: "Owner and accountant",
         deliveryGuardrailOverride: "Manual approval required",
@@ -528,6 +557,19 @@ describe("report delivery subscriptions", () => {
       status: "paused",
       settingsSource: "company",
     });
+  });
+
+  it("[R12-10] rejects a Google Sheets channel while the integration is unconfigured", async () => {
+    const res = await request(
+      appWithRoutes(),
+      "PATCH",
+      `/api/companies/${companyId}/report-delivery/subscriptions/owner-weekly-executive-delivery/settings`,
+      { channel: "Email and Google Sheets" }
+    );
+
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("GOOGLE_SHEETS_NOT_CONFIGURED");
+    expect(storage.upsertReportDeliverySubscriptionSetting).not.toHaveBeenCalled();
   });
 
   it("queues a report delivery notification for the current user", async () => {
@@ -554,12 +596,20 @@ describe("report delivery subscriptions", () => {
       expect.objectContaining({
         companyId,
         subscriptionId: "owner-weekly-executive-delivery",
-        notificationId: "notification-1",
         queuedBy: userId,
         status: "queued",
         readinessStatus: "ready",
       })
     );
+    // R12-01: the run is executed (rendered + emailed) and the notification reports the outcome.
+    expect(executeReportDeliveryRun).toHaveBeenCalledWith(
+      expect.objectContaining({ companyId, runId: "run-1" })
+    );
+    expect(createAndEmitNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Report delivery sent: Owner weekly executive delivery" })
+    );
+    expect(setRunNotification).toHaveBeenCalledWith(companyId, "run-1", "notification-1");
+    expect(res.body.run.status).toBe("sent");
   });
 
   it("requires handoff acknowledgement before queueing after a failed delivery", async () => {
@@ -622,8 +672,14 @@ describe("report delivery subscriptions", () => {
     );
   });
 
-  it("records a failed report delivery run when notification queueing fails", async () => {
-    vi.mocked(createAndEmitNotification).mockRejectedValueOnce(new Error("Email provider down"));
+  it("reports the executed run status when the in-app notification fails", async () => {
+    // R12-01: the notification is an extra signal, never the delivery itself.
+    vi.mocked(createAndEmitNotification).mockRejectedValueOnce(new Error("Socket down"));
+    vi.mocked(executeReportDeliveryRun).mockResolvedValueOnce({
+      id: "run-1",
+      status: "failed",
+      errorMessage: "Email provider down",
+    } as any);
 
     const res = await request(
       appWithRoutes(),
@@ -631,16 +687,9 @@ describe("report delivery subscriptions", () => {
       `/api/companies/${companyId}/report-delivery/subscriptions/owner-weekly-executive-delivery/queue`
     );
 
-    expect(res.status).toBe(500);
-    expect(storage.createReportDeliveryRun).toHaveBeenCalledWith(
-      expect.objectContaining({
-        companyId,
-        subscriptionId: "owner-weekly-executive-delivery",
-        queuedBy: userId,
-        status: "failed",
-        errorMessage: "Email provider down",
-      })
-    );
+    expect(res.status).toBe(201);
+    expect(res.body.run).toMatchObject({ status: "failed", errorMessage: "Email provider down" });
+    expect(storage.createReportDeliveryRun).toHaveBeenCalledTimes(1);
   });
 
   it("retries failed report delivery runs", async () => {
@@ -680,7 +729,6 @@ describe("report delivery subscriptions", () => {
       expect.objectContaining({
         companyId,
         subscriptionId: "owner-weekly-executive-delivery",
-        notificationId: "notification-1",
         retriedFromRunId: "failed-run-1",
         queuedBy: userId,
         status: "queued",
@@ -719,7 +767,7 @@ describe("report delivery subscriptions", () => {
     );
 
     expect(res.status).toBe(409);
-    expect(res.body.message).toBe("Only failed report delivery runs can be retried");
+    expect(res.body.message).toBe("Only failed or blocked report delivery runs can be retried");
     expect(createAndEmitNotification).not.toHaveBeenCalled();
     expect(storage.createReportDeliveryRun).not.toHaveBeenCalled();
   });

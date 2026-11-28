@@ -1,0 +1,73 @@
+{
+  "description": "Sandbox-shaped recording for the generic ASP mapping (DEFAULT_ASP_MAPPING). Shapes follow the common UAE ASP REST pattern (submit / status / inbox / cancel). Not a real provider: replace with a recording from the contracted ASP's sandbox before go-live.",
+  "interactions": [
+    {
+      "name": "submit-accepted",
+      "request": { "method": "POST", "path": "/v1/invoices" },
+      "response": {
+        "status": 202,
+        "body": { "id": "asp-doc-0001", "status": "received", "message": "Queued for validation" }
+      }
+    },
+    {
+      "name": "status-cleared",
+      "request": { "method": "GET", "path": "/v1/invoices/asp-doc-0001" },
+      "response": {
+        "status": 200,
+        "body": { "id": "asp-doc-0001", "status": "reported", "message": "Reported to FTA" }
+      }
+    },
+    {
+      "name": "status-rejected",
+      "request": { "method": "GET", "path": "/v1/invoices/asp-doc-0002" },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "asp-doc-0002",
+          "status": "rejected",
+          "errors": [
+            { "code": "ibr-132-ae", "message": "Buyer TRN is not a valid TRN", "field": "IBT-048" },
+            { "code": "BR-CO-15", "message": "Invoice total with VAT mismatch" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "submit-validation-error",
+      "request": { "method": "POST", "path": "/v1/invoices" },
+      "response": {
+        "status": 422,
+        "body": {
+          "message": "Document failed schematron",
+          "errors": [{ "ruleId": "ibr-143-ae", "description": "Seller city missing" }]
+        }
+      }
+    },
+    {
+      "name": "submit-unavailable",
+      "request": { "method": "POST", "path": "/v1/invoices" },
+      "response": { "status": 503, "body": { "error": "Service temporarily unavailable" } }
+    },
+    {
+      "name": "inbox",
+      "request": { "method": "GET", "path": "/v1/inbox?since=2027-01-01T00%3A00%3A00.000Z" },
+      "response": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "id": "asp-in-0001",
+              "receivedAt": "2027-01-15T10:00:00Z",
+              "document": "PEludm9pY2UgeG1sbnM9InVybjpvYXNpczpuYW1lczpzcGVjaWZpY2F0aW9uOnVibDpzY2hlbWE6eHNkOkludm9pY2UtMiIvPg=="
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "cancel",
+      "request": { "method": "POST", "path": "/v1/invoices/asp-doc-0001/cancel" },
+      "response": { "status": 200, "body": { "id": "asp-doc-0001", "status": "cancelled" } }
+    }
+  ]
+}

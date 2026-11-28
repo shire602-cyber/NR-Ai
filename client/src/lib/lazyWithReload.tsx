@@ -57,7 +57,8 @@ export function clearChunkReloadGuards(storage: Storage | null = safeStorage()):
 
 export interface ChunkRetryOptions {
   key: string;
-  reload?: () => void;
+  /** Use false when the caller keeps its UI available and offers a manual reload. */
+  reload?: (() => void) | false;
   storage?: Storage | null;
   delayMs?: number;
 }
@@ -83,7 +84,7 @@ export async function loadWithChunkRetry<T>(
       await new Promise((r) => setTimeout(r, opts.delayMs ?? 400));
       return await factory();
     } catch (retryError) {
-      if (!isChunkLoadError(retryError)) throw retryError;
+      if (reload === false || !isChunkLoadError(retryError)) throw retryError;
 
       const alreadyReloaded = (() => {
         try {
@@ -108,7 +109,7 @@ export async function loadWithChunkRetry<T>(
   }
 }
 
-export function lazyWithReload<T extends ComponentType<unknown>>(
+export function lazyWithReload<T extends ComponentType<any>>(
   factory: () => Promise<{ default: T }>,
   key?: string
 ): React.LazyExoticComponent<T> {

@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "fs";
 import type { Request, Response, NextFunction } from "express";
 import {
   calculateHealthScore,
@@ -57,6 +58,7 @@ function baseInputs(overrides: Partial<ClientHealthInputs> = {}): ClientHealthIn
     overdueBalance: 0,
     overdueInvoiceCount: 0,
     vatStatus: "filed",
+    vatReference: "ET-1",
     vatDueDate: new Date("2026-06-30T00:00:00Z"),
     receiptBacklog: 0,
     lastActivityAt: new Date("2026-04-29T00:00:00Z"),
@@ -72,6 +74,7 @@ function baseSnapshot(overrides: Partial<ClientSnapshot> = {}): ClientSnapshot {
     companyName: "Acme LLC",
     onboardingCompleted: true,
     vatStatus: "filed",
+    vatReference: "ET-1",
     vatDueDate: new Date("2026-06-30T00:00:00Z"),
     overdueBalance: 0,
     overdueInvoiceCount: 0,
@@ -86,6 +89,7 @@ function mockRes(): Response {
   return {
     status: vi.fn().mockReturnThis(),
     json: vi.fn().mockReturnThis(),
+    locals: {},
   } as unknown as Response;
 }
 
@@ -139,8 +143,23 @@ describe("calculateHealthScore — boundary cases", () => {
     expect(result.score).toBe(90);
   });
 
-  it("treats submitted VAT identically to filed", () => {
-    expect(calculateHealthScore(baseInputs({ vatStatus: "submitted" })).score).toBe(100);
+  it("keeps the overdue warning until EmaraTax filing is recorded", () => {
+    const deadline = new Date("2026-04-01T00:00:00Z");
+    const prepared = baseInputs({
+      vatStatus: "submitted",
+      vatReference: null,
+      vatDueDate: deadline,
+    });
+    expect(calculateHealthScore(prepared).factors.vatOverdue).toBe(true);
+    expect(generateAlertsForClient(baseSnapshot(prepared), FIXED_NOW)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ alertType: "vat_deadline", severity: "critical" }),
+      ])
+    );
+    expect(
+      calculateHealthScore({ ...prepared, vatStatus: "filed", vatReference: "ET-9" }).factors
+        .vatOverdue
+    ).toBe(false);
   });
 
   it("does not penalize when no VAT return exists with -5", () => {
@@ -633,5 +652,32 @@ describe("firm-wide aggregation accuracy", () => {
     );
     // overdue_balance + document_missing
     expect(alerts.length).toBe(2);
+  });
+});
+
+// ─── F02: bookkeeper-dashboard VAT alignment ─────────────────────────────────
+// Source-inspection: behaviour test requires Postgres (the handler is DB-backed);
+// this guard catches a future refactor that removes the superseded-row filter.
+
+describe("F02: bookkeeper-dashboard applies activeVatReturnFilter", () => {
+  const src = readFileSync(
+    new URL("../../server/routes/firm/bookkeeper-dashboard.ts", import.meta.url),
+    "utf8"
+  );
+
+  it("imports activeVatReturnFilter from the vat-filing-filter module", () => {
+    expect(src).toMatch(/activeVatReturnFilter.*from.*vat-filing-filter/);
+  });
+
+  it("applies activeVatReturnFilter inside the latestVatSub subquery where clause", () => {
+    // The subquery must exclude amended returns so max(periodEnd) only considers
+    // non-superseded rows; otherwise an amended row's period can win.
+    // The filter appears in .where() before .as("latest_vat_for_bookkeeper").
+    expect(src).toMatch(/activeVatReturnFilter[\s\S]{0,300}latest_vat_for_bookkeeper/);
+  });
+
+  it("applies activeVatReturnFilter in the main join condition", () => {
+    // The join must also filter so an amended row for the latest period is not returned.
+    expect(src).toMatch(/innerJoin[\s\S]{0,500}activeVatReturnFilter/);
   });
 });

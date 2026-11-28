@@ -13,15 +13,19 @@ const log = createLogger("monitoring");
 export interface CaptureContext {
   requestId?: string | null;
   method?: string;
-  url?: string;
-  userId?: string | null;
-  companyId?: string | null;
-  [key: string]: unknown;
+  route?: string;
+  code?: string;
+  operational?: boolean;
+  unhandled?: boolean;
+  source?: "unhandledRejection" | "uncaughtException";
+  fatal?: boolean;
 }
 
-function normaliseError(error: unknown): { message: string; name?: string; stack?: string } {
-  if (error instanceof Error) return { message: error.message, name: error.name, stack: error.stack };
-  return { message: typeof error === "string" ? error : JSON.stringify(error) };
+function errorType(error: unknown): string {
+  for (const type of [TypeError, RangeError, ReferenceError, SyntaxError, URIError]) {
+    if (error instanceof type) return type.name;
+  }
+  return error instanceof Error ? "Error" : typeof error;
 }
 
 /**
@@ -29,15 +33,27 @@ function normaliseError(error: unknown): { message: string; name?: string; stack
  * monitor when one is configured (no-op until then).
  */
 export function captureException(error: unknown, context: CaptureContext = {}): void {
-  const err = normaliseError(error);
-  log.error({ err, ...context, captured: true }, `captureException: ${err.message}`);
+  // Messages and stacks can embed SQL parameters, provider responses and URLs.
+  log.error({ ...context, errorType: errorType(error), captured: true }, "Captured exception");
 
   // Forward hook — wire an external tracker here when a DSN is configured. Kept
   // env-gated + lazy so no SDK dependency is required until you opt in.
   // if (process.env.SENTRY_DSN) { ...Sentry.captureException(error, { extra: context })... }
 }
 
-/** Whether an external monitor is configured (for /health to report). */
-export function monitoringConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.SENTRY_DSN || env.MONITORING_DSN);
+/**
+ * Whether an error forwarder is actually active. captureException only logs today (no SDK is
+ * wired), so this is false even when SENTRY_DSN / MONITORING_DSN is set: reporting "configured"
+ * for a DSN nothing consumes would be a false assurance on /health. Flip this only together with
+ * a real forwarder in captureException.
+ */
+const ERROR_FORWARDER_ACTIVE = false;
+
+export function monitoringConfigured(_env: NodeJS.ProcessEnv = process.env): boolean {
+  return ERROR_FORWARDER_ACTIVE;
+}
+
+/** True when a DSN is set but nothing forwards errors to it (surfaced on /health). */
+export function monitoringDsnIgnored(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !ERROR_FORWARDER_ACTIVE && Boolean(env.SENTRY_DSN || env.MONITORING_DSN);
 }

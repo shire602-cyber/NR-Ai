@@ -1,7 +1,24 @@
+// i18n-ignore-file: workbook/CSV cell content generated for download (sheet headers and row labels), not UI copy.
 import { apiRequest } from "./queryClient";
 import { apiUrl } from "./api";
 import { getAuthHeaders } from "./auth";
 import { withCsrfHeader } from "./csrf";
+import { failedResponseMessage } from "./validation-messages";
+import {
+  formatDate,
+  formatDateRange,
+  formatDateTimePlain,
+  formatEmbeddedDates,
+  parseCalendarDate,
+} from "./format-date";
+import { t as catalogs, translateNow } from "./i18n";
+import { currentExportLocale, localizeExportSheets } from "./export-localize";
+import { localizeServerText } from "@shared/server-copy";
+import { EXCEL_EXPORT_LIMITS, supportsExcelWorkbookSize } from "@shared/excel-export";
+import { budgetCategoryLabel } from "./budget-categories";
+import { activityActionLabel, activityEntityLabel, activitySentence } from "./activity-log-labels";
+import { localizeJournalLine } from "./journal-memo";
+import type { ActivityLog, User } from "@shared/schema";
 
 // Shape of one row in the OCR-format Excel export. Matches the server-side
 // schema in `server/services/excel-export.service.ts` so the request body and
@@ -25,24 +42,62 @@ export interface ExportData {
   columns: ExportColumn[];
   rows: Record<string, any>[];
   sheetName?: string;
+  /** Right-to-left sheet (Arabic exports). */
+  rtl?: boolean;
 }
 
-export async function exportToExcel(data: ExportData[], filename: string) {
+// R11-10: amounts prepared with toFixed(2) ("112200.00") must reach Excel as
+// NUMBER cells so they can be summed. Plain 2-decimal amounts are converted;
+// account codes ("1020"), percentages and labels stay text. The server export
+// service applies the same rule (normalizeGenericCell) for other callers.
+const EXPORT_MONEY_STRING = /^-?\d{1,15}\.\d{2}$/;
+
+export function coerceExportCell(value: unknown): unknown {
+  if (typeof value === "string" && EXPORT_MONEY_STRING.test(value.trim())) {
+    return Number(value.trim());
+  }
+  return value;
+}
+
+export function coerceExportSheets(data: ExportData[]): ExportData[] {
+  return data.map((sheet) => ({
+    ...sheet,
+    rows: sheet.rows.map((row) => {
+      const out: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(row)) out[key] = coerceExportCell(value);
+      return out;
+    }),
+  }));
+}
+
+export async function exportToExcel(
+  data: ExportData[],
+  filename: string,
+  { reportPack = false, assertActive }: { reportPack?: boolean; assertActive?: () => void } = {}
+) {
+  if (!supportsExcelWorkbookSize(data)) {
+    throw new Error(translateNow("toasts.excelExportTooLarge"));
+  }
+  // E1: the workbook follows the language of the user who exports (labels, codes, dates, RTL).
+  const sheets = await localizeExportSheets(coerceExportSheets(data), undefined, reportPack);
   const { blob, filename: downloadedFilename } = await postForBlob(
     "/api/export/excel",
-    { sheets: data, filename },
-    `${filename}.xlsx`
+    { sheets, filename },
+    `${filename}.xlsx`,
+    { maxRequestBytes: EXCEL_EXPORT_LIMITS.requestBytes, assertActive }
   );
+  assertActive?.();
   await triggerBlobDownload(blob, downloadedFilename);
 }
 
 export async function exportToGoogleSheets(
   data: ExportData[],
   title: string,
-  companyId: string
+  companyId: string,
+  reportPack = false
 ): Promise<{ success: boolean; spreadsheetUrl?: string; error?: string }> {
   try {
-    const sheetsData = data.map((sheet) => ({
+    const sheetsData = (await localizeExportSheets(data, undefined, reportPack)).map((sheet) => ({
       name: sheet.sheetName || "Sheet1",
       headers: sheet.columns.map((col) => col.header),
       rows: sheet.rows.map((row) =>
@@ -79,7 +134,7 @@ function filenameFromContentDisposition(disposition: string | null, fallback: st
   return match ? decodeURIComponent(match[1]) : fallback;
 }
 
-async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> {
+export async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -93,8 +148,16 @@ async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> 
 async function postForBlob(
   url: string,
   body: unknown,
-  fallbackFilename: string
+  fallbackFilename: string,
+  { maxRequestBytes, assertActive }: { maxRequestBytes?: number; assertActive?: () => void } = {}
 ): Promise<{ blob: Blob; filename: string }> {
+  const payload = JSON.stringify(body);
+  if (
+    maxRequestBytes !== undefined &&
+    new TextEncoder().encode(payload).byteLength > maxRequestBytes
+  ) {
+    throw new Error(translateNow("toasts.excelExportTooLarge"));
+  }
   let headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...getAuthHeaders(),
@@ -103,22 +166,25 @@ async function postForBlob(
     headers = await withCsrfHeader("POST", headers);
   }
 
+  assertActive?.();
   const res = await fetch(apiUrl(url), {
     method: "POST",
     credentials: "include",
     headers,
-    body: JSON.stringify(body),
+    body: payload,
   });
 
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
+    let errorBody: unknown;
     try {
-      const json = await res.json();
+      errorBody = await res.json();
+      const json = errorBody as { message?: string; error?: string };
       message = json.message || json.error || message;
     } catch {
       /* binary body — keep status */
     }
-    throw new Error(message);
+    throw new Error(await failedResponseMessage(res.status, errorBody, message));
   }
 
   const blob = await res.blob();
@@ -129,18 +195,25 @@ async function postForBlob(
   return { blob, filename };
 }
 
+// Send `locale` only when the caller supplies one; the server defaults to English.
+function localeField(locale?: string): { locale?: "ar" | "en" } {
+  return locale ? { locale: locale === "ar" ? "ar" : "en" } : {};
+}
+
 // Download an .xlsx file containing the supplied OCR-extracted rows. Uses the
 // server-side workbook builder so formatting (bold headers, currency cells,
 // totals row) stays consistent across in-flight and bulk exports.
 export async function downloadOcrExcel(
   rows: OcrExportRow[],
-  options: { filename?: string } = {}
+  options: { filename?: string; locale?: string; assertActive?: () => void } = {}
 ): Promise<void> {
   const { blob, filename } = await postForBlob(
     "/api/ocr/export-excel",
-    { rows, filename: options.filename },
-    "muhasib-ocr-receipts.xlsx"
+    { rows, filename: options.filename, ...localeField(options.locale) },
+    "muhasib-ocr-receipts.xlsx",
+    { assertActive: options.assertActive }
   );
+  options.assertActive?.();
   await triggerBlobDownload(blob, filename);
 }
 
@@ -148,13 +221,15 @@ export async function downloadOcrExcel(
 // `ids` to filter to a subset, or omit it to export every saved receipt.
 export async function downloadReceiptsExcel(
   companyId: string,
-  options: { ids?: string[] } = {}
+  options: { ids?: string[]; locale?: string; assertActive?: () => void } = {}
 ): Promise<void> {
   const { blob, filename } = await postForBlob(
     `/api/companies/${companyId}/receipts/export-excel`,
-    options.ids ? { ids: options.ids } : {},
-    "muhasib-receipts.xlsx"
+    { ...(options.ids ? { ids: options.ids } : {}), ...localeField(options.locale) },
+    "muhasib-receipts.xlsx",
+    { assertActive: options.assertActive }
   );
+  options.assertActive?.();
   await triggerBlobDownload(blob, filename);
 }
 
@@ -196,12 +271,13 @@ export function ocrDataToExportRow(data: {
 
 export function formatDateForExport(date: Date | string | null | undefined): string {
   if (!date) return "";
-  const d = typeof date === "string" ? new Date(date) : date;
-  return d.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  // Business dates are calendar days, not instants in the browser's zone (N1).
+  const d = parseCalendarDate(date);
+  if (Number.isNaN(d.getTime())) return "";
+  // Arabic users get "1 نوفمبر 2026" (Latin digits, as everywhere in the app).
+  if (currentExportLocale() === "ar") return formatDate(d, "ar");
+  // "01 Nov 2026"; the shared formatter keeps September at three letters ("Sep", not ICU's "Sept").
+  return formatDate(d, "en").replace(/^(\d) /, "0$1 ");
 }
 
 export function formatCurrencyForExport(
@@ -262,13 +338,18 @@ export function prepareReceiptsForExport(receipts: any[], _locale: string = "en"
   };
 }
 
+/** Account name in the exporting user's language (`accountNameAr` for Arabic), like the screens. */
+function exportAccountName(item: { accountName?: string | null; accountNameAr?: string | null }) {
+  return (currentExportLocale() === "ar" && item.accountNameAr) || item.accountName || "";
+}
+
 export function prepareProfitLossForExport(profitLoss: any): ExportData {
   const rows: any[] = [];
 
   rows.push({ account: "REVENUE", code: "", amount: "" });
   profitLoss?.revenue?.forEach((item: any) => {
     rows.push({
-      account: item.accountName,
+      account: exportAccountName(item),
       code: item.accountCode || "",
       amount: item.amount?.toFixed(2) || "0.00",
     });
@@ -283,7 +364,7 @@ export function prepareProfitLossForExport(profitLoss: any): ExportData {
   rows.push({ account: "EXPENSES", code: "", amount: "" });
   profitLoss?.expenses?.forEach((item: any) => {
     rows.push({
-      account: item.accountName,
+      account: exportAccountName(item),
       code: item.accountCode || "",
       amount: item.amount?.toFixed(2) || "0.00",
     });
@@ -356,7 +437,7 @@ export function prepareBalanceSheetForExport(balanceSheet: any): ExportData {
   rows.push({ account: "ASSETS", code: "", amount: "" });
   balanceSheet?.assets?.forEach((item: any) => {
     rows.push({
-      account: item.accountName,
+      account: exportAccountName(item),
       code: item.accountCode || "",
       amount: item.amount?.toFixed(2) || "0.00",
     });
@@ -371,7 +452,7 @@ export function prepareBalanceSheetForExport(balanceSheet: any): ExportData {
   rows.push({ account: "LIABILITIES", code: "", amount: "" });
   balanceSheet?.liabilities?.forEach((item: any) => {
     rows.push({
-      account: item.accountName,
+      account: exportAccountName(item),
       code: item.accountCode || "",
       amount: item.amount?.toFixed(2) || "0.00",
     });
@@ -386,7 +467,7 @@ export function prepareBalanceSheetForExport(balanceSheet: any): ExportData {
   rows.push({ account: "EQUITY", code: "", amount: "" });
   balanceSheet?.equity?.forEach((item: any) => {
     rows.push({
-      account: item.accountName,
+      account: exportAccountName(item),
       code: item.accountCode || "",
       amount: item.amount?.toFixed(2) || "0.00",
     });
@@ -408,6 +489,19 @@ export function prepareBalanceSheetForExport(balanceSheet: any): ExportData {
   };
 }
 
+/**
+ * The VAT summary period as text. The API sends `{ from, to }` (older payloads a string); writing
+ * the object itself produced "[object Object]" in the workbook (E2).
+ */
+function vatPeriodForExport(period: unknown): string {
+  if (typeof period === "string") return period;
+  if (period && typeof period === "object") {
+    const { from, to } = period as { from?: string | null; to?: string | null };
+    return formatDateRange(from, to, currentExportLocale(), { plain: true });
+  }
+  return "";
+}
+
 export function prepareVATSummaryForExport(vatSummary: any): ExportData {
   return {
     sheetName: "VAT Summary",
@@ -416,7 +510,7 @@ export function prepareVATSummaryForExport(vatSummary: any): ExportData {
       { header: "Amount (AED)", key: "amount", width: 15 },
     ],
     rows: [
-      { description: "Period", amount: vatSummary?.period || "" },
+      { description: "Period", amount: vatPeriodForExport(vatSummary?.period) },
       { description: "", amount: "" },
       { description: "Sales (Excl. VAT)", amount: vatSummary?.salesSubtotal?.toFixed(2) || "0.00" },
       { description: "Output VAT (5%)", amount: vatSummary?.salesVAT?.toFixed(2) || "0.00" },
@@ -524,7 +618,7 @@ export function prepareTrialBalanceForExport(trialBalance: any): ExportData {
   const rows =
     trialBalance?.rows?.map((row: any) => ({
       code: row.accountCode || "",
-      account: row.accountName || "",
+      account: exportAccountName(row),
       type: row.accountType || "",
       debit: row.totalDebit?.toFixed(2) || "0.00",
       credit: row.totalCredit?.toFixed(2) || "0.00",
@@ -898,21 +992,6 @@ export function prepareInvoiceStatusForExport(report: any): ExportData[] {
   ];
 }
 
-function receiptExportRate(receipt: any): number {
-  const rate = Number(receipt?.exchangeRate ?? 1);
-  return Number.isFinite(rate) && rate > 0 ? rate : 1;
-}
-
-function receiptSubtotalExportAed(receipt: any): number {
-  const base = Number(receipt?.baseCurrencyAmount ?? 0);
-  if (Number.isFinite(base) && Math.abs(base) > 0.005) return base;
-  return (Number(receipt?.amount) || 0) * receiptExportRate(receipt);
-}
-
-function receiptVatExportAed(receipt: any): number {
-  return (Number(receipt?.vatAmount) || 0) * receiptExportRate(receipt);
-}
-
 function expenseSummaryRows(rows: any[] = []) {
   return rows.map((row: any) => ({
     label: row.label,
@@ -925,6 +1004,7 @@ function expenseSummaryRows(rows: any[] = []) {
 }
 
 export function prepareExpenseReportsForExport(report: any): ExportData[] {
+  const baseCurrency = report?.baseCurrency ?? "AED";
   return [
     {
       sheetName: "Expenses by Vendor",
@@ -932,9 +1012,9 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { header: "Vendor", key: "label", width: 30 },
         { header: "Posted Entries", key: "entryCount", width: 16 },
         { header: "Expense Lines", key: "lineCount", width: 16 },
-        { header: "Debit (AED)", key: "debitAed", width: 18 },
-        { header: "Credit (AED)", key: "creditAed", width: 18 },
-        { header: "Net Expense (AED)", key: "netExpenseAed", width: 20 },
+        { header: `Debit (${baseCurrency})`, key: "debitAed", width: 18 },
+        { header: `Credit (${baseCurrency})`, key: "creditAed", width: 18 },
+        { header: `Net Expense (${baseCurrency})`, key: "netExpenseAed", width: 20 },
       ],
       rows: expenseSummaryRows(report?.byVendor),
     },
@@ -944,9 +1024,9 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { header: "Category", key: "label", width: 28 },
         { header: "Posted Entries", key: "entryCount", width: 16 },
         { header: "Expense Lines", key: "lineCount", width: 16 },
-        { header: "Debit (AED)", key: "debitAed", width: 18 },
-        { header: "Credit (AED)", key: "creditAed", width: 18 },
-        { header: "Net Expense (AED)", key: "netExpenseAed", width: 20 },
+        { header: `Debit (${baseCurrency})`, key: "debitAed", width: 18 },
+        { header: `Credit (${baseCurrency})`, key: "creditAed", width: 18 },
+        { header: `Net Expense (${baseCurrency})`, key: "netExpenseAed", width: 20 },
       ],
       rows: expenseSummaryRows(report?.byCategory),
     },
@@ -962,11 +1042,26 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { metric: "Needs posting", value: report?.unpostedReceipts ?? 0 },
         { metric: "Posted expense entries", value: report?.entryCount ?? 0 },
         { metric: "Posted expense lines", value: report?.lineCount ?? 0 },
-        { metric: "Posted expense debits (AED)", value: formatExportAmount(report?.debitAed) },
-        { metric: "Posted expense credits (AED)", value: formatExportAmount(report?.creditAed) },
-        { metric: "Net posted expenses (AED)", value: formatExportAmount(report?.totalAed) },
-        { metric: "Receipt VAT captured (AED)", value: formatExportAmount(report?.vatAed) },
-        { metric: "Receipt spend captured (AED)", value: formatExportAmount(report?.receiptSpendAed) },
+        {
+          metric: `Posted expense debits (${baseCurrency})`,
+          value: formatExportAmount(report?.debitAed),
+        },
+        {
+          metric: `Posted expense credits (${baseCurrency})`,
+          value: formatExportAmount(report?.creditAed),
+        },
+        {
+          metric: `Net posted expenses (${baseCurrency})`,
+          value: formatExportAmount(report?.totalAed),
+        },
+        {
+          metric: `Receipt VAT captured (${baseCurrency})`,
+          value: formatExportAmount(report?.receiptVat),
+        },
+        {
+          metric: `Receipt spend captured (${baseCurrency})`,
+          value: formatExportAmount(report?.receiptSpend),
+        },
         { metric: "Basis", value: report?.basis ?? "" },
       ],
     },
@@ -1033,9 +1128,9 @@ export function prepareExpenseReportsForExport(report: any): ExportData[] {
         { header: "Expense Account", key: "category", width: 28 },
         { header: "Account Code", key: "accountCode", width: 16 },
         { header: "Source", key: "source", width: 18 },
-        { header: "Debit (AED)", key: "debitAed", width: 18 },
-        { header: "Credit (AED)", key: "creditAed", width: 18 },
-        { header: "Net Expense (AED)", key: "netExpenseAed", width: 20 },
+        { header: `Debit (${baseCurrency})`, key: "debitAed", width: 18 },
+        { header: `Credit (${baseCurrency})`, key: "creditAed", width: 18 },
+        { header: `Net Expense (${baseCurrency})`, key: "netExpenseAed", width: 20 },
       ],
       rows:
         report?.lines?.map((line: any) => ({
@@ -1226,7 +1321,12 @@ export function prepareLedgerReportsForExport(report: any): ExportData[] {
           accountCode: line.accountCode || "",
           accountName: line.accountName || "",
           accountType: line.accountType || "",
-          memo: line.memo || "",
+          memo: localizeJournalLine(
+            catalogs[currentExportLocale()],
+            currentExportLocale(),
+            { description: line.memo, lineKey: line.lineKey, lineParams: line.lineParams },
+            line
+          ),
           source: line.source || "Unknown",
           debit: formatExportAmount(line.debit),
           credit: formatExportAmount(line.credit),
@@ -1234,6 +1334,15 @@ export function prepareLedgerReportsForExport(report: any): ExportData[] {
         })) ?? [],
     },
   ];
+}
+
+/**
+ * A server sentence (month-end check title, description, details) in the exporting user's
+ * language, the same way the Close tab shows it; English users keep the stored text.
+ */
+function exportServerText(text: string, copy?: Parameters<typeof localizeServerText>[2]): string {
+  if (!text || currentExportLocale() !== "ar") return text;
+  return formatEmbeddedDates(localizeServerText(text, catalogs.ar, copy), "ar");
 }
 
 export function prepareMonthEndCloseStatusForExport(report: any): ExportData[] {
@@ -1265,13 +1374,60 @@ export function prepareMonthEndCloseStatusForExport(report: any): ExportData[] {
       rows:
         report?.checklist?.map((item: any) => ({
           number: item.id,
-          title: item.title,
+          title: exportServerText(item.title, item.copy?.title),
           status: item.status === "complete" ? "Complete" : "Needs review",
-          description: item.description,
-          details: item.details ?? "",
+          description: exportServerText(item.description, item.copy?.description),
+          details: exportServerText(item.details ?? "", item.copy?.details),
         })) ?? [],
     },
   ];
+}
+
+/**
+ * An audit action or record-type label in the exporting user's language: the app's catalog label
+ * for an Arabic user (as on the Audit trail screen), the stored English words otherwise.
+ */
+function auditLabel(
+  code: string | null | undefined,
+  english: string | null | undefined,
+  labelFor: (catalog: Record<string, string>, code: string) => string,
+  fallback = "Unknown"
+): string {
+  if (currentExportLocale() === "ar" && code && code !== "unknown") {
+    return labelFor(catalogs.ar, code);
+  }
+  return english || fallback;
+}
+
+export function exportActivityLogs(
+  logs: ActivityLog[],
+  users: Pick<User, "id" | "email">[],
+  t: Record<string, string>,
+  locale: string
+) {
+  return exportToExcel(
+    [
+      {
+        sheetName: t["activityLog.export.sheet"],
+        rtl: locale === "ar",
+        columns: [
+          { header: t["activityLog.export.date"], key: "date", width: 20 },
+          { header: t["activityLog.export.user"], key: "user", width: 28 },
+          { header: t["activityLog.export.action"], key: "action", width: 28 },
+          { header: t["activityLog.export.entity"], key: "entity", width: 22 },
+          { header: t["activityLog.export.description"], key: "description", width: 60 },
+        ],
+        rows: logs.map((log) => ({
+          date: formatDateTimePlain(log.createdAt, locale),
+          user: users.find((user) => user.id === log.userId)?.email ?? "",
+          action: activityActionLabel(t, log.action),
+          entity: activityEntityLabel(t, log.entityType ?? ""),
+          description: activitySentence(t, log, locale),
+        })),
+      },
+    ],
+    "activity-log"
+  );
 }
 
 export function prepareAuditTrailForExport(report: any): ExportData[] {
@@ -1303,7 +1459,7 @@ export function prepareAuditTrailForExport(report: any): ExportData[] {
         { header: "Latest Activity", key: "latestAt", width: 16 },
       ],
       rows: actionRows.map((row: any) => ({
-        action: row.label || row.action || "Unknown",
+        action: auditLabel(row.key, row.label || row.action, activityActionLabel),
         count: row.count ?? 0,
         latestAt: formatDateForExport(row.latestAt),
       })),
@@ -1316,7 +1472,7 @@ export function prepareAuditTrailForExport(report: any): ExportData[] {
         { header: "Latest Activity", key: "latestAt", width: 16 },
       ],
       rows: entityRows.map((row: any) => ({
-        entity: row.label || row.entityType || "Unknown",
+        entity: auditLabel(row.key, row.label || row.entityType, activityEntityLabel),
         count: row.count ?? 0,
         latestAt: formatDateForExport(row.latestAt),
       })),
@@ -1335,11 +1491,19 @@ export function prepareAuditTrailForExport(report: any): ExportData[] {
       ],
       rows: rows.map((row: any) => ({
         date: formatDateForExport(row.createdAt),
-        action: row.actionLabel || row.action || "",
-        entity: row.entityLabel || row.entityType || "",
+        action: auditLabel(row.action, row.actionLabel || row.action, activityActionLabel, ""),
+        entity: auditLabel(
+          row.entityType,
+          row.entityLabel || row.entityType,
+          activityEntityLabel,
+          ""
+        ),
         entityId: row.entityId || "",
         risk: row.riskLevel || "Low",
-        description: row.description || "",
+        description:
+          currentExportLocale() === "ar" && row.action
+            ? activitySentence(catalogs.ar, row, "ar")
+            : row.description || "",
         userId: row.userId || "",
         metadata: row.metadata || "",
       })),
@@ -1506,13 +1670,19 @@ export function preparePlanningReportsForExport(report: any): ExportData[] {
       ],
       rows:
         report?.varianceLines?.map((line: any) => ({
-          category: line.category || "",
+          category: budgetCategoryLabel(catalogs[currentExportLocale()], line.category),
           description: line.description || "",
           budget: formatExportAmount(line.totals?.budget),
           actual: formatExportAmount(line.totals?.actual),
           variance: formatExportAmount(line.totals?.variance),
           variancePercent: formatExportPercent(line.totals?.variancePercent),
-          status: Number(line.totals?.variance ?? 0) < 0 ? "Over budget" : "Within budget",
+          // Same rule as the screen (W3-E): only a spend line above its budget is over budget; an
+          // income line below target is not.
+          status:
+            line.accountType !== "income" &&
+            Number(line.totals?.actual ?? 0) > Number(line.totals?.budget ?? 0)
+              ? "Over budget"
+              : "Within budget",
         })) ?? [],
     },
     {
@@ -1909,4 +2079,33 @@ export function prepareBalanceSummaryReportsForExport(report: any): ExportData[]
       })),
     },
   ];
+}
+
+/**
+ * GET a server-rendered document (invoice / quote / credit-note PDF) and save it. The server PDF
+ * carries the Arabic shaping and fonts, so the UI never builds these client-side.
+ */
+export async function downloadServerFile(url: string, fallbackFilename: string): Promise<void> {
+  const res = await fetch(apiUrl(url), {
+    method: "GET",
+    credentials: "include",
+    headers: { ...getAuthHeaders() },
+  });
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText}`;
+    let errorBody: unknown;
+    try {
+      errorBody = await res.json();
+      const json = errorBody as { message?: string; error?: string };
+      message = json.message || json.error || message;
+    } catch {
+      /* binary body — keep status */
+    }
+    throw new Error(await failedResponseMessage(res.status, errorBody, message));
+  }
+  const blob = await res.blob();
+  await triggerBlobDownload(
+    blob,
+    filenameFromContentDisposition(res.headers.get("Content-Disposition"), fallbackFilename)
+  );
 }

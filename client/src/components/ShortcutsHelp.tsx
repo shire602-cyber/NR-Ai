@@ -8,38 +8,39 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useKeyboardShortcuts, formatCombo } from "@/hooks/useKeyboardShortcuts";
+import { useTranslation } from "@/lib/i18n";
 
 const SHORTCUTS = [
   {
-    group: "General",
+    group: "components.shortcutsGroupGeneral",
     items: [
-      { combo: "mod+k", label: "Open command palette" },
-      { combo: "/", label: "Search / open command palette" },
-      { combo: "mod+shift+/", label: "Show keyboard shortcuts" },
-      { combo: "escape", label: "Close dialog or modal" },
+      { combo: "mod+k", label: "components.shortcutsOpenPalette" },
+      { combo: "/", label: "components.shortcutsSearch" },
+      { combo: "mod+shift+/", label: "components.shortcutsShowHelp" },
+      { combo: "escape", label: "components.shortcutsClose" },
     ],
   },
   {
-    group: "Navigation",
+    group: "components.shortcutsGroupNavigation",
     items: [
-      { combo: "g d", label: "Go to Dashboard" },
-      { combo: "g i", label: "Go to Invoices" },
-      { combo: "g j", label: "Go to Journal" },
-      { combo: "g r", label: "Go to Reports" },
-      { combo: "g c", label: "Go to Contacts" },
+      { combo: "g d", label: "components.shortcutsGoDashboard" },
+      { combo: "g i", label: "components.shortcutsGoInvoices" },
+      { combo: "g j", label: "components.shortcutsGoJournal" },
+      { combo: "g r", label: "components.shortcutsGoReports" },
+      { combo: "g c", label: "components.shortcutsGoContacts" },
     ],
   },
   {
-    group: "Lists",
+    group: "components.shortcutsGroupLists",
     items: [
-      { combo: "j", label: "Move down" },
-      { combo: "k", label: "Move up" },
-      { combo: "enter", label: "Open selected item" },
+      { combo: "j", label: "components.shortcutsMoveDown" },
+      { combo: "k", label: "components.shortcutsMoveUp" },
+      { combo: "enter", label: "components.shortcutsOpenSelected" },
     ],
   },
   {
-    group: "Create",
-    items: [{ combo: "n", label: "New invoice (on Invoices page)" }],
+    group: "components.shortcutsGroupCreate",
+    items: [{ combo: "n", label: "components.shortcutsNewInvoice" }],
   },
 ];
 
@@ -49,18 +50,19 @@ interface ShortcutsHelpProps {
 }
 
 export function ShortcutsHelp({ open, onOpenChange }: ShortcutsHelpProps) {
+  const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Keyboard shortcuts</DialogTitle>
-          <DialogDescription>Speed up navigation with these keys.</DialogDescription>
+          <DialogTitle>{t["components.shortcutsTitle"]}</DialogTitle>
+          <DialogDescription>{t["components.shortcutsDescription"]}</DialogDescription>
         </DialogHeader>
         <div className="space-y-5 pt-2 max-h-[60vh] overflow-y-auto">
           {SHORTCUTS.map((section) => (
             <div key={section.group}>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                {section.group}
+                {t[section.group]}
               </h3>
               <div className="space-y-1">
                 {section.items.map((item) => (
@@ -68,8 +70,8 @@ export function ShortcutsHelp({ open, onOpenChange }: ShortcutsHelpProps) {
                     key={item.combo}
                     className="flex items-center justify-between py-1.5 text-sm"
                   >
-                    <span className="text-foreground/90">{item.label}</span>
-                    <kbd className="ml-auto px-2 py-1 text-[11px] font-mono bg-muted rounded border border-border/70 text-muted-foreground">
+                    <span className="text-foreground/90">{t[item.label]}</span>
+                    <kbd className="ms-auto px-2 py-1 text-[11px] font-mono bg-muted rounded border border-border/70 text-muted-foreground">
                       {item.combo
                         .split(" ")
                         .map((c) => formatCombo(c))

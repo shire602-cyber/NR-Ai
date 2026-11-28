@@ -1,244 +1,159 @@
-// @ts-ignore - pdfkit has no type declarations
-import PDFDocument from "pdfkit";
+import { isDraftStatus, isVoidedStatus, pdfLocale, stampDraftWatermark } from "./pdf-fonts";
+import { bi, date, lineVatPercent, ltr, money, renderSimpleDocument } from "./pdf-ledger";
+import { loadCompanyLogo } from "./pdf-logo";
 import type { CreditNote, CreditNoteLine, Company, Invoice } from "../../shared/schema";
 
 /**
- * Generate a professional credit note PDF on the server side using PDFKit.
- * Returns a Buffer containing the PDF data.
+ * Foreign-currency credit note: the booking rate and VAT in the base currency exactly as posted
+ * (never a fresh rate lookup; a credit note never creates an FX gain or loss).
  */
-export async function generateCreditNotePDF(
-  creditNote: CreditNote,
-  lines: CreditNoteLine[],
-  company: Company,
-  originalInvoice?: Invoice
-): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({
-        size: "A4",
-        margin: 50,
-        info: {
-          Title: `Credit Note ${creditNote.number}`,
-          Author: company.name,
-        },
-      });
-
-      const chunks: Buffer[] = [];
-      doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-      doc.on("end", () => resolve(Buffer.concat(chunks)));
-      doc.on("error", reject);
-
-      const pageWidth = 595.28; // A4 width in points
-      const margin = 50;
-      const contentWidth = pageWidth - 2 * margin;
-
-      // --- Header: Blue background bar ---
-      doc.rect(0, 0, pageWidth, 100).fill("#1E40AF");
-
-      // Company Name
-      doc.fontSize(22).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text(company.name, margin, 30, { width: contentWidth * 0.6 });
-
-      // Credit Note Label
-      doc.fontSize(16).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text("CREDIT NOTE", margin, 35, {
-        width: contentWidth,
-        align: "right",
-      });
-
-      // --- Credit Note Details Box ---
-      let y = 120;
-      const hasOriginalInvoice = !!originalInvoice;
-      const hasReason = !!creditNote.reason;
-      const detailBoxHeight = 50 + (hasOriginalInvoice ? 18 : 0) + (hasReason ? 18 : 0);
-      doc.rect(margin, y, contentWidth, detailBoxHeight).fill("#F9FAFB").stroke("#E5E7EB");
-
-      doc.fontSize(10).fillColor("#1F2937").font("Helvetica-Bold");
-      doc.text("Credit Note #:", margin + 10, y + 12);
-      doc.font("Helvetica").text(creditNote.number, margin + 95, y + 12);
-
-      doc.font("Helvetica-Bold").text("Date:", margin + 10, y + 30);
-      doc.font("Helvetica").text(
-        new Date(creditNote.date).toLocaleDateString("en-AE", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        }),
-        margin + 95,
-        y + 30
-      );
-
-      let detailY = y + 48;
-
-      if (hasOriginalInvoice && originalInvoice) {
-        doc.font("Helvetica-Bold").text("Ref. Invoice:", margin + 10, detailY);
-        doc.font("Helvetica").text(originalInvoice.number, margin + 95, detailY);
-        detailY += 18;
-      }
-
-      if (hasReason && creditNote.reason) {
-        doc.font("Helvetica-Bold").text("Reason:", margin + 10, detailY);
-        doc.font("Helvetica").text(creditNote.reason, margin + 95, detailY, { width: 200 });
-      }
-
-      // TRN on right side
-      const isVATRegistered = !!company.trnVatNumber;
-      if (isVATRegistered && company.trnVatNumber) {
-        doc.font("Helvetica-Bold").text("TRN:", margin + contentWidth - 170, y + 12);
-        doc.font("Helvetica").text(company.trnVatNumber, margin + contentWidth - 135, y + 12);
-      }
-
-      // Status on right side
-      if (creditNote.status) {
-        doc.font("Helvetica-Bold").text("Status:", margin + contentWidth - 170, y + 30);
-        doc
-          .font("Helvetica")
-          .text(creditNote.status.toUpperCase(), margin + contentWidth - 125, y + 30);
-      }
-
-      // --- Company Details ---
-      y = 120 + detailBoxHeight + 15;
-      doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
-      if (company.businessAddress) {
-        doc.text(company.businessAddress, margin, y, { width: 200 });
-        y += 12;
-      }
-      if (company.contactPhone) {
-        doc.text(`Phone: ${company.contactPhone}`, margin, y);
-        y += 10;
-      }
-      if (company.contactEmail) {
-        doc.text(`Email: ${company.contactEmail}`, margin, y);
-        y += 10;
-      }
-
-      y = Math.max(y + 10, 220);
-
-      // --- Bill To Section ---
-      doc.fontSize(12).fillColor("#1E40AF").font("Helvetica-Bold");
-      doc.text("BILL TO:", margin, y);
-      y += 18;
-
-      doc.fontSize(11).fillColor("#1F2937").font("Helvetica-Bold");
-      doc.text(creditNote.customerName, margin, y);
-      y += 16;
-
-      if (creditNote.customerTrn) {
-        doc.fontSize(9).fillColor("#6B7280").font("Helvetica");
-        doc.text(`TRN: ${creditNote.customerTrn}`, margin, y);
-        y += 14;
-      }
-
-      y += 10;
-
-      // --- Line Items Table ---
-      const tableTop = y;
-      const colX = {
-        description: margin + 5,
-        qty: margin + 250,
-        price: margin + 310,
-        vat: margin + 380,
-        amount: margin + contentWidth - 10,
-      };
-      const rowHeight = 25;
-
-      // Table Header
-      doc.rect(margin, tableTop, contentWidth, rowHeight).fill("#1E40AF");
-      doc.fontSize(9).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text("Description", colX.description, tableTop + 8);
-      doc.text("Qty", colX.qty, tableTop + 8, { width: 50, align: "center" });
-      doc.text("Price", colX.price, tableTop + 8, { width: 60, align: "center" });
-      doc.text("VAT", colX.vat, tableTop + 8, { width: 40, align: "center" });
-      doc.text("Amount", colX.amount - 60, tableTop + 8, { width: 60, align: "right" });
-
-      y = tableTop + rowHeight;
-
-      // Table Rows
-      doc.font("Helvetica").fillColor("#1F2937").fontSize(9);
-      lines.forEach((line, index) => {
-        const bgColor = index % 2 === 0 ? "#FFFFFF" : "#F9FAFB";
-        doc.rect(margin, y, contentWidth, rowHeight).fill(bgColor);
-
-        const lineTotal = line.quantity * line.unitPrice;
-        const vatPercent = ((line.vatRate || 0.05) * 100).toFixed(0);
-
-        doc.fillColor("#1F2937");
-        doc.text(line.description, colX.description, y + 8, { width: 230 });
-        doc.text(line.quantity.toString(), colX.qty, y + 8, { width: 50, align: "center" });
-        doc.text(formatAmount(line.unitPrice, creditNote.currency), colX.price, y + 8, {
-          width: 60,
-          align: "center",
-        });
-        doc.text(`${vatPercent}%`, colX.vat, y + 8, { width: 40, align: "center" });
-        doc.text(formatAmount(lineTotal, creditNote.currency), colX.amount - 60, y + 8, {
-          width: 60,
-          align: "right",
-        });
-
-        y += rowHeight;
-      });
-
-      // Table border
-      doc.rect(margin, tableTop, contentWidth, y - tableTop).stroke("#E5E7EB");
-
-      y += 15;
-
-      // --- Totals ---
-      const totalsX = margin + contentWidth - 170;
-      const totalsValueX = margin + contentWidth - 10;
-
-      doc.fontSize(10).fillColor("#1F2937").font("Helvetica");
-      doc.text("Subtotal:", totalsX, y);
-      doc.text(formatAmount(creditNote.subtotal, creditNote.currency), totalsValueX - 80, y, {
-        width: 80,
-        align: "right",
-      });
-      y += 18;
-
-      doc.text("VAT:", totalsX, y);
-      doc.text(formatAmount(creditNote.vatAmount, creditNote.currency), totalsValueX - 80, y, {
-        width: 80,
-        align: "right",
-      });
-      y += 22;
-
-      // Total with blue background
-      doc.rect(totalsX - 10, y - 7, 180, 28).fill("#1E40AF");
-      doc.fontSize(13).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text("TOTAL CREDIT:", totalsX, y);
-      doc.text(formatAmount(creditNote.total, creditNote.currency), totalsValueX - 80, y, {
-        width: 80,
-        align: "right",
-      });
-
-      // --- Footer ---
-      const footerY = 770;
-      doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
-      doc.text(
-        "This credit note reduces the amount owed on the referenced invoice.",
-        margin,
-        footerY,
-        {
-          width: contentWidth,
-          align: "center",
-        }
-      );
-
-      if (isVATRegistered) {
-        doc.fontSize(7);
-        doc.text("This is a tax credit note - Please keep for your records", margin, footerY + 12, {
-          width: contentWidth,
-          align: "center",
-        });
-      }
-
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
-  });
+export interface CreditNotePdfAdjustment {
+  currency: string;
+  /** Net value of the supply on the original tax invoice. */
+  originalNet: number;
+  /** Net value after every credit note on the invoice up to and including this one. */
+  correctedNet: number;
+  /** The net amount this credit note removes. */
+  differenceNet: number;
+  /** The same three figures in the base currency at the stored booking rate (foreign only). */
+  base?: { currency: string; originalNet: number; correctedNet: number; differenceNet: number };
 }
 
-function formatAmount(amount: number, currency: string = "AED"): string {
-  return `${currency} ${amount.toFixed(2)}`;
+/** The canonical credit note plus the recipient address printed under "Credit to". */
+export type CreditNotePdfSource = CreditNote & { customerAddress?: string | null };
+
+export interface CreditNotePdfFx {
+  baseCurrency: string;
+  /** Base currency per 1 unit of the document currency, as stored on the credit note. */
+  exchangeRate: number;
+  /** VAT in the base currency, from the posted journal (or the stored rate for a draft). */
+  vatBase: number;
+}
+
+/**
+ * Credit note PDF in the "Ledger" layout (server/services/pdf-ledger.ts).
+ * The status is not printed (a draft carries the DRAFT watermark instead).
+ */
+export async function generateCreditNotePDF(
+  creditNote: CreditNotePdfSource,
+  lines: CreditNoteLine[],
+  company: Company,
+  originalInvoice?: Invoice | null,
+  fx?: CreditNotePdfFx | null,
+  adjustment?: CreditNotePdfAdjustment | null
+): Promise<Buffer> {
+  const ar = pdfLocale(company) === "ar";
+  const adjLine = (pick: "originalNet" | "correctedNet" | "differenceNet"): string => {
+    if (!adjustment) return "";
+    const doc = money(adjustment[pick], adjustment.currency);
+    return adjustment.base
+      ? `${doc} (${money(adjustment.base[pick], adjustment.base.currency)})`
+      : doc;
+  };
+  // S1 (R14-13): the uploaded company logo (companies.logo_path), never an inline data: URL.
+  const logo = await loadCompanyLogo(company);
+  const isVATRegistered = !!company.trnVatNumber;
+  return renderSimpleDocument({
+    locale: pdfLocale(company),
+    info: { Title: `Credit Note ${creditNote.number}`, Author: company.name },
+    company: {
+      name: company.name,
+      legalName: company.legalName,
+      legalNameAr: company.legalNameAr,
+      addressAr: company.addressAr,
+      trn: company.trnVatNumber,
+      address: company.businessAddress,
+      phone: company.contactPhone,
+      email: company.contactEmail,
+    },
+    logo,
+    title: isVATRegistered
+      ? bi("Tax credit note", "إشعار دائن ضريبي")
+      : bi("Credit note", "إشعار دائن"),
+    meta: [
+      { label: bi("Credit note no.", "رقم الإشعار"), value: ltr(creditNote.number) },
+      { label: bi("Date", "التاريخ"), value: date(creditNote.date) },
+      {
+        label: bi("Ref. invoice", "الفاتورة المرجعية"),
+        value: originalInvoice ? ltr(originalInvoice.number) : null,
+      },
+      {
+        label: bi("Ref. invoice date", "تاريخ الفاتورة المرجعية"),
+        value: originalInvoice ? date(originalInvoice.date) : null,
+      },
+    ],
+    party: {
+      label: bi("Credit to", "لصالح"),
+      name: creditNote.customerName,
+      trn: creditNote.customerTrn,
+      address: creditNote.customerAddress,
+    },
+    currency: creditNote.currency || "AED",
+    lines: lines.map((line) => ({
+      description: line.description,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      vatPercent: lineVatPercent(line),
+      amount: line.quantity * line.unitPrice,
+    })),
+    totals: {
+      subtotal: creditNote.subtotal,
+      vat: creditNote.vatAmount,
+      total: creditNote.total,
+      totalLabel: bi("Total credit", "إجمالي الدائن"),
+      extraRows: fx
+        ? [
+            {
+              label: bi(`VAT total (${fx.baseCurrency})`, `إجمالي الضريبة (${fx.baseCurrency})`),
+              value: money(fx.vatBase, fx.baseCurrency),
+            },
+            {
+              label: bi("Exchange rate", "سعر الصرف"),
+              value: ltr(
+                `1 ${creditNote.currency || "AED"} = ${fx.exchangeRate.toFixed(4)} ${fx.baseCurrency}`
+              ),
+            },
+          ]
+        : undefined,
+    },
+    notes: [
+      {
+        label: bi("Reason", "السبب"),
+        text: creditNote.reason || (ar ? "إشعار دائن للفاتورة" : "Invoice credit note"),
+      },
+      ...(adjustment
+        ? [
+            {
+              label: bi("Original value of the supply (net)", "القيمة الأصلية للتوريد (الصافي)"),
+              text: adjLine("originalNet"),
+            },
+            {
+              label: bi("Corrected value of the supply (net)", "القيمة المصححة للتوريد (الصافي)"),
+              text: adjLine("correctedNet"),
+            },
+            {
+              label: bi("Difference (net credited)", "الفرق (صافي المبلغ الدائن)"),
+              text: adjLine("differenceNet"),
+            },
+          ]
+        : []),
+    ],
+    footer: [
+      bi(
+        "This credit note reduces the amount owed on the referenced invoice.",
+        "يخفض هذا الإشعار المبلغ المستحق على الفاتورة المرجعية."
+      ),
+      isVATRegistered
+        ? bi(
+            "This is a tax credit note. Please keep it for your records.",
+            "هذا إشعار دائن ضريبي. يرجى الاحتفاظ به لسجلاتكم."
+          )
+        : null,
+    ],
+    beforeEnd: (doc) => {
+      if (isDraftStatus(creditNote.status)) stampDraftWatermark(doc);
+      else if (isVoidedStatus(creditNote.status))
+        stampDraftWatermark(doc, "void", { masculine: true });
+    },
+  });
 }

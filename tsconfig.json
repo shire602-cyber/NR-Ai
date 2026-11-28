@@ -8,7 +8,6 @@
     "**/Temp/**",
     "**/bugbot-*/**",
     "**/.cursor/**",
-    "server/services/depreciation.service.ts",
     "server/services/invoice-payment.service.ts",
     "client/src/hooks/useHealthCheck.ts",
     "client/src/lib/date-safe.ts",

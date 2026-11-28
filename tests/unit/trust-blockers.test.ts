@@ -80,13 +80,12 @@ vi.mock("../../server/storage", () => ({
         ? { id: "user-1", email, passwordHash: "x", name: "User" }
         : undefined
     ),
-    deletePasswordResetTokensForUser: vi.fn(async () => {}),
-    createPasswordResetToken: vi.fn(async () => ({})),
+    replacePasswordResetToken: vi.fn(async () => true),
   },
 }));
 
 import { registerNotificationRoutes } from "../../server/routes/notifications.routes";
-import { registerAnalyticsRoutes } from "../../server/routes/analytics.routes";
+import { maskIntegrationSecrets } from "../../server/services/ecommerce/routes";
 import { resolveAllowedOrigins } from "../../server/middleware/security";
 import { storage } from "../../server/storage";
 
@@ -197,11 +196,21 @@ describe("CORS allowlist (resolveAllowedOrigins)", () => {
 });
 
 describe("e-commerce integration secret masking", () => {
-  it("list response carries presence flags, never stored secrets", async () => {
-    const app = appWith(registerAnalyticsRoutes);
-    const res = await request(app, "GET", "/api/integrations/ecommerce?companyId=company-1");
-    expect(res.status).toBe(200);
-    const integration = res.body[0];
+  // W5-B: the routes moved to server/services/ecommerce/routes.ts and are DB-tested in
+  // tests/db/commercial-ecommerce.test.ts (connect verifies credentials with the platform).
+  it("responses carry presence flags, never stored secrets", () => {
+    const integration = maskIntegrationSecrets({
+      id: "int-1",
+      companyId: "company-1",
+      platform: "stripe_payouts",
+      isActive: true,
+      apiKey: "enc:v1:aaa:bbb:ccc",
+      accessToken: null,
+      refreshToken: null,
+      webhookSecret: "enc:v1:ddd:eee:fff",
+      shopDomain: null,
+      syncStatus: "never",
+    } as never) as Record<string, unknown>;
     expect(integration.hasApiKey).toBe(true);
     expect(integration.hasWebhookSecret).toBe(true);
     expect(integration.hasAccessToken).toBe(false);
@@ -209,18 +218,6 @@ describe("e-commerce integration secret masking", () => {
     expect(integration.accessToken).toBeUndefined();
     expect(integration.refreshToken).toBeUndefined();
     expect(integration.webhookSecret).toBeUndefined();
-    expect(JSON.stringify(res.body)).not.toContain("enc:v1");
-  });
-
-  it("connect response does not echo submitted credentials", async () => {
-    const app = appWith(registerAnalyticsRoutes);
-    const res = await request(app, "POST", "/api/integrations/ecommerce/connect", {
-      companyId: "company-1",
-      platform: "stripe",
-      apiKey: "sk_live_supersecret",
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.hasApiKey).toBe(true);
-    expect(JSON.stringify(res.body)).not.toContain("sk_live_supersecret");
+    expect(JSON.stringify(integration)).not.toContain("enc:v1");
   });
 });

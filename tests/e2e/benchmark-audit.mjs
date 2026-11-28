@@ -25,9 +25,11 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
 import { readyReportCatalog, reportPersonaHref } from "../../client/src/lib/reportCatalog.ts";
+import { bankStatementEvidence, bankStatementReportRow } from "./lib/bank-statement-evidence.mjs";
+import { dubaiToday } from "../helpers/dates.mjs";
 
 const BASE = (process.env.BASE_URL || process.argv[2] || "").replace(/\/$/, "");
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = dubaiToday();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../..");
 const OUTPUT_DIR = path.resolve(
@@ -272,7 +274,7 @@ function runFixture() {
   return result;
 }
 
-async function loadFixtureArtifact() {
+async function loadFixtureArtifact(fixtureRan) {
   let artifact = null;
   try {
     artifact = await readJsonFile(FIXTURE_ARTIFACT);
@@ -296,9 +298,11 @@ async function loadFixtureArtifact() {
     ? { email: artifact.account.email, reused: Boolean(artifact.account.reused) }
     : null;
   state.company = artifact.company || null;
-  state.created = artifact.created || {};
-  state.fixtureProbes = artifact.probes || [];
-  state.fixtureWarnings = artifact.warnings || [];
+  if (fixtureRan && Date.parse(artifact.startedAt) >= Date.parse(state.startedAt)) {
+    state.created = artifact.created || {};
+    state.fixtureProbes = artifact.probes || [];
+    state.fixtureWarnings = artifact.warnings || [];
+  }
   return artifact;
 }
 
@@ -467,7 +471,10 @@ async function checkPageOnce(page, href, targetList, screenshotBase) {
   page.on("pageerror", onError);
   page.on("response", onResponse);
   try {
-    await page.goto(`${BASE}${href}`, { timeout: 45000, waitUntil: "domcontentloaded" });
+    const navigation = await page.goto(`${BASE}${href}`, {
+      timeout: 45000,
+      waitUntil: "domcontentloaded",
+    });
     await page.waitForTimeout(1200);
     await dismissOnboardingIfVisible(page);
     const bodyText = await page
@@ -479,6 +486,11 @@ async function checkPageOnce(page, href, targetList, screenshotBase) {
     const failureText = bodyText.match(failText)?.[0] || null;
     const redirectedToAuth =
       currentPath.startsWith("/login") || currentPath.startsWith("/register");
+    const reconciliationPageMissing =
+      href === "/bank-reconciliation" &&
+      (navigation?.ok() !== true ||
+        currentPath !== href ||
+        !(await page.getByTestId("select-bank-account").isVisible()));
     const screenshotPath = path.join(SCREENSHOT_DIR, `${screenshotBase}.png`);
     await page.screenshot({ path: screenshotPath, fullPage: true });
     const relativeScreenshotPath = path.relative(OUTPUT_DIR, screenshotPath);
@@ -487,11 +499,19 @@ async function checkPageOnce(page, href, targetList, screenshotBase) {
     }
     result.screenshot = relativeScreenshotPath;
     result.bodyText = bodyText;
-    if (blank || failureText || redirectedToAuth || pageErrors.length || apiFailures.length) {
+    if (
+      blank ||
+      failureText ||
+      redirectedToAuth ||
+      reconciliationPageMissing ||
+      pageErrors.length ||
+      apiFailures.length
+    ) {
       result.issue = JSON.stringify({
         blank: blank || undefined,
         failureText,
         redirectedToAuth: redirectedToAuth || undefined,
+        reconciliationPageMissing: reconciliationPageMissing || undefined,
         pageErrors: pageErrors.slice(0, 3),
         apiFailures: [...new Set(apiFailures)].slice(0, 6),
       });
@@ -628,6 +648,7 @@ function table(headers, rows) {
 
 async function writeDocs() {
   state.finishedAt = new Date().toISOString();
+  state.bankStatementEvidence = bankStatementEvidence(state.routeChecks, state.fixtureProbes);
   const gaps = topGaps();
   state.topGaps = gaps;
   const reportRows = state.reportChecks.map((report) => [
@@ -778,11 +799,7 @@ ${table(
       "Review",
       "Balances and contacts routes are crawled; single-pane depth must be reviewed.",
     ],
-    [
-      "Bank feeds and rules",
-      "Review",
-      "Manual import/reconciliation is tested; live provider credentials are outside this audit.",
-    ],
+    bankStatementReportRow(state.bankStatementEvidence),
     [
       "Multi-currency revaluation",
       "Review",
@@ -855,12 +872,13 @@ async function main() {
     process.exit(1);
   }
 
-  runFixture();
+  const fixture = runFixture();
   const envCredentialsProvided = Boolean(
     (process.env.BENCHMARK_EMAIL || process.env.REPORT_AUDIT_EMAIL) &&
     (process.env.BENCHMARK_PASSWORD || process.env.REPORT_AUDIT_PASSWORD)
   );
-  const artifact = RUN_FIXTURE || !envCredentialsProvided ? await loadFixtureArtifact() : null;
+  const artifact =
+    RUN_FIXTURE || !envCredentialsProvided ? await loadFixtureArtifact(!fixture.skipped) : null;
   const credentials = {
     email:
       process.env.BENCHMARK_EMAIL ||

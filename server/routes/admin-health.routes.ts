@@ -10,12 +10,15 @@ import { Router } from "express";
 import type { Express } from "express";
 
 import { storage } from "../storage";
-import { authMiddleware, adminMiddleware } from "../middleware/auth";
+import { authMiddleware, adminMiddleware, optionalAuthUser } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
-import { pool } from "../db";
-import { getTableConfig } from "drizzle-orm/pg-core";
+import { getPoolStats, pingDb, pool } from "../db";
+import { monitoringConfigured, monitoringDsnIgnored } from "../services/monitoring";
+import { ssoStatus } from "./auth.routes";
+import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import * as schema from "../../shared/schema";
+import { errorMessage } from "../errors";
 
 const logger = createLogger("admin-health-routes");
 
@@ -23,8 +26,8 @@ export function registerAdminHealthRoutes(app: Express): void {
   const router = Router();
 
   // Apply auth + admin middleware only to /admin/* paths (not all /api/*)
-  router.use("/admin", authMiddleware as any);
-  router.use("/admin", adminMiddleware as any);
+  router.use("/admin", authMiddleware);
+  router.use("/admin", adminMiddleware);
 
   // =========================================
   // GET /api/admin/schema-health
@@ -41,11 +44,11 @@ export function registerAdminHealthRoutes(app: Express): void {
       for (const exported of Object.values(schema)) {
         let cfg;
         try {
-          cfg = getTableConfig(exported as any);
+          cfg = getTableConfig(exported as PgTable);
         } catch {
           continue; // not a pgTable export (relation, enum, zod schema, ...)
         }
-        const cols = new Set<string>(cfg.columns.map((c: any) => c.name as string));
+        const cols = new Set<string>(cfg.columns.map((c) => c.name));
         expected.set(cfg.name, cols);
       }
       // Raw-SQL tables managed outside Drizzle.
@@ -211,9 +214,9 @@ export function registerAdminHealthRoutes(app: Express): void {
               lastActivity,
               nextDeadline,
             };
-          } catch (err: any) {
+          } catch (err: unknown) {
             logger.error(
-              { companyId: company.id, error: err.message },
+              { companyId: company.id, error: errorMessage(err) },
               "Error computing health for company"
             );
             return {
@@ -326,9 +329,9 @@ export function registerAdminHealthRoutes(app: Express): void {
               status,
             });
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           logger.error(
-            { companyId: company.id, error: err.message },
+            { companyId: company.id, error: errorMessage(err) },
             "Error fetching deadlines for company"
           );
         }
@@ -341,6 +344,60 @@ export function registerAdminHealthRoutes(app: Express): void {
     })
   );
 
+  // =========================================
+  // GET /api/admin/auth/sso-status (R01-15)
+  // OAuth provider configuration and the SAML capability (requires_external).
+  // =========================================
+  router.get(
+    "/admin/auth/sso-status",
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json(ssoStatus());
+    })
+  );
+
   // Mount under /api
   app.use("/api", router);
+}
+
+/**
+ * GET /health (R17-13). Anonymous callers (load balancers, uptime checks)
+ * get only `{ status }`; node version, pid, memory and pool internals are
+ * returned to authenticated platform admins only.
+ */
+export function createHealthHandler(environment: string) {
+  return async (req: Request, res: Response): Promise<void> => {
+    const ping = await pingDb();
+    const status = ping.ok ? "ok" : "degraded";
+    const code = ping.ok ? 200 : 503;
+    const viewer = await optionalAuthUser(req).catch(() => null);
+    if (!viewer?.isAdmin) {
+      res.status(code).json({ status });
+      return;
+    }
+    const mem = process.memoryUsage();
+    res.status(code).json({
+      status,
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment,
+      version: process.env.APP_VERSION || "1.0.0",
+      node: process.version,
+      pid: process.pid,
+      memory: {
+        rssMB: Math.round(mem.rss / 1024 / 1024),
+        heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+      },
+      checks: {
+        database: ping.ok ? "ok" : "error",
+        databaseLatencyMs: ping.latencyMs,
+        databaseError: ping.error,
+        pool: getPoolStats(),
+        errorTracking: monitoringConfigured() ? "configured" : "logs-only",
+        errorTrackingNote: monitoringDsnIgnored()
+          ? "DSN is set but no error forwarder is wired; errors are logged only"
+          : undefined,
+      },
+    });
+  };
 }

@@ -15,9 +15,13 @@
  * we still record the best internal result so the receipt is never lost.
  */
 
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import OpenAI from "openai";
+import { createMeteredOpenAI } from "./ai/usage-meter";
+import { rememberVendorAccount } from "./vendor-memory.service";
 import { storage } from "../storage";
 import { pool } from "../db";
+import { baseCurrencyOf } from "../ledger/currency";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
@@ -33,9 +37,14 @@ import {
   invalidateModel,
   applyAccuracyFailsafe,
 } from "./training-data.service";
+import type { ValidationIssue } from "../../shared/receipt-confidence";
 import type { Account } from "../../shared/schema";
 import { DEFAULT_CLASSIFIER_CONFIG } from "../../shared/schema";
 import { evaluateAutoPostGate } from "./classification-feedback.util";
+import { errorMessage } from "../errors";
+import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
+import { vatWithoutTrnMessage } from "../../shared/receipt-amounts";
+import { isOwnTrn } from "../../shared/bill-capture";
 
 const log = createLogger("receipt-autopilot");
 
@@ -55,6 +64,18 @@ export interface OcrReceipt {
   rawText?: string | null;
   imagePath?: string | null;
   imageData?: string | null;
+  /** Supplier TRN (validated) when the document carried one. */
+  supplierTrn?: string | null;
+  /** Model-reported extraction confidence (missing => 0). */
+  extractionConfidence?: number;
+  /** True when extraction was not high-confidence/clean: never auto-post, always review. */
+  needsReview?: boolean;
+  /** Why extraction needs a person (VAT_DERIVED, AMOUNT_MISMATCH); not persisted on the receipt row. */
+  reviewIssues?: ValidationIssue[];
+  /** True file facts captured by the upload guard. */
+  contentSha256?: string | null;
+  fileMime?: string | null;
+  fileSize?: number | null;
 }
 
 export interface AutopilotResult {
@@ -69,6 +90,8 @@ export interface AutopilotResult {
   queuedForReview: boolean;
   /** The transaction_classifications.id we recorded for ML feedback. */
   classificationId: string;
+  /** Why the receipt was queued although everything else allowed auto-post (shown to the reviewer). */
+  reviewNote?: { code: string; message: string };
 }
 
 // =============================================
@@ -76,11 +99,14 @@ export interface AutopilotResult {
 // =============================================
 
 let _openai: OpenAI | null | undefined;
-function getOpenAI(): OpenAI | null {
-  if (_openai !== undefined) return _openai;
-  const key = getEnv().OPENAI_API_KEY;
-  _openai = key ? new OpenAI({ apiKey: key }) : null;
-  return _openai;
+function getOpenAI(companyId?: string | null): OpenAI | null {
+  if (_openai === undefined) {
+    const key = getEnv().OPENAI_API_KEY;
+    _openai = key ? new OpenAI({ apiKey: key }) : null;
+  }
+  if (!_openai) return null;
+  // Every classification call is quota-checked and recorded in ai_usage_events (R05-26).
+  return createMeteredOpenAI(_openai, { companyId, task: "categorize" }) as unknown as OpenAI;
 }
 
 // Test-only seam — lets unit tests inject a fake OpenAI client without
@@ -103,7 +129,7 @@ export function __setOpenAIForTests(client: OpenAI | null): void {
  */
 export async function classifyOcrReceipt(
   companyId: string,
-  ocr: Pick<OcrReceipt, "merchant" | "amount" | "lineItems">,
+  ocr: Pick<OcrReceipt, "merchant" | "amount" | "lineItems"> & { supplierTrn?: string | null },
   prefetched?: {
     config?: { accuracyThreshold: number; mode: "hybrid" | "openai_only" };
     accounts?: Account[];
@@ -123,8 +149,9 @@ export async function classifyOcrReceipt(
     lineItems: (ocr.lineItems || []).map((li) => li?.description || "").filter(Boolean),
     model,
     options: { threshold: config.accuracyThreshold, mode: config.mode },
-    openai: getOpenAI(),
+    openai: getOpenAI(companyId),
     expenseAccountNames,
+    supplierTrn: ocr.supplierTrn ?? null,
   });
 }
 
@@ -162,8 +189,9 @@ export async function runAutopilot(
     lineItems: (ocr.lineItems || []).map((li) => li?.description || "").filter(Boolean),
     model,
     options: { threshold: config.accuracyThreshold, mode: config.mode },
-    openai: getOpenAI(),
+    openai: getOpenAI(companyId),
     expenseAccountNames,
+    supplierTrn: ocr.supplierTrn ?? null,
   });
 
   // Stage 2 — resolve account ids.
@@ -194,6 +222,10 @@ export async function runAutopilot(
     rawText: ocr.rawText ?? null,
     imageData: ocr.imageData ?? null,
     imagePath: ocr.imagePath ?? null,
+    supplierTrn: ocr.supplierTrn ?? null,
+    contentSha256: ocr.contentSha256 ?? null,
+    fileMime: ocr.fileMime ?? null,
+    fileSize: ocr.fileSize ?? null,
     uploadedBy,
     posted: false,
     autoPosted: false,
@@ -234,14 +266,27 @@ export async function runAutopilot(
     typeof config.autopostThreshold === "number"
       ? config.autopostThreshold
       : DEFAULT_CLASSIFIER_CONFIG.autopostThreshold;
+  // Input VAT needs a tax invoice, which carries the supplier's TRN. A VAT figure with no valid
+  // TRN may have been computed by the model rather than printed (an unregistered supplier's
+  // total), so it is never booked unattended. VAT-free receipts are unaffected. Callers that skip
+  // normalizeOcrJson (POST /api/ai/autopilot/process) are covered too.
+  // The company's own TRN (printed as the buyer on a B2B invoice) is not the supplier's.
+  const company = await storage.getCompany(companyId);
+  const supplierTrnUsable =
+    validateUaeTrn(ocr.supplierTrn ?? null).valid &&
+    !isOwnTrn(ocr.supplierTrn, company?.trnVatNumber ?? null);
+  const vatWithoutTrn = vatAmount > 0 && !supplierTrnUsable;
   const shouldAutoPost =
     config.autopilotEnabled &&
+    !vatWithoutTrn &&
     classification.confidence >= autopostThreshold &&
     ruleAcceptedEnough &&
     !!expenseAccountId &&
     !!paymentAccountId &&
     netAmount > 0 &&
-    isAed;
+    isAed &&
+    baseCurrencyOf(company) === "AED" &&
+    !ocr.needsReview;
 
   if (!shouldAutoPost) {
     return {
@@ -251,6 +296,9 @@ export async function runAutopilot(
       autoPosted: false,
       queuedForReview: true,
       classificationId: classificationRow.id,
+      ...(vatWithoutTrn
+        ? { reviewNote: { code: "VAT_NO_TRN", message: vatWithoutTrnMessage(vatAmount) } }
+        : {}),
     };
   }
 
@@ -260,6 +308,7 @@ export async function runAutopilot(
   try {
     journalEntryId = await autoPostJournalEntry({
       companyId,
+      receiptId: receipt.id,
       uploadedBy,
       ocr,
       expenseAccountId: expenseAccountId!,
@@ -267,9 +316,9 @@ export async function runAutopilot(
       accounts,
       classification,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error(
-      { err: err?.message || err, receiptId: receipt.id },
+      { err: errorMessage(err) || err, receiptId: receipt.id },
       "Auto-post failed before JE creation — leaving receipt for manual review"
     );
     return {
@@ -315,9 +364,9 @@ export async function runAutopilot(
       accountId: expenseAccountId,
       paymentAccountId,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error(
-      { err: err?.message || err, receiptId: receipt.id, journalEntryId },
+      { err: errorMessage(err) || err, receiptId: receipt.id, journalEntryId },
       "Auto-post: JE created but receipt link update failed — manual repair needed"
     );
   }
@@ -332,9 +381,9 @@ export async function runAutopilot(
         `UPDATE ai_company_rules SET times_applied = times_applied + 1, updated_at = now() WHERE id = $1 AND company_id = $2`,
         [classification.matchedRuleId, companyId]
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.warn(
-        { err: err?.message || err, ruleId: classification.matchedRuleId },
+        { err: errorMessage(err) || err, ruleId: classification.matchedRuleId },
         "Auto-post: rule times_applied bump failed — non-fatal"
       );
     }
@@ -358,12 +407,17 @@ export async function recordClassificationFeedback(
   companyId: string,
   classificationId: string,
   wasAccepted: boolean,
-  userSelectedAccountId?: string | null
+  userSelectedAccountId?: string | null,
+  supplierTrn?: string | null
 ): Promise<void> {
   await storage.updateTransactionClassification(classificationId, companyId, {
     wasAccepted,
     userSelectedAccountId: userSelectedAccountId ?? undefined,
   });
+  // Vendor-to-account memory keyed by supplier TRN (R05-24).
+  if (wasAccepted && supplierTrn && userSelectedAccountId) {
+    await rememberVendorAccount(companyId, supplierTrn, userSelectedAccountId);
+  }
   invalidateModel(companyId);
   await applyAccuracyFailsafe(companyId);
 }
@@ -379,7 +433,8 @@ export interface ManualReceiptForAutoPost {
   amount: number | string | null;
   vatAmount: number | string | null;
   currency: string | null;
-  date: Date | string;
+  /** Stored receipts may have no date; null falls back to the epoch as before. */
+  date: Date | string | null;
 }
 
 export interface ManualAutoPostResult {
@@ -418,7 +473,8 @@ export async function autoPostManualReceipt(args: {
   if (!config.autopilotEnabled) return skip("autopilot_disabled");
   if (!userKeptSuggestion) return skip("user_overrode_category");
   if (!(net > 0)) return skip("non_positive_amount");
-  if (currency !== "AED") return skip("non_aed");
+  if (currency !== "AED" || baseCurrencyOf(await storage.getCompany(companyId)) !== "AED")
+    return skip("non_aed");
 
   const accounts = await storage.getAccountsByCompanyId(companyId);
   const expenseAccounts = accounts.filter(
@@ -434,7 +490,7 @@ export async function autoPostManualReceipt(args: {
     lineItems: [],
     model,
     options: { threshold: config.accuracyThreshold, mode: config.mode },
-    openai: getOpenAI(),
+    openai: getOpenAI(companyId),
     expenseAccountNames: expenseAccounts.map((a) => a.nameEn),
   });
 
@@ -475,7 +531,7 @@ export async function autoPostManualReceipt(args: {
     date:
       typeof receipt.date === "string"
         ? receipt.date
-        : new Date(receipt.date).toISOString().split("T")[0],
+        : new Date(receipt.date ?? 0).toISOString().split("T")[0],
     category: classification.category,
   };
 
@@ -483,6 +539,7 @@ export async function autoPostManualReceipt(args: {
   try {
     journalEntryId = await autoPostJournalEntry({
       companyId,
+      receiptId: receipt.id,
       uploadedBy,
       ocr,
       expenseAccountId: expenseAccountId!,
@@ -490,9 +547,9 @@ export async function autoPostManualReceipt(args: {
       accounts,
       classification,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error(
-      { err: err?.message || err, receiptId: receipt.id },
+      { err: errorMessage(err) || err, receiptId: receipt.id },
       "Manual auto-post failed before JE creation - leaving receipt for manual review"
     );
     return skip("post_failed");
@@ -524,9 +581,9 @@ export async function autoPostManualReceipt(args: {
       accountId: expenseAccountId,
       paymentAccountId,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error(
-      { err: err?.message || err, receiptId: receipt.id, journalEntryId },
+      { err: errorMessage(err) || err, receiptId: receipt.id, journalEntryId },
       "Manual auto-post: JE created but receipt link update failed - manual repair needed"
     );
   }
@@ -537,9 +594,9 @@ export async function autoPostManualReceipt(args: {
         `UPDATE ai_company_rules SET times_applied = times_applied + 1, updated_at = now() WHERE id = $1 AND company_id = $2`,
         [classification.matchedRuleId, companyId]
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.warn(
-        { err: err?.message || err, ruleId: classification.matchedRuleId },
+        { err: errorMessage(err) || err, ruleId: classification.matchedRuleId },
         "Manual auto-post: rule times_applied bump failed - non-fatal"
       );
     }
@@ -554,6 +611,7 @@ export async function autoPostManualReceipt(args: {
 
 interface AutoPostInput {
   companyId: string;
+  receiptId: string;
   uploadedBy: string;
   ocr: OcrReceipt;
   expenseAccountId: string;
@@ -565,6 +623,7 @@ interface AutoPostInput {
 async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
   const {
     companyId,
+    receiptId,
     uploadedBy,
     ocr,
     expenseAccountId,
@@ -591,15 +650,21 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
   );
 
   const merchantLabel = typeof ocr.merchant === "string" ? ocr.merchant : "";
-  const lines: Array<{ accountId: string; debit: number; credit: number; description: string }> =
-    [];
+  const lines: Array<{
+    accountId: string;
+    debit: number;
+    credit: number;
+    description: string;
+    lineKey?: string;
+    lineParams?: Record<string, string>;
+  }> = [];
   if (vatInputAccount && vat > 0) {
     lines.push({ accountId: expenseAccountId, debit: net, credit: 0, description: merchantLabel });
     lines.push({
       accountId: vatInputAccount.id,
       debit: vat,
       credit: 0,
-      description: `Input VAT — ${merchantLabel}`,
+      ...journalLine("autopilotInputVat", { merchant: merchantLabel }),
     });
     lines.push({
       accountId: paymentAccountId,
@@ -622,21 +687,23 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
     });
   }
 
-  const entryNumber = await storage.generateEntryNumber(companyId, txnDate);
-  const entry = await storage.createJournalEntry(
-    {
-      companyId,
-      entryNumber,
-      date: txnDate,
-      memo: `Receipt Autopilot: ${merchantLabel} (${classification.method}, ${(classification.confidence * 100).toFixed(0)}% conf)`,
-      status: "posted",
-      source: "system",
-      createdBy: uploadedBy,
-      postedBy: uploadedBy,
-      postedAt: new Date(),
-    },
-    lines
-  );
+  // Kernel post through the same atomic receipt claim as a manual post (source "receipt",
+  // sourceId = receipt id): the receipt is marked posted in the same transaction, a concurrent
+  // post cannot create a second entry, and revise/reverseBySource work on autopilot receipts.
+  const { entry } = await storage.postReceiptAtomic({
+    receiptId,
+    companyId,
+    userId: uploadedBy,
+    accountId: expenseAccountId,
+    paymentAccountId,
+    entryDate: txnDate,
+    ...journalMemo("receiptAutopilot", {
+      party: merchantLabel,
+      method: classification.method,
+      pct: (classification.confidence * 100).toFixed(0),
+    }),
+    lines,
+  });
   return entry.id;
 }
 
@@ -678,7 +745,10 @@ function pickExpenseAccountForCategory(
   return (generic || expenseAccounts[0])?.id ?? null;
 }
 
-function pickPaymentAccount(accounts: Account[]): string | null {
+function pickPaymentAccount(all: Account[]): string | null {
+  // X5 (J1 D1): header accounts (with sub-accounts) never receive postings.
+  const parents = new Set(all.filter((a) => !a.isArchived && a.parentId).map((a) => a.parentId));
+  const accounts = all.filter((a) => !parents.has(a.id));
   // Prefer cash, then bank.
   const cash = accounts.find(
     (a) => a.type === "asset" && a.isActive && !a.isArchived && /cash/i.test(a.nameEn)

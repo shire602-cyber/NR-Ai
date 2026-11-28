@@ -3,23 +3,25 @@
 // The product is "AI accounting software", but the AI runs on an external key
 // (OPENAI_API_KEY) that is NOT set in CI or in any environment before the key is
 // provisioned. In that state the AI features must degrade to a clear 503
-// "not configured" — NEVER an HTTP 500. Four endpoints (cfo-advice, anomaly
-// detection, cashflow forecast, bank-statement parsing) used to return 500,
-// surfacing the marquee feature as a server crash.
+// "not configured" response.
 //
 // Runs with NO key on purpose. If OPENAI_API_KEY *is* set, the AI paths return
 // 200 and the "must not 500" assertion still holds.
 
+import { fail as abort, throttledFetch } from "./_http.mjs";
+import { withRegisterLogin } from "./register-compat.mjs";
+
+const api = withRegisterLogin(apiRaw, { status: "s", body: "j" });
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 let pass = 0, fail = 0; const fails = [];
 const ok = (name, cond, detail) => {
   if (cond) { pass++; console.log("PASS  " + name); }
   else { fail++; fails.push(name + " :: " + JSON.stringify(detail)); console.log("FAIL  " + name + "  " + JSON.stringify(detail)); }
 };
-async function api(m, p, o = {}) {
+async function apiRaw(m, p, o = {}) {
   const h = { "Content-Type": "application/json" };
   if (o.token) h.Authorization = "Bearer " + o.token;
-  const r = await fetch(BASE + p, { method: m, headers: h, body: o.body === undefined ? undefined : JSON.stringify(o.body) });
+  const r = await throttledFetch(BASE + p, { method: m, headers: h, body: o.body === undefined ? undefined : JSON.stringify(o.body) });
   const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}
   return { s: r.status, j, t };
 }
@@ -27,18 +29,17 @@ async function api(m, p, o = {}) {
 async function main() {
   const s = Math.random().toString(36).slice(2, 8);
   const reg = await api("POST", "/api/auth/register", { body: { name: "AID", email: `aid_${s}@e.com`, password: "Password123!" } });
-  if (!reg.j?.token) { console.log("SKIP: registration rate-limited"); process.exit(0); }
+  if (!reg.j?.token) abort("registration failed (after rate-limit retries)", { status: reg.s, body: reg.t?.slice(0, 200) });
   const token = reg.j.token, cid = reg.j.company.id;
   await api("PATCH", `/api/companies/${cid}`, { token, body: { trnVatNumber: "100123456700003", vatRegistered: true, emirate: "dubai" } });
 
   // The OpenAI-only endpoints. Each must never 500.
+  // OCR validates the upload first (a corrupt image is a 400), so send a real 1x1 PNG.
   const calls = [
     ["cfo-advice", "POST", "/api/ai/cfo-advice", { companyId: cid, question: "how is my cash flow?" }],
     ["detect-anomalies", "POST", "/api/ai/detect-anomalies", { companyId: cid }],
-    ["forecast-cashflow", "POST", "/api/ai/forecast-cashflow", { companyId: cid, days: 90 }],
-    ["parse-bank-statement", "POST", "/api/ai/parse-bank-statement", { companyId: cid, text: "01/01 PMT 500" }],
     ["nl-gateway", "POST", "/api/ai/nl-gateway", { companyId: cid, message: "what is my revenue" }],
-    ["ocr/process", "POST", "/api/ocr/process", { companyId: cid, imageData: "data:image/png;base64,iVBORw0KGgo=" }],
+    ["ocr/process", "POST", "/api/ocr/process", { companyId: cid, imageData: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" }],
   ];
 
   const noKey = !process.env.OPENAI_API_KEY;
@@ -50,6 +51,21 @@ async function main() {
         { status: r.s, code: r.j?.code, msg: String(r.j?.message).slice(0, 60) });
     }
   }
+
+  const statement = await api("POST", "/api/ai/parse-bank-statement", {
+    token,
+    body: { companyId: cid, text: "01/01 PMT 500" },
+  });
+  ok("legacy statement extraction directs callers to CSV",
+    statement.s === 410 && statement.j?.code === "STATEMENT_CSV_REQUIRED",
+    { status: statement.s, code: statement.j?.code });
+
+  // The cash-flow forecast is document driven (S3): no model call, so no key is needed. An empty
+  // company has nothing to forecast -> 400 INSUFFICIENT_DATA, never 500 and never a fabricated row.
+  const fc = await api("POST", "/api/ai/forecast-cashflow", { token, body: { companyId: cid, days: 90 } });
+  ok("forecast-cashflow never returns 500", fc.s !== 500, { status: fc.s });
+  ok("forecast-cashflow on empty books is INSUFFICIENT_DATA", fc.s === 400 && fc.j?.code === "INSUFFICIENT_DATA",
+    { status: fc.s, code: fc.j?.code });
 
   // Auth must be enforced on the AI surface.
   const noAuth = await api("POST", "/api/ai/categorize", { body: { companyId: cid, description: "x", amount: 1, currency: "AED" } });

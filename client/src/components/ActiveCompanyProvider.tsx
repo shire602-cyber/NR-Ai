@@ -9,25 +9,49 @@ import {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Company } from "@shared/schema";
-import { getActiveCompanyId, switchActiveCompany, clearActiveCompany } from "@/lib/activeCompany";
+import { ReceiptQueueProvider } from "@/components/receipts/ReceiptQueueProvider";
+import {
+  getActiveCompanyId,
+  resolveActiveCompany,
+  switchActiveCompany,
+  clearActiveCompany,
+} from "@/lib/activeCompany";
+
+type WorkspaceCompany = Company & { hasPostedDocuments?: boolean };
+
+/**
+ * What is known about the company list. "empty" means a successful response listed no company;
+ * "waiting" is a paused request and "error" a failed one, neither of which says there is none.
+ */
+export type CompanyListState = "ready" | "empty" | "loading" | "waiting" | "error";
 
 interface ActiveCompanyContextValue {
   /** The currently active company (firm-managed client if switched, else first owned company). */
-  company: Company | undefined;
+  company: WorkspaceCompany | undefined;
   /** Convenience accessor for the company id. */
   companyId: string | undefined;
   /** Full list of companies the user can access (owned + firm-accessible). */
-  companies: Company[];
+  companies: WorkspaceCompany[];
   /** True while the underlying company list is loading. */
   isLoading: boolean;
   /** Error from the underlying company query, if any. */
   error: unknown;
-  /** True when the user has no accessible companies and the load is complete. */
+  /** True when the first company load is paused (offline or tab hidden) with no data yet. */
+  isPaused: boolean;
+  /** Re-run the company list query (Retry after a failed first load). */
+  refetch: () => void;
+  /** True only when a successful response listed no accessible company. */
   hasNoCompanies: boolean;
+  /** State of the company-list query, for screens that must tell "none" from "not known". */
+  companyListState: CompanyListState;
+  /** Fetch the company list again (that query only). */
+  retryCompanyList: () => void;
   /** True when the user has explicitly switched into a firm-managed client. */
   isFirmContext: boolean;
-  /** Switch into a firm-managed client's company workspace. */
-  setActiveClientCompany: (companyId: string) => void;
+  /** True from the moment a client switch is committed until the company list has caught up. */
+  isSwitchingClient: boolean;
+  /** Switch into a firm-managed client's company workspace. Resolves once the query cache is reset. */
+  setActiveClientCompany(companyId: string): Promise<void>;
   /** Drop firm-client override and return to the user's own company. */
   clearActiveClientCompany: () => void;
 }
@@ -62,12 +86,41 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     data: companies,
     isLoading,
     error,
-  } = useQuery<Company[]>({
+    fetchStatus,
+    isSuccess,
+    isError,
+    isLoadingError,
+    refetch: refetchCompanies,
+  } = useQuery<WorkspaceCompany[]>({
     queryKey: ["/api/companies"],
   });
+  const companyListState: CompanyListState = companies?.length
+    ? "ready"
+    : isSuccess
+      ? "empty"
+      : isLoadingError
+        ? "error"
+        : fetchStatus === "paused"
+          ? "waiting"
+          : isError
+            ? "error"
+            : "loading";
+  const retryCompanyList = useCallback(() => void refetchCompanies(), [refetchCompanies]);
+  // Paused (offline or tab not focused) with nothing loaded yet: the list is unknown, not empty.
+  const isPaused = fetchStatus === "paused" && companies === undefined;
 
-  const setActiveClientCompany = useCallback((id: string) => {
-    void switchActiveCompany(id).then(() => setActiveId(id));
+  const [switchingClient, setSwitchingClient] = useState(false);
+  const setActiveClientCompany = useCallback(async (id: string) => {
+    // Commit the id synchronously so the shell never renders the open-books click against the staffer's
+    // own company (and bounces them to their own onboarding wizard) before the switch lands.
+    setSwitchingClient(true);
+    setActiveId(id);
+    try {
+      await switchActiveCompany(id);
+      setActiveId(id);
+    } finally {
+      setSwitchingClient(false);
+    }
   }, []);
 
   const clearActiveClientCompany = useCallback(() => {
@@ -89,22 +142,41 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ActiveCompanyContextValue>(() => {
     const list = companies ?? [];
     const activeMatch = activeId ? list.find((c) => c.id === activeId) : undefined;
-    const fallback = list[0];
-    const company = activeMatch ?? fallback;
+    const company = resolveActiveCompany(list, activeId);
     return {
       company,
       companyId: company?.id,
       companies: list,
       isLoading,
       error,
-      hasNoCompanies: !isLoading && !error && list.length === 0,
+      isPaused,
+      refetch: retryCompanyList,
+      hasNoCompanies: companyListState === "empty",
+      companyListState,
+      retryCompanyList,
       isFirmContext: !!activeMatch && activeMatch.companyType === "client",
+      isSwitchingClient: switchingClient,
       setActiveClientCompany,
       clearActiveClientCompany,
     };
-  }, [companies, activeId, isLoading, error, setActiveClientCompany, clearActiveClientCompany]);
+  }, [
+    companies,
+    activeId,
+    isLoading,
+    error,
+    isPaused,
+    companyListState,
+    retryCompanyList,
+    switchingClient,
+    setActiveClientCompany,
+    clearActiveClientCompany,
+  ]);
 
-  return <ActiveCompanyContext.Provider value={value}>{children}</ActiveCompanyContext.Provider>;
+  return (
+    <ActiveCompanyContext.Provider value={value}>
+      <ReceiptQueueProvider>{children}</ReceiptQueueProvider>
+    </ActiveCompanyContext.Provider>
+  );
 }
 
 /**

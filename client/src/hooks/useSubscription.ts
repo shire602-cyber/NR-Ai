@@ -1,6 +1,38 @@
-import { useQuery } from "@tanstack/react-query";
-import { apiRequest } from "../lib/queryClient";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiError, apiRequest } from "../lib/queryClient";
 import { useDefaultCompany } from "./useDefaultCompany";
+import type { TrialState } from "@shared/trial";
+import {
+  FEATURE_MIN_PLAN,
+  type BillingCycle,
+  type PaidPlanId,
+  type PlanFeature,
+  type PlanLimits,
+  type PlanState,
+} from "@shared/plans";
+
+export interface EntitlementData {
+  /** trial | active | expired; "firm" = NR-managed client books (billed through the firm). */
+  state: PlanState | "firm";
+  /** Plan whose features apply (the top plan during the trial); null when expired. */
+  planId: PaidPlanId | null;
+  storedPlanId: string;
+  features: Record<PlanFeature, boolean> | null;
+  limits?: PlanLimits;
+  trialEndsAt?: string | null;
+  /** STEP4: the plan chosen for after the trial (never changes what the company can do now). */
+  chosenPlan?: ChosenPlan | null;
+  activationRequestedAt?: string | null;
+}
+
+export interface ChosenPlan {
+  planId: PaidPlanId;
+  billingCycle: BillingCycle;
+  source: string | null;
+  chosenAt: string | null;
+  /** Price per billing period in AED. */
+  price: number;
+}
 
 interface SubscriptionData {
   subscription: {
@@ -11,174 +43,188 @@ interface SubscriptionData {
     billingCycle: string;
     currentPeriodEnd: string;
     stripeCustomerId: string | null;
+    stripeSubscriptionId: string | null;
     invoicesCreatedThisMonth: number;
     receiptsCreatedThisMonth: number;
     aiCreditsUsedThisMonth: number;
   };
   limits: Record<string, number>;
+  entitlement?: EntitlementData;
   enforcement?: boolean;
+  trialLocked?: boolean;
+  /** False while Stripe is not configured: the plan buttons become "Contact us". */
+  checkoutAvailable?: boolean;
+  trial?: TrialState | null;
 }
 
 interface UsageData {
-  plan: string;
+  plan: string | null;
   usage: {
     invoices: { used: number; limit: number };
     receipts: { used: number; limit: number };
     aiCredits: { used: number; limit: number };
     users: { used: number; limit: number };
-    storage: { used: number; limit: number };
+    storage: { used: number | null; limit: number };
   };
 }
 
-const TIER_FEATURES: Record<string, Record<string, boolean>> = {
-  free: {
-    quotes: false,
-    creditNotes: false,
-    purchaseOrders: false,
-    invoiceTemplates: false,
-    bankImport: false,
-    bulkOps: false,
-    advancedReports: false,
-    apiAccess: false,
-    invoicePayment: false,
-    recurringInvoices: false,
-    multiCurrency: false,
-    payroll: false,
-    webhooks: false,
-    fixedAssets: false,
-    costCenters: false,
-  },
-  starter: {
-    quotes: true,
-    creditNotes: true,
-    purchaseOrders: false,
-    invoiceTemplates: true,
-    bankImport: true,
-    bulkOps: false,
-    advancedReports: false,
-    apiAccess: false,
-    invoicePayment: true,
-    recurringInvoices: true,
-    multiCurrency: true,
-    payroll: false,
-    webhooks: false,
-    fixedAssets: false,
-    costCenters: false,
-  },
-  professional: {
-    quotes: true,
-    creditNotes: true,
-    purchaseOrders: true,
-    invoiceTemplates: true,
-    bankImport: true,
-    bulkOps: true,
-    advancedReports: true,
-    apiAccess: false,
-    invoicePayment: true,
-    recurringInvoices: true,
-    multiCurrency: true,
-    payroll: true,
-    webhooks: false,
-    fixedAssets: true,
-    costCenters: true,
-  },
-  enterprise: {
-    quotes: true,
-    creditNotes: true,
-    purchaseOrders: true,
-    invoiceTemplates: true,
-    bankImport: true,
-    bulkOps: true,
-    advancedReports: true,
-    apiAccess: true,
-    invoicePayment: true,
-    recurringInvoices: true,
-    multiCurrency: true,
-    payroll: true,
-    webhooks: true,
-    fixedAssets: true,
-    costCenters: true,
-  },
-};
+/**
+ * The company's plan as the server enforces it (server/middleware/featureGate.ts, shared/plans.ts).
+ * Feature gates refuse writes only, so a module outside the plan stays open to read:
+ *   canAccess(f)  — may the module be opened? (always true: data is never hidden)
+ *   canWrite(f)   — may records be added or changed? (false → show the locked state)
+ */
+export function useCompanySubscription(watchTrial = false, enabled = true) {
+  const { companyId } = useDefaultCompany();
 
-const FEATURE_MIN_TIER: Record<string, string> = {
-  quotes: "starter",
-  creditNotes: "starter",
-  purchaseOrders: "professional",
-  invoiceTemplates: "starter",
-  bankImport: "starter",
-  bulkOps: "professional",
-  advancedReports: "professional",
-  apiAccess: "enterprise",
-  invoicePayment: "starter",
-  recurringInvoices: "starter",
-  multiCurrency: "starter",
-  payroll: "professional",
-  webhooks: "enterprise",
-  fixedAssets: "professional",
-  costCenters: "professional",
-};
+  return useQuery<SubscriptionData>({
+    queryKey: ["/api/companies", companyId, "billing", "subscription"],
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/billing/subscription`, undefined, undefined, {
+        signal,
+      }),
+    enabled: enabled && !!companyId,
+    staleTime: 30000,
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 1,
+    // The gate can mount more observers after a 404. They share its failed result.
+    retryOnMount: false,
+    refetchInterval: watchTrial
+      ? ({ state: { data } }) => {
+          if (!data?.enforcement) return false;
+          if (data.trialLocked) return 15_000;
+          if (data.entitlement?.state !== "trial" || !data.entitlement.trialEndsAt) return false;
+          return Math.max(
+            1000,
+            Math.min(30_000, Date.parse(data.entitlement.trialEndsAt) - Date.now())
+          );
+        }
+      : false,
+  });
+}
 
 export function useSubscription() {
   const { companyId } = useDefaultCompany();
-
   const {
     data: subData,
     isLoading: subLoading,
-    isError: subError,
-  } = useQuery<SubscriptionData>({
-    queryKey: ["/api/companies", companyId, "billing", "subscription"],
-    // 404 = billing module not deployed in this environment; resolve null
-    // instead of erroring so the UI fails open without retry noise.
-    queryFn: () =>
-      apiRequest("GET", `/api/companies/${companyId}/billing/subscription`).catch((err: any) => {
-        if (err?.status === 404) return null;
-        throw err;
-      }),
-    enabled: !!companyId,
-    staleTime: 30000,
-    retry: 1,
-  });
+    error: subQueryError,
+    isLoadingError: subLoadingError,
+    isRefetchError: subRefetchError,
+    fetchStatus: subFetchStatus,
+    refetch: refetchSubscription,
+  } = useCompanySubscription();
 
-  const { data: usageData, isLoading: usageLoading } = useQuery<UsageData>({
+  const {
+    data: usageData,
+    isLoading: usageLoading,
+    error: usageError,
+    isLoadingError: usageLoadingError,
+    isRefetchError: usageRefetchError,
+    fetchStatus: usageFetchStatus,
+    refetch: refetchUsage,
+  } = useQuery<UsageData>({
     queryKey: ["/api/companies", companyId, "billing", "usage"],
-    queryFn: () =>
-      apiRequest("GET", `/api/companies/${companyId}/billing/usage`).catch((err: any) => {
-        if (err?.status === 404) return null;
-        throw err;
+    queryFn: ({ signal }) =>
+      apiRequest("GET", `/api/companies/${companyId}/billing/usage`, undefined, undefined, {
+        signal,
       }),
     enabled: !!companyId,
     staleTime: 30000,
   });
 
-  // No billing system deployed (endpoint missing/erroring) means features
-  // must fail OPEN — a paywall with a dead upgrade button is worse than no
-  // paywall. Same when the API reports enforcement off (BILLING_ENFORCEMENT
-  // unset server-side): gates only apply once billing is actually live.
-  const billingUnavailable = (subError || subData === null) && !subData;
+  // No billing module (endpoint missing/erroring) or enforcement off means the client locks
+  // nothing: the UI must never block what the API serves.
+  const billingUnavailable = subLoadingError;
   const enforcementOff = subData ? subData.enforcement !== true : false;
   const gatesOpen = billingUnavailable || enforcementOff;
-  const tierName = subData?.subscription?.planId || "free";
-  const isFreeTier = !gatesOpen && tierName === "free";
+  const entitlement = subData?.entitlement ?? null;
+  const planState = entitlement?.state ?? null;
+  const tierName = entitlement?.planId ?? subData?.subscription?.planId ?? "free";
 
-  function canAccess(feature: string): boolean {
-    if (gatesOpen) return true;
-    const features = TIER_FEATURES[tierName] || TIER_FEATURES.free;
-    return !!features[feature];
+  function canWrite(feature: string): boolean {
+    if (gatesOpen || !entitlement?.features) return true;
+    return entitlement.features[feature as PlanFeature] !== false;
+  }
+
+  /** Reading a module is never gated (WQ7): its data stays visible on every plan. */
+  function canAccess(_feature: string): boolean {
+    return true;
   }
 
   function getRequiredTier(feature: string): string {
-    return FEATURE_MIN_TIER[feature] || "starter";
+    return FEATURE_MIN_PLAN[feature as PlanFeature] ?? "starter";
   }
+
+  /** First fetch is paused (offline, or a retry waiting for focus): nothing is known yet. */
+  const isPaused = subData === undefined && subFetchStatus === "paused";
+  const usagePaused = usageData === undefined && usageFetchStatus === "paused";
 
   return {
     subscription: subData?.subscription,
     usage: usageData?.usage,
     limits: subData?.limits,
+    entitlement,
+    /** trial | active | expired | firm (null while loading or without billing). */
+    planState,
+    /** Plan limits are enforced (server billingEnforced()). */
+    enforcement: subData?.enforcement === true,
+    trialLocked: subData?.trialLocked === true,
+    checkoutAvailable: subData?.checkoutAvailable === true,
+    trial: subData?.trial ?? null,
+    chosenPlan: entitlement?.chosenPlan ?? null,
+    activationRequestedAt: entitlement?.activationRequestedAt ?? null,
     tierName,
-    isFreeTier,
+    /** Trial over with no active plan. The protected shell handles the workspace lock. */
+    isReadOnly: !gatesOpen && planState === "expired",
+    /** @deprecated there is no free plan; kept for older callers (true = expired trial). */
+    isFreeTier: !gatesOpen && planState === "expired",
     canAccess,
+    canWrite,
     getRequiredTier,
     isLoading: subLoading || usageLoading,
+    /** The plan's own first fetch is in flight (usage has its own state below). */
+    planLoading: subLoading,
+    /** The first load failed. Paused wins. */
+    loadError: subLoadingError && !isPaused ? subQueryError : null,
+    isPaused,
+    /** A refresh failed and the cached plan is still in use. */
+    refreshError: subRefetchError ? subQueryError : null,
+    retryLoad: () => {
+      void refetchSubscription();
+    },
+    /** Usage has its own request: without `usage` the meters must not read as zero. */
+    usageState: {
+      loaded: usageData !== undefined,
+      loadError: usageLoadingError && !usagePaused ? usageError : null,
+      refreshError: usageRefetchError ? usageError : null,
+      retry: () => {
+        void refetchUsage();
+      },
+    },
   };
+}
+
+/** STEP4: the customer's mutations on their after-trial choice; both refresh the subscription. */
+export function usePlanChoiceActions() {
+  const { companyId } = useDefaultCompany();
+  const queryClient = useQueryClient();
+  const refresh = () =>
+    queryClient.invalidateQueries({
+      queryKey: ["/api/companies", companyId, "billing", "subscription"],
+    });
+  const choose = useMutation({
+    mutationFn: (body: { planId: PaidPlanId; billingCycle: BillingCycle }) =>
+      apiRequest("PUT", `/api/companies/${companyId}/billing/chosen-plan`, body),
+    onSuccess: refresh,
+  });
+  const activate = useMutation({
+    mutationFn: (note?: string) =>
+      apiRequest(
+        "POST",
+        `/api/companies/${companyId}/billing/activation-request`,
+        note ? { note } : {}
+      ),
+    onSuccess: refresh,
+  });
+  return { choose, activate };
 }

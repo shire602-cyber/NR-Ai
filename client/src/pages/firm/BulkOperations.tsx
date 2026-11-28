@@ -1,23 +1,24 @@
+import { formatAedText } from "@/lib/format";
+import { localizeFirmText } from "@shared/server-copy";
+import { T } from "@/components/layout/T";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useRef, useCallback } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Upload,
   FileText,
   ReceiptIcon,
   CheckCircle2,
   XCircle,
-  Clock,
-  AlertCircle,
   Play,
   RefreshCw,
   Building2,
-  ChevronDown,
   Loader2,
   CheckSquare,
   Square,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,7 +41,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { SERVER_ERROR_NAMESPACES, serverErrorCopy } from "@/lib/validation-messages";
 import type { Company } from "@shared/schema";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
+import { queryReadState } from "@/lib/queryReadState";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,7 +61,26 @@ interface OcrFileItem {
   preview?: string;
   status: "pending" | "processing" | "success" | "error";
   receiptId?: string;
-  error?: string;
+  errorKey?: string;
+}
+
+function bulkOcrErrorKey(error: unknown): string {
+  if (typeof error === "string") {
+    if (/(?:^|; )(?:OpenAI: )?Empty OpenAI response$/.test(error)) {
+      return "components.srv.firm.bulk.ocrEmptyResponse";
+    }
+    if (error === "Unable to save bulk OCR receipt") {
+      return "components.srv.firm.bulk.ocrSaveFailed";
+    }
+    if (
+      error.startsWith("Unsupported image MIME type: ") ||
+      error.startsWith("Image must be a data URL with MIME type ") ||
+      error === "Invalid image data URL"
+    ) {
+      return "components.srv.firm.bulk.ocrInvalidImage";
+    }
+  }
+  return "components.srv.firm.bulk.ocrFailed";
 }
 
 interface VatQueueEntry {
@@ -76,7 +100,7 @@ interface BulkInvoiceResult {
   success: boolean;
   invoiceId?: string;
   invoiceNumber?: string;
-  error?: string;
+  code?: string;
 }
 
 interface PeriodCloseStatus {
@@ -93,24 +117,10 @@ interface PeriodCloseStatus {
   readyToClose: boolean;
 }
 
-interface BankImportStatus {
-  companyId: string;
-  companyName: string;
-  lastImportDate: string | null;
-  unreconciledCount: number;
-  totalTransactions: number;
-  matchRate: number;
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatAed(n: number) {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(n);
+  return formatAedText(n);
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -123,12 +133,25 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 function VatStatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const map: Record<string, { label: string; cls: string }> = {
-    draft: { label: "Draft", cls: "bg-muted text-foreground border-border" },
-    pending_review: { label: "Pending Review", cls: "bg-info-subtle text-info border-info/30" },
-    submitted: { label: "Submitted", cls: "bg-warning-subtle text-warning border-warning/30" },
-    filed: { label: "Filed", cls: "bg-success-subtle text-success border-success/30" },
-    none: { label: "Not Started", cls: "bg-muted text-muted-foreground border-border" },
+    draft: { label: t["firmOps.bulkVatDraft"], cls: "bg-muted text-foreground border-border" },
+    pending_review: {
+      label: t["firmOps.bulkVatPendingReview"],
+      cls: "bg-info-subtle text-info border-info/30",
+    },
+    submitted: {
+      label: t["firmOps.bulkVatSubmitted"],
+      cls: "bg-warning-subtle text-warning border-warning/30",
+    },
+    filed: {
+      label: t["firmOps.bulkVatFiled"],
+      cls: "bg-success-subtle text-success border-success/30",
+    },
+    none: {
+      label: t["firmOps.bulkVatNotStarted"],
+      cls: "bg-muted text-muted-foreground border-border",
+    },
   };
   const { label, cls } = map[status] ?? map.draft;
   return <Badge className={cls}>{label}</Badge>;
@@ -150,6 +173,7 @@ function CheckItem({ ok, label }: { ok: boolean; label: string }) {
 // ─── Tab 1: Batch OCR ─────────────────────────────────────────────────────────
 
 function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [items, setItems] = useState<OcrFileItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -192,7 +216,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
     const pendingItems = items.filter((i) => i.status === "pending");
     if (!pendingItems.length) return;
     if (pendingItems.some((i) => !i.companyId)) {
-      toast({ variant: "destructive", title: "Select a client for each receipt" });
+      toast({ variant: "destructive", title: t["bulkOperations.selectAClientForEach"] });
       return;
     }
 
@@ -215,17 +239,16 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
             )
           );
         } else {
+          const errorKey = bulkOcrErrorKey(r?.error);
           setItems((prev) =>
-            prev.map((i) =>
-              i.id === item.id ? { ...i, status: "error", error: r?.error ?? "OCR failed" } : i
-            )
+            prev.map((i) => (i.id === item.id ? { ...i, status: "error", errorKey } : i))
           );
         }
-      } catch (err: any) {
+      } catch {
         setItems((prev) =>
           prev.map((i) =>
             i.id === item.id
-              ? { ...i, status: "error", error: err?.message ?? "Request failed" }
+              ? { ...i, status: "error", errorKey: "bulkOperations.requestFailed" }
               : i
           )
         );
@@ -240,9 +263,11 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold">Batch OCR Processing</h3>
+        <h3 className="text-lg font-semibold">
+          <T k="pages.batchOcrProcessing" />
+        </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Upload multiple receipt images and assign each to a client. Processing runs one at a time.
+          {t["bulkOperations.uploadMultipleReceiptImagesAnd"]}
         </p>
       </div>
 
@@ -262,9 +287,11 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
         onClick={() => inputRef.current?.click()}
       >
         <Upload className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-        <p className="font-medium">Drop receipt images here, or click to browse</p>
+        <p className="font-medium">
+          <T k="pages.dropReceiptImagesHereOrClickToBrowse" />
+        </p>
         <p className="text-sm text-muted-foreground mt-1">
-          JPEG, PNG, WebP — multiple files supported
+          {t["bulkOperations.jpegPngWebpMultipleFiles"]}
         </p>
         <input
           ref={inputRef}
@@ -282,15 +309,15 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">
-                {items.length} file{items.length !== 1 ? "s" : ""} queued
+                {formatMessage(t["firmOps.bulkFilesQueued"], { count: items.length })}
                 {successCount > 0 && (
-                  <span className="ml-2 text-success text-sm font-normal">
-                    · {successCount} done
+                  <span className="ms-2 text-success text-sm font-normal">
+                    · {formatMessage(t["firmOps.bulkFilesDone"], { count: successCount })}
                   </span>
                 )}
                 {errorCount > 0 && (
-                  <span className="ml-2 text-destructive text-sm font-normal">
-                    · {errorCount} failed
+                  <span className="ms-2 text-destructive text-sm font-normal">
+                    · {formatMessage(t["firmOps.bulkFilesFailed"], { count: errorCount })}
                   </span>
                 )}
               </CardTitle>
@@ -299,11 +326,11 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                 disabled={isProcessing || items.every((i) => i.status !== "pending")}
               >
                 {isProcessing ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                 ) : (
-                  <Play className="w-4 h-4 mr-2" />
+                  <Play className="w-4 h-4 me-2" />
                 )}
-                Process All
+                {t["firmOps.bulkProcessAll"]}
               </Button>
             </div>
           </CardHeader>
@@ -312,9 +339,13 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>File</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>{t["firmOps.bulkColFile"]}</TableHead>
+                    <TableHead>
+                      <T k="pages.client" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -331,7 +362,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                           disabled={item.status !== "pending"}
                         >
                           <SelectTrigger className="w-44">
-                            <SelectValue placeholder="Select client" />
+                            <SelectValue placeholder={t["bulkOperations.selectClient"]} />
                           </SelectTrigger>
                           <SelectContent>
                             {clients.map((c) => (
@@ -343,23 +374,30 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                         </Select>
                       </TableCell>
                       <TableCell>
-                        {item.status === "pending" && <Badge variant="outline">Pending</Badge>}
+                        {item.status === "pending" && (
+                          <Badge variant="outline">
+                            <T k="pages.pending" />
+                          </Badge>
+                        )}
                         {item.status === "processing" && (
                           <Badge className="bg-info-subtle text-info">
-                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                            Processing
+                            <Loader2 className="w-3 h-3 me-1 animate-spin" />
+                            <T k="pages.processing" />
                           </Badge>
                         )}
                         {item.status === "success" && (
                           <Badge className="bg-success-subtle text-success">
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
-                            Done
+                            <CheckCircle2 className="w-3 h-3 me-1" />
+                            {t["firmOps.bulkDone"]}
                           </Badge>
                         )}
                         {item.status === "error" && (
-                          <Badge variant="destructive" title={item.error}>
-                            <XCircle className="w-3 h-3 mr-1" />
-                            Failed
+                          <Badge
+                            variant="destructive"
+                            title={t[item.errorKey ?? "components.srv.firm.bulk.ocrFailed"]}
+                          >
+                            <XCircle className="w-3 h-3 me-1" />
+                            <T k="pages.failed" />
                           </Badge>
                         )}
                       </TableCell>
@@ -384,7 +422,8 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
 
 // ─── Tab 2: VAT Filing Queue ──────────────────────────────────────────────────
 
-function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
+function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [queue, setQueue] = useState<VatQueueEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -394,9 +433,13 @@ function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
     try {
       const data = await apiRequest("POST", "/api/firm/bulk/vat-queue", {});
       setQueue(data);
-      toast({ title: `Prepared VAT queue for ${data.length} client(s)` });
+      toast({
+        title: formatMessage(translateNow("toasts.preparedVatQueueForClientS"), {
+          count: data.length,
+        }),
+      });
     } catch {
-      toast({ variant: "destructive", title: "Failed to prepare VAT queue" });
+      toast({ variant: "destructive", title: t["bulkOperations.failedToPrepareVatQueue"] });
     } finally {
       setIsLoading(false);
     }
@@ -408,19 +451,20 @@ function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="text-lg font-semibold">VAT Filing Queue</h3>
+          <h3 className="text-lg font-semibold">
+            <T k="pages.vatFilingQueue" />
+          </h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Review VAT period data across all clients. Use this to prepare returns before manual
-            submission on the FTA portal.
+            {t["bulkOperations.reviewVatPeriodDataAcross"]}
           </p>
         </div>
         <Button onClick={prepareAll} disabled={isLoading}>
           {isLoading ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            <Loader2 className="w-4 h-4 me-2 animate-spin" />
           ) : (
-            <RefreshCw className="w-4 h-4 mr-2" />
+            <RefreshCw className="w-4 h-4 me-2" />
           )}
-          Prepare All
+          {t["firmOps.bulkPrepareAll"]}
         </Button>
       </div>
 
@@ -429,19 +473,25 @@ function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Card>
               <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">Clients in Queue</p>
+                <p className="text-sm text-muted-foreground">
+                  <T k="pages.clientsInQueue" />
+                </p>
                 <p className="text-2xl font-bold mt-1">{queue.length}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">Total VAT Payable</p>
+                <p className="text-sm text-muted-foreground">
+                  <T k="pages.totalVatPayable" />
+                </p>
                 <p className="text-2xl font-bold mt-1">{formatAed(totalVatPayable)}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">Ready to File</p>
+                <p className="text-sm text-muted-foreground">
+                  <T k="pages.readyToFile" />
+                </p>
                 <p className="text-2xl font-bold mt-1">
                   {queue.filter((e) => e.status === "submitted" || e.status === "filed").length}
                 </p>
@@ -455,28 +505,38 @@ function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Company</TableHead>
+                      <TableHead>
+                        <T k="pages.company" />
+                      </TableHead>
                       <TableHead>TRN</TableHead>
-                      <TableHead>Period</TableHead>
-                      <TableHead className="text-right">Sales</TableHead>
-                      <TableHead className="text-right">Purchases</TableHead>
-                      <TableHead className="text-right">VAT Payable</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>
+                        <T k="pages.period" />
+                      </TableHead>
+                      <TableHead data-numeric>
+                        <T k="pages.sales" />
+                      </TableHead>
+                      <TableHead data-numeric>
+                        <T k="pages.purchases" />
+                      </TableHead>
+                      <TableHead data-numeric>
+                        <T k="pages.vatPayable" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="pages.status" />
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {queue.map((entry) => (
                       <TableRow key={entry.companyId}>
                         <TableCell className="font-medium">{entry.companyName}</TableCell>
-                        <TableCell className="text-muted-foreground font-mono text-sm">
+                        <TableCell className="text-muted-foreground tabular-nums text-sm">
                           {entry.trn}
                         </TableCell>
                         <TableCell>{entry.period}</TableCell>
-                        <TableCell className="text-right">{formatAed(entry.totalSales)}</TableCell>
-                        <TableCell className="text-right">
-                          {formatAed(entry.totalPurchases)}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold">
+                        <TableCell data-numeric>{formatAed(entry.totalSales)}</TableCell>
+                        <TableCell data-numeric>{formatAed(entry.totalPurchases)}</TableCell>
+                        <TableCell data-numeric className=" font-semibold">
                           {formatAed(entry.vatPayable)}
                         </TableCell>
                         <TableCell>
@@ -496,9 +556,7 @@ function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
         <Card className="border-dashed">
           <CardContent className="py-12 text-center">
             <FileText className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-            <p className="text-muted-foreground">
-              Click "Prepare All" to load VAT period data across all clients.
-            </p>
+            <p className="text-muted-foreground">{t["firmOps.bulkPrepareHint"]}</p>
           </CardContent>
         </Card>
       )}
@@ -509,6 +567,7 @@ function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
 // ─── Tab 3: Bulk Invoicing ────────────────────────────────────────────────────
 
 function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
+  const { locale, t } = useTranslation(SERVER_ERROR_NAMESPACES);
   const { toast } = useToast();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [serviceDescription, setServiceDescription] = useState("");
@@ -542,15 +601,15 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
 
   const generate = async () => {
     if (!serviceDescription.trim()) {
-      toast({ variant: "destructive", title: "Enter a service description" });
+      toast({ variant: "destructive", title: t["bulkOperations.enterAServiceDescription"] });
       return;
     }
     if (numAmount <= 0) {
-      toast({ variant: "destructive", title: "Enter a valid amount" });
+      toast({ variant: "destructive", title: t["bulkOperations.enterAValidAmount"] });
       return;
     }
     if (selectedIds.size === 0) {
-      toast({ variant: "destructive", title: "Select at least one client" });
+      toast({ variant: "destructive", title: t["bulkOperations.selectAtLeastOneClient"] });
       return;
     }
 
@@ -564,9 +623,9 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
       });
       setResults(data.results ?? []);
       const success = (data.results ?? []).filter((r: BulkInvoiceResult) => r.success).length;
-      toast({ title: `Generated ${success} invoice(s)` });
+      toast({ title: formatMessage(translateNow("toasts.generatedInvoiceS"), { success }) });
     } catch {
-      toast({ variant: "destructive", title: "Failed to generate invoices" });
+      toast({ variant: "destructive", title: t["bulkOperations.failedToGenerateInvoices"] });
     } finally {
       setIsGenerating(false);
     }
@@ -577,10 +636,11 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold">Bulk Invoicing</h3>
+        <h3 className="text-lg font-semibold">
+          <T k="pages.bulkInvoicing" />
+        </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Generate NRA service invoices to multiple clients in one action. Each invoice is created
-          as a draft.
+          {t["bulkOperations.generateNraServiceInvoicesTo"]}
         </p>
       </div>
 
@@ -588,21 +648,25 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
         {/* Left: form */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Invoice Details</CardTitle>
+            <CardTitle className="text-base">
+              <T k="pages.invoiceDetails" />
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label>Service Description</Label>
+              <Label>
+                <T k="pages.serviceDescription" />
+              </Label>
               <Input
                 className="mt-1"
-                placeholder="e.g. Monthly accounting services — April 2026"
+                placeholder={t["firmOps.bulkServicePlaceholder"]}
                 value={serviceDescription}
                 onChange={(e) => setServiceDescription(e.target.value)}
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Amount (AED excl. VAT)</Label>
+                <Label>{t["firmOps.bulkAmountExcl"]}</Label>
                 <Input
                   className="mt-1"
                   type="number"
@@ -614,14 +678,16 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                 />
               </div>
               <div>
-                <Label>VAT Rate</Label>
+                <Label>
+                  <T k="pages.vatRate" />
+                </Label>
                 <Select value={vatRate} onValueChange={setVatRate}>
                   <SelectTrigger className="mt-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0.05">5% (Standard)</SelectItem>
-                    <SelectItem value="0">0% (Zero-rated)</SelectItem>
+                    <SelectItem value="0.05">{t["firmOps.bulkVat5"]}</SelectItem>
+                    <SelectItem value="0">{t["firmOps.bulkVat0"]}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -630,7 +696,9 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
             {numAmount > 0 && (
               <div className="bg-muted/40 rounded-lg p-3 text-sm space-y-1">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="text-muted-foreground">
+                    <T k="pages.subtotal" />
+                  </span>
                   <span>{formatAed(numAmount)}</span>
                 </div>
                 <div className="flex justify-between">
@@ -640,12 +708,16 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                   <span>{formatAed(vatAmount)}</span>
                 </div>
                 <div className="flex justify-between font-semibold border-t pt-1">
-                  <span>Total per invoice</span>
+                  <span>
+                    <T k="pages.totalPerInvoice" />
+                  </span>
                   <span>{formatAed(total)}</span>
                 </div>
                 {selectedIds.size > 0 && (
                   <div className="flex justify-between text-primary font-semibold pt-1">
-                    <span>Total ({selectedIds.size} clients)</span>
+                    <span>
+                      {formatMessage(t["firmOps.bulkTotalClients"], { count: selectedIds.size })}
+                    </span>
                     <span>{formatAed(total * selectedIds.size)}</span>
                   </div>
                 )}
@@ -658,18 +730,20 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Select Clients</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pages.selectClients" />
+              </CardTitle>
               <Button variant="ghost" size="sm" onClick={toggleAll}>
                 {allSelected ? (
-                  <CheckSquare className="w-4 h-4 mr-1" />
+                  <CheckSquare className="w-4 h-4 me-1" />
                 ) : (
-                  <Square className="w-4 h-4 mr-1" />
+                  <Square className="w-4 h-4 me-1" />
                 )}
-                {allSelected ? "Deselect All" : "Select All"}
+                {allSelected ? t["bulkOperations.deselectAll"] : t["pageLabels.selectAll"]}
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="max-h-64 overflow-y-auto space-y-1 pr-2">
+          <CardContent className="max-h-64 overflow-y-auto space-y-1 pe-2">
             {clients.map((client) => (
               <div
                 key={client.id}
@@ -693,46 +767,57 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
       <div className="flex justify-end">
         <Button onClick={generate} disabled={isGenerating || selectedIds.size === 0}>
           {isGenerating ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            <Loader2 className="w-4 h-4 me-2 animate-spin" />
           ) : (
-            <Play className="w-4 h-4 mr-2" />
+            <Play className="w-4 h-4 me-2" />
           )}
-          Generate{" "}
           {selectedIds.size > 0
-            ? `${selectedIds.size} Invoice${selectedIds.size !== 1 ? "s" : ""}`
-            : "Invoices"}
+            ? formatMessage(t["firmOps.bulkGenerate"], { count: selectedIds.size })
+            : t["firmOps.bulkGenerateEmpty"]}
         </Button>
       </div>
 
       {results.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Results</CardTitle>
+            <CardTitle className="text-base">
+              <T k="pages.results" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Invoice #</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>
+                    <T k="pages.company" />
+                  </TableHead>
+                  <TableHead>{t["firmOps.bulkInvoiceNumber"]}</TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {results.map((r) => (
                   <TableRow key={r.companyId}>
                     <TableCell className="font-medium">{r.companyName}</TableCell>
-                    <TableCell className="font-mono text-sm">{r.invoiceNumber ?? "—"}</TableCell>
+                    <TableCell className="tabular-nums text-sm">{r.invoiceNumber ?? "—"}</TableCell>
                     <TableCell>
                       {r.success ? (
                         <Badge className="bg-success-subtle text-success">
-                          <CheckCircle2 className="w-3 h-3 mr-1" />
-                          Created
+                          <CheckCircle2 className="w-3 h-3 me-1" />
+                          <T k="pages.created" />
                         </Badge>
                       ) : (
-                        <Badge variant="destructive" title={r.error}>
-                          <XCircle className="w-3 h-3 mr-1" />
-                          Failed
+                        <Badge
+                          variant="destructive"
+                          title={
+                            (r.code && serverErrorCopy(locale, r.code)) ||
+                            t["bulkOperations.failedToGenerateInvoices"]
+                          }
+                        >
+                          <XCircle className="w-3 h-3 me-1" />
+                          <T k="pages.failed" />
                         </Badge>
                       )}
                     </TableCell>
@@ -750,6 +835,7 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
 // ─── Tab 4: Period Close ──────────────────────────────────────────────────────
 
 function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [period, setPeriod] = useState(() => {
     const now = new Date();
@@ -770,7 +856,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
 
   const runCheck = async () => {
     if (selectedIds.size === 0) {
-      toast({ variant: "destructive", title: "Select at least one client" });
+      toast({ variant: "destructive", title: t["bulkOperations.selectAtLeastOneClient"] });
       return;
     }
     setIsChecking(true);
@@ -781,9 +867,14 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
       });
       setStatuses(data);
       const readyCount = data.filter((s: PeriodCloseStatus) => s.readyToClose).length;
-      toast({ title: `${readyCount}/${data.length} clients ready to close` });
+      toast({
+        title: formatMessage(translateNow("toasts.clientsReadyToClose"), {
+          readyCount,
+          count: data.length,
+        }),
+      });
     } catch {
-      toast({ variant: "destructive", title: "Period close check failed" });
+      toast({ variant: "destructive", title: t["bulkOperations.periodCloseCheckFailed"] });
     } finally {
       setIsChecking(false);
     }
@@ -803,16 +894,19 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold">Period-End Close</h3>
+        <h3 className="text-lg font-semibold">
+          <T k="pages.periodEndClose" />
+        </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Run a pre-close checklist across selected clients to identify outstanding items before
-          closing the period.
+          {t["bulkOperations.runAPreCloseChecklist"]}
         </p>
       </div>
 
       <div className="flex items-end gap-4">
         <div>
-          <Label>Period</Label>
+          <Label>
+            <T k="pages.period" />
+          </Label>
           <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="mt-1 w-36">
               <SelectValue />
@@ -828,11 +922,11 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
         </div>
         <Button onClick={runCheck} disabled={isChecking || selectedIds.size === 0}>
           {isChecking ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            <Loader2 className="w-4 h-4 me-2 animate-spin" />
           ) : (
-            <CheckCircle2 className="w-4 h-4 mr-2" />
+            <CheckCircle2 className="w-4 h-4 me-2" />
           )}
-          Run Checklist
+          {t["firmOps.bulkRunChecklist"]}
         </Button>
       </div>
 
@@ -842,7 +936,10 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">
-                Clients ({selectedIds.size}/{clients.length})
+                {formatMessage(t["firmOps.bulkClientsCount"], {
+                  selected: selectedIds.size,
+                  total: clients.length,
+                })}
               </CardTitle>
               <Button
                 variant="ghost"
@@ -855,7 +952,9 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
                   )
                 }
               >
-                {selectedIds.size === clients.length ? "Deselect All" : "Select All"}
+                {selectedIds.size === clients.length
+                  ? t["bulkOperations.deselectAll"]
+                  : t["pageLabels.selectAll"]}
               </Button>
             </div>
           </CardHeader>
@@ -883,17 +982,23 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
         {statuses.length > 0 && (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Summary</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pages.summary" />
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Ready to close</span>
+                <span className="text-muted-foreground">
+                  <T k="pages.readyToClose" />
+                </span>
                 <span className="font-semibold text-success">
                   {statuses.filter((s) => s.readyToClose).length}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Issues found</span>
+                <span className="text-muted-foreground">
+                  <T k="pages.issuesFound" />
+                </span>
                 <span className="font-semibold text-warning">
                   {statuses.filter((s) => !s.readyToClose).length}
                 </span>
@@ -918,24 +1023,35 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
                     <p className="text-sm text-muted-foreground">{s.period}</p>
                   </div>
                   {s.readyToClose ? (
-                    <Badge className="bg-success-subtle text-success">Ready</Badge>
+                    <Badge className="bg-success-subtle text-success">
+                      <T k="pages.ready" />
+                    </Badge>
                   ) : (
                     <Badge className="bg-warning-subtle text-warning">
-                      {s.issues.length} issue{s.issues.length !== 1 ? "s" : ""}
+                      {formatMessage(t["firmOps.bulkIssuesCount"], { count: s.issues.length })}
                     </Badge>
                   )}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <CheckItem ok={s.checks.trialBalanceOk} label="Trial balance" />
-                  <CheckItem ok={s.checks.bankRecDone} label="Bank reconciliation" />
-                  <CheckItem ok={s.checks.allReceiptsPosted} label="All receipts posted" />
-                  <CheckItem ok={s.checks.vatPrepared} label="VAT return prepared" />
+                  <CheckItem
+                    ok={s.checks.trialBalanceOk}
+                    label={t["reportCenter.trialBalanceShort"]}
+                  />
+                  <CheckItem ok={s.checks.bankRecDone} label={t["marketing.bankTitle"]} />
+                  <CheckItem
+                    ok={s.checks.allReceiptsPosted}
+                    label={t["bulkOperations.allReceiptsPosted"]}
+                  />
+                  <CheckItem
+                    ok={s.checks.vatPrepared}
+                    label={t["bulkOperations.vatReturnPrepared"]}
+                  />
                 </div>
                 {s.issues.length > 0 && (
                   <div className="mt-3 bg-warning-subtle border border-warning/30 rounded p-2">
                     {s.issues.map((issue, i) => (
                       <p key={i} className="text-xs text-warning">
-                        · {issue}
+                        · {localizeFirmText(issue, t)}
                       </p>
                     ))}
                   </div>
@@ -950,9 +1066,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
         <Card className="border-dashed">
           <CardContent className="py-12 text-center">
             <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-            <p className="text-muted-foreground">
-              Select clients and click "Run Checklist" to begin the period-close review.
-            </p>
+            <p className="text-muted-foreground">{t["firmOps.bulkCloseHint"]}</p>
           </CardContent>
         </Card>
       )}
@@ -963,44 +1077,65 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function BulkOperations() {
-  const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
+  const { t } = useTranslation();
+  const clientsQuery = useQuery<ClientWithStats[]>({
     queryKey: ["/api/firm/clients"],
   });
+  const clientsState = queryReadState(clientsQuery);
 
-  if (isLoading) {
+  if (clientsState === "pending") {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex items-center justify-center h-64" data-testid="bulk-clients-loading">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
+  // The tabs seed their client selection from this list, so they mount only once it has loaded.
+  if (clientsState === "error") {
+    return (
+      <div className="space-y-6">
+        <PageHeader eyebrow={t["firm.eyebrowFirm"]} title={t["bulkOperations.bulkOperations"]} />
+        <LoadErrorState
+          error={clientsQuery.error}
+          onRetry={() => void clientsQuery.refetch()}
+          testId="bulk-clients-error"
+        />
+      </div>
+    );
+  }
+  const clients = clientsQuery.data ?? [];
+
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
-        title="Bulk Operations"
-        description="Batch actions across all managed clients — OCR receipts, prepare VAT queues, generate invoices, and run period-close checklists."
+        eyebrow={t["firm.eyebrowFirm"]}
+        title={t["bulkOperations.bulkOperations"]}
+        description={t["bulkOperations.batchActionsAcrossAllManaged"]}
       />
+
+      {clientsState === "stale" && (
+        <StaleDataNotice onRetry={() => void clientsQuery.refetch()} testId="bulk-clients-stale" />
+      )}
 
       <Tabs defaultValue="ocr">
         <div className="overflow-x-auto">
-          <TabsList className="grid w-full grid-cols-4 min-w-[500px]">
+          <TabsList>
             <TabsTrigger value="ocr">
-              <ReceiptIcon className="w-4 h-4 mr-2" />
-              Batch OCR
+              <ReceiptIcon className="w-4 h-4 me-2" />
+              <T k="pages.batchOcr" />
             </TabsTrigger>
             <TabsTrigger value="vat">
-              <FileText className="w-4 h-4 mr-2" />
-              VAT Queue
+              <FileText className="w-4 h-4 me-2" />
+              <T k="pages.vatQueue" />
             </TabsTrigger>
             <TabsTrigger value="invoices">
-              <Building2 className="w-4 h-4 mr-2" />
-              Invoicing
+              <Building2 className="w-4 h-4 me-2" />
+              <T k="pages.invoicing" />
             </TabsTrigger>
             <TabsTrigger value="close">
-              <CheckCircle2 className="w-4 h-4 mr-2" />
-              Period Close
+              <CheckCircle2 className="w-4 h-4 me-2" />
+              <T k="pages.periodClose" />
             </TabsTrigger>
           </TabsList>
         </div>

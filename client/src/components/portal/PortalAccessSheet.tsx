@@ -1,0 +1,685 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link2, Loader2, Mail, RotateCw, Send, UserRoundX, XCircle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert } from "@/components/ui/alert";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { useToast } from "@/hooks/use-toast";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { ApiError, apiRequest } from "@/lib/queryClient";
+import { bidiIsolate } from "@/lib/customer-link";
+import { isolateLtrText } from "@/lib/format-bidi";
+import { formatDate } from "@/lib/format-date";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { defaultInviteLanguage, portalAccessKey, portalSummaryKey } from "@/lib/portal-invite";
+import {
+  PORTAL_INVITE_MESSAGE_MAX,
+  PORTAL_INVITE_TTL_DAYS,
+  type PortalInviteLanguage,
+} from "@shared/validators/portal-invitations";
+
+export interface PortalSheetContact {
+  id: string;
+  name: string;
+  email: string | null;
+  contactPerson?: string | null;
+  preferredLanguage?: string | null;
+}
+
+interface AccessData {
+  contact: { id: string; email: string | null };
+  people: Array<{
+    id: string;
+    name: string;
+    email: string;
+    since: string;
+    lastSeenAt: string | null;
+  }>;
+  invitations: Array<{
+    id: string;
+    email: string;
+    status: "pending" | "accepted" | "revoked" | "expired";
+    expiresAt: string;
+    lastSentAt: string | null;
+    resendIn: number;
+    language: PortalInviteLanguage;
+    /** The latest email was handed to the provider (false: queued, blocked or failed). */
+    emailSent: boolean;
+  }>;
+}
+
+/** "m:ss" with Latin digits, so a 61 second wait reads 1:01 and not "61s". */
+function formatCountdown(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+interface InviteResponse {
+  delivery: "email" | "queued";
+  invitation: { id: string; email: string };
+}
+
+const STATUS_TONE: Record<string, StatusTone> = {
+  pending: "info",
+  expired: "warning",
+  revoked: "neutral",
+  accepted: "success",
+};
+
+type Confirm =
+  | { kind: "revoke"; id: string; email: string }
+  | { kind: "remove"; id: string; name: string }
+  | null;
+
+/**
+ * The invite form. It lives inside the sheet's content, so it mounts fresh (prefilled from the
+ * contact) every time the sheet opens.
+ */
+function InviteForm({
+  contact,
+  companyId,
+  supplierName,
+  canInvite,
+  pendingEmails,
+  onDelivered,
+  onFailed,
+}: {
+  contact: PortalSheetContact;
+  companyId: string;
+  supplierName: string;
+  canInvite: boolean;
+  /** Lower-cased emails that already have a pending invitation (resend those instead). */
+  pendingEmails: string[];
+  onDelivered: (res: InviteResponse) => void;
+  onFailed: (err: unknown) => void;
+}) {
+  const { t } = useTranslation();
+  const { gate } = useCompanyPermission();
+  // An address that already has a pending invitation is not pre-filled: submitting it would only
+  // fail with "already invited", so the pending invitation above is the thing to act on.
+  const [email, setEmail] = useState(() =>
+    contact.email && !pendingEmails.includes(contact.email.trim().toLowerCase())
+      ? contact.email
+      : ""
+  );
+  const [name, setName] = useState(contact.contactPerson ?? "");
+  const [language, setLanguage] = useState<PortalInviteLanguage>(
+    defaultInviteLanguage(contact.preferredLanguage)
+  );
+  const [note, setNote] = useState("");
+
+  const invite = useMutation({
+    mutationFn: () =>
+      apiRequest(
+        "POST",
+        `/api/companies/${companyId}/customer-contacts/${contact.id}/portal-invitations`,
+        {
+          email: email.trim() || undefined,
+          name: name.trim() || undefined,
+          language,
+          message: note.trim() || undefined,
+          saveEmailToContact: !contact.email && !!email.trim() ? true : undefined,
+        }
+      ) as Promise<InviteResponse>,
+    onSuccess: (res) => {
+      setNote("");
+      onDelivered(res);
+    },
+    onError: onFailed,
+  });
+
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const emailPending = pendingEmails.includes(email.trim().toLowerCase());
+  // The subject the customer will see, one line per language (each in its own direction).
+  const preview = useMemo(() => {
+    const en = {
+      lang: "en",
+      // The English subject mirrors server/services/portal-invite-email.ts.
+      text: `${bidiIsolate(supplierName)} invited you to view your invoices`, // i18n-ignore: the English email subject
+    };
+    const ar = {
+      lang: "ar",
+      text: formatMessage(t["portal.invite.previewSubjectAr"], {
+        supplier: bidiIsolate(supplierName),
+      }),
+    };
+    return language === "ar" ? [ar] : language === "bilingual" ? [en, ar] : [en];
+  }, [language, supplierName, t]);
+
+  const langs: Array<{ id: PortalInviteLanguage; label: string; lang?: string }> = [
+    { id: "en", label: "English", lang: "en" },
+    { id: "ar", label: "العربية", lang: "ar" },
+    { id: "bilingual", label: t["portal.invite.both"] },
+  ];
+
+  return (
+    <form
+      className="mt-3 space-y-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (emailOk && canInvite && !emailPending) invite.mutate();
+      }}
+      data-testid="pa-invite-form"
+    >
+      <div>
+        <Label htmlFor="pa-email">{t["portal.email"]}</Label>
+        <Input
+          id="pa-email"
+          type="email"
+          inputMode="email"
+          autoComplete="off"
+          dir="ltr"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="mt-1.5 h-11 text-base"
+          aria-describedby={
+            emailPending ? "pa-email-pending" : !contact.email ? "pa-email-help" : undefined
+          }
+          data-testid="pa-email"
+        />
+        {emailPending && (
+          <p
+            id="pa-email-pending"
+            className="mt-1 text-caption text-muted-foreground"
+            data-testid="pa-email-pending"
+          >
+            {t["portal.invite.pendingHelp"]}
+          </p>
+        )}
+        {!contact.email && !emailPending && (
+          <p id="pa-email-help" className="mt-1 text-caption text-muted-foreground">
+            {t["portal.invite.noEmailHelp"]}
+          </p>
+        )}
+      </div>
+      <div>
+        <Label htmlFor="pa-name">{t["portal.invite.nameLabel"]}</Label>
+        <Input
+          id="pa-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="mt-1.5 h-11 text-base"
+          dir="auto"
+          maxLength={100}
+          data-testid="pa-name"
+        />
+      </div>
+      <fieldset>
+        <legend className="text-small font-medium">{t["portal.invite.languageLabel"]}</legend>
+        <div
+          className="mt-1.5 inline-flex w-full rounded-md border border-border p-0.5 sm:w-auto"
+          role="radiogroup"
+        >
+          {langs.map((l) => (
+            <button
+              key={l.id}
+              type="button"
+              role="radio"
+              aria-checked={language === l.id}
+              lang={l.lang}
+              onClick={() => setLanguage(l.id)}
+              className={`min-h-11 flex-1 rounded px-4 text-small font-medium sm:flex-none ${
+                language === l.id ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+              }`}
+              data-testid={`pa-lang-${l.id}`}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <div>
+        <Label htmlFor="pa-note">{t["portal.invite.noteLabel"]}</Label>
+        <Textarea
+          id="pa-note"
+          value={note}
+          onChange={(e) => setNote(e.target.value.slice(0, PORTAL_INVITE_MESSAGE_MAX))}
+          rows={3}
+          className="mt-1.5 text-base"
+          dir="auto"
+          data-testid="pa-note"
+        />
+        <p className="mt-1 text-end text-caption text-muted-foreground">
+          <bdi dir="ltr" className="tabular-nums">
+            {note.length}/{PORTAL_INVITE_MESSAGE_MAX}
+          </bdi>
+        </p>
+      </div>
+      <div className="rounded-lg bg-muted/50 p-3" data-testid="pa-preview">
+        <p className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground">
+          <Mail className="h-3.5 w-3.5" aria-hidden />
+          {t["portal.invite.previewTitle"]}
+        </p>
+        {preview.map((line) => (
+          <p
+            key={line.lang}
+            className="mt-1 text-start text-small font-medium"
+            lang={line.lang}
+            dir={line.lang === "ar" ? "rtl" : "ltr"}
+            data-testid={`pa-preview-${line.lang}`}
+          >
+            {line.text}
+          </p>
+        ))}
+        <p className="mt-0.5 text-caption text-muted-foreground">
+          {formatMessage(t["portal.invite.previewExpiry"], { days: PORTAL_INVITE_TTL_DAYS })}
+        </p>
+      </div>
+      <Button
+        type="submit"
+        className="h-11 w-full"
+        disabled={!emailOk || emailPending || invite.isPending || !canInvite}
+        {...(canInvite ? {} : gate("documents.write"))}
+        data-testid="pa-send"
+      >
+        {invite.isPending ? (
+          <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />
+        ) : (
+          <Send className="me-2 h-4 w-4 rtl:-scale-x-100" aria-hidden />
+        )}
+        {t["portal.invite.send"]}
+      </Button>
+    </form>
+  );
+}
+
+/**
+ * "Portal access" for one customer: who can sign in, the invitations (resend, revoke) and a form
+ * to invite someone, with the email language and an optional note. Nothing is reported as sent
+ * without an email provider: the staff member gets the link to share instead.
+ */
+export function PortalAccessSheet({
+  open,
+  onOpenChange,
+  companyId,
+  supplierName,
+  contact,
+  onManageLinks,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  companyId: string;
+  supplierName: string;
+  contact: PortalSheetContact | null;
+  onManageLinks: () => void;
+}) {
+  const { t, locale } = useTranslation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { can, gate } = useCompanyPermission();
+  const canInvite = can("documents.write");
+  const contactId = contact?.id ?? "";
+
+  const { data, isLoading, dataUpdatedAt } = useQuery<AccessData>({
+    queryKey: portalAccessKey(companyId, contactId),
+    enabled: open && !!contactId && !!companyId,
+    staleTime: 0,
+  });
+
+  const [confirm, setConfirm] = useState<Confirm>(null);
+  // A clock for the Resend countdown: it ticks once a second only while a cooldown is running.
+  const [now, setNow] = useState(() => Date.now());
+  const remaining = (resendIn: number) =>
+    Math.max(0, resendIn - Math.floor((now - dataUpdatedAt) / 1000));
+  const cooling = (data?.invitations ?? []).some((i) => remaining(i.resendIn) > 0);
+  useEffect(() => {
+    if (!cooling) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [cooling]);
+
+  // Honest delivery state: with no email provider an invitation is saved but never emailed.
+  const { data: emailStatus } = useQuery<{ configured: boolean }>({
+    queryKey: ["/api/companies", companyId, "email-outbox", "status"],
+    enabled: open && !!companyId,
+  });
+  const emailOff = !!emailStatus && !emailStatus.configured;
+
+  // After Send the new invitation must be visible: on a phone the form is far below the list.
+  const invitesRef = useRef<HTMLElement>(null);
+  const revealInvite = useRef(false);
+  useEffect(() => {
+    if (!revealInvite.current || !data) return;
+    revealInvite.current = false;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    invitesRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  }, [data, dataUpdatedAt]);
+
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: portalAccessKey(companyId, contactId) });
+    void queryClient.invalidateQueries({ queryKey: portalSummaryKey(companyId) });
+    setNow(Date.now());
+  };
+  const fail = (err: unknown) => {
+    toast({
+      title: err instanceof ApiError ? err.message : t["portal.invite.failed"],
+      variant: "destructive",
+    });
+    if (err instanceof ApiError && err.body?.code === "PORTAL_INVITE_DELIVERY_FAILED") refresh();
+  };
+  const reportDelivery = (res: InviteResponse) => {
+    if (res.delivery === "email") {
+      toast({
+        title: formatMessage(t["portal.invite.sentTo"], {
+          email: isolateLtrText(res.invitation.email),
+        }),
+      });
+    } else {
+      // Nothing went out (no email provider, or the provider is retrying): never say "sent".
+      toast({ title: t["portal.invite.notSent"] });
+    }
+    revealInvite.current = true;
+    refresh();
+  };
+
+  const base = `/api/companies/${companyId}`;
+  const resend = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `${base}/portal-invitations/${id}/resend`, {}) as Promise<InviteResponse>,
+    onSuccess: reportDelivery,
+    onError: fail,
+  });
+  const revoke = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `${base}/portal-invitations/${id}/revoke`, {}),
+    onSuccess: () => {
+      toast({ title: t["portal.invite.revoked"] });
+      refresh();
+    },
+    onError: fail,
+  });
+  const removeAccess = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `${base}/portal-accounts/${id}`),
+    onSuccess: () => {
+      toast({ title: t["portal.access.removed"] });
+      refresh();
+    },
+    onError: fail,
+  });
+
+  return (
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent
+          side={locale === "ar" ? "left" : "right"}
+          className="flex w-full max-w-none flex-col gap-0 overflow-y-auto p-0 sm:max-w-[500px]"
+          data-size="sheet"
+          data-testid="portal-access-sheet"
+        >
+          <SheetHeader className="border-b border-border p-5 pb-4">
+            <SheetTitle>{t["customerContacts.portalAccess"]}</SheetTitle>
+            <SheetDescription>
+              {contact
+                ? formatMessage(t["portal.access.forName"], { name: bidiIsolate(contact.name) })
+                : ""}
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="space-y-7 p-5">
+            {/* People with access */}
+            <section aria-labelledby="pa-people">
+              <h3 id="pa-people" className="text-small font-semibold">
+                {t["portal.access.people"]}
+              </h3>
+              {isLoading ? (
+                <Skeleton className="mt-2 h-14" />
+              ) : (data?.people.length ?? 0) === 0 ? (
+                <p className="mt-1 text-small text-muted-foreground" data-testid="pa-people-empty">
+                  {t["portal.access.noPeople"]}
+                </p>
+              ) : (
+                <ul className="mt-2 divide-y divide-border rounded-lg border border-border">
+                  {data!.people.map((p) => (
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between gap-3 p-3"
+                      data-testid={`pa-person-${p.id}`}
+                    >
+                      <span className="min-w-0">
+                        <bdi
+                          className="block truncate text-small font-medium"
+                          translate="no"
+                          title={p.name}
+                        >
+                          {p.name}
+                        </bdi>
+                        <bdi
+                          className="block truncate text-caption text-muted-foreground"
+                          dir="ltr"
+                          translate="no"
+                          title={p.email}
+                        >
+                          {p.email}
+                        </bdi>
+                        <span className="block text-caption text-muted-foreground">
+                          {p.lastSeenAt
+                            ? formatMessage(t["portal.access.lastSeen"], {
+                                date: formatDate(p.lastSeenAt, locale),
+                              })
+                            : t["portal.access.neverSignedIn"]}
+                        </span>
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="min-h-11 shrink-0 text-destructive hover:text-destructive"
+                        onClick={() => setConfirm({ kind: "remove", id: p.id, name: p.name })}
+                        {...gate("documents.write")}
+                        data-testid={`pa-remove-${p.id}`}
+                      >
+                        <UserRoundX className="me-1.5 h-4 w-4" aria-hidden />
+                        {t["portal.access.remove"]}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {/* Invitations */}
+            <section aria-labelledby="pa-invites" ref={invitesRef} className="scroll-mt-4">
+              <h3 id="pa-invites" className="text-small font-semibold">
+                {t["portal.access.invitations"]}
+              </h3>
+              {emailOff && (
+                <Alert
+                  tone="warning"
+                  title={t["portal.access.emailOffTitle"]}
+                  className="my-2"
+                  data-testid="pa-email-off"
+                >
+                  {t["portal.access.emailOffBody"]}
+                </Alert>
+              )}
+              {!isLoading && (data?.invitations.length ?? 0) === 0 ? (
+                <p className="mt-1 text-small text-muted-foreground" data-testid="pa-invites-empty">
+                  {t["portal.access.noInvitations"]}
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-2">
+                  {(data?.invitations ?? []).map((inv) => {
+                    const wait = remaining(inv.resendIn);
+                    const closed = inv.status === "revoked";
+                    return (
+                      <li
+                        key={inv.id}
+                        className="rounded-lg border border-border p-3"
+                        data-testid={`pa-invite-${inv.id}`}
+                        data-status={inv.status}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <bdi
+                            className="min-w-0 truncate text-small font-medium"
+                            dir="ltr"
+                            translate="no"
+                            title={inv.email}
+                          >
+                            {inv.email}
+                          </bdi>
+                          {inv.status === "pending" && !inv.emailSent ? (
+                            <StatusBadge tone="warning" data-testid={`pa-notsent-${inv.id}`}>
+                              {t["portal.access.status.notSent"]}
+                            </StatusBadge>
+                          ) : (
+                            <StatusBadge tone={STATUS_TONE[inv.status] ?? "neutral"}>
+                              {t[`portal.access.status.${inv.status}`]}
+                            </StatusBadge>
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-caption text-muted-foreground">
+                          {inv.status === "pending"
+                            ? formatMessage(t["portal.access.expires"], {
+                                date: formatDate(inv.expiresAt, locale),
+                              })
+                            : inv.status === "expired"
+                              ? formatMessage(t["portal.access.expiredOn"], {
+                                  date: formatDate(inv.expiresAt, locale),
+                                })
+                              : t["portal.access.cancelled"]}
+                        </p>
+                        {!closed && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="min-h-11"
+                              disabled={wait > 0 || resend.isPending || !canInvite}
+                              onClick={() => resend.mutate(inv.id)}
+                              data-testid={`pa-resend-${inv.id}`}
+                            >
+                              {resend.isPending && resend.variables === inv.id ? (
+                                <Loader2 className="me-1.5 h-4 w-4 animate-spin" aria-hidden />
+                              ) : (
+                                <RotateCw className="me-1.5 h-4 w-4" aria-hidden />
+                              )}
+                              {wait > 0
+                                ? formatMessage(t["portal.access.resendInTime"], {
+                                    time: isolateLtrText(formatCountdown(wait)),
+                                  })
+                                : t["portal.access.resend"]}
+                            </Button>
+                            {inv.status === "pending" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="min-h-11 text-destructive hover:text-destructive"
+                                onClick={() =>
+                                  setConfirm({ kind: "revoke", id: inv.id, email: inv.email })
+                                }
+                                {...gate("documents.write")}
+                                data-testid={`pa-revoke-${inv.id}`}
+                              >
+                                <XCircle className="me-1.5 h-4 w-4" aria-hidden />
+                                {t["portal.access.revoke"]}
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+
+            {/* Invite someone */}
+            <section aria-labelledby="pa-invite">
+              <h3 id="pa-invite" className="text-small font-semibold">
+                {t["portal.access.inviteSomeone"]}
+              </h3>
+              {isLoading && <Skeleton className="mt-3 h-40" />}
+              {contact && !isLoading && (
+                <InviteForm
+                  key={contact.id}
+                  pendingEmails={(data?.invitations ?? [])
+                    .filter((i) => i.status === "pending")
+                    .map((i) => i.email.trim().toLowerCase())}
+                  contact={contact}
+                  companyId={companyId}
+                  supplierName={supplierName}
+                  canInvite={canInvite}
+                  onDelivered={reportDelivery}
+                  onFailed={fail}
+                />
+              )}
+            </section>
+
+            {/* Share link (no sign-in) */}
+            <section aria-labelledby="pa-share" className="border-t border-border pt-5">
+              <h3 id="pa-share" className="text-small font-semibold">
+                {t["portal.access.shareLink"]}
+              </h3>
+              <p className="mt-1 text-small text-muted-foreground">
+                {t["portal.access.shareLinkHelp"]}
+              </p>
+              <Button
+                variant="outline"
+                className="mt-3 min-h-11"
+                onClick={onManageLinks}
+                data-testid="pa-manage-links"
+              >
+                <Link2 className="me-2 h-4 w-4" aria-hidden />
+                {t["portal.access.manageLinks"]}
+              </Button>
+            </section>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirm?.kind === "remove" ? t["portal.access.remove"] : t["portal.access.revoke"]}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirm?.kind === "remove"
+                ? formatMessage(t["portal.access.removeConfirm"], {
+                    name: bidiIsolate(confirm.name),
+                  })
+                : confirm?.kind === "revoke"
+                  ? formatMessage(t["portal.access.revokeConfirm"], {
+                      email: isolateLtrText(confirm.email),
+                    })
+                  : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t["common.cancel"]}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (confirm?.kind === "remove") removeAccess.mutate(confirm.id);
+                else if (confirm?.kind === "revoke") revoke.mutate(confirm.id);
+                setConfirm(null);
+              }}
+              data-testid="pa-confirm"
+            >
+              {confirm?.kind === "remove" ? t["portal.access.remove"] : t["portal.access.revoke"]}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}

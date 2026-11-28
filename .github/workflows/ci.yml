@@ -4,7 +4,8 @@ on:
   push:
     branches: [main, refactor/platform-overhaul]
   pull_request:
-    branches: [main, refactor/platform-overhaul]
+    # The release line (PR #67) is stacked work: PRs into it (e.g. #68) get the full suite too.
+    branches: [main, refactor/platform-overhaul, claude/eloquent-maxwell-kjxxjc]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,9 +13,10 @@ concurrency:
 
 jobs:
   verify:
-    name: Typecheck · Test · Build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: Typecheck · Lint · Unit tests · Audit · Build · Bundle budget
+    # Pinned: Playwright has no Chromium build for ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v4
@@ -25,16 +27,24 @@ jobs:
           node-version-file: package.json
           cache: npm
 
+      - name: Install poppler-utils (pdftotext for PDF content tests)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit
 
-      - name: Typecheck + guards (money-types, migration-journal)
-        # tsc OOMs on the default heap; pin it so this never goes red without a
-        # code change. `npm run check` also runs the money-type and migration
-        # journal guards added in the correctness pass.
-        env:
-          NODE_OPTIONS: --max-old-space-size=6144
+      # `npm run check` bakes NODE_OPTIONS=--max-old-space-size=6144 into the
+      # tsc step itself (R20-01), then runs the repo guards (money types,
+      # migration journal, route shadowing/registration, API contract, and
+      # scripts/run-guards.mjs).
+      - name: Typecheck + guards
         run: npm run check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Migration secret scan
+        run: npm run check:migrations
 
       - name: Unit tests
         env:
@@ -42,15 +52,109 @@ jobs:
           SESSION_SECRET: ci_session_secret_that_is_long_enough_for_validation
         run: npm test
 
+      - name: Coverage ratchet (tests/helpers/coverage-ratchet.json)
+        env:
+          DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          SESSION_SECRET: ci_session_secret_that_is_long_enough_for_validation
+        run: npm run test:coverage
+
+      # Fails on any critical/high production advisory not accepted in
+      # docs/security/dependency-exceptions.md (R17-27).
+      - name: Production dependency audit
+        run: node scripts/qa/audit-gate.mjs
+
+      - name: Railway install path (node 20.19 / npm 10)
+        run: |
+          mkdir -p /tmp/install-check
+          cp package.json package-lock.json /tmp/install-check/
+          cd /tmp/install-check
+          npx -y -p node@20.19.0 -p npm@10.8.2 -c "npm ci --omit=dev --ignore-scripts"
+
+      - name: Frontend API coverage (strict)
+        run: npm run audit:api-coverage:strict
+
       - name: Build (client + server)
         env:
           DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
           SESSION_SECRET: ci_session_secret_that_is_long_enough_for_validation
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npm run build
+
+      # These read dist/public, so they cannot run in the earlier "Unit tests" step; with
+      # REQUIRE_BUILD_OUTPUT=1 a missing build fails instead of skipping.
+      - name: Build-output tests (first-load chunks, i18n code split)
+        env:
+          REQUIRE_BUILD_OUTPUT: "1"
+          DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          SESSION_SECRET: ci_session_secret_that_is_long_enough_for_validation
+        run: npx vitest run tests/unit/first-load-chunks.test.ts tests/unit/i18n-code-split.test.ts
+
+      # Fails if any client chunk grows >10% over scripts/qa/bundle-baseline.json.
+      - name: Bundle budget
+        run: npm run bundle:budget
+
+      - name: Dead-code report (knip, informational)
+        continue-on-error: true
+        run: npm run audit:dead-code
+
+  db:
+    name: DB harness · route matrix · concurrency · soak (real Postgres 16)
+    # Pinned: Playwright has no Chromium build for ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: muhasib
+          POSTGRES_DB: muhasib
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U muhasib"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_ADMIN_URL: postgres://muhasib@127.0.0.1:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Install poppler-utils (pdftotext for PDF content tests)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+
+      # One migrated template per run; a fresh database per test file; the real
+      # app booted through registerRoutes (tests/db/README.md). Includes the
+      # cross-tenant route matrix, concurrency, soak, golden books, migrations
+      # and the credit-note consolidation regression.
+      - name: npm run test:db
+        run: npm run test:db
+
+      - name: Migration rehearsal (disposable Postgres 16)
+        run: npm run test:migration-rehearsal
+
+      - name: UAE calendar date regressions
+        env:
+          TZ: Asia/Dubai
+        run: npm run test:db -- tests/db/e3-vat-lifecycle-periods.test.ts tests/db/purchases-bills.test.ts
 
   e2e:
     name: Browser E2E · full route crawl
-    runs-on: ubuntu-latest
+    # Pinned: Playwright has no Chromium build for ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     services:
@@ -71,6 +175,11 @@ jobs:
     env:
       DATABASE_URL: postgres://muhasib@127.0.0.1:5432/muhasib
       NODE_ENV: development
+      # The crawl hits hundreds of routes from one IP; raise the per-IP budgets so the
+      # run measures the app, not the rate limiter (same as the boot-and-perf job).
+      RL_API_MAX: "100000"
+      RL_READ_MAX: "100000"
+      RL_AUTH_MAX: "1000"
 
     steps:
       - uses: actions/checkout@v4
@@ -107,6 +216,26 @@ jobs:
       - name: Browser E2E
         run: npm run e2e
 
+      - name: Public launch crawl
+        run: npm run e2e:customer:public
+
+      - name: Owner report pack downloads
+        run: npm run e2e:owner-report-pack
+
+      - name: Excel export feedback
+        run: node tests/e2e/excel-export-feedback.mjs
+
+      - name: Bilingual marketing route and accessibility crawl
+        run: npm run e2e:marketing
+
+      - name: Bilingual firm website crawl
+        run: |
+          python3 -m http.server 8080 --bind 127.0.0.1 --directory sites/najma-al-raeda-website > /tmp/firm-site.log 2>&1 &
+          firm_site_pid=$!
+          trap 'kill "$firm_site_pid"' EXIT
+          curl --fail --silent --retry 5 --retry-connrefused http://127.0.0.1:8080/ -o /dev/null
+          npm run e2e:firm-site
+
       - name: Server log on failure
         if: failure()
         run: tail -100 /tmp/server.log || true
@@ -119,10 +248,11 @@ jobs:
           path: tests/e2e/.artifacts/
           if-no-files-found: ignore
 
-  boot-and-fixes:
-    name: Boot gate + correctness integration tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  boot-and-perf:
+    name: Boot gate · live integration scripts · perf budget
+    # Pinned: Playwright has no Chromium build for ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
 
     services:
       postgres:
@@ -142,6 +272,13 @@ jobs:
     env:
       DATABASE_URL: postgres://muhasib@127.0.0.1:5432/muhasib
       NODE_ENV: development
+      # `npm start` forces NODE_ENV=production; CI has no persistent volume.
+      ALLOW_LOCAL_STORAGE: "true"
+      # The integration scripts and perf seeding read the same budgets and
+      # self-throttle on 429; raised here so the job stays fast.
+      RL_API_MAX: "100000"
+      RL_READ_MAX: "100000"
+      RL_AUTH_MAX: "1000"
 
     steps:
       - uses: actions/checkout@v4
@@ -160,9 +297,8 @@ jobs:
           echo "SESSION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
           echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
 
-      # Boot gate: migrations must apply from a clean database and the server
-      # must answer /api/version. This is what "the app does not boot from a
-      # clean checkout" would have caught.
+      # Boot gate: migrations must apply from a clean database and the built
+      # server must answer /api/version.
       - name: Run migrations (clean DB)
         run: npx tsx server/migrate.ts
 
@@ -171,8 +307,33 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=6144
         run: npm run build
 
+      - name: Install Chromium for provider flow
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Bilingual e-invoicing provider browser flow
+        env:
+          DATABASE_URL: postgres://muhasib@127.0.0.1:5432/einvoice_browser
+        run: |
+          node --input-type=module <<'JS'
+          import pg from 'pg';
+          const admin = new pg.Client({ connectionString: 'postgres://muhasib@127.0.0.1:5432/postgres' });
+          await admin.connect();
+          try {
+            await admin.query('CREATE DATABASE einvoice_browser');
+          } finally {
+            await admin.end();
+          }
+          JS
+          npx tsx tests/e2e/einvoice-infrastructure-flow.mjs
+
       - name: Start server
         run: |
+          redis_dir="$(mktemp -d)"
+          node tests/fixtures/redis-rest.mjs cert "$redis_dir"
+          export UPSTASH_REDIS_REST_TOKEN="$(openssl rand -hex 32)"
+          export UPSTASH_REDIS_REST_URL=https://127.0.0.1:5081
+          export NODE_EXTRA_CA_CERTS="$redis_dir/cert.pem"
+          node tests/fixtures/redis-rest.mjs serve "$redis_dir" 127.0.0.1 5081 > /tmp/redis-rest.log 2>&1 &
           npm start > /tmp/server.log 2>&1 &
           for i in $(seq 1 60); do
             if curl -sf http://127.0.0.1:5000/api/version > /dev/null; then echo "up"; exit 0; fi
@@ -180,65 +341,78 @@ jobs:
           done
           echo "Server failed to boot"; tail -80 /tmp/server.log; exit 1
 
-      # Real HTTP against the built server + a real Postgres. Covers the
-      # criticals (boot, overpayment, period lock, money precision) and the
-      # highs (emirate attribution, honest filing status, VAT periods, bank
-      # validation) — the classes of bug the unit suite structurally cannot see.
-      - name: Correctness integration tests
+      - name: Correctness integration scripts (live server)
         run: npm run test:integration
+
+      # p95 for the 7 report-20 endpoints at 300 invoices; fails on >50%
+      # regression over scripts/qa/perf-baseline.json.
+      - name: Perf budget
+        run: npm run perf:budget
 
       - name: Server log on failure
         if: failure()
-        run: tail -120 /tmp/server.log || true
+        run: tail -120 /tmp/server.log /tmp/redis-rest.log || true
 
-  db-integration:
-    name: DB integration · credit-note consolidation
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: muhasib
-          POSTGRES_DB: muhasib
-          POSTGRES_HOST_AUTH_METHOD: trust
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U muhasib"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
+  selfhost:
+    name: Self-hosting go-live gate (docker compose prod, health, login smoke)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
-      DATABASE_URL: postgres://muhasib@127.0.0.1:5432/muhasib
-      INTEGRATION_DATABASE_URL: postgres://muhasib@127.0.0.1:5432/muhasib
-      NODE_ENV: development
+      COMPOSE_FILE: docker-compose.prod.yml:.github/compose.redis-rest-ci.yml
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: package.json
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci --prefer-offline --no-audit
-
-      - name: Generate ephemeral secrets
+      - name: Test environment (self-signed TLS on localhost, throwaway secrets)
         run: |
-          echo "SESSION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-          echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          DATA_DIR="$RUNNER_TEMP/muhasib"
+          mkdir -p "$DATA_DIR"/{pgdata,uploads,caddy-data,caddy-config,backups,redis-rest}
+          node tests/fixtures/redis-rest.mjs cert "$DATA_DIR/redis-rest"
+          # The app image runs as uid/gid 1001; the bind-mounted uploads dir must be writable by it.
+          sudo chown 1001:1001 "$DATA_DIR/uploads"
+          {
+            echo "DATA_DIR=$DATA_DIR"
+            echo "DB_PASSWORD=$(openssl rand -hex 16)"
+            echo "APP_DOMAIN=localhost"
+            echo "ACME_EMAIL=ci@example.com"
+            echo "COMMIT_SHA=${GITHUB_SHA}"
+            echo "SESSION_SECRET=$(openssl rand -hex 32)"
+            echo "JWT_SECRET=$(openssl rand -hex 32)"
+            echo "TOKEN_ENCRYPTION_KEY=$(openssl rand -hex 32)"
+            echo "AUTH_PUBLIC_URL=https://localhost"
+            echo "RBAC_ENFORCE=enforce"
+            echo "UPSTASH_REDIS_REST_URL=https://redis-rest:5081"
+            echo "UPSTASH_REDIS_REST_TOKEN=$(openssl rand -hex 32)"
+          } > .env.prod
+          docker compose --env-file .env.prod config > /dev/null
 
-      # Build the schema the integration test seeds into (creates all tables,
-      # including the A-B11 0081_credit_note_consolidation migration).
-      - name: Run migrations
-        run: npx tsx server/migrate.ts
+      - name: Build image and boot the production stack
+        run: docker compose --env-file .env.prod up -d --build
 
-      # A-B11/A-B15: backfill must leave the VAT-201 totals and trial balance
-      # unchanged (no double/under count). Runs against the real Postgres above.
-      - name: Credit-note consolidation regression (real DB)
-        run: npm run test:credit-note-consolidation
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -ksf https://localhost/health/live > /dev/null; then echo "up"; exit 0; fi
+            sleep 3
+          done
+          echo "stack failed to become healthy"; exit 1
+
+      - name: App runs as non-root
+        run: |
+          uid=$(docker compose --env-file .env.prod exec -T app id -u)
+          echo "app uid: $uid"
+          test "$uid" != "0"
+
+      - name: Health, version and login smoke
+        run: CURL_OPTS=-k scripts/ops/selfhost-smoke.sh https://localhost
+
+      - name: Version matches the built commit
+        run: curl -ksf https://localhost/api/version | grep -q "${GITHUB_SHA}"
+
+      - name: Compose logs on failure
+        if: failure()
+        run: docker compose --env-file .env.prod logs --no-color --tail=200 || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose --env-file .env.prod down -v || true

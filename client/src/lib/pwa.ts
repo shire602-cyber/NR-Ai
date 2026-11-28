@@ -40,6 +40,8 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
       scope: "/",
     });
 
+    if (!registration) return null;
+
     swRegistration = registration;
     syncSessionMarkerToServiceWorker();
 
@@ -193,34 +195,6 @@ export function onInstallPromptAvailable(callback: InstallPromptCallback): () =>
   };
 }
 
-// ─── Background Sync ────────────────────────────────────────────────────────
-
-/**
- * Queues a failed request for background sync retry.
- */
-export async function queueForSync(request: {
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  body?: string;
-}): Promise<void> {
-  if (typeof navigator === "undefined" || !navigator.serviceWorker?.controller) {
-    return;
-  }
-
-  navigator.serviceWorker.controller.postMessage({
-    type: "QUEUE_REQUEST",
-    request: {
-      url: request.url,
-      method: request.method,
-      contentType:
-        request.headers["Content-Type"] || request.headers["content-type"] || "application/json",
-      body: request.body,
-      sessionMarker: getSessionMarker(),
-    },
-  });
-}
-
 // ─── Cache Management ───────────────────────────────────────────────────────
 
 /**
@@ -259,12 +233,6 @@ function syncSessionMarkerToServiceWorker(): void {
     type: "SET_SESSION_MARKER",
     sessionMarker: marker,
   });
-}
-
-function getSessionMarker(): string {
-  const existing = sessionStorage.getItem(SESSION_MARKER_KEY);
-  if (existing) return existing;
-  return rotatePwaSessionMarker();
 }
 
 // ─── Connectivity ───────────────────────────────────────────────────────────

@@ -3,6 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { AlertCircle, RefreshCw, Home } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { clientErrorPath, redactClientErrorText } from "@shared/client-error-privacy";
 
 interface Props {
   children: ReactNode;
@@ -53,13 +55,15 @@ async function reportToServer(error: Error, info: ErrorInfo, name?: string) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
+      referrerPolicy: "no-referrer",
       body: JSON.stringify({
-        message: error.message,
-        stack: error.stack,
-        componentStack: info.componentStack,
-        url: typeof window !== "undefined" ? window.location.href : undefined,
-        userAgent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
-        boundary: name,
+        message: redactClientErrorText(error.message),
+        stack: error.stack && redactClientErrorText(error.stack),
+        componentStack: info.componentStack && redactClientErrorText(info.componentStack),
+        url: typeof window !== "undefined" ? clientErrorPath(window.location.href) : undefined,
+        userAgent:
+          typeof navigator !== "undefined" ? redactClientErrorText(navigator.userAgent) : undefined,
+        boundary: name && redactClientErrorText(name),
       }),
     });
   } catch {
@@ -78,7 +82,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Error caught by boundary:", error, errorInfo);
+    console.error("Error caught by boundary:", redactClientErrorText(error.stack ?? error.message));
 
     // If a stale chunk failed to load and bubbled up to a boundary (rather than
     // being recovered by lazyWithReload), attempt a one-time hard reload to pull
@@ -118,6 +122,7 @@ export class ErrorBoundary extends Component<Props, State> {
 }
 
 function PageErrorFallback({ error, onRetry }: { error: Error | null; onRetry: () => void }) {
+  const { t } = useTranslation();
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-background">
       <Card className="max-w-md w-full">
@@ -126,11 +131,9 @@ function PageErrorFallback({ error, onRetry }: { error: Error | null; onRetry: (
             <div className="p-2 rounded-full bg-destructive/10">
               <AlertCircle className="w-6 h-6 text-destructive" />
             </div>
-            <CardTitle className="text-xl">Something went wrong</CardTitle>
+            <CardTitle className="text-xl">{t["components.errorSomethingWrong"]}</CardTitle>
           </div>
-          <CardDescription>
-            An unexpected error occurred. You can try again or return to the dashboard.
-          </CardDescription>
+          <CardDescription>{t["components.errorUnexpected"]}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {error && import.meta.env.DEV && (
@@ -144,12 +147,12 @@ function PageErrorFallback({ error, onRetry }: { error: Error | null; onRetry: (
               onClick={() => (window.location.href = "/dashboard")}
               className="flex-1"
             >
-              <Home className="w-4 h-4 mr-2" />
-              Dashboard
+              <Home className="w-4 h-4 me-2" />
+              {t["components.errorDashboard"]}
             </Button>
             <Button onClick={onRetry} className="flex-1">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Try Again
+              <RefreshCw className="w-4 h-4 me-2" />
+              {t["components.errorTryAgain"]}
             </Button>
           </div>
         </CardContent>
@@ -167,6 +170,7 @@ function SectionErrorFallback({
   onRetry: () => void;
   name?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       role="alert"
@@ -179,11 +183,11 @@ function SectionErrorFallback({
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="font-medium mb-1">
-            {name ? `${name} couldn't load` : "This section couldn't load"}
+            {name
+              ? formatMessage(t["components.errorNamedCouldNotLoad"], { name })
+              : t["components.errorSectionCouldNotLoad"]}
           </h3>
-          <p className="text-sm text-muted-foreground mb-3">
-            We've been notified. You can retry, or continue using the rest of the app.
-          </p>
+          <p className="text-sm text-muted-foreground mb-3">{t["components.errorNotified"]}</p>
           {error && import.meta.env.DEV && (
             <pre className="p-2 bg-muted rounded text-xs overflow-auto max-h-32 text-muted-foreground mb-3">
               {error.message}
@@ -191,12 +195,12 @@ function SectionErrorFallback({
           )}
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={onRetry}>
-              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-              Retry
+              <RefreshCw className="w-3.5 h-3.5 me-1.5" />
+              {t["components.errorRetry"]}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => (window.location.href = "/dashboard")}>
-              <Home className="w-3.5 h-3.5 mr-1.5" />
-              Dashboard
+              <Home className="w-3.5 h-3.5 me-1.5" />
+              {t["components.errorDashboard"]}
             </Button>
           </div>
         </div>

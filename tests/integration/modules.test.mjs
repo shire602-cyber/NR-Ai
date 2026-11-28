@@ -8,25 +8,34 @@
 //   RL_API_MAX=100000 RL_READ_MAX=100000 RL_AUTH_MAX=1000 npm start &
 //   BASE_URL=http://127.0.0.1:5000 node tests/integration/modules.test.mjs
 
+import { fail as abort, rateLimitRetries, throttledFetch } from "./_http.mjs";
+import { withRegisterLogin } from "./register-compat.mjs";
+import { dubaiToday } from "../helpers/dates.mjs";
+
+const api = withRegisterLogin(apiRaw, { status: "s", body: "j" });
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
-let pass = 0, fail = 0, skipped = 0; const fails = [];
+let pass = 0, fail = 0; const fails = [];
 const ok = (name, cond, detail) => {
-  if (!cond && detail && (detail.status === 429 || detail.s === 429)) {
-    skipped++; console.log("SKIP  " + name + "  (rate-limited)"); return;
-  }
   if (cond) { pass++; console.log("PASS  " + name); }
   else { fail++; fails.push(name + " :: " + JSON.stringify(detail)); console.log("FAIL  " + name + "  " + JSON.stringify(detail)); }
 };
-async function api(m, p, o = {}) {
+async function apiRaw(m, p, o = {}) {
   const h = { "Content-Type": "application/json" };
   if (o.token) h.Authorization = "Bearer " + o.token;
-  const r = await fetch(BASE + p, { method: m, headers: h, body: o.body === undefined ? undefined : JSON.stringify(o.body) });
+  const r = await throttledFetch(BASE + p, { method: m, headers: h, body: o.body === undefined ? undefined : JSON.stringify(o.body) });
   const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch {}
   return { s: r.status, j, t };
 }
 const n = (v) => Number(v ?? 0);
 const close = (a, b, tol = 0.02) => Math.abs(n(a) - n(b)) <= tol;
-const today = new Date().toISOString().slice(0, 10);
+const today = dubaiToday();
+// A VAT 201 period is a whole, already finished calendar quarter: date the bill in the last one.
+const qtr = (() => {
+  let y = Number(today.slice(0, 4)), q = Math.floor((Number(today.slice(5, 7)) - 1) / 3) - 1;
+  if (q < 0) { y -= 1; q = 3; }
+  const sm = q * 3 + 1, em = sm + 2, p = (v) => String(v).padStart(2, "0");
+  return { start: `${y}-${p(sm)}-01`, end: `${y}-${p(em)}-${p(new Date(Date.UTC(y, em, 0)).getUTCDate())}` };
+})();
 const yStart = today.slice(0, 4) + "-01-01";
 
 let T, ACC = [];
@@ -42,7 +51,7 @@ async function tb() {
 async function main() {
   const s = Math.random().toString(36).slice(2, 8);
   const reg = await api("POST", "/api/auth/register", { body: { name: "Mod", email: `mod_${s}@e.com`, password: "Password123!" } });
-  if (!reg.j?.token) { console.log("SKIP: registration rate-limited"); process.exit(0); }
+  if (!reg.j?.token) abort("registration failed (after rate-limit retries)", { status: reg.s, body: reg.t?.slice(0, 200) });
   T = { token: reg.j.token, cid: reg.j.company.id };
   await api("PATCH", `/api/companies/${T.cid}`, { token: T.token, body: { trnVatNumber: "100123456700003", vatRegistered: true, emirate: "dubai" } });
   ACC = (await api("GET", `/api/companies/${T.cid}/accounts`, { token: T.token })).j || [];
@@ -105,7 +114,7 @@ async function main() {
     let r = await api("POST", `/api/companies/${T.cid}/bills`, {
       token: T.token,
       body: {
-        vendor_name: "Supplier A", bill_date: today, due_date: today, currency: "AED",
+        vendor_name: "Supplier A", bill_date: qtr.end, due_date: qtr.end, currency: "AED",
         line_items: [{ description: "goods", quantity: 1, unit_price: 1000, vat_rate: 0.05 }],
       },
     });
@@ -122,7 +131,7 @@ async function main() {
 
       // Approved bills must feed input VAT recovery (Box 9).
       const v = await api("POST", `/api/companies/${T.cid}/vat-returns/generate`, {
-        token: T.token, body: { periodStart: today.slice(0, 8) + "01", periodEnd: today },
+        token: T.token, body: { periodStart: qtr.start, periodEnd: qtr.end },
       });
       ok("bills: approved bill appears in VAT Box 9 expenses", close(v.j?.box9ExpensesAmount, 1000, 1),
         { box9: v.j?.box9ExpensesAmount });
@@ -141,7 +150,7 @@ async function main() {
   // ══ PURCHASE ORDERS ═══════════════════════════════════════
   {
     let r = await api("POST", `/api/companies/${T.cid}/purchase-orders`, {
-      token: T.token, body: { vendorName: "Supplier B", date: today, number: `PO-${s}`, lines: [{ description: "parts", quantity: 2, unitPrice: 250, vatRate: 5 }] },
+      token: T.token, body: { vendorName: "Supplier B", date: today, lines: [{ description: "parts", quantity: 2, unitPrice: 250, vatRate: 5 }] },
     });
     ok("purchase orders: create", r.s === 200 || r.s === 201, { status: r.s, msg: r.t.slice(0, 160) });
     const poid = r.j?.id;
@@ -159,7 +168,7 @@ async function main() {
   // ══ EXPENSE CLAIMS ════════════════════════════════════════
   {
     let r = await api("POST", `/api/companies/${T.cid}/expense-claims`, {
-      token: T.token, body: { title: "Taxi", claimDate: today, lines: [{ description: "taxi", amount: 200, date: today, accountId: expense?.id }] },
+      token: T.token, body: { title: "Taxi", items: [{ expense_date: today, category: "travel", description: "taxi", amount: 20000 }] },
     });
     ok("expense claims: create", r.s === 200 || r.s === 201, { status: r.s, msg: r.t.slice(0, 160) });
     const eid = r.j?.id;
@@ -200,7 +209,7 @@ async function main() {
   {
     let r = await api("POST", `/api/companies/${T.cid}/recurring-invoices`, {
       token: T.token,
-      body: { customerName: "Sub Co", frequency: "monthly", startDate: today, nextRunDate: today,
+      body: { customerName: "Sub Co", frequency: "monthly", startDate: today,
               lines: [{ description: "retainer", quantity: 1, unitPrice: 1000, vatRate: 5 }] },
     });
     ok("recurring invoices: create", r.s === 200 || r.s === 201, { status: r.s, msg: r.t.slice(0, 160) });
@@ -218,7 +227,7 @@ async function main() {
     ok("payroll: create employee", r.s === 200 || r.s === 201, { status: r.s, msg: r.t.slice(0, 160) });
 
     const run = await api("POST", `/api/companies/${T.cid}/payroll-runs`, {
-      token: T.token, body: { periodMonth: 7, periodYear: Number(today.slice(0, 4)), payDate: today },
+      token: T.token, body: { periodMonth: 7, periodYear: Number(today.slice(0, 4)) },
     });
     ok("payroll: create run", run.s === 200 || run.s === 201, { status: run.s, msg: run.t.slice(0, 140) });
 
@@ -254,7 +263,8 @@ async function main() {
     const bad = await api("POST", `/api/companies/${T.cid}/bank-accounts`, {
       token: T.token, body: { nameEn: "X", bankName: "Totally Fake Bank", currency: "AED" },
     });
-    ok("bank: unrecognised bank rejected (handler no longer shadowed)", bad.s >= 400 && bad.s < 500, { status: bad.s });
+    // bankName is free text (R06-17): known banks are only suggestions, so an unlisted one is accepted.
+    ok("bank: free-text bank name accepted (R06-17)", bad.s === 201, { status: bad.s });
 
     const un = await api("GET", `/api/companies/${T.cid}/bank-statements/unreconciled`, { token: T.token });
     ok("bank: unreconciled feed", un.s === 200, { status: un.s });
@@ -269,7 +279,7 @@ async function main() {
     ok("FINAL: balance sheet A = L + E", close(A, L + E, 0.02), { A, L, E, diff: Math.round((A - L - E) * 100) / 100 });
   }
 
-  console.log(`\n==== ${pass} passed, ${fail} failed${skipped ? `, ${skipped} skipped` : ""} ====`);
+  console.log(`\n==== ${pass} passed, ${fail} failed (${rateLimitRetries} rate-limit retries) ====`);
   if (fail) { console.log("FAILURES:\n - " + fails.join("\n - ")); process.exit(1); }
 }
 main().catch((e) => { console.error("CRASH", e); process.exit(2); });

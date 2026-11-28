@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { io, type Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 import { getAuthHeaders } from "@/lib/auth";
 import { API_BASE_URL, apiUrl } from "@/lib/api";
 import { useCurrentUser } from "./useCurrentUser";
@@ -54,26 +54,34 @@ export function useNotifications(): UseNotificationsReturn {
   useEffect(() => {
     if (!user) return;
 
-    fetchNotifications();
+    // Initial load for the subscription; state is only set after the response resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchNotifications();
 
-    const socket = io(API_BASE_URL || window.location.origin, {
-      path: "/socket.io",
-      withCredentials: true,
-      transports: ["websocket", "polling"],
-    });
+    // socket.io-client (15 KB) is fetched after the page is interactive, not with the shell.
+    let cancelled = false;
+    void import("socket.io-client").then(({ io }) => {
+      if (cancelled) return;
+      const socket = io(API_BASE_URL || window.location.origin, {
+        path: "/socket.io",
+        withCredentials: true,
+        transports: ["websocket", "polling"],
+      });
 
-    socketRef.current = socket;
+      socketRef.current = socket;
 
-    socket.on("connect", () => setIsConnected(true));
-    socket.on("disconnect", () => setIsConnected(false));
+      socket.on("connect", () => setIsConnected(true));
+      socket.on("disconnect", () => setIsConnected(false));
 
-    socket.on("notification:new", (notification: AppNotification) => {
-      setNotifications((prev) => [notification, ...prev]);
-      setUnreadCount((prev) => prev + 1);
+      socket.on("notification:new", (notification: AppNotification) => {
+        setNotifications((prev) => [notification, ...prev]);
+        setUnreadCount((prev) => prev + 1);
+      });
     });
 
     return () => {
-      socket.disconnect();
+      cancelled = true;
+      socketRef.current?.disconnect();
       socketRef.current = null;
     };
   }, [fetchNotifications, user]);

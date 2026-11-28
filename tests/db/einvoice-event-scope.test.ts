@@ -1,0 +1,214 @@
+import { expect, it, vi } from "vitest";
+import { useHarness, type Tenant } from "./harness";
+import type { EInvoiceProvider } from "../../server/services/einvoice-provider";
+import { dubaiToday } from "../helpers/dates";
+
+const h = useHarness();
+const providerDocumentUuid = "01a0ab23-24d8-7787-bd01-883b1b089b00";
+
+async function submittedInvoice(tenant: Tenant, environment: "production" | "sandbox") {
+  const created = await tenant.as.post(`/api/companies/${tenant.company.id}/invoices`, {
+    customerName: "Example buyer",
+    date: dubaiToday(),
+    lines: [{ description: "Service", quantity: 1, unitPrice: 100, vatRate: 5 }],
+  });
+  expect(created.status, created.text).toBe(200);
+  const { id } = created.body;
+  await h.sql(
+    `UPDATE invoices SET einvoice_status = 'submitted', einvoice_provider = 'acube',
+       einvoice_provider_message_id = $2 WHERE id = $1`,
+    [id, providerDocumentUuid]
+  );
+  await h.sql(
+    `INSERT INTO einvoice_documents
+       (company_id, invoice_id, status, provider, provider_message_id, delivery_status, validation)
+     VALUES ($1, $2, 'submitted', 'acube', $3, 'sending', $4::jsonb)`,
+    [
+      tenant.company.id,
+      id,
+      providerDocumentUuid,
+      JSON.stringify({ valid: true, submission: { environment } }),
+    ]
+  );
+  return id as string;
+}
+
+function provider(environment: "sandbox" | "production") {
+  const getStatus = vi.fn<EInvoiceProvider["getStatus"]>(async (providerMessageId) => ({
+    providerMessageId,
+    status: "accepted",
+    delivery: "delivered",
+    providerStatus: "accepted",
+  }));
+  const simulated: EInvoiceProvider = {
+    name: "acube",
+    environment,
+    capabilities: { submit: false, getStatus: true, receive: false, cancel: false },
+    submit: async () => {
+      throw new Error("Unexpected submit");
+    },
+    getStatus,
+    receive: async () => [],
+    cancel: async () => {
+      throw new Error("Unexpected cancel");
+    },
+    parseWebhook: () => null,
+  };
+  return { simulated, getStatus };
+}
+
+it("scopes webhook deduplication and status re-reads to the verified company and environment", async () => {
+  const a = await h.createTenant();
+  const b = await h.createSecondTenant();
+  const aInvoice = await submittedInvoice(a, "sandbox");
+  const bInvoice = await submittedInvoice(b, "sandbox");
+  const { enqueueProviderEvent, runProviderEvents } =
+    await import("../../server/services/einvoice/provider-events");
+  const event = {
+    provider: "acube",
+    environment: "sandbox",
+    type: "document.delivered" as const,
+    eventId: "same-event-id",
+    payload: { documentId: providerDocumentUuid },
+  };
+  const first = await enqueueProviderEvent({ ...event, companyId: a.company.id });
+  expect(first.duplicate).toBe(false);
+  expect((await enqueueProviderEvent({ ...event, companyId: a.company.id })).duplicate).toBe(true);
+  const other = await enqueueProviderEvent({ ...event, companyId: b.company.id });
+  expect(other.duplicate).toBe(false);
+
+  const { simulated, getStatus } = provider("sandbox");
+  expect(await runProviderEvents({ id: first.id!, provider: simulated })).toMatchObject({
+    claimed: 1,
+    processed: 1,
+  });
+  expect(getStatus).toHaveBeenCalledExactlyOnceWith(
+    providerDocumentUuid,
+    expect.objectContaining({ documentType: null, knownCredentialScope: false })
+  );
+  expect(
+    (await h.sql(`SELECT status FROM einvoice_documents WHERE invoice_id = $1`, [aInvoice]))[0]
+      .status
+  ).not.toBe("submitted");
+  expect(
+    (await h.sql(`SELECT status FROM einvoice_documents WHERE invoice_id = $1`, [bInvoice]))[0]
+      .status
+  ).toBe("submitted");
+
+  const wrongEnvironment = await enqueueProviderEvent({
+    ...event,
+    environment: "production",
+    companyId: b.company.id,
+  });
+  const production = provider("production");
+  expect(
+    await runProviderEvents({ id: wrongEnvironment.id!, provider: production.simulated })
+  ).toMatchObject({
+    claimed: 1,
+    failed: 1,
+  });
+  expect(production.getStatus).not.toHaveBeenCalled();
+});
+
+it("polls a manually selected company without opening another company's provider inbox", async () => {
+  const a = await h.createTenant({
+    companyColumns: {
+      einvoice_partner: "acube",
+      trn_vat_number: "100111111100003",
+      emirate: "dubai",
+    },
+  });
+  const b = await h.createSecondTenant({
+    companyColumns: {
+      einvoice_partner: "acube",
+      trn_vat_number: "100222222200003",
+      emirate: "dubai",
+    },
+  });
+  await submittedInvoice(a, "sandbox");
+  await submittedInvoice(b, "sandbox");
+  const { runProviderPoll } = await import("../../server/services/einvoice/provider-events");
+  const { upsertLegalEntity } = await import("../../server/services/einvoice/legal-entities");
+  await upsertLegalEntity(a.company.id, "acube", "sandbox", "1001111111", {
+    status: "active",
+    legalEntityId: "example-a",
+  });
+  await upsertLegalEntity(b.company.id, "acube", "sandbox", "1002222222", {
+    status: "active",
+    legalEntityId: "example-b",
+  });
+  const { simulated, getStatus } = provider("sandbox");
+  const listInbound = vi.fn(async () => []);
+  expect(
+    await runProviderPoll("acube", {
+      companyId: a.company.id,
+      provider: { ...simulated, listInbound },
+    })
+  ).toEqual({
+    refreshed: 1,
+    enqueued: 0,
+  });
+  expect(getStatus).toHaveBeenCalledTimes(1);
+  expect(listInbound).toHaveBeenCalledExactlyOnceWith({ legalEntityIds: ["example-a"] });
+});
+
+it("parks a missing-provider webhook until its actual retry deadline", async () => {
+  const owner = await h.createTenant({ companyColumns: { einvoice_partner: "acube" } });
+  const { enqueueProviderEvent, runProviderEvents } =
+    await import("../../server/services/einvoice/provider-events");
+  const event = await enqueueProviderEvent({
+    provider: "acube",
+    environment: "sandbox",
+    type: "document.delivered",
+    eventId: "retry-deadline",
+    companyId: owner.company.id,
+    payload: { documentId: providerDocumentUuid },
+  });
+  // A pre-fix unclaimed event could have both default timestamps stored in Dubai time.
+  await h.sql(
+    `UPDATE einvoice_provider_events
+    SET received_at = stamp, next_attempt_at = stamp
+    FROM (SELECT (statement_timestamp() AT TIME ZONE 'UTC') + interval '4 hours' AS stamp) clock
+    WHERE id = $1`,
+    [event.id]
+  );
+  expect(await runProviderEvents({ id: event.id! })).toEqual({
+    claimed: 1,
+    processed: 0,
+    failed: 0,
+  });
+  const readEvent = () =>
+    h.sql(
+      `SELECT status, attempts, last_error, locked_until
+    FROM einvoice_provider_events WHERE id = $1`,
+      [event.id]
+    );
+  const paused = [
+    {
+      status: "pending",
+      attempts: 1,
+      last_error: "Provider event is waiting for provider configuration",
+      locked_until: null,
+    },
+  ];
+  expect(await readEvent()).toEqual(paused);
+  expect(await runProviderEvents({ id: event.id! })).toEqual({
+    claimed: 0,
+    processed: 0,
+    failed: 0,
+  });
+  expect(await readEvent()).toEqual(paused);
+  await h.sql(
+    `UPDATE einvoice_provider_events SET status = 'processing',
+    locked_until = (statement_timestamp() AT TIME ZONE 'UTC') + interval '5 minutes' WHERE id = $1`,
+    [event.id]
+  );
+  expect((await runProviderEvents({ id: event.id! })).claimed).toBe(0);
+  await h.sql(
+    `UPDATE einvoice_provider_events SET locked_until =
+    (statement_timestamp() AT TIME ZONE 'UTC') - interval '1 second' WHERE id = $1`,
+    [event.id]
+  );
+  expect((await runProviderEvents({ id: event.id! })).claimed).toBe(1);
+  expect(await readEvent()).toEqual([{ ...paused[0], attempts: 2 }]);
+});

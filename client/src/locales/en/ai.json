@@ -1,0 +1,17 @@
+{
+  "ai.hubDescription": "Your AI CFO, features, smart assistant, chat and inbox in one place.",
+  "ai.hubTitle": "AI hub",
+  "ai.tabAssistant": "Smart assistant",
+  "ai.tabCfo": "AI CFO",
+  "ai.tabChat": "Chat",
+  "ai.tabFeatures": "AI features",
+  "ai.tabInbox": "AI inbox",
+  "ai.kpiProfitMargin": "Profit margin",
+  "ai.kpiExpenseRatio": "Expense ratio",
+  "ai.kpiTotalRevenue": "Total revenue",
+  "ai.kpiNetProfit": "Net profit",
+  "ai.cfoSubtitle": "Ask questions about your financial data and get AI-generated guidance.",
+  "ai.cfoMarginValue": "{value}% margin",
+  "ai.cfoNoRevenueYet": "No revenue yet",
+  "ai.cfoOutstandingHint": "You have outstanding amounts that need follow-up. Send reminders to improve cash flow."
+}

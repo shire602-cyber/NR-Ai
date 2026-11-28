@@ -1,49 +1,32 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, parseISO } from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { ArrowRight, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Money } from "@/components/ui/money";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Progress } from "@/components/ui/progress";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { useToast } from "@/hooks/use-toast";
-import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { formatDate } from "@/lib/format-date";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
-import {
-  Sparkles,
-  Link2,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  ArrowRightLeft,
-  FileText,
-  Receipt,
-  BookOpen,
-  AlertTriangle,
-  Check,
-  Unlink,
-  ChevronRight,
-} from "lucide-react";
+import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
+import { translateMatchReasons } from "./auto-reconcile-match-reasons";
+import { hasBankRowWriteInFlight } from "./bank-row-writes";
 
-// ─── Types ─────────────────────────────────────────────────────────────────
+/**
+ * Bank reconciliation → Suggestions (spec 3.9; the former /auto-reconcile page). "Find matches"
+ * asks the server for candidate matches; each suggestion is accepted or skipped one by one, or
+ * all confident ones at once. Accepting uses the same apply endpoint as before, so the ledger
+ * and reconciliation state change exactly as they did.
+ */
 
 interface ReconcileMatch {
   bankTransactionId: string;
-  matchedType: "journal_entry" | "invoice" | "receipt";
+  matchedType: "journal_entry" | "invoice" | "receipt" | "bill";
   matchedId: string;
   confidence: number;
   matchReason: string;
-  // Enriched display fields from the service
   bankDescription?: string;
   bankAmount?: number;
   bankDate?: string;
@@ -59,421 +42,235 @@ interface AutoReconcileResult {
   totalUnreconciled: number;
 }
 
-// ─── Config ────────────────────────────────────────────────────────────────
+/** At or above this confidence a suggestion counts as confident. */
+const CONFIDENT = 75;
 
-const matchTypeConfig = {
-  journal_entry: {
-    icon: BookOpen,
-    label: "Journal Entry",
-    color: "text-chart-5",
-    bg: "bg-chart-5/10",
-  },
-  invoice: { icon: FileText, label: "Invoice", color: "text-info", bg: "bg-info-subtle" },
-  receipt: { icon: Receipt, label: "Receipt", color: "text-success", bg: "bg-success-subtle" },
-};
-
-function getConfidenceStyle(confidence: number) {
-  if (confidence >= 80)
-    return {
-      textColor: "text-success",
-      barClass: "[&>div]:bg-success",
-      badge: "bg-success-subtle text-success-subtle-foreground",
-      label: "High",
-    };
-  if (confidence >= 60)
-    return {
-      textColor: "text-warning",
-      barClass: "[&>div]:bg-warning",
-      badge: "bg-warning-subtle text-warning-subtle-foreground",
-      label: "Medium",
-    };
-  return {
-    textColor: "text-destructive",
-    barClass: "[&>div]:bg-destructive",
-    badge: "bg-danger-subtle text-danger-subtle-foreground",
-    label: "Low",
-  };
+function confidenceTone(confidence: number): StatusTone {
+  if (confidence >= CONFIDENT) return "success";
+  if (confidence >= 60) return "warning";
+  return "neutral";
 }
 
-function formatDate(dateStr?: string) {
-  if (!dateStr) return "—";
-  try {
-    return format(parseISO(dateStr), "dd MMM yyyy");
-  } catch {
-    return dateStr;
-  }
-}
-
-// ─── Component ────────────────────────────────────────────────────────────
-
-export default function AutoReconcile() {
+export function MatchSuggestions({
+  companyId,
+  scanRequest,
+  onSuggestedCount,
+}: {
+  companyId?: string;
+  /** Incremented by the page's "Find matches" button; each change runs a new search. */
+  scanRequest: number;
+  /** E3 (J1-r3): told how many bank lines have a suggested match after each search. */
+  onSuggestedCount?: (count: number) => void;
+}) {
+  const { t, locale } = useTranslation();
+  const tt = t as Record<string, string>;
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [result, setResult] = useState<AutoReconcileResult | null>(null);
-  const [selectedMatches, setSelectedMatches] = useState<Set<string>>(new Set());
-  const [hasScanned, setHasScanned] = useState(false);
+  const [skipped, setSkipped] = useState<Set<string>>(new Set());
 
-  const scanMutation = useMutation({
+  const scan = useMutation({
     mutationFn: async () => apiRequest("POST", `/api/companies/${companyId}/auto-reconcile`),
     onSuccess: (data: AutoReconcileResult) => {
       setResult(data);
-      setHasScanned(true);
-      // Pre-select high confidence matches
-      const highConf = new Set(
-        data.matches.filter((m) => m.confidence >= 75).map((m) => m.bankTransactionId)
-      );
-      setSelectedMatches(highConf);
+      setSkipped(new Set());
+    },
+    onError: (error: Error) =>
       toast({
-        title: "Scan complete",
-        description: `Found ${data.matches.length} potential match(es) for ${data.totalUnreconciled} unreconciled transaction(s).`,
-      });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Scan failed", description: error?.message, variant: "destructive" });
-    },
+        title: translateNow("toasts.scanFailed"),
+        description: error?.message,
+        variant: "destructive",
+      }),
   });
 
-  const applyMutation = useMutation({
-    mutationFn: async () => {
-      if (!result) return;
-      const matchesToApply = result.matches
-        .filter((m) => selectedMatches.has(m.bankTransactionId))
-        .map((m) => ({
+  const apply = useMutation({
+    mutationFn: async (matches: ReconcileMatch[]) =>
+      apiRequest("POST", `/api/companies/${companyId}/auto-reconcile/apply`, {
+        matches: matches.map((m) => ({
           bankTransactionId: m.bankTransactionId,
           matchedType: m.matchedType,
           matchedId: m.matchedId,
-        }));
-      return apiRequest("POST", `/api/companies/${companyId}/auto-reconcile/apply`, {
-        matches: matchesToApply,
+        })),
+      }),
+    onSuccess: (data: { message: string; skipped?: number; errors?: string[] }) => {
+      // Failed or skipped lines are reported, never counted as reconciled.
+      toast({
+        title: translateNow("toasts.reconciliationApplied"),
+        description: [data.message, ...(data.errors ?? []).slice(0, 3)].join(" · "),
+        variant: data.errors && data.errors.length > 0 ? "destructive" : undefined,
       });
-    },
-    onSuccess: (data: any) => {
-      toast({ title: "Reconciliation applied", description: data.message });
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
-      scanMutation.mutate();
+      scan.mutate();
     },
-    onError: (error: Error) => {
-      toast({ title: "Apply failed", description: error?.message, variant: "destructive" });
-    },
+    onError: (error: Error) =>
+      toast({
+        title: translateNow("toasts.applyFailed"),
+        description: error?.message,
+        variant: "destructive",
+      }),
   });
 
-  const toggleMatch = (id: string) => {
-    setSelectedMatches((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  // Checked at submit, not at render: a scan can already see a line the server has unmatched
+  // while the Unmatch response is still outstanding. Other lines in the batch still apply.
+  const submitApply = (matches: ReconcileMatch[]) => {
+    const eligible = matches.filter(
+      (m) => !hasBankRowWriteInFlight(companyId, m.bankTransactionId)
+    );
+    if (eligible.length > 0) apply.mutate(eligible);
   };
 
-  const selectAll = () =>
-    result && setSelectedMatches(new Set(result.matches.map((m) => m.bankTransactionId)));
-  const deselectAll = () => setSelectedMatches(new Set());
-  const selectHighConf = () =>
-    result &&
-    setSelectedMatches(
-      new Set(result.matches.filter((m) => m.confidence >= 75).map((m) => m.bankTransactionId))
-    );
+  useEffect(() => {
+    if (scanRequest > 0 && companyId) scan.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanRequest, companyId]);
 
-  if (isLoadingCompany) {
+  const open = useMemo(
+    () => (result?.matches ?? []).filter((m) => !skipped.has(m.bankTransactionId)),
+    [result, skipped]
+  );
+  // E3 (J1-r3): the page summary counts the lines with a suggestion from this same search.
+  useEffect(() => {
+    if (result) onSuggestedCount?.(new Set(open.map((m) => m.bankTransactionId)).size);
+  }, [result, open, onSuggestedCount]);
+  const confident = open.filter((m) => m.confidence >= CONFIDENT);
+  const reasons = (raw: string) => translateMatchReasons(raw, tt);
+
+  if (scan.isPending && !result) {
     return (
-      <div className="p-6 space-y-6">
-        <Skeleton className="h-10 w-64" />
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-28" />
-          ))}
-        </div>
-      </div>
+      <Card className="space-y-2 p-5">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-16 w-full" />
+        ))}
+      </Card>
     );
   }
 
-  if (!companyId) {
+  if (!result) {
     return (
-      <div className="p-6">
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <p className="text-muted-foreground">
-              Please create a company first to use auto-reconciliation.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <EmptyState
+          size="md"
+          title={tt["banking.suggest.readyTitle"]}
+          description={tt["banking.suggest.readyBody"]}
+          action={{
+            label: tt["banking.suggest.find"],
+            onClick: () => scan.mutate(),
+            testId: "button-find-matches-empty",
+          }}
+        />
+      </Card>
     );
   }
+
+  if (open.length === 0) {
+    return (
+      <Card>
+        <EmptyState
+          size="md"
+          title={
+            result.totalUnreconciled === 0
+              ? tt["banking.suggest.allDoneTitle"]
+              : tt["banking.suggest.noneTitle"]
+          }
+          description={
+            result.totalUnreconciled === 0
+              ? tt["banking.suggest.allDoneBody"]
+              : formatMessage(tt["banking.suggest.noneBody"], {
+                  count: result.totalUnreconciled,
+                })
+          }
+        />
+      </Card>
+    );
+  }
+
+  const side = (description?: string, date?: string, amount?: number, typeLabel?: string) => (
+    <div className="min-w-0">
+      {typeLabel && <div className="text-caption text-muted-foreground">{typeLabel}</div>}
+      <div dir="auto" className="truncate text-small font-medium text-foreground">
+        {description || "—"}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-2 text-caption text-muted-foreground">
+        {date && <span className="tabular-nums">{formatDate(date, locale)}</span>}
+        {amount != null && <Money amount={amount} tone="auto" />}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary/10 rounded-lg">
-            <Sparkles className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">AI Auto-Reconciliation</h1>
-            <p className="text-muted-foreground text-sm">
-              Automatically match bank transactions with journal entries, invoices, and receipts
-            </p>
-          </div>
-        </div>
-        <Button onClick={() => scanMutation.mutate()} disabled={scanMutation.isPending} size="lg">
-          {scanMutation.isPending ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+    <Card className="overflow-hidden" data-testid="match-suggestions">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
+        <p className="text-small text-muted-foreground">
+          {formatMessage(tt["banking.suggest.summary"], {
+            count: open.length,
+            confident: confident.length,
+          })}
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={confident.length === 0 || apply.isPending}
+          onClick={() => submitApply(confident)}
+          data-testid="button-accept-confident"
+        >
+          {apply.isPending ? (
+            <Loader2 className="animate-spin" aria-hidden />
           ) : (
-            <ArrowRightLeft className="h-4 w-4 mr-2" />
+            <Check aria-hidden />
           )}
-          {scanMutation.isPending ? "Scanning..." : "Run Auto-Reconcile"}
+          {formatMessage(tt["banking.suggest.acceptConfident"], { count: confident.length })}
         </Button>
       </div>
-
-      {/* Summary cards */}
-      {result && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-1 pt-4 px-4">
-              <CardDescription className="text-xs flex items-center gap-1">
-                <Unlink className="h-3 w-3" /> Unreconciled
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold">{result.totalUnreconciled}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-1 pt-4 px-4">
-              <CardDescription className="text-xs flex items-center gap-1">
-                <Link2 className="h-3 w-3" /> Total Matches
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold">{result.matches.length}</div>
-            </CardContent>
-          </Card>
-          <Card className="border-success/30">
-            <CardHeader className="pb-1 pt-4 px-4">
-              <CardDescription className="text-xs flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3 text-success" /> High Confidence
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-success">{result.autoMatchedCount}</div>
-              <p className="text-xs text-muted-foreground mt-1">≥75% — auto-selected</p>
-            </CardContent>
-          </Card>
-          <Card className="border-warning/30">
-            <CardHeader className="pb-1 pt-4 px-4">
-              <CardDescription className="text-xs flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3 text-warning" /> Needs Review
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-warning">{result.manualReviewCount}</div>
-              <p className="text-xs text-muted-foreground mt-1">&lt;75% confidence</p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Matches table */}
-      {result && result.matches.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Link2 className="h-5 w-5 text-primary" /> Suggested Matches
-                </CardTitle>
-                <CardDescription>
-                  Review and apply auto-detected reconciliation matches.
-                  {selectedMatches.size > 0 && ` ${selectedMatches.size} selected.`}
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="outline" size="sm" onClick={selectHighConf}>
-                  High Confidence
-                </Button>
-                <Button variant="outline" size="sm" onClick={selectAll}>
-                  Select All
-                </Button>
-                <Button variant="outline" size="sm" onClick={deselectAll}>
-                  Clear
-                </Button>
-                <Button
-                  onClick={() => applyMutation.mutate()}
-                  disabled={selectedMatches.size === 0 || applyMutation.isPending}
-                >
-                  {applyMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Check className="h-4 w-4 mr-2" />
-                  )}
-                  Apply {selectedMatches.size > 0 ? `(${selectedMatches.size})` : ""}
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10"></TableHead>
-                    <TableHead>Bank Transaction</TableHead>
-                    <TableHead className="w-8 text-center">
-                      <ChevronRight className="h-4 w-4 mx-auto text-muted-foreground" />
-                    </TableHead>
-                    <TableHead>Matched With</TableHead>
-                    <TableHead className="w-48">Confidence</TableHead>
-                    <TableHead>Reason</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {result.matches.map((match) => {
-                    const typeConfig = matchTypeConfig[match.matchedType];
-                    const TypeIcon = typeConfig.icon;
-                    const confStyle = getConfidenceStyle(match.confidence);
-                    const isSelected = selectedMatches.has(match.bankTransactionId);
-
-                    return (
-                      <TableRow
-                        key={match.bankTransactionId}
-                        className={isSelected ? "bg-primary/5" : ""}
-                        onClick={() => toggleMatch(match.bankTransactionId)}
-                        style={{ cursor: "pointer" }}
-                      >
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => toggleMatch(match.bankTransactionId)}
-                          />
-                        </TableCell>
-
-                        {/* Bank transaction details */}
-                        <TableCell>
-                          <div className="space-y-0.5">
-                            <div className="font-medium text-sm truncate max-w-[200px]">
-                              {match.bankDescription || match.bankTransactionId.slice(0, 8) + "..."}
-                            </div>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <span>{formatDate(match.bankDate)}</span>
-                              {match.bankAmount != null && (
-                                <span
-                                  className={`font-mono font-medium ${match.bankAmount >= 0 ? "text-success" : "text-destructive"}`}
-                                >
-                                  {formatCurrency(match.bankAmount)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-
-                        {/* Arrow */}
-                        <TableCell className="text-center">
-                          <ChevronRight className="h-4 w-4 text-muted-foreground mx-auto" />
-                        </TableCell>
-
-                        {/* Matched record details */}
-                        <TableCell>
-                          <div className="flex items-start gap-2">
-                            <div className={`p-1 rounded shrink-0 mt-0.5 ${typeConfig.bg}`}>
-                              <TypeIcon className={`h-3 w-3 ${typeConfig.color}`} />
-                            </div>
-                            <div className="space-y-0.5 min-w-0">
-                              <div className="text-xs font-medium text-muted-foreground">
-                                {typeConfig.label}
-                              </div>
-                              <div className="font-medium text-sm truncate max-w-[200px]">
-                                {match.matchedDescription || match.matchedId.slice(0, 8) + "..."}
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <span>{formatDate(match.matchedDate)}</span>
-                                {match.matchedAmount != null && (
-                                  <span className="font-mono font-medium">
-                                    {formatCurrency(match.matchedAmount)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </TableCell>
-
-                        {/* Confidence */}
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-sm font-bold ${confStyle.textColor}`}>
-                                {match.confidence}%
-                              </span>
-                              <span
-                                className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${confStyle.badge}`}
-                              >
-                                {confStyle.label}
-                              </span>
-                            </div>
-                            <Progress
-                              value={match.confidence}
-                              className={`h-1.5 ${confStyle.barClass}`}
-                            />
-                          </div>
-                        </TableCell>
-
-                        {/* Reason */}
-                        <TableCell>
-                          <span className="text-xs text-muted-foreground">{match.matchReason}</span>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Empty states */}
-      {!hasScanned && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center py-12 space-y-4">
-              <ArrowRightLeft className="h-12 w-12 text-muted-foreground mx-auto" />
-              <h3 className="text-lg font-semibold">Ready to Reconcile</h3>
-              <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                Click "Run Auto-Reconcile" to scan your unreconciled bank transactions and
-                automatically find matching journal entries, invoices, and receipts.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {hasScanned && result && result.matches.length === 0 && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center py-12 space-y-4">
-              {result.totalUnreconciled === 0 ? (
-                <>
-                  <CheckCircle2 className="h-12 w-12 text-success mx-auto" />
-                  <h3 className="text-lg font-semibold">All Caught Up</h3>
-                  <p className="text-muted-foreground text-sm">
-                    All bank transactions are already reconciled.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <XCircle className="h-12 w-12 text-warning mx-auto" />
-                  <h3 className="text-lg font-semibold">No Matches Found</h3>
-                  <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                    {result.totalUnreconciled} unreconciled transaction(s) found, but no automatic
-                    matches could be determined. Try reconciling manually in Bank Reconciliation.
-                  </p>
-                </>
+      <ul className="divide-hairline">
+        {open.map((match) => (
+          <li
+            key={match.bankTransactionId}
+            className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] md:items-center"
+            data-testid={`suggestion-${match.bankTransactionId}`}
+          >
+            {side(match.bankDescription, match.bankDate, match.bankAmount)}
+            <ArrowRight
+              className="hidden h-4 w-4 text-muted-foreground rtl:rotate-180 md:block"
+              aria-hidden
+            />
+            <div className="min-w-0 space-y-1.5">
+              {side(
+                match.matchedDescription,
+                match.matchedDate,
+                match.matchedAmount,
+                tt[`banking.suggest.type.${match.matchedType}`]
               )}
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge tone={confidenceTone(match.confidence)}>
+                  {formatMessage(tt["banking.suggest.confidence"], { value: match.confidence })}
+                </StatusBadge>
+                {reasons(match.matchReason) && (
+                  <span className="text-caption text-muted-foreground">
+                    {reasons(match.matchReason)}
+                  </span>
+                )}
+              </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+            <div className="flex items-center gap-2 md:justify-end">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSkipped((prev) => new Set(prev).add(match.bankTransactionId))}
+              >
+                {tt["banking.suggest.skip"]}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={apply.isPending}
+                onClick={() => submitApply([match])}
+                data-testid={`button-accept-${match.bankTransactionId}`}
+              >
+                {tt["banking.suggest.accept"]}
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

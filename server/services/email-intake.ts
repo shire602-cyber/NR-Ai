@@ -1,3 +1,4 @@
+import { assertUploadSize } from "../http/upload-errors";
 // Pure logic for the email document-intake pipeline (firm-internal pilot).
 //
 // Side-effect free so the routing / dedup / gating decisions are unit-tested
@@ -102,9 +103,9 @@ export function hashAttachment(content: Buffer | string): string {
 }
 
 /**
- * A repeat content hash for the same company is a duplicate (same invoice
- * emailed twice, or emailed and also picked up by the bank feed). `seenHashes`
- * is the set of hashes already stored for that company.
+ * A repeat content hash for the same company is a duplicate even when the
+ * file arrives in a different email. `seenHashes` contains the hashes of
+ * attachments already stored for that company.
  */
 export function isDuplicateAttachment(hash: string, seenHashes: Set<string>): boolean {
   return seenHashes.has(hash);
@@ -158,6 +159,7 @@ export function normalizeInboundMessage(
 ): NormalizedIntakeMessage {
   const attachments: NormalizedIntakeAttachment[] = raw.attachments.map((a) => {
     const buf = Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content, "base64");
+    assertUploadSize(buf.length);
     return {
       filename: a.filename,
       mimeType: a.mimeType,

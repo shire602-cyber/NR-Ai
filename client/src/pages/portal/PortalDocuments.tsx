@@ -1,28 +1,52 @@
+import { usePortalAccountScope } from "@/lib/portal-scope";
+import { T } from "@/components/layout/T";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Upload, FileText, FileImage, File, Loader2, CheckCircle2 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Upload, FileText, FileImage, File, FolderOpen, Loader2, CheckCircle2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PortalLoadNotice } from "@/components/portal/PortalLoadNotice";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { DateText } from "@/components/documents/DateText";
+import { fetchPortalResource, portalQuery } from "@/lib/queryClient";
+import { portalRequestHeaders } from "@/lib/portal-state";
+import { withCsrfHeader } from "@/lib/csrf";
 
-const CATEGORY_LABELS: Record<string, string> = {
-  trade_license: "Trade License",
-  contract: "Contract",
-  tax_certificate: "Tax Certificate",
-  audit_report: "Audit Report",
-  bank_statement: "Bank Statement",
-  insurance: "Insurance",
-  visa: "Visa",
-  other: "Other",
-};
+/** W4-D (R16-09): real multipart upload; the server sniffs the bytes and stores them. */
+async function uploadDocument(file: File, supplier: string) {
+  const form = new FormData();
+  form.append("name", file.name.replace(/\.[^.]+$/, ""));
+  form.append("category", "other");
+  form.append("file", file, file.name);
+  const headers = await withCsrfHeader("POST", portalRequestHeaders(supplier));
+  const res = await fetchPortalResource("/api/client-portal/documents", {
+    method: "POST",
+    headers,
+    body: form,
+  });
+  return res.json();
+}
+import { useToast } from "@/hooks/use-toast";
+import { usePortalRetry } from "@/hooks/usePortalRetry";
+
+const CATEGORIES = new Set([
+  "trade_license",
+  "contract",
+  "tax_certificate",
+  "audit_report",
+  "bank_statement",
+  "insurance",
+  "visa",
+  "other",
+]);
 
 function fileIcon(mime: string) {
-  if (mime?.startsWith("image/")) return <FileImage className="w-5 h-5 text-info" />;
-  if (mime === "application/pdf") return <FileText className="w-5 h-5 text-destructive" />;
-  return <File className="w-5 h-5 text-muted-foreground/70" />;
+  if (mime?.startsWith("image/")) return FileImage;
+  if (mime === "application/pdf") return FileText;
+  return File;
 }
 
 function formatBytes(bytes: number | null) {
@@ -33,24 +57,33 @@ function formatBytes(bytes: number | null) {
 }
 
 export default function PortalDocuments() {
+  const supplier = usePortalAccountScope();
+  const { t, locale } = useTranslation();
   const qc = useQueryClient();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  const { data: documents = [], isLoading } = useQuery<any[]>({
-    queryKey: ["portal-documents"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/documents"),
-  });
+  const documentsQuery = portalQuery("/api/client-portal/documents", supplier);
+  const query = useQuery<any[]>({ ...documentsQuery });
+  const { data: documents, isPaused, isFetching } = query;
+  const { error, isLoading, retryPending, retry } = usePortalRetry(documentsQuery.queryKey, query);
 
   const uploadMutation = useMutation({
-    mutationFn: (payload: any) => apiRequest("POST", "/api/client-portal/documents", payload),
+    mutationFn: (file: File) => uploadDocument(file, supplier),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-documents"] });
-      toast({ title: "Document uploaded", description: "NR Accounting can now see your file." });
+      toast({
+        title: translateNow("toasts.documentUploaded"),
+        description: translateNow("toasts.nrAccountingCanNowSeeYourFile"),
+      });
     },
     onError: (e: any) =>
-      toast({ title: "Upload failed", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.uploadFailed2"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -58,96 +91,106 @@ export default function PortalDocuments() {
     if (!file) return;
     setUploading(true);
     try {
-      // In production this would upload to S3; here we send metadata only
-      await uploadMutation.mutateAsync({
-        name: file.name.replace(/\.[^.]+$/, ""),
-        fileName: file.name,
-        mimeType: file.type || "application/octet-stream",
-        fileSize: file.size,
-        category: "other",
-        fileUrl: `/uploads/${file.name}`,
-      });
+      await uploadMutation.mutateAsync(file);
+    } catch {
+      // The mutation reports upload failures to the customer.
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
 
+  const pick = () => fileRef.current?.click();
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground">Documents</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Upload receipts and documents for NR Accounting to process.
-          </p>
-        </div>
-        <div>
-          <input
-            ref={fileRef}
-            type="file"
-            className="hidden"
-            onChange={handleFileChange}
-            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
-          />
+    <div className="mx-auto max-w-[960px] space-y-6">
+      <input
+        ref={fileRef}
+        type="file"
+        className="hidden"
+        onChange={handleFileChange}
+        accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
+      />
+      <PageHeader
+        title={t["pages.documents"]}
+        description={t["portal.doc.documentsHint"]}
+        primaryAction={
           <Button
-            onClick={() => fileRef.current?.click()}
+            className="min-h-11"
+            onClick={pick}
             disabled={uploading}
-            className="bg-info hover:bg-info text-white"
+            data-testid="button-portal-upload"
           >
             {uploading ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="h-4 w-4 me-2 animate-spin" aria-hidden />
             ) : (
-              <Upload className="w-4 h-4 mr-2" />
+              <Upload className="h-4 w-4 me-2" aria-hidden />
             )}
-            Upload Document
+            <T k="portal.doc.upload" />
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       <Card>
         <CardContent className="p-0">
+          {!isLoading && (
+            <PortalLoadNotice
+              error={error}
+              paused={isPaused}
+              retrying={isFetching}
+              retryPending={retryPending}
+              onRetry={retry}
+              compact={documents !== undefined}
+              resource="documents"
+            />
+          )}
           {isLoading ? (
-            <div className="flex items-center justify-center h-32">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            <div className="flex h-32 items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
             </div>
-          ) : documents.length === 0 ? (
-            <div className="text-center py-14">
-              <Upload className="w-10 h-10 text-muted-foreground/70 mx-auto mb-3" />
-              <p className="text-sm font-medium text-muted-foreground">No documents yet</p>
-              <p className="text-xs text-muted-foreground/70 mt-1">
-                Upload receipts or files for your accountant.
-              </p>
-            </div>
+          ) : documents === undefined ? null : documents.length === 0 ? (
+            <EmptyState
+              headingLevel="h2"
+              icon={FolderOpen}
+              title={t["portal.doc.noDocumentsTitle"]}
+              description={t["portal.doc.noDocumentsBody"]}
+              action={{ label: t["portal.doc.upload"], onClick: pick }}
+            />
           ) : (
-            <div className="divide-y divide-border">
-              {documents.map((doc: any) => (
-                <div
-                  key={doc.id}
-                  className="flex items-center gap-4 px-4 py-3 hover:bg-muted transition-colors"
-                >
-                  <div className="flex-shrink-0">{fileIcon(doc.mimeType)}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{doc.name}</p>
-                    <p className="text-xs text-muted-foreground/70">
-                      {doc.createdAt ? format(new Date(doc.createdAt), "MMM d, yyyy") : "—"}
-                      {doc.fileSize ? ` · ${formatBytes(doc.fileSize)}` : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <Badge variant="outline" className="text-xs">
-                      {CATEGORY_LABELS[doc.category] ?? doc.category}
-                    </Badge>
-                    {doc.uploadedBy && (
-                      <CheckCircle2
-                        className="w-4 h-4 text-success"
-                        aria-label="Received by NRA"
-                      />
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ul className="divide-y divide-border">
+              {documents.map((doc: any) => {
+                const Icon = fileIcon(doc.mimeType);
+                return (
+                  <li key={doc.id} className="flex items-center gap-4 px-5 py-3">
+                    <Icon className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-small font-medium text-foreground" dir="auto">
+                        {doc.name}
+                      </p>
+                      <p className="text-caption text-muted-foreground">
+                        {doc.createdAt ? <DateText value={doc.createdAt} locale={locale} /> : "—"}
+                        {doc.fileSize ? <bdi> · {formatBytes(doc.fileSize)}</bdi> : null}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <StatusBadge tone="neutral">
+                        {
+                          t[
+                            `portal.doc.category.${CATEGORIES.has(doc.category) ? doc.category : "other"}`
+                          ]
+                        }
+                      </StatusBadge>
+                      {doc.uploadedBy && (
+                        <CheckCircle2
+                          className="h-4 w-4 text-success"
+                          aria-label={t["portal.doc.received"]}
+                        />
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </CardContent>
       </Card>

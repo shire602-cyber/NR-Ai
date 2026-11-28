@@ -1,10 +1,25 @@
 import OpenAI from "openai";
+import { journalMemo } from "@shared/journal-memo";
 import { pool } from "../db";
 import { storage } from "../storage";
 import { getEnv } from "../config/env";
+import { resolveModel } from "./ai/model-router";
+import { createMeteredOpenAI } from "./ai/usage-meter";
+import { DATA_BLOCK_INSTRUCTION, wrapUserData } from "./ai/data-blocks";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { recordAudit } from "./audit.service";
+import { notificationCopy } from "../../shared/server-copy";
+import { deleteDraft, postDraft, postJournal } from "../ledger";
+import { AI_QUEUE_STILL_OPEN_SQL } from "./ai-gl-queue-sql";
+import { categorisationReasonCopy } from "../../shared/server-copy";
+import { DomainError, errorCode, errorMessage } from "../errors";
+import {
+  applyMatch,
+  confirmPendingEntry,
+  getMatches,
+  unmatchTransaction,
+} from "./bank-reconciliation.service";
 
 const log = createLogger("autonomous-gl");
 
@@ -88,13 +103,17 @@ interface AICategorizationResult {
 // OpenAI client
 // =============================================
 
-function createOpenAIClient(): OpenAI | null {
+function createOpenAIClient(companyId: string): OpenAI | null {
   const apiKey = getEnv().OPENAI_API_KEY;
   if (!apiKey) {
     log.warn("OPENAI_API_KEY not set — autonomous GL AI features disabled");
     return null;
   }
-  return new OpenAI({ apiKey });
+  // Quota-checked and recorded in ai_usage_events (R05-26).
+  return createMeteredOpenAI(new OpenAI({ apiKey }), {
+    companyId,
+    task: "categorize",
+  }) as unknown as OpenAI;
 }
 
 // =============================================
@@ -111,7 +130,7 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
   ruleMatched: number;
   aiClassified: number;
 }> {
-  const openai = createOpenAIClient();
+  const openai = createOpenAIClient(companyId);
 
   // 1. Find unreconciled bank transactions that are NOT already in ai_gl_queue
   const _unreconciledResult = await pool.query(
@@ -159,6 +178,11 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
   );
   const fewShotExamples: FewShotExample[] = _fewShotResult.rows;
 
+  // The model writes its reason in the company language, so Arabic companies read Arabic.
+  const companyLocale: string =
+    (await pool.query(`SELECT locale FROM companies WHERE id = $1`, [companyId])).rows[0]?.locale ??
+    "en";
+
   let ruleMatched = 0;
   let aiClassified = 0;
 
@@ -186,7 +210,7 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
 
     // 3b. If rule found with confidence > 0.85, use it directly
     if (matchedRule && parseFloat(matchedRule.confidence) > 0.85) {
-      const matchedAccount = accounts.find((a: any) => a.id === matchedRule!.account_id);
+      const matchedAccount = accounts.find((a) => a.id === matchedRule!.account_id);
       await pool.query(
         `INSERT INTO ai_gl_queue
          (company_id, bank_transaction_id, description, amount, transaction_date,
@@ -202,7 +226,11 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
           matchedRule.account_id,
           matchedAccount?.type || "expense",
           matchedRule.confidence,
-          `Matched rule: ${matchedRule.merchant_pattern || matchedRule.description_pattern} (applied ${matchedRule.times_applied} times, ${matchedRule.times_accepted} accepted)`,
+          categorisationReasonCopy("categorise.matchedRule", {
+            pattern: matchedRule.merchant_pattern || matchedRule.description_pattern || "",
+            applied: matchedRule.times_applied,
+            accepted: matchedRule.times_accepted,
+          }).text,
           0,
           "pending_review",
         ]
@@ -233,7 +261,7 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
           Math.abs(txn.amount),
           txn.transaction_date,
           0,
-          "OpenAI not configured — manual categorization required",
+          categorisationReasonCopy("categorise.operator.notConfigured").text,
           0,
           "pending_review",
         ]
@@ -242,7 +270,13 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
     }
 
     try {
-      const result = await classifyWithOpenAI(openai, txn, accounts, fewShotExamples);
+      const result = await classifyWithOpenAI(
+        openai,
+        txn,
+        accounts,
+        fewShotExamples,
+        companyLocale
+      );
 
       await pool.query(
         `INSERT INTO ai_gl_queue
@@ -266,7 +300,9 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
       );
 
       aiClassified++;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      // Over the monthly AI cap: stop the scan and surface 429 instead of queueing every row blank.
+      if (errorCode(err) === "AI_QUOTA_EXCEEDED") throw err;
       log.error({ err, txnId: txn.id }, "Failed to classify transaction with OpenAI");
 
       // Store with zero confidence on error
@@ -282,7 +318,9 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
           Math.abs(txn.amount),
           txn.transaction_date,
           0,
-          `AI classification error: ${err.message || "Unknown error"}`,
+          categorisationReasonCopy("categorise.operator.error", {
+            error: errorMessage(err) || "Unknown error",
+          }).text,
           0,
           "pending_review",
         ]
@@ -298,6 +336,11 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
   };
 }
 
+/** Language the model is asked to write the customer-facing reason in. */
+export function reasonLanguage(locale: string | null | undefined): string {
+  return locale === "ar" ? "written in Arabic" : "written in English";
+}
+
 /**
  * Classify a bank transaction using OpenAI with the company's chart of accounts
  * and few-shot examples.
@@ -306,9 +349,10 @@ async function classifyWithOpenAI(
   openai: OpenAI,
   txn: BankTransactionRow,
   accounts: ChartOfAccountRow[],
-  fewShotExamples: FewShotExample[]
+  fewShotExamples: FewShotExample[],
+  locale = "en"
 ): Promise<AICategorizationResult> {
-  const AI_MODEL = getEnv().AI_MODEL;
+  const AI_MODEL = resolveModel("categorize");
 
   // Build chart of accounts context
   const accountList = accounts
@@ -336,6 +380,8 @@ CHART OF ACCOUNTS:
 ${accountList}
 ${fewShotBlock}
 
+${DATA_BLOCK_INSTRUCTION}
+
 RULES:
 - For payments/debits: typically debit an expense/asset account and credit the bank account.
 - For deposits/credits: typically debit the bank account and credit an income/liability account.
@@ -349,13 +395,13 @@ Return a JSON object with exactly these fields:
   "accountName": "<English name of the chosen account>",
   "category": "<account type: expense, income, asset, liability, equity>",
   "confidence": <number between 0.0 and 1.0>,
-  "reason": "<brief 1-2 sentence explanation of why this account was chosen>"
+  "reason": "<brief 1-2 sentence explanation of why this account was chosen, ${reasonLanguage(locale)}>"
 }`;
 
   const userPrompt = `Categorize this bank transaction:
-Description: ${txn.description}
+${wrapUserData("description", txn.description, 500)}
 Amount: AED ${Math.abs(txn.amount).toFixed(2)} (${txn.amount > 0 ? "credit/deposit" : "debit/payment"})
-Date: ${txn.transaction_date}${txn.reference ? `\nReference: ${txn.reference}` : ""}`;
+Date: ${txn.transaction_date}${txn.reference ? `\n${wrapUserData("reference", txn.reference, 200)}` : ""}`;
 
   const completion = await openai.chat.completions.create({
     model: AI_MODEL,
@@ -427,6 +473,7 @@ export async function autoPostHighConfidence(companyId: string): Promise<{
      WHERE q.company_id = $1
        AND q.ai_confidence >= 0.85
        AND q.status = 'pending_review'
+       AND ${AI_QUEUE_STILL_OPEN_SQL}
        AND q.suggested_account_id IS NOT NULL
      ORDER BY q.transaction_date`,
     [companyId]
@@ -468,9 +515,9 @@ export async function autoPostHighConfidence(companyId: string): Promise<{
           amount: Number(item.amount),
         },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.error({ err, queueItemId: item.id }, "Failed to draft queue item");
-      errors.push(`Failed to draft item ${item.id}: ${err.message}`);
+      errors.push(`Failed to draft item ${item.id}: ${errorMessage(err)}`);
     }
   }
 
@@ -490,39 +537,88 @@ async function notifyOwnerOfDrafts(companyId: string, draftCount: number): Promi
   await pool.query(
     `INSERT INTO notifications
        (user_id, company_id, type, title, message, priority, related_entity_type, action_url)
-     VALUES ($1, $2, 'system', $3, $4, 'high', 'journal_entry', '/journal-entries?status=draft')`,
+     VALUES ($1, $2, 'system', $3, $4, 'high', 'journal_entry', '/journal?status=draft')`,
+    // Sweep: the link was /journal-entries?status=draft (no such page: 404) and the copy was
+    // English-only; it is now catalog copy the client localises.
     [
       ownerUserId,
       companyId,
-      `${draftCount} AI draft journal ${draftCount === 1 ? "entry" : "entries"} need review`,
-      `The AI categorized ${draftCount} bank transaction${draftCount === 1 ? "" : "s"} with high confidence. Review and approve each draft journal entry before it posts to the GL.`,
+      ...Object.values(
+        notificationCopy(
+          "notification.aiDraftsReview.title",
+          "notification.aiDraftsReview.message",
+          {
+            count: draftCount,
+          }
+        )
+      ),
     ]
   );
 }
 
 /**
- * Create a journal entry from a queue item.
- * Debit/credit depends on the transaction direction.
+ * Create the journal entry for a queue item through the ledger kernel.
+ *
+ * Bank-linked items go through the bank match service (applyMatch, target "entry"): the entry,
+ * its allocation row in bank_transaction_matches and the line's reconciled state are written in
+ * one transaction, so "Unmatch" on the Banking page reverses exactly what the AI created. An
+ * unattended draft becomes a PENDING match (the line is not reconciled until a human posts it).
+ * Items without a bank line post a plain kernel entry against the first cash/bank account.
  */
 async function createJournalEntryForQueueItem(
   companyId: string,
   item: AIGLQueueItem & { bank_account_id?: string | null },
   // Human-reviewed actions (accept/correct) POST immediately — the review IS
   // the approval. Only the unattended autopilot path drafts for later review.
-  postImmediately = false
+  postImmediately = false,
+  actorUserId?: string
 ): Promise<string> {
-  const amount = parseFloat(item.amount);
   const txnDate = new Date(item.transaction_date);
 
   // Block AI auto-posting into a locked period.
   await assertPeriodNotLocked(companyId, txnDate);
 
-  // Determine bank account (from bank_transaction or fallback to first bank/cash account)
-  let bankAccountId = (item as any).bank_account_id;
+  if (!item.suggested_account_id) {
+    throw new Error("Cannot post: queue item has no suggested account");
+  }
+
+  // Resolve a valid actor user (owner / member / firm owner) for created_by.
+  const actorId = actorUserId ?? (await storage.resolveCompanyActorUserId(companyId));
+  if (!actorId) {
+    throw new Error(
+      `No actor user found for company ${companyId} — cannot create auto-posted journal entry`
+    );
+  }
+  const memoFields = journalMemo(postImmediately ? "aiReviewed" : "aiDraft", {
+    party: item.description,
+  });
+
+  if (item.bank_transaction_id) {
+    const result = await applyMatch({
+      companyId,
+      transactionId: item.bank_transaction_id,
+      actorId,
+      target: {
+        kind: "entry",
+        accountId: item.suggested_account_id,
+        memo: memoFields.memo,
+        memoKey: memoFields.memoKey,
+        memoParams: memoFields.memoParams,
+        postingMode: postImmediately ? "posted" : "draft",
+      },
+      idempotencyKey: `ai-gl:${item.id}:${postImmediately ? "post" : "draft"}:${item.suggested_account_id}`,
+    });
+    const entryId = result.journalEntryIds[0];
+    if (!entryId) throw new Error("Bank match created no journal entry");
+    return entryId;
+  }
+
+  // No bank line: post against the first cash/bank account of the company.
+  let bankAccountId = item.bank_account_id ?? null;
   if (!bankAccountId) {
     const { rows: bankAccounts } = await pool.query(
       `SELECT id FROM accounts
-       WHERE company_id = $1 AND type = 'asset' AND sub_type = 'current_asset'
+       WHERE company_id = $1 AND type = 'asset' AND sub_type IN ('current_asset', 'cash', 'bank')
          AND (lower(name_en) LIKE '%bank%' OR lower(name_en) LIKE '%cash%')
          AND is_active = true
        ORDER BY code LIMIT 1`,
@@ -530,90 +626,96 @@ async function createJournalEntryForQueueItem(
     );
     bankAccountId = bankAccounts[0]?.id || null;
   }
-
   if (!bankAccountId) {
     throw new Error("No bank account found for journal entry");
   }
 
-  if (!item.suggested_account_id) {
-    throw new Error("Cannot post: queue item has no suggested account");
-  }
-
-  // Resolve a valid actor user (owner / member / firm owner) for created_by.
-  const systemUserId = await storage.resolveCompanyActorUserId(companyId);
-  if (!systemUserId) {
-    throw new Error(
-      `No actor user found for company ${companyId} — cannot create auto-posted journal entry`
-    );
-  }
-
-  // Determine direction from original bank transaction:
-  //   negative amount → payment out (debit expense, credit bank)
-  //   positive amount → deposit in (debit bank, credit income)
-  let isDebit = true;
-  if (item.bank_transaction_id) {
-    const {
-      rows: [bankTxn],
-    } = await pool.query(`SELECT amount FROM bank_transactions WHERE id = $1`, [
-      item.bank_transaction_id,
-    ]);
-    if (bankTxn && bankTxn.amount > 0) {
-      isDebit = false;
-    }
-  }
-
-  const lines = isDebit
-    ? [
-        {
-          accountId: item.suggested_account_id,
-          debit: amount,
-          credit: 0,
-          description: item.description,
-        },
-        {
-          accountId: bankAccountId as string,
-          debit: 0,
-          credit: amount,
-          description: item.description,
-        },
-      ]
-    : [
-        {
-          accountId: bankAccountId as string,
-          debit: amount,
-          credit: 0,
-          description: item.description,
-        },
-        {
-          accountId: item.suggested_account_id,
-          debit: 0,
-          credit: amount,
-          description: item.description,
-        },
-      ];
-
-  // Use storage helper: validates balance + wraps entry+lines in a single transaction.
-  // High-confidence AI suggestions are saved as DRAFT — a human must review and
-  // approve each draft before it is posted to the GL.
-  const entryNumber = await storage.generateEntryNumber(companyId, txnDate);
-  const entry = await storage.createJournalEntry(
+  // Without a bank line the direction is unknown; like before, treat it as money paid out
+  // (debit the suggested account, credit cash/bank).
+  const amountFils = Math.round(Math.abs(parseFloat(item.amount)) * 100);
+  const lines = [
+    { accountId: item.suggested_account_id, debitFils: amountFils, description: item.description },
+    { accountId: bankAccountId, creditFils: amountFils, description: item.description },
+  ];
+  const { entry } = await postJournal(
     {
       companyId,
-      entryNumber,
       date: txnDate,
-      memo: postImmediately
-        ? `AI GL (reviewed): ${item.description}`
-        : `AI Draft (review required): ${item.description}`,
+      ...memoFields,
+      source: "ai_gl",
+      sourceId: item.id,
+      idempotencyKey: `ai-gl:${item.id}:${postImmediately ? "post" : "draft"}:${item.suggested_account_id}`,
       status: postImmediately ? "posted" : "draft",
-      source: "system",
-      sourceId: item.bank_transaction_id,
-      createdBy: systemUserId,
-      ...(postImmediately ? { postedBy: systemUserId, postedAt: new Date() } : {}),
-    } as any,
-    lines
+      lines,
+    },
+    { actorId, audit: true }
   );
-
   return entry.id;
+}
+
+/**
+ * Post the draft an autopilot run created for a queue item (human approval). A bank-linked draft
+ * is a pending match: confirming it posts the entry and reconciles the line in one transaction.
+ */
+async function postQueueDraft(
+  companyId: string,
+  item: AIGLQueueItem,
+  journalEntryId: string,
+  userId: string
+): Promise<void> {
+  const [je] = (
+    await pool.query(`SELECT status FROM journal_entries WHERE id = $1 AND company_id = $2`, [
+      journalEntryId,
+      companyId,
+    ])
+  ).rows as Array<{ status: string }>;
+  if (!je)
+    throw new DomainError("JOURNAL_ENTRY_NOT_FOUND", 404, undefined, "Draft entry not found");
+  if (je.status !== "draft") return;
+  if (item.bank_transaction_id) {
+    const pending = await getMatches(companyId, item.bank_transaction_id, ["pending"]);
+    if (pending.some((m) => m.journalEntryId === journalEntryId)) {
+      await confirmPendingEntry({
+        companyId,
+        transactionId: item.bank_transaction_id,
+        actorId: userId,
+      });
+      return;
+    }
+  }
+  await postDraft(journalEntryId, { actorId: userId, companyId });
+}
+
+/**
+ * Remove the draft an autopilot run created for a queue item (reject / correct). A bank-linked
+ * draft is undone through the bank match service so the line returns to unmatched.
+ */
+async function discardQueueDraft(
+  companyId: string,
+  item: AIGLQueueItem,
+  userId: string
+): Promise<void> {
+  if (!item.journal_entry_id) return;
+  const [je] = (
+    await pool.query(`SELECT status FROM journal_entries WHERE id = $1 AND company_id = $2`, [
+      item.journal_entry_id,
+      companyId,
+    ])
+  ).rows as Array<{ status: string }>;
+  if (je?.status !== "draft") return;
+  if (item.bank_transaction_id) {
+    const pending = await getMatches(companyId, item.bank_transaction_id, ["pending"]);
+    if (pending.some((m) => m.journalEntryId === item.journal_entry_id)) {
+      await unmatchTransaction({
+        companyId,
+        transactionId: item.bank_transaction_id,
+        actorId: userId,
+        reason: "AI GL suggestion rejected or corrected",
+      });
+      return;
+    }
+  }
+  await deleteDraft(item.journal_entry_id, { actorId: userId, companyId });
 }
 
 /**
@@ -623,19 +725,25 @@ export async function processUserFeedback(
   queueId: string,
   action: "accept" | "reject" | "correct",
   userId: string,
-  userAccountId?: string
-): Promise<{ success: boolean; message: string }> {
-  // Get the queue item
-  const _itemResult = await pool.query(`SELECT * FROM ai_gl_queue WHERE id = $1`, [queueId]);
+  userAccountId: string | undefined,
+  companyId: string
+): Promise<{ success: boolean; message: string; code?: string }> {
+  // Get the queue item. Scoped to the caller's company: loading by id alone let a user of
+  // company B accept/reject/correct company A's queue items (W1A-02).
+  const _itemResult = await pool.query(
+    `SELECT * FROM ai_gl_queue WHERE id = $1 AND company_id = $2`,
+    [queueId, companyId]
+  );
   const [item]: AIGLQueueItem[] = _itemResult.rows;
 
   if (!item) {
-    return { success: false, message: "Queue item not found" };
+    return { success: false, code: "QUEUE_ITEM_NOT_FOUND", message: "Queue item not found" };
   }
 
   if (item.status !== "pending_review" && item.status !== "auto_posted") {
     return {
       success: false,
+      code: "QUEUE_ITEM_NOT_PENDING",
       message: `Cannot process feedback for item with status: ${item.status}`,
     };
   }
@@ -645,31 +753,19 @@ export async function processUserFeedback(
     let journalEntryId = item.journal_entry_id;
     if (!journalEntryId) {
       if (!item.suggested_account_id) {
-        return { success: false, message: "Cannot accept — no suggested account" };
+        return {
+          success: false,
+          code: "QUEUE_ITEM_NO_SUGGESTED_ACCOUNT",
+          message: "Cannot accept — no suggested account",
+        };
       }
-      // Get bank_account_id from bank transaction
-      let bankAccountId: string | null = null;
-      if (item.bank_transaction_id) {
-        const {
-          rows: [bt],
-        } = await pool.query(`SELECT bank_account_id FROM bank_transactions WHERE id = $1`, [
-          item.bank_transaction_id,
-        ]);
-        bankAccountId = bt?.bank_account_id || null;
-      }
-      journalEntryId = await createJournalEntryForQueueItem(
-        item.company_id,
-        { ...item, bank_account_id: bankAccountId },
-        true // human accepted → post to GL now
-      );
+      // human accepted -> post to GL now (bank-linked: through the bank match service, which
+      // writes the allocation row and reconciles the line in the same transaction)
+      journalEntryId = await createJournalEntryForQueueItem(item.company_id, item, true, userId);
     } else {
-      // A draft already exists (auto-drafted by autopilot) — accepting it is
-      // the human approval, so post it now instead of leaving it as a draft.
-      await pool.query(
-        `UPDATE journal_entries SET status = 'posted', posted_by = $1, posted_at = now()
-         WHERE id = $2 AND status = 'draft'`,
-        [userId, journalEntryId]
-      );
+      // A draft already exists (auto-drafted by autopilot) — accepting it is the human
+      // approval: post it through the ledger kernel (and confirm the pending bank match).
+      await postQueueDraft(item.company_id, item, journalEntryId, userId);
     }
 
     await pool.query(
@@ -678,16 +774,6 @@ export async function processUserFeedback(
        WHERE id = $3`,
       [journalEntryId, userId, queueId]
     );
-
-    // Mark bank transaction as reconciled
-    if (item.bank_transaction_id) {
-      await pool.query(
-        `UPDATE bank_transactions
-         SET is_reconciled = true, matched_journal_entry_id = $1
-         WHERE id = $2`,
-        [journalEntryId, item.bank_transaction_id]
-      );
-    }
 
     // Update ai_company_rules: increment times_accepted
     await updateRuleFromFeedback(item, "accepted");
@@ -727,6 +813,8 @@ export async function processUserFeedback(
   }
 
   if (action === "reject") {
+    // An autopilot draft for a rejected suggestion must not stay postable.
+    await discardQueueDraft(item.company_id, item, userId);
     await pool.query(
       `UPDATE ai_gl_queue
        SET status = 'rejected', reviewed_by = $1, reviewed_at = now()
@@ -742,29 +830,37 @@ export async function processUserFeedback(
 
   if (action === "correct") {
     if (!userAccountId) {
-      return { success: false, message: "userAccountId is required for correction" };
+      return {
+        success: false,
+        code: "ACCOUNT_ID_REQUIRED",
+        message: "userAccountId is required for correction",
+      };
+    }
+    // The chosen account must belong to the same company as the queue item (W1A-02).
+    const { rows: ownedAccount } = await pool.query(
+      `SELECT 1 FROM accounts WHERE id = $1 AND company_id = $2`,
+      [userAccountId, companyId]
+    );
+    if (ownedAccount.length === 0) {
+      return {
+        success: false,
+        code: "ACCOUNT_NOT_IN_COMPANY",
+        message: "Account not found for this company",
+      };
     }
 
-    // Create journal entry with user's chosen account
-    let bankAccountId: string | null = null;
-    if (item.bank_transaction_id) {
-      const {
-        rows: [bt],
-      } = await pool.query(`SELECT bank_account_id FROM bank_transactions WHERE id = $1`, [
-        item.bank_transaction_id,
-      ]);
-      bankAccountId = bt?.bank_account_id || null;
-    }
-
+    // Replace any autopilot draft, then post with the user's chosen account.
+    await discardQueueDraft(item.company_id, item, userId);
     const correctedItem = {
       ...item,
+      journal_entry_id: null,
       suggested_account_id: userAccountId,
-      bank_account_id: bankAccountId,
     };
     const journalEntryId = await createJournalEntryForQueueItem(
       item.company_id,
       correctedItem,
-      true // human corrected + approved → post to GL now
+      true, // human corrected + approved -> post to GL now
+      userId
     );
 
     await pool.query(
@@ -774,16 +870,6 @@ export async function processUserFeedback(
        WHERE id = $4`,
       [userAccountId, journalEntryId, userId, queueId]
     );
-
-    // Mark bank transaction as reconciled
-    if (item.bank_transaction_id) {
-      await pool.query(
-        `UPDATE bank_transactions
-         SET is_reconciled = true, matched_journal_entry_id = $1
-         WHERE id = $2`,
-        [journalEntryId, item.bank_transaction_id]
-      );
-    }
 
     // Create or update rule for this merchant/description pattern
     await createOrUpdateRuleFromCorrection(item, userAccountId);
@@ -809,7 +895,7 @@ export async function processUserFeedback(
     return { success: true, message: "Transaction corrected and posted to GL" };
   }
 
-  return { success: false, message: "Invalid action" };
+  return { success: false, code: "INVALID_ACTION", message: "Invalid action" };
 }
 
 /**
@@ -942,9 +1028,9 @@ export async function getAIGLStats(companyId: string): Promise<{
        COUNT(*) FILTER (WHERE status = 'auto_posted') as auto_posted,
        COUNT(*) FILTER (WHERE status = 'accepted' OR status = 'auto_posted') as accepted,
        COUNT(*) FILTER (WHERE status = 'rejected') as rejected,
-       COUNT(*) FILTER (WHERE status = 'pending_review') as pending_review,
+       COUNT(*) FILTER (WHERE status = 'pending_review' AND ${AI_QUEUE_STILL_OPEN_SQL}) as pending_review,
        COUNT(*) as total
-     FROM ai_gl_queue
+     FROM ai_gl_queue q
      WHERE company_id = $1`,
     [companyId]
   );
@@ -986,10 +1072,22 @@ export async function scanAndClassifyAllCompanies(): Promise<void> {
   const { rows: companies } = await pool.query(
     `SELECT DISTINCT company_id FROM bank_transactions WHERE is_reconciled = false`
   );
-  const companyIds: string[] = companies.map((r: any) => r.company_id);
+  const companyIds: string[] = companies.map((r) => r.company_id);
+  const { runForCompany } = await import("../platform/company-automations");
   for (const companyId of companyIds) {
     try {
-      await scanAndClassifyTransactions(companyId);
+      // WQ7: skipped for companies that switched "Categorise bank lines" off in Automations.
+      await runForCompany(
+        "categorise",
+        companyId,
+        () => scanAndClassifyTransactions(companyId),
+        (scan) => {
+          const s = scan as unknown as Record<string, unknown> | undefined;
+          return s && typeof s === "object"
+            ? { classified: Number(s.classified ?? 0), scanned: Number(s.scanned ?? 0) }
+            : null;
+        }
+      );
     } catch (err) {
       // Log per-company failures but continue with others
       const log = (await import("../config/logger")).createLogger("autonomous-gl");

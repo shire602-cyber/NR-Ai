@@ -20,21 +20,21 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
     const path = req.originalUrl || req.url;
 
     // Only log API requests (skip static files)
-    if (!path.startsWith("/api") && path !== "/health") return;
+    if (!/^\/api(?:[/?]|$)/i.test(path) && path !== "/health") return;
 
+    // Express's route template is registered by the server. Raw paths and
+    // query strings can contain share tokens, account IDs or arbitrary text.
+    const route = typeof req.route?.path === "string" ? req.route.path : undefined;
     const logData = {
       requestId: req.id,
       method: req.method,
-      path,
+      route,
       statusCode: res.statusCode,
       duration: `${duration}ms`,
-      ip: req.ip,
-      userAgent: req.get("user-agent"),
-      userId: (req as any).user?.id,
     };
 
-    const msg = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-    if (res.statusCode >= 500) {
+    const msg = `${req.method} ${res.statusCode} in ${duration}ms`;
+    if (res.statusCode >= 500 && !res.locals.expectedRefusal) {
       log.error(logData, msg);
     } else if (res.statusCode >= 400) {
       log.warn(logData, msg);

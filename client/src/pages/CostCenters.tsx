@@ -1,9 +1,7 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import {
   Plus,
   Edit,
@@ -14,15 +12,13 @@ import {
   TrendingDown,
   DollarSign,
   Download,
+  RotateCw,
 } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Badge, StatusBadge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -31,47 +27,51 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Switch } from "@/components/ui/switch";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { SectionCard } from "@/components/ui/section-card";
+import { StatCard } from "@/components/ui/stat-card";
+import { DataTableCard } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import { CostCenterLoadNotice } from "@/components/CostCenterLoadNotice";
+import { Money, MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
+import {
+  costCenterDisplayName,
+  costCenterLoadState,
+  costCenterPeriodLabel,
+  filterCostCenters,
+} from "@/lib/cost-center-view";
 import { exportToExcel, prepareCostCenterProfitabilityForExport } from "@/lib/export";
-import { formatCurrency } from "@/lib/format";
+import type { CostCenter, CostCenterFormData } from "@/components/CostCenterFormDialog";
+import { useOnDemandDialog } from "@/components/team/useOnDemandDialog";
+import { freshChunkUrl } from "@/lib/dialogChunk";
+
+type FormDialogModule = typeof import("@/components/CostCenterFormDialog");
+
+// The create/edit form (react-hook-form, zod, select, switch) loads on the first open. First try:
+// the literal import (split, hashed and preloaded by the bundler). Retry: the same chunk under a
+// fresh URL; the production path is a marker the dialog-chunk-urls Vite plugin rewrites to the
+// emitted chunk (see lib/dialogChunk.ts).
+const loadCostCenterFormDialog = (retry: string | null) => {
+  let chunk: Promise<FormDialogModule>;
+  if (retry === null) {
+    chunk = import("@/components/CostCenterFormDialog");
+  } else {
+    const path = import.meta.env.DEV
+      ? "../components/CostCenterFormDialog.tsx"
+      : "__MUHASIB_DIALOG_CHUNK__CostCenterFormDialog__";
+    chunk = import(/* @vite-ignore */ freshChunkUrl(new URL(path, import.meta.url), retry));
+  }
+  return chunk.then((m) => ({ default: m.CostCenterFormDialog }));
+};
 
 // ─── Types ───────────────────────────────────────────────
-
-interface CostCenter {
-  id: string;
-  companyId: string;
-  code: string;
-  name: string;
-  description?: string | null;
-  parentId?: string | null;
-  isActive: boolean;
-}
 
 interface CostCenterReport {
   totalIncome: number;
@@ -83,6 +83,11 @@ interface CostCenterProfitabilityRow {
   costCenterId: string;
   code: string;
   name: string;
+  nameAr?: string | null;
+  type?: string;
+  depth?: number;
+  isUnallocated?: boolean;
+  rollup?: { totalIncome: number; totalExpenses: number; netIncome: number };
   isActive: boolean;
   totalIncome: number;
   totalExpenses: number;
@@ -104,63 +109,68 @@ interface CostCenterProfitabilityReport {
   };
 }
 
-// ─── Schemas ─────────────────────────────────────────────
-
-const costCenterFormSchema = z.object({
-  code: z.string().min(1, "Code is required"),
-  name: z.string().min(1, "Name is required"),
-  description: z.string().optional(),
-  parentId: z.string().optional().nullable(),
-  isActive: z.boolean().default(true),
-});
-
-type CostCenterFormData = z.infer<typeof costCenterFormSchema>;
-
 // ─── Component ───────────────────────────────────────────
 
+/** The default API loader, with the query's abort signal carried to `fetch`. */
+function costCenterLoader<T>() {
+  return getQueryFn<T>({ on401: "throw" });
+}
+
 export default function CostCenters() {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const formDialog = useOnDemandDialog(loadCostCenterFormDialog, "CostCenterFormDialog");
   const [editingCostCenter, setEditingCostCenter] = useState<CostCenter | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<string | null>(null);
 
   // ─── Queries ───────────────────────────────────────────
 
-  const { data: costCenters = [], isLoading } = useQuery<CostCenter[]>({
+  const registerQuery = useQuery<CostCenter[]>({
     queryKey: [`/api/companies/${companyId}/cost-centers`],
+    queryFn: costCenterLoader<CostCenter[]>(),
     enabled: !!companyId,
   });
 
-  const { data: profitabilityReport, isLoading: isLoadingProfitability } =
-    useQuery<CostCenterProfitabilityReport>({
-      queryKey: [`/api/companies/${companyId}/cost-centers/profitability`],
-      enabled: !!companyId,
-    });
+  const profitabilityQuery = useQuery<CostCenterProfitabilityReport>({
+    queryKey: [`/api/companies/${companyId}/cost-centers/profitability`],
+    queryFn: costCenterLoader<CostCenterProfitabilityReport>(),
+    enabled: !!companyId,
+  });
 
-  const { data: report } = useQuery<CostCenterReport>({
+  const reportQuery = useQuery<CostCenterReport>({
     queryKey: [`/api/companies/${companyId}/cost-centers/${selectedCostCenterId}/report`],
+    queryFn: costCenterLoader<CostCenterReport>(),
     enabled: !!companyId && !!selectedCostCenterId,
   });
 
-  // ─── Form ─────────────────────────────────────────────
-
-  const form = useForm<CostCenterFormData>({
-    resolver: zodResolver(costCenterFormSchema),
-    defaultValues: {
-      code: "",
-      name: "",
-      description: "",
-      parentId: null,
-      isActive: true,
-    },
-  });
+  // `data` stays undefined until a request has succeeded: counts, totals and empty states are
+  // only drawn from it, and it is kept (never mutated) when a later refresh fails.
+  const registerData = registerQuery.data;
+  const profitabilityReport = profitabilityQuery.data;
+  const report = reportQuery.data;
+  const costCenters = registerData ?? [];
+  const registerState = costCenterLoadState(registerQuery);
+  const profitabilityState = costCenterLoadState(profitabilityQuery);
+  const reportState = costCenterLoadState(reportQuery);
 
   // ─── Mutations ────────────────────────────────────────
+
+  // After a create, edit (rename, activation) or delete the register and the P&L (which feeds the
+  // on-page table and its export) are both stale. Cancel first: invalidating alone reuses a
+  // still-running load, whose pre-write response would then stand in for the fresh one.
+  const reloadCostCenterData = async () => {
+    const filters = [
+      { queryKey: [`/api/companies/${companyId}/cost-centers`], exact: true },
+      { queryKey: [`/api/companies/${companyId}/cost-centers/profitability`], exact: true },
+    ];
+    await Promise.all(filters.map((f) => queryClient.cancelQueries(f)));
+    await Promise.all(filters.map((f) => queryClient.invalidateQueries(f)));
+  };
 
   const createMutation = useMutation({
     mutationFn: (data: CostCenterFormData) =>
@@ -169,16 +179,19 @@ export default function CostCenters() {
         parentId: data.parentId || null,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
+      void reloadCostCenterData();
       toast({
-        title: "Cost Center Created",
-        description: "Cost center has been added successfully.",
+        title: translateNow("toasts.costCenterCreated"),
+        description: translateNow("toasts.costCenterHasBeenAddedSuccessfully"),
       });
       setDialogOpen(false);
-      form.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -189,58 +202,52 @@ export default function CostCenters() {
         parentId: data.parentId || null,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
+      void reloadCostCenterData();
       toast({
-        title: "Cost Center Updated",
-        description: "Cost center details have been updated.",
+        title: translateNow("toasts.costCenterUpdated"),
+        description: translateNow("toasts.costCenterDetailsHaveBeenUpdated"),
       });
       setDialogOpen(false);
       setEditingCostCenter(null);
-      form.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/cost-centers/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
+      void reloadCostCenterData();
       if (selectedCostCenterId) {
         setSelectedCostCenterId(null);
       }
-      toast({ title: "Cost Center Deleted", description: "Cost center has been removed." });
+      toast({
+        title: translateNow("toasts.costCenterDeleted"),
+        description: translateNow("toasts.costCenterHasBeenRemoved"),
+      });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
   // ─── Handlers ─────────────────────────────────────────
 
-  const handleOpenCreateDialog = () => {
-    setEditingCostCenter(null);
-    form.reset({
-      code: "",
-      name: "",
-      description: "",
-      parentId: null,
-      isActive: true,
-    });
-    setDialogOpen(true);
-  };
-
-  const handleOpenEditDialog = (costCenter: CostCenter) => {
+  // The Add (null) or Edit (row) target is set right away, so the latest click wins and a retry
+  // keeps it; the form renders once its chunk is there.
+  const openDialog = (costCenter: CostCenter | null) => {
     setEditingCostCenter(costCenter);
-    form.reset({
-      code: costCenter.code,
-      name: costCenter.name,
-      description: costCenter.description || "",
-      parentId: costCenter.parentId || null,
-      isActive: costCenter.isActive,
-    });
     setDialogOpen(true);
+    formDialog.request();
   };
 
   const handleSubmit = (data: CostCenterFormData) => {
@@ -254,8 +261,8 @@ export default function CostCenters() {
   const handleExportCostCenterProfitability = async () => {
     if (!profitabilityReport) {
       toast({
-        title: "No report data",
-        description: "Cost Center P&L is still loading or has no rows to export.",
+        title: translateNow("toasts.noReportData"),
+        description: translateNow("toasts.costCenterPLIsStillLoading"),
         variant: "destructive",
       });
       return;
@@ -267,14 +274,14 @@ export default function CostCenters() {
         `cost_center_pnl_${new Date().toISOString().slice(0, 10)}`
       );
       toast({
-        title: "Report exported",
-        description: "Cost Center P&L has been downloaded.",
+        title: translateNow("toasts.reportExported2"),
+        description: translateNow("toasts.costCenterPLHasBeenDownloaded"),
       });
     } catch (error) {
       toast({
-        title: "Export failed",
+        title: translateNow("toasts.exportFailed"),
         description:
-          error instanceof Error ? error.message : "Unable to export Cost Center P&L.",
+          error instanceof Error ? error.message : translateNow("toasts.unableExportCostCenterPl"),
         variant: "destructive",
       });
     }
@@ -285,48 +292,33 @@ export default function CostCenters() {
   const getParentName = (parentId: string | null | undefined): string => {
     if (!parentId) return "-";
     const parent = costCenters.find((cc) => cc.id === parentId);
-    return parent ? parent.name : "-";
+    return parent ? costCenterDisplayName(parent, locale) : "-";
   };
 
-  const getAvailableParents = (): CostCenter[] => {
-    if (!editingCostCenter) return costCenters;
-    return costCenters.filter((cc) => cc.id !== editingCostCenter.id);
-  };
-
-  const filteredCostCenters = costCenters.filter((cc) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      cc.code.toLowerCase().includes(q) ||
-      cc.name.toLowerCase().includes(q) ||
-      (cc.description?.toLowerCase().includes(q) ?? false)
-    );
-  });
+  const filteredCostCenters = filterCostCenters(costCenters, searchQuery);
 
   const activeCount = costCenters.filter((cc) => cc.isActive).length;
   const inactiveCount = costCenters.filter((cc) => !cc.isActive).length;
   const selectedCostCenter = costCenters.find((cc) => cc.id === selectedCostCenterId);
   const profitabilityRows = profitabilityReport?.costCenters ?? [];
-  const profitabilityTotals = profitabilityReport?.totals ?? {
-    costCenterCount: 0,
-    activeCostCenterCount: 0,
-    allocatedLineCount: 0,
-    totalIncome: 0,
-    totalExpenses: 0,
-    netIncome: 0,
-  };
-  const profitabilityPeriodLabel =
-    profitabilityReport?.periodStart || profitabilityReport?.periodEnd
-      ? `${profitabilityReport.periodStart ?? "Beginning"} to ${
-          profitabilityReport.periodEnd ?? "today"
-        }`
-      : "All posted periods";
+  const profitabilityTotals = profitabilityReport?.totals;
+  // Without a report, no period is known: do not claim "all posted periods".
+  const profitabilityPeriodLabel = profitabilityReport
+    ? costCenterPeriodLabel(profitabilityReport.periodStart, profitabilityReport.periodEnd, {
+        beginning: t["costCenters.ccPeriodBeginning"],
+        today: t["costCenters.ccPeriodToday"],
+        range: t["costCenters.ccPeriodRange"],
+        allPeriods: t["costCenters.allPostedPeriods"],
+      })
+    : profitabilityState === "error"
+      ? t["costCenters.ccPeriodUnavailable"]
+      : t["costCenters.ccPeriodUnknown"];
 
   if (!canAccess("costCenters")) {
     return <UpgradePrompt feature="costCenters" requiredTier={getRequiredTier("costCenters")} />;
   }
 
-  if (isLoadingCompany || isLoading) {
+  if (isLoadingCompany) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -334,475 +326,448 @@ export default function CostCenters() {
     );
   }
 
+  // The queries stay disabled without a company, so there is nothing to wait for.
+  if (!companyId) {
+    return <EmptyState icon={Building2} title={t["screens.noCompanySelected"]} />;
+  }
+
   // ─── Render ───────────────────────────────────────────
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <PageHeader
-        eyebrow="Accounting"
-        title="Cost Centers"
-        description="Manage cost centers for departmental accounting and P&L tracking"
+        eyebrow={t["costCenters.ccEyebrow"]}
+        title={t["costCenters.costCenters"]}
+        description={t["costCenters.costCentersDescription"]}
         backHref="/reports"
-        backLabel={locale === "ar" ? "العودة إلى التقارير" : "Back to reports"}
+        backLabel={locale === "ar" ? "العودة إلى التقارير" : t["reportCenter.backToReports"]}
         actions={
           <>
             <Button
               variant="outline"
               onClick={handleExportCostCenterProfitability}
-              disabled={isLoadingProfitability || !profitabilityReport}
+              disabled={!profitabilityReport}
             >
-              <Download className="mr-2 h-4 w-4" />
-              Export
+              <Download aria-hidden />
+              <T k="pages.export" />
             </Button>
-            <Button onClick={handleOpenCreateDialog}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Cost Center
+            <Button onClick={() => openDialog(null)}>
+              <Plus aria-hidden />
+              <T k="pageLabels.addCostCenter" />
             </Button>
           </>
         }
       />
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <CardTitle>Cost Center P&L</CardTitle>
-            <CardDescription>
-              Period: {profitabilityPeriodLabel}. Source basis: posted journal lines allocated to
-              cost centers, grouped by income and expense accounts.
-            </CardDescription>
-          </div>
-          <Badge variant="secondary" className="w-fit">
-            Accrual basis
-          </Badge>
-        </CardHeader>
-        <CardContent>
-          {isLoadingProfitability ? (
-            <div className="space-y-3">
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-48 w-full" />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-4">
-                <div className="rounded-md border bg-muted/20 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Active centers
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold">
-                    {profitabilityTotals.activeCostCenterCount}/{profitabilityTotals.costCenterCount}
-                  </p>
-                </div>
-                <div className="rounded-md border bg-muted/20 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Income
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold text-success">
-                    {formatCurrency(profitabilityTotals.totalIncome, "AED", locale)}
-                  </p>
-                </div>
-                <div className="rounded-md border bg-muted/20 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Expenses
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold text-destructive">
-                    {formatCurrency(profitabilityTotals.totalExpenses, "AED", locale)}
-                  </p>
-                </div>
-                <div className="rounded-md border bg-muted/20 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Net income
-                  </p>
-                  <p
-                    className={`mt-1 text-2xl font-semibold ${
-                      profitabilityTotals.netIncome >= 0 ? "text-success" : "text-destructive"
-                    }`}
-                  >
-                    {formatCurrency(profitabilityTotals.netIncome, "AED", locale)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-md border overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Code</TableHead>
-                      <TableHead>Cost Center</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Income</TableHead>
-                      <TableHead className="text-right">Expenses</TableHead>
-                      <TableHead className="text-right">Net Income</TableHead>
-                      <TableHead className="text-right">Lines</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {profitabilityRows.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                          No cost center allocations have been posted yet.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      profitabilityRows.map((row) => (
-                        <TableRow key={row.costCenterId}>
-                          <TableCell className="font-mono text-sm">{row.code}</TableCell>
-                          <TableCell className="font-medium">{row.name}</TableCell>
-                          <TableCell>
-                            <Badge variant={row.isActive ? "default" : "secondary"}>
-                              {row.isActive ? "Active" : "Inactive"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.totalIncome, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(row.totalExpenses, "AED", locale)}
-                          </TableCell>
-                          <TableCell
-                            className={`text-right font-mono ${
-                              row.netIncome >= 0 ? "text-success" : "text-destructive"
-                            }`}
-                          >
-                            {formatCurrency(row.netIncome, "AED", locale)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">{row.lineCount}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Cost Centers</CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{costCenters.length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success">{activeCount}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Inactive</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-muted-foreground">{inactiveCount}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search */}
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search cost centers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
+      {formDialog.status === "loading" && (
+        <div
+          role="status"
+          data-testid="cost-center-form-loading"
+          className="flex flex-wrap items-center gap-3 px-4 py-3 text-small text-muted-foreground"
+        >
+          <p>{t["costCenters.ccFormLoading"]}</p>
         </div>
-      </div>
-
-      {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Parent</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredCostCenters.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                    {searchQuery
-                      ? "No cost centers match your search"
-                      : "No cost centers yet. Add your first cost center to get started."}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredCostCenters.map((cc) => (
-                  <TableRow
-                    key={cc.id}
-                    className={
-                      selectedCostCenterId === cc.id
-                        ? "bg-muted/50"
-                        : "cursor-pointer hover:bg-muted/30"
-                    }
-                    onClick={() =>
-                      setSelectedCostCenterId(cc.id === selectedCostCenterId ? null : cc.id)
-                    }
-                  >
-                    <TableCell className="font-mono text-sm">{cc.code}</TableCell>
-                    <TableCell className="font-medium">{cc.name}</TableCell>
-                    <TableCell className="text-muted-foreground max-w-[200px] truncate">
-                      {cc.description || "-"}
-                    </TableCell>
-                    <TableCell>{getParentName(cc.parentId)}</TableCell>
-                    <TableCell>
-                      {cc.isActive ? (
-                        <Badge className="bg-success-subtle text-success-subtle-foreground hover:bg-success-subtle">
-                          Active
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-muted text-foreground hover:bg-muted">
-                          Inactive
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEditDialog(cc);
-                          }}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (
-                              window.confirm("Are you sure you want to delete this cost center?")
-                            ) {
-                              deleteMutation.mutate(cc.id);
-                            }
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {/* Cost Center P&L Report */}
-      {selectedCostCenter && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              P&L Summary — {selectedCostCenter.name} ({selectedCostCenter.code})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {report ? (
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card className="bg-success-subtle border-success/30">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-success">Income</CardTitle>
-                    <TrendingUp className="h-4 w-4 text-success" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-success font-mono">
-                      {formatCurrency(report.totalIncome ?? 0, "AED", locale)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="bg-danger-subtle border-destructive/30">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium text-destructive">Expenses</CardTitle>
-                    <TrendingDown className="h-4 w-4 text-destructive" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-destructive font-mono">
-                      {formatCurrency(report.totalExpenses ?? 0, "AED", locale)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card
-                  className={
-                    (report.netIncome ?? 0) >= 0
-                      ? "bg-info-subtle border-info/30"
-                      : "bg-warning-subtle border-warning/30"
-                  }
-                >
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle
-                      className={`text-sm font-medium ${(report.netIncome ?? 0) >= 0 ? "text-info" : "text-warning"}`}
-                    >
-                      Net
-                    </CardTitle>
-                    <DollarSign
-                      className={`h-4 w-4 ${(report.netIncome ?? 0) >= 0 ? "text-info" : "text-warning"}`}
-                    />
-                  </CardHeader>
-                  <CardContent>
-                    <div
-                      className={`text-2xl font-bold font-mono ${(report.netIncome ?? 0) >= 0 ? "text-info" : "text-warning"}`}
-                    >
-                      {formatCurrency(report.netIncome ?? 0, "AED", locale)}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-sm">
-                No report data available for this cost center.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+      )}
+      {(formDialog.status === "failed" || formDialog.status === "offline") && (
+        <div
+          role="alert"
+          data-testid="cost-center-form-error"
+          className="flex flex-wrap items-center gap-3 px-4 py-3 text-small text-destructive"
+        >
+          <p>
+            {formDialog.status === "offline"
+              ? t["common.errorHeading.offline"]
+              : t["costCenters.ccFormError"]}
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={formDialog.request}>
+            <RotateCw aria-hidden />
+            {t["components.errorRetry"]}
+          </Button>
+        </div>
       )}
 
-      {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{editingCostCenter ? "Edit Cost Center" : "Add Cost Center"}</DialogTitle>
-            <DialogDescription>
-              {editingCostCenter
-                ? "Update cost center details below."
-                : "Fill in the details to create a new cost center."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="code"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Code *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="CC-001" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Name *</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Marketing" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Optional description for this cost center"
-                        rows={3}
-                        {...field}
-                        value={field.value || ""}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+      {/* P&L by cost center. Spec 2.6: hidden until the first cost center exists, so an
+          empty company sees no KPI row of zeros above the empty register. */}
+      {(!registerData || registerData.length > 0) && (
+        <section className="space-y-4" aria-labelledby="cc-pl-title">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              <h2 id="cc-pl-title" className="text-h2 text-foreground">
+                <T k="pageLabels.costCenterPAndL" />
+              </h2>
+              <p className="mt-1 text-small text-muted-foreground">
+                {formatMessage(t["costCenters.costCenterPlBasis"], {
+                  period: profitabilityPeriodLabel,
+                })}
+              </p>
+            </div>
+            <Badge variant="neutral">
+              <T k="pageLabels.accrualBasis" />
+            </Badge>
+          </div>
+          {(profitabilityTotals || profitabilityState === "pending") && (
+            <div className="mobile-keep-cols grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <StatCard
+                testId="cost-center-stat-active"
+                label={t["pageLabels.activeCenters"]}
+                loading={!profitabilityTotals}
+                value={
+                  profitabilityTotals && (
+                    <span className="tabular-nums">
+                      {profitabilityTotals.activeCostCenterCount}/
+                      {profitabilityTotals.costCenterCount}
+                    </span>
+                  )
+                }
               />
-
-              <FormField
-                control={form.control}
-                name="parentId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Parent Cost Center</FormLabel>
-                    <Select
-                      onValueChange={(value) => field.onChange(value === "_none" ? null : value)}
-                      value={field.value || "_none"}
+              <StatCard
+                testId="cost-center-stat-income"
+                label={t["pages.income"]}
+                loading={!profitabilityTotals}
+                value={profitabilityTotals && <Money amount={profitabilityTotals.totalIncome} />}
+              />
+              <StatCard
+                label={t["pages.expenses"]}
+                loading={!profitabilityTotals}
+                value={profitabilityTotals && <Money amount={profitabilityTotals.totalExpenses} />}
+              />
+              <StatCard
+                label={t["pageLabels.netIncome"]}
+                loading={!profitabilityTotals}
+                value={
+                  profitabilityTotals && (
+                    <Money amount={profitabilityTotals.netIncome} tone="auto" />
+                  )
+                }
+              />
+            </div>
+          )}
+          <DataTableCard testId="cost-center-pl">
+            <CostCenterLoadNotice
+              state={profitabilityState}
+              hasData={!!profitabilityReport}
+              errorTitle={t["costCenters.ccPlError"]}
+              errorBody={t["costCenters.ccLoadErrorBody"]}
+              onRetry={() => void profitabilityQuery.refetch()}
+              testId="cost-center-pl-notice"
+            />
+            {!profitabilityReport && profitabilityState === "pending" && <TableSkeleton />}
+            {profitabilityReport && profitabilityRows.length === 0 && (
+              <EmptyState
+                compact
+                icon={Building2}
+                title={t["pageLabels.noCostCenterAllocationsHaveBeenPostedYet"]}
+              />
+            )}
+            {profitabilityRows.length > 0 && (
+              <Table className="row-cards">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t["screens.code"]}</TableHead>
+                    <TableHead className="w-full">
+                      <T k="pageLabels.costCenter" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
+                    <TableHead data-numeric="">
+                      <T k="pages.income" />
+                    </TableHead>
+                    <TableHead data-numeric="">
+                      <T k="pages.expenses" />
+                    </TableHead>
+                    <TableHead data-numeric="">
+                      <T k="pages.netIncome" />
+                    </TableHead>
+                    <TableHead data-numeric="">{t["costCenters.ccRollup"]}</TableHead>
+                    <TableHead data-numeric="">{t["costCenters.ccLines"]}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {profitabilityRows.map((row) => (
+                    <TableRow
+                      key={row.costCenterId}
+                      className={row.isUnallocated ? "bg-surface-sunken/60" : undefined}
                     >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="None (top-level)" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="_none">None (top-level)</SelectItem>
-                        {getAvailableParents().map((parent) => (
-                          <SelectItem key={parent.id} value={parent.id}>
-                            {parent.code} — {parent.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <TableCell
+                        data-nowrap=""
+                        data-cell="meta"
+                        className="tabular-nums text-muted-foreground"
+                      >
+                        {row.code}
+                      </TableCell>
+                      <TableCell
+                        data-truncate=""
+                        data-cell="title"
+                        className={cn("font-medium", row.isUnallocated && "text-muted-foreground")}
+                        style={{ paddingInlineStart: `${(row.depth ?? 0) * 16 + 16}px` }}
+                      >
+                        <span dir="auto">
+                          {row.isUnallocated
+                            ? t["costCenters.ccUnallocated"]
+                            : locale === "ar" && row.nameAr
+                              ? row.nameAr
+                              : row.name}
+                        </span>
+                        {row.type && row.type !== "cost_centre" && !row.isUnallocated && (
+                          <Badge variant="outline" className="ms-2">
+                            {row.type === "project"
+                              ? t["costCenters.ccTypeProject"]
+                              : t["costCenters.ccTypeJob"]}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell data-nowrap="" data-cell="status">
+                        {!row.isUnallocated && (
+                          <StatusBadge status={row.isActive ? "active" : "inactive"} />
+                        )}
+                      </TableCell>
+                      <MoneyCell
+                        amount={row.totalIncome}
+                        showCurrency={false}
+                        className="text-muted-foreground"
+                      />
+                      <MoneyCell
+                        amount={row.totalExpenses}
+                        showCurrency={false}
+                        className="text-muted-foreground"
+                      />
+                      <MoneyCell
+                        amount={row.netIncome}
+                        tone="auto"
+                        className="font-medium"
+                        data-cell="amount"
+                      />
+                      <TableCell data-numeric="" className="text-muted-foreground">
+                        {row.rollup ? (
+                          <Money amount={row.rollup.netIncome} showCurrency={false} />
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                      <TableCell data-numeric="" className="text-muted-foreground">
+                        {row.lineCount}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </DataTableCard>
+        </section>
+      )}
 
-              <FormField
-                control={form.control}
-                name="isActive"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                    <div className="space-y-0.5">
-                      <FormLabel>Active</FormLabel>
-                      <p className="text-sm text-muted-foreground">
-                        Inactive cost centers cannot receive new transactions
-                      </p>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+      {/* Register */}
+      <section className="space-y-4" aria-labelledby="cc-register-title">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 id="cc-register-title" className="text-h2 text-foreground">
+              {t["costCenters.costCenterRegister"]}
+            </h2>
+            {registerData && (
+              <p className="mt-1 text-small text-muted-foreground" data-testid="cost-center-counts">
+                {formatMessage(t["costCenters.costCenterCounts"], {
+                  total: costCenters.length,
+                  active: activeCount,
+                  inactive: inactiveCount,
+                })}
+              </p>
+            )}
+          </div>
+          <div className="relative w-full sm:w-72">
+            <Search
+              className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              placeholder={t["costCenters.searchCostCenters"]}
+              aria-label={t["costCenters.searchCostCenters"]}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-9 ps-9"
+            />
+          </div>
+        </div>
+        <DataTableCard testId="cost-center-register">
+          <CostCenterLoadNotice
+            state={registerState}
+            hasData={!!registerData}
+            errorTitle={t["costCenters.ccRegisterError"]}
+            errorBody={t["costCenters.ccLoadErrorBody"]}
+            onRetry={() => void registerQuery.refetch()}
+            testId="cost-center-register-notice"
+          />
+          {!registerData && registerState === "pending" && <TableSkeleton />}
+          {registerData && filteredCostCenters.length === 0 && (
+            <EmptyState
+              compact
+              icon={Building2}
+              title={
+                searchQuery.trim()
+                  ? t["costCenters.noCostCenterMatch"]
+                  : t["costCenters.noCostCenters"]
+              }
+              action={
+                searchQuery.trim()
+                  ? undefined
+                  : { label: t["pageLabels.addCostCenter"], onClick: () => openDialog(null) }
+              }
+            />
+          )}
+          {filteredCostCenters.length > 0 && (
+            <Table className="row-cards">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t["screens.code"]}</TableHead>
+                  <TableHead className="w-full">{t["pages.contactsColName"]}</TableHead>
+                  <TableHead>
+                    <T k="pages.description" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="consolidation.parent" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead>
+                    <span className="sr-only">
+                      <T k="pages.actions" />
+                    </span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredCostCenters.map((center) => (
+                  <TableRow
+                    key={center.id}
+                    data-state={selectedCostCenterId === center.id ? "selected" : undefined}
+                    className="cursor-pointer"
+                    onClick={() =>
+                      setSelectedCostCenterId(center.id === selectedCostCenterId ? null : center.id)
+                    }
+                  >
+                    <TableCell
+                      data-nowrap=""
+                      data-cell="meta"
+                      className="tabular-nums text-muted-foreground"
+                    >
+                      {center.code}
+                    </TableCell>
+                    <TableCell
+                      data-truncate=""
+                      data-cell="title"
+                      dir="auto"
+                      className="font-medium"
+                    >
+                      {costCenterDisplayName(center, locale)}
+                    </TableCell>
+                    <TableCell data-truncate="" className="text-muted-foreground">
+                      {center.description || "—"}
+                    </TableCell>
+                    <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                      {getParentName(center.parentId)}
+                    </TableCell>
+                    <TableCell data-nowrap="" data-cell="status">
+                      <StatusBadge status={center.isActive ? "active" : "inactive"} />
+                    </TableCell>
+                    <TableCell data-cell="actions" onClick={(e) => e.stopPropagation()}>
+                      <RowActions
+                        collapseOnMobile
+                        menu={
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={() => {
+                              if (window.confirm(t["costCenters.confirmDeleteCostCenter"])) {
+                                deleteMutation.mutate(center.id);
+                              }
+                            }}
+                          >
+                            <Trash2 aria-hidden />
+                            {t.delete}
+                          </DropdownMenuItem>
+                        }
+                      >
+                        <RowActionButton
+                          label={t.edit}
+                          icon={Edit}
+                          onClick={() => openDialog(center)}
+                        />
+                      </RowActions>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </DataTableCard>
+      </section>
 
-              <div className="flex justify-end gap-3 pt-2">
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  {(createMutation.isPending || updateMutation.isPending) && (
-                    <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  )}
-                  {editingCostCenter ? "Update Cost Center" : "Add Cost Center"}
-                </Button>
+      {/* Selected cost center P&L */}
+      {selectedCostCenter && (
+        <SectionCard
+          title={
+            <>
+              {t["screens.plSummary"]} ·{" "}
+              <span dir="auto">{costCenterDisplayName(selectedCostCenter, locale)}</span>{" "}
+              <span className="tabular-nums text-muted-foreground">
+                ({selectedCostCenter.code})
+              </span>
+            </>
+          }
+        >
+          <CostCenterLoadNotice
+            state={reportState}
+            hasData={!!report}
+            errorTitle={t["costCenters.ccReportError"]}
+            errorBody={t["costCenters.ccLoadErrorBody"]}
+            onRetry={() => void reportQuery.refetch()}
+            testId="cost-center-report-notice"
+            className="px-0"
+          />
+          {report && (
+            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3" data-testid="cost-center-report">
+              <div>
+                <dt className="flex items-center gap-1.5 text-small text-muted-foreground">
+                  <TrendingUp className="h-4 w-4" aria-hidden />
+                  <T k="pages.income" />
+                </dt>
+                <dd className="mt-1 text-h3 font-semibold">
+                  <Money amount={report.totalIncome} />
+                </dd>
               </div>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
+              <div>
+                <dt className="flex items-center gap-1.5 text-small text-muted-foreground">
+                  <TrendingDown className="h-4 w-4" aria-hidden />
+                  <T k="pages.expenses" />
+                </dt>
+                <dd className="mt-1 text-h3 font-semibold">
+                  <Money amount={report.totalExpenses} />
+                </dd>
+              </div>
+              <div>
+                <dt className="flex items-center gap-1.5 text-small text-muted-foreground">
+                  <DollarSign className="h-4 w-4" aria-hidden />
+                  {t["screens.net"]}
+                </dt>
+                <dd className="mt-1 text-h3 font-semibold">
+                  <Money amount={report.netIncome} tone="auto" />
+                </dd>
+              </div>
+            </dl>
+          )}
+        </SectionCard>
+      )}
+
+      {formDialog.Component && (
+        <formDialog.Component
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          editing={editingCostCenter}
+          parents={costCenters}
+          pending={createMutation.isPending || updateMutation.isPending}
+          onSubmit={handleSubmit}
+        />
+      )}
     </div>
   );
 }

@@ -23,6 +23,13 @@ vi.mock("../../server/storage", () => ({
   },
 }));
 
+// WQ7: the scan reads the per-company Automations switches; none is switched off here.
+vi.mock("../../server/platform/company-automations", () => ({
+  automationWritesAllowed: vi.fn(async () => true),
+  companiesWithAutomationOff: vi.fn(async () => new Set<string>()),
+  recordAutomationRun: vi.fn(async () => undefined),
+}));
+
 vi.mock("../../server/services/socket.service", () => ({
   createAndEmitNotification: vi.fn(async (data: any) => ({
     id: "notification-1",
@@ -31,7 +38,32 @@ vi.mock("../../server/services/socket.service", () => ({
   })),
 }));
 
+// W5-A (R12-01): queue/retry now render and email through the executor; its behaviour is
+// covered end-to-end in tests/db/report-delivery-outbox.test.ts.
+vi.mock("../../server/services/report-render/delivery", () => ({
+  executeReportDeliveryRun: vi.fn(async ({ runId }: any) => ({
+    id: runId,
+    status: "sent",
+    recipientAddresses: ["owner@example.com"],
+    errorMessage: null,
+    blockedReason: null,
+  })),
+  setRunNotification: vi.fn(async (_companyId: string, runId: string, notificationId: string) => ({
+    id: runId,
+    status: "sent",
+    notificationId,
+  })),
+  refreshReportDeliveryRuns: vi.fn(async (runs: any[]) => runs),
+  cancelPendingRunEmails: vi.fn(async () => undefined),
+  parseRecipientEmails: (value: string) =>
+    (value.match(/[^\s,;]+@[^\s,;]+\.[^\s,;]+/g) ?? []).map((e) => e.toLowerCase()),
+  listRunArtifacts: vi.fn(async () => []),
+  getRunArtifact: vi.fn(async () => undefined),
+}));
+
 import { storage } from "../../server/storage";
+import { automationWritesAllowed } from "../../server/platform/company-automations";
+import { executeReportDeliveryRun } from "../../server/services/report-render/delivery";
 import { createAndEmitNotification } from "../../server/services/socket.service";
 import { getReportDeliveryPlans } from "../../server/services/report-delivery.service";
 import {
@@ -58,6 +90,7 @@ describe("report delivery scheduler", () => {
     vi.mocked(storage.resolveCompanyActorUserId).mockResolvedValue(userId);
     vi.mocked(storage.createReportDeliveryRun).mockClear();
     vi.mocked(storage.createReportDeliverySchedulerScan).mockClear();
+    vi.mocked(executeReportDeliveryRun).mockClear();
     vi.mocked(createAndEmitNotification).mockClear();
   });
 
@@ -180,6 +213,19 @@ describe("report delivery scheduler", () => {
     );
   });
 
+  it("skips expired companies before recording any scheduled delivery activity", async () => {
+    vi.mocked(automationWritesAllowed).mockResolvedValueOnce(false);
+
+    expect(await scanDueReportDeliveries(new Date("2026-06-22T09:00:00.000Z"))).toMatchObject({
+      scannedCompanies: 1,
+      scannedSubscriptions: 0,
+      queuedRuns: 0,
+    });
+    expect(storage.createReportDeliveryRun).not.toHaveBeenCalled();
+    expect(storage.createReportDeliverySchedulerScan).not.toHaveBeenCalled();
+    expect(executeReportDeliveryRun).not.toHaveBeenCalled();
+  });
+
   it("does not create scheduled notifications without a company actor", async () => {
     vi.mocked(storage.resolveCompanyActorUserId).mockResolvedValue(null);
 
@@ -265,7 +311,10 @@ describe("report delivery scheduler", () => {
   });
 
   it("records failed scheduled runs and continues scanning remaining subscriptions", async () => {
-    vi.mocked(createAndEmitNotification).mockRejectedValueOnce(new Error("Email provider down"));
+    // R12-01: the run row is created first; a failure before it exists is recorded as failed.
+    vi.mocked(storage.createReportDeliveryRun).mockRejectedValueOnce(
+      new Error("Email provider down")
+    );
 
     const result = await scanDueReportDeliveries(new Date("2026-06-22T09:00:00.000Z"));
 
@@ -275,7 +324,8 @@ describe("report delivery scheduler", () => {
       queuedRuns: 2,
       errors: 1,
     });
-    expect(createAndEmitNotification).toHaveBeenCalledTimes(3);
+    expect(createAndEmitNotification).toHaveBeenCalledTimes(2);
+    expect(executeReportDeliveryRun).toHaveBeenCalledTimes(2);
     expect(storage.createReportDeliveryRun).toHaveBeenCalledWith(
       expect.objectContaining({
         companyId,

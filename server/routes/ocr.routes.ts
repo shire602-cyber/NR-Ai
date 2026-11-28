@@ -1,4 +1,10 @@
+import { sizeErrorBody } from "../http/upload-errors";
+import { withOcrDeadline } from "../http/ocr-deadline";
 import { type Express, type Request, type Response } from "express";
+import { parsedBody } from "../http/parsed-body";
+import { strictBody } from "../http/strict-body";
+import { ocrProcessBody } from "../../shared/validators/route-bodies";
+import { EXCEL_EXPORT_LIMITS, excelWorkbookCellCount } from "../../shared/excel-export";
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 import { z } from "zod";
@@ -19,20 +25,74 @@ import { extractReceiptWithLocalOcr } from "../services/local-ocr.service";
 import {
   createOcrClients,
   describeOcrProviders,
-  formatProviderFailures,
   summarizeOcrProviderError,
 } from "../services/ocr-provider-clients";
-import { parseReceiptOcrText } from "@shared/receipt-ocr-parser";
+import {
+  isFeeVatAmbiguityIssue,
+  parseReceiptOcrText,
+  UNKNOWN_RECEIPT_MERCHANT,
+  validateUaeTrn,
+} from "@shared/receipt-ocr-parser";
+import { deriveConfidenceBand, type ValidationIssue } from "@shared/receipt-confidence";
+import { isOwnTrn } from "@shared/bill-capture";
+import { buildLimiter, limiterProfiles } from "../middleware/rateLimit";
+import { extractReceipt, type ExtractionClients } from "../services/ai/receipt-extraction";
+import {
+  normalizeModelConfidence,
+  VALID_RECEIPT_CATEGORIES,
+} from "../services/ai/structured-output";
+import { sanityCheckReceipt } from "../services/ai/structured-output";
+import { assertAiQuota, type AiContext } from "../services/ai/usage-meter";
+import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
+import { errorCode, errorMessage, errorProperty } from "../errors";
+import { todayDubai } from "@shared/accounting-date";
+import {
+  amountMismatchMessage,
+  aiVatRate,
+  hasVatFigure,
+  printedRateWithZeroVat,
+  vatRateAmountConflictMessage,
+  reconcileReceiptAmounts,
+  vatDerivedMessage,
+  vatDerivedSource,
+  vatWithoutTrnMessage,
+} from "@shared/receipt-amounts";
 
 const log = createLogger("ocr");
 
-function extractJson(raw: string): any {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  return JSON.parse(fenced ? fenced[1].trim() : raw.trim());
+export interface OcrRouteDeps {
+  /** Inject (mock) provider clients. Omit to build them from the environment. */
+  anthropic?: Anthropic | null;
+  openai?: OpenAI | null;
 }
 
-export function registerOCRRoutes(app: Express) {
-  const { anthropic, openai } = createOcrClients();
+export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
+  const envClients =
+    deps.anthropic === undefined && deps.openai === undefined ? createOcrClients() : null;
+  const anthropic = deps.anthropic !== undefined ? deps.anthropic : (envClients?.anthropic ?? null);
+  const openai = deps.openai !== undefined ? deps.openai : (envClients?.openai ?? null);
+  const aiLimiter = buildLimiter("ocr-routes", limiterProfiles.ai);
+  // X6b: one budget per company (not per user) so a company's scans cannot starve the platform
+  // however many users it adds. Applied once the caller's access to the company is proven.
+  const companyLimiter = buildLimiter("ocr-company", {
+    ...limiterProfiles.ocrCompany,
+    keyGenerator: (req) => `ocr:${(req as Request & { ocrCompanyId?: string }).ocrCompanyId}`,
+  });
+  const applyCompanyLimit = (req: Request, res: Response, companyId: string) =>
+    new Promise<boolean>((resolve, reject) => {
+      (req as Request & { ocrCompanyId?: string }).ocrCompanyId = companyId;
+      companyLimiter(req, res, (err?: unknown) => (err ? reject(err) : resolve(true)));
+      res.once("finish", () => resolve(false));
+    });
+
+  // X3 (J2): lets the Receipts page say up front that automatic reading is not enabled.
+  app.get(
+    "/api/ocr/status",
+    authMiddleware,
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json({ aiConfigured: Boolean(anthropic || openai) });
+    })
+  );
 
   // ===========================
   // OCR Processing Endpoint
@@ -41,13 +101,25 @@ export function registerOCRRoutes(app: Express) {
   app.post(
     "/api/ocr/process",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+    aiLimiter,
+    strictBody(ocrProcessBody, { allowServerOwned: ["companyId"] }),
+    withOcrDeadline(async (req, res, signal, waitForStep) => {
+      const userId = req.user?.id;
       if (!userId) {
-        return res.status(401).json({ message: "Unauthorized" });
+        return res.status(401).json({ message: "Unauthorized", code: "AUTH_REQUIRED" });
       }
 
-      const { messageId, content, imageData, companyId: requestedCompanyId } = req.body;
+      const {
+        messageId,
+        content,
+        imageData,
+        companyId: requestedCompanyId,
+      } = parsedBody<{
+        messageId?: string | null;
+        content?: string | null;
+        imageData?: string | null;
+        companyId?: string | null;
+      }>(req);
 
       // Phase 2 enriches the OCR result with the company's per-tenant classifier
       // (training data + rules). The active company MUST come from the request so
@@ -56,108 +128,116 @@ export function registerOCRRoutes(app: Express) {
       // company A's model bleeding into a receipt being processed for company B.
       let companyId: string;
       if (requestedCompanyId && typeof requestedCompanyId === "string") {
-        const hasAccess = await storage.hasCompanyAccess(userId, requestedCompanyId);
+        const hasAccess = await waitForStep(storage.hasCompanyAccess(userId, requestedCompanyId));
         if (!hasAccess) {
-          return res.status(403).json({ message: "Access denied" });
+          return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
         }
         companyId = requestedCompanyId;
       } else {
         // Backwards-compat fallback for older clients: only safe when the user
         // has exactly one company. For multi-company users we require an
         // explicit companyId so we never silently pick the wrong tenant.
-        const companies = await storage.getCompaniesByUserId(userId);
+        const companies = await waitForStep(storage.getCompaniesByUserId(userId));
         if (companies.length === 0) {
-          return res.status(404).json({ message: "No company found" });
+          return res.status(404).json({ message: "No company found", code: "COMPANY_NOT_FOUND" });
         }
         if (companies.length > 1) {
           return res.status(400).json({
             message: "companyId is required when the user has access to multiple companies",
+            code: "COMPANY_REQUIRED",
           });
         }
         companyId = companies[0].id;
       }
 
+      // X6b (J2): with no AI provider, fail image-only requests early. Pasted text
+      // still goes through the deterministic parser below.
+      if (!anthropic && !openai && imageData && !content) {
+        return res.status(503).json({
+          message: "Automatic receipt reading is not enabled on this server.",
+          code: "AI_NOT_CONFIGURED",
+        });
+      }
+
+      // The limiter can write its own response and its Redis call has a 3-second timeout.
+      if (!(await applyCompanyLimit(req, res, companyId))) return;
+      signal.throwIfAborted();
+
       const sanitizedContent = content ? String(content).slice(0, 10000) : "";
       const sanitizedMessageId = messageId ? String(messageId).slice(0, 100) : null;
 
-      const validCategories = [
-        "Office Supplies",
-        "Utilities",
-        "Travel",
-        "Meals",
-        "Rent",
-        "Marketing",
-        "Equipment",
-        "Professional Services",
-        "Insurance",
-        "Maintenance",
-        "Communication",
-        "Other",
-      ];
+      const validCategories: string[] = [...VALID_RECEIPT_CATEGORIES];
 
       if (!imageData && !sanitizedContent) {
-        return res.status(400).json({ message: "Missing imageData or content" });
+        return res
+          .status(400)
+          .json({ message: "Missing imageData or content", code: "IMAGE_REQUIRED" });
       }
 
-      const extractionPrompt = `You are an expert accountant specializing in UAE business receipt and invoice processing. Analyze this receipt/invoice image carefully and extract ALL financial data with high precision.
+      // Validate the image from its bytes before it goes to any provider (R05-06/R05-08).
+      let imageDataUrl: string | null = null;
+      if (imageData) {
+        try {
+          const inspected = await waitForStep(inspectUpload(String(imageData)));
+          imageDataUrl = `data:${inspected.mime};base64,${inspected.buffer.toString("base64")}`;
+        } catch (err) {
+          if (err instanceof UploadRejectedError) {
+            return res
+              .status(err.status)
+              .json(
+                err.code === "FILE_TOO_LARGE"
+                  ? sizeErrorBody(req, err.code)
+                  : { message: err.message, code: err.code }
+              );
+          }
+          throw err;
+        }
+      }
 
-Extract the following fields. Be extremely precise with numbers — read every digit carefully:
+      // Monthly AI cap (R05-26): applies before any provider call, local fallbacks stay free.
+      if (anthropic || openai) {
+        try {
+          await waitForStep(assertAiQuota(companyId));
+        } catch (err: unknown) {
+          signal.throwIfAborted();
+          if (errorCode(err) === "AI_QUOTA_EXCEEDED") {
+            return res.status(429).json({
+              message: errorMessage(err),
+              code: "AI_QUOTA_EXCEEDED",
+              usage: errorProperty(err, "detail"),
+            });
+          }
+          throw err;
+        }
+      }
 
-1. merchant: The exact business/supplier name as printed (include LLC, Co., etc.)
-2. date: Transaction date in YYYY-MM-DD format. Check for formats like DD/MM/YYYY, MM-DD-YYYY, written dates (15 Jan 2025), Arabic dates. If not found use today.
-3. invoiceNumber: Invoice/receipt/transaction number or reference (look for "Invoice No", "Receipt No", "Ref", "TRN", "#", bill number, etc.)
-4. subtotal: The amount BEFORE VAT/tax (look for "Subtotal", "Net Amount", "Before Tax", "Excl. VAT"). Number only.
-5. vatPercentage: The VAT/tax rate percentage (default 5 for UAE). Number only.
-6. vatAmount: The exact VAT/tax amount charged (look for "VAT", "Tax Amount", "VAT 5%"). Number only.
-7. total: The FINAL total amount paid including VAT (look for "Total", "Grand Total", "Amount Due", "Total Due", "Net Payable"). This is typically the largest amount. Number only.
-8. currency: Currency code (AED, USD, EUR, etc.). Default AED for UAE receipts.
-9. category: Classify into one of: ${validCategories.join(", ")}
-10. lineItems: Array of items. Each item: { "description": string, "quantity": number, "unitPrice": number, "total": number }
-
-IMPORTANT RULES:
-- The "total" field must be the grand total INCLUDING VAT — the final amount the customer pays
-- If you see only one amount, treat it as the total. Calculate subtotal = total / 1.05 for UAE receipts
-- If subtotal and vatAmount are both found but no total, compute total = subtotal + vatAmount
-- If total and vatAmount are both found but no subtotal, compute subtotal = total - vatAmount
-- For Arabic text: read right-to-left, extract numbers regardless of language
-- Numbers may use commas as thousands separators (1,234.56) — parse correctly
-- Amounts may show as "AED 1,234.56" or "1,234.56 AED" or just "1,234.56"
-- Look for TRN (Tax Registration Number) which indicates a VAT-registered business
-
-Respond ONLY with valid JSON matching this exact structure:
-{
-  "merchant": "string",
-  "date": "YYYY-MM-DD",
-  "invoiceNumber": "string or null",
-  "subtotal": number,
-  "vatPercentage": number,
-  "vatAmount": number,
-  "total": number,
-  "currency": "string",
-  "category": "string",
-  "lineItems": [{"description": "string", "quantity": number, "unitPrice": number, "total": number}],
-  "confidence": number between 0 and 1
-}`;
+      const ocrCtx: AiContext = { companyId, userId, task: "ocr" };
+      const clients: ExtractionClients = { anthropic, openai };
 
       // Helper: post-process AI extraction → run our internal classifier on the
       // merchant. Overrides AI's category if our classifier is more confident
       // (≥ 0.8) — the same threshold as Phase 2's auto-fallback rule.
-      const enrichWithInternalClassifier = async (aiResult: any) => {
+      const enrichWithInternalClassifier = async (aiResult: LooseOcrResult) => {
         try {
-          const merchant = (aiResult?.merchant && String(aiResult.merchant)) || "Unknown Merchant";
+          const merchant =
+            (aiResult?.merchant ? String(aiResult.merchant) : "") || UNKNOWN_RECEIPT_MERCHANT;
           const lineItems = Array.isArray(aiResult?.lineItems)
-            ? aiResult.lineItems.map((li: any) => String(li?.description || ""))
+            ? (aiResult.lineItems as Array<{ description?: unknown } | null>).map((li) => ({
+                description: String(li?.description || ""),
+              }))
             : [];
-          const subtotal = parseFloat(aiResult?.subtotal) || 0;
+          const subtotal = parseFloat(String(aiResult?.subtotal)) || 0;
           const result = await classifyOcrReceipt(companyId, {
             merchant,
             amount: subtotal,
             lineItems,
+            supplierTrn: typeof aiResult?.supplierTrn === "string" ? aiResult.supplierTrn : null,
           });
           // Only override the AI category when our classifier is at-or-above its
           // own confidence threshold. The AI's confidence is on the OCR
           // extraction (numbers/date/total), not the category — so we surface
           // both and let the caller see how the category was determined.
+          aiResult._aiCategory = aiResult.category;
           if (result.confidence >= 0.8 && isStandardCategory(result.category)) {
             aiResult.category = result.category;
           }
@@ -165,26 +245,52 @@ Respond ONLY with valid JSON matching this exact structure:
             method: result.method,
             confidence: result.confidence,
             reason: result.reason,
+            // Agreement is only meaningful when the classifier is deterministic/internal.
+            agreesWithAi:
+              result.method === "openai" ? null : result.category === aiResult._aiCategory,
           };
-        } catch (err: any) {
-          log.warn({ err: err?.message || err }, "Internal classifier enrichment failed");
+        } catch (err: unknown) {
+          log.warn({ err: errorMessage(err) || err }, "Internal classifier enrichment failed");
         }
         return aiResult;
       };
 
-      const respondWithResult = async (result: any, rawText: string, ocrSource: string) => {
+      const respondWithResult = async (
+        result: LooseOcrResult,
+        rawText: string,
+        ocrSource: string
+      ) => {
         result._ocrSource = result._ocrSource || ocrSource;
-        await enrichWithInternalClassifier(result);
+        await waitForStep(enrichWithInternalClassifier(result));
+        let ownTrn: string | null = null;
+        let ownTrnVerified = false;
+        try {
+          const company = await waitForStep(storage.getCompany(companyId));
+          if (company) {
+            ownTrn = company.trnVatNumber ?? null;
+            ownTrnVerified = true;
+          }
+        } catch (err: unknown) {
+          log.warn({ err: errorMessage(err) || err }, "Company TRN lookup for receipt scan failed");
+        }
         return res.json(
-          buildResult(result, rawText, companyId, sanitizedMessageId, validCategories)
+          buildResult(
+            result,
+            rawText,
+            companyId,
+            sanitizedMessageId,
+            validCategories,
+            ownTrn,
+            ownTrnVerified
+          )
         );
       };
 
       let localOcrErrorDetail: string | null = null;
       const tryLocalImageFallback = async (reason: string) => {
-        if (!imageData) return null;
+        if (!imageDataUrl) return null;
         try {
-          const localResult = await extractReceiptWithLocalOcr(String(imageData));
+          const localResult = await waitForStep(extractReceiptWithLocalOcr(imageDataUrl, signal));
           localOcrErrorDetail = null;
           log.warn(
             {
@@ -195,7 +301,8 @@ Respond ONLY with valid JSON matching this exact structure:
             "AI OCR unavailable; used local Tesseract fallback"
           );
           return localResult;
-        } catch (err: any) {
+        } catch (err: unknown) {
+          signal.throwIfAborted();
           localOcrErrorDetail = summarizeOcrProviderError(err);
           log.error({ err: localOcrErrorDetail, reason }, "Local OCR fallback failed");
           return null;
@@ -213,14 +320,12 @@ Respond ONLY with valid JSON matching this exact structure:
           },
           "AI OCR unavailable; used deterministic text parser fallback"
         );
-        return { ...parsed, _ocrSource: "text-parser" };
+        return { ...parsed, _issues: parsed.validationIssues, _ocrSource: "text-parser" };
       };
 
       if (!anthropic && !openai) {
-        log.warn("OCR called with no AI key configured; trying local OCR fallback");
-        const fallback =
-          (await tryLocalImageFallback("no configured AI provider")) ||
-          parseTextFallback("no configured AI provider");
+        log.warn("OCR called with no AI key configured; using the text parser only");
+        const fallback = parseTextFallback("no configured AI provider");
         if (fallback) {
           return respondWithResult(
             fallback,
@@ -231,15 +336,24 @@ Respond ONLY with valid JSON matching this exact structure:
         return res.status(503).json({
           message:
             "OCR service unavailable — AI provider not configured and local OCR fallback could not read the image.",
+          code: "AI_NOT_CONFIGURED",
         });
       }
 
       // Strategy 1: Vision API with image (Anthropic preferred, OpenAI fallback)
-      if (imageData) {
+      if (imageDataUrl) {
         try {
-          const aiResult = await runVisionOCR(imageData, extractionPrompt, anthropic, openai);
+          const aiResult = await waitForStep(runVisionOCR(imageDataUrl, clients, ocrCtx, signal));
           return respondWithResult(aiResult, sanitizedContent, "ai-vision");
-        } catch (visionError: any) {
+        } catch (visionError: unknown) {
+          signal.throwIfAborted();
+          if (errorCode(visionError) === "AI_QUOTA_EXCEEDED") {
+            return res.status(429).json({
+              message: errorMessage(visionError),
+              code: "AI_QUOTA_EXCEEDED",
+              usage: errorProperty(visionError, "detail"),
+            });
+          }
           const provider = describeOcrProviders({ anthropic, openai });
           const detail = summarizeOcrProviderError(visionError);
           log.error({ err: detail, provider }, "Vision OCR failed");
@@ -263,9 +377,17 @@ Respond ONLY with valid JSON matching this exact structure:
       // Strategy 2: Text-based extraction (no image, or vision failed but text given)
       if (sanitizedContent) {
         try {
-          const aiResult = await runTextOCR(sanitizedContent, extractionPrompt, anthropic, openai);
+          const aiResult = await waitForStep(runTextOCR(sanitizedContent, clients, ocrCtx, signal));
           return respondWithResult(aiResult, sanitizedContent, "ai-text");
-        } catch (textError: any) {
+        } catch (textError: unknown) {
+          signal.throwIfAborted();
+          if (errorCode(textError) === "AI_QUOTA_EXCEEDED") {
+            return res.status(429).json({
+              message: errorMessage(textError),
+              code: "AI_QUOTA_EXCEEDED",
+              usage: errorProperty(textError, "detail"),
+            });
+          }
           const provider = describeOcrProviders({ anthropic, openai });
           const detail = summarizeOcrProviderError(textError);
           log.error({ err: detail, provider }, "Text OCR failed");
@@ -279,7 +401,9 @@ Respond ONLY with valid JSON matching this exact structure:
         }
       }
 
-      return res.status(400).json({ message: "Missing imageData or content" });
+      return res
+        .status(400)
+        .json({ message: "Missing imageData or content", code: "IMAGE_REQUIRED" });
     })
   );
 
@@ -295,10 +419,11 @@ Respond ONLY with valid JSON matching this exact structure:
     authMiddleware,
     validate({ body: ocrExportSchema }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { rows, filename } = req.body as z.infer<typeof ocrExportSchema>;
+      const { rows, filename, locale } = req.body as z.infer<typeof ocrExportSchema>;
       const buffer = await buildOcrReceiptsWorkbook(rows as OcrExportRow[], {
         sheetName: "OCR Receipts",
         title: "Muhasib OCR Export",
+        locale,
       });
       const safeName = filename
         ? `${filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80)}.xlsx`
@@ -354,6 +479,7 @@ const ocrExportRowSchema = z.object({
 const ocrExportSchema = z.object({
   rows: z.array(ocrExportRowSchema).min(1, "At least one row is required").max(5000),
   filename: z.string().max(80).optional(),
+  locale: z.enum(["en", "ar"]).optional(),
 });
 
 const genericExportColumnSchema = z.object({
@@ -367,208 +493,157 @@ const genericExportSchema = z.object({
     .array(
       z.object({
         sheetName: z.string().max(80).optional(),
-        columns: z.array(genericExportColumnSchema).min(1).max(100),
-        rows: z.array(z.record(z.unknown())).max(5000),
+        rtl: z.boolean().optional(),
+        columns: z
+          .array(genericExportColumnSchema)
+          .min(1)
+          .max(EXCEL_EXPORT_LIMITS.columnsPerWorksheet),
+        rows: z.array(z.record(z.string(), z.unknown())).max(EXCEL_EXPORT_LIMITS.rowsPerWorksheet),
       })
     )
     .min(1)
-    .max(10),
+    .max(EXCEL_EXPORT_LIMITS.worksheets)
+    .refine((sheets) => excelWorkbookCellCount(sheets) <= EXCEL_EXPORT_LIMITS.renderedCells, {
+      message: "Excel export exceeds the workbook cell limit",
+    }),
   filename: z.string().max(80).optional(),
 });
 
-async function runVisionOCR(
-  imageData: string,
-  prompt: string,
-  anthropic: Anthropic | null,
-  openai: OpenAI | null
-): Promise<any> {
-  // Parse the data URL once for both providers.
-  let base64Data = imageData;
-  let mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp" = "image/jpeg";
-
-  const dataUrlMatch = imageData.match(/^data:([^;]+);base64,(.+)$/s);
-  if (dataUrlMatch) {
-    const mimeType = dataUrlMatch[1];
-    base64Data = dataUrlMatch[2];
-    if (mimeType.includes("png")) mediaType = "image/png";
-    else if (mimeType.includes("webp")) mediaType = "image/webp";
-    else if (mimeType.includes("gif")) mediaType = "image/gif";
-    else mediaType = "image/jpeg";
-  }
-
-  if (anthropic) {
-    try {
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1500,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: { type: "base64", media_type: mediaType, data: base64Data },
-              },
-              { type: "text", text: prompt },
-            ],
-          },
-        ],
-      });
-      const block = response.content[0];
-      if (!block || block.type !== "text") {
-        throw new Error("Unexpected Anthropic response (no text block)");
-      }
-      return extractJson(block.text);
-    } catch (err) {
-      if (!openai) throw err;
-      log.warn(
-        { err: summarizeOcrProviderError(err) },
-        "Anthropic vision OCR failed; trying OpenAI"
-      );
-      const failures: Array<{ provider: "Anthropic" | "OpenAI"; error: unknown }> = [
-        { provider: "Anthropic", error: err },
-      ];
-      try {
-        return await runOpenAiVisionOCR(openai, mediaType, base64Data, prompt);
-      } catch (openaiErr) {
-        failures.push({ provider: "OpenAI", error: openaiErr });
-        throw new Error(formatProviderFailures(failures));
-      }
-    }
-  }
-
-  if (openai) {
-    return runOpenAiVisionOCR(openai, mediaType, base64Data, prompt);
-  }
-
-  throw new Error("No vision client available");
+function parseImageDataUrl(imageData: string): { base64: string; mediaType: string } {
+  const m = imageData.match(/^data:([^;]+);base64,(.+)$/s);
+  return m ? { mediaType: m[1], base64: m[2] } : { mediaType: "image/jpeg", base64: imageData };
 }
 
-async function runOpenAiVisionOCR(
-  openai: OpenAI,
-  mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-  base64Data: string,
-  prompt: string
-): Promise<any> {
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image_url",
-            image_url: { url: `data:${mediaType};base64,${base64Data}`, detail: "high" },
-          },
-          { type: "text", text: prompt },
-        ],
-      },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 1500,
-  });
-  const raw = response.choices[0]?.message?.content;
-  if (!raw) throw new Error("Empty OpenAI response");
-  return JSON.parse(raw);
+/** Classifier note attached to an OCR result by enrichWithInternalClassifier. */
+interface OcrClassifierNote {
+  method: string;
+  confidence: number;
+  reason: string;
+  agreesWithAi: boolean | null;
+}
+
+/**
+ * The loose OCR shape buildResult/enrichment consume: provider (AI) extraction,
+ * deterministic text parsing or local Tesseract output. Field values are not
+ * trusted, so they stay `unknown` and are coerced in buildResult.
+ */
+interface LooseOcrResult {
+  merchant?: unknown;
+  date?: unknown;
+  invoiceNumber?: unknown;
+  subtotal?: unknown;
+  vatAmount?: unknown;
+  vatPercentage?: unknown;
+  total?: unknown;
+  currency?: unknown;
+  category?: unknown;
+  lineItems?: unknown;
+  supplierTrn?: unknown;
+  supplierTrnIssue?: unknown;
+  isTaxInvoice?: unknown;
+  simplifiedInvoice?: unknown;
+  reverseChargeSuggested?: unknown;
+  confidence?: unknown;
+  _issues?: ValidationIssue[];
+  _ocrSource?: string;
+  _provider?: string;
+  _model?: string;
+  _aiCategory?: unknown;
+  _classifier?: OcrClassifierNote;
+}
+
+/** Provider result -> the loose shape buildResult/enrichment consume (+ validation issues). */
+function toAiResult(outcome: Awaited<ReturnType<typeof extractReceipt>>): LooseOcrResult {
+  return {
+    ...outcome.data,
+    _issues: outcome.issues,
+    _ocrSource: "ai",
+    _provider: outcome.provider,
+    _model: outcome.model,
+  };
+}
+
+async function runVisionOCR(
+  imageData: string,
+  clients: ExtractionClients,
+  ctx: AiContext,
+  signal: AbortSignal
+): Promise<LooseOcrResult> {
+  if (!clients.anthropic && !clients.openai) throw new Error("No vision client available");
+  const { base64, mediaType } = parseImageDataUrl(imageData);
+  return toAiResult(
+    await extractReceipt({ clients, input: { kind: "image", base64, mediaType }, ctx, signal })
+  );
 }
 
 async function runTextOCR(
   textContent: string,
-  prompt: string,
-  anthropic: Anthropic | null,
-  openai: OpenAI | null
-): Promise<any> {
-  const userMessage = `Extract receipt data from this OCR text:\n\n${textContent}`;
-
-  if (anthropic) {
-    try {
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1500,
-        system: prompt,
-        messages: [{ role: "user", content: userMessage }],
-      });
-      const block = response.content[0];
-      if (!block || block.type !== "text") {
-        throw new Error("Unexpected Anthropic response (no text block)");
-      }
-      return extractJson(block.text);
-    } catch (err) {
-      if (!openai) throw err;
-      log.warn({ err: summarizeOcrProviderError(err) }, "Anthropic text OCR failed; trying OpenAI");
-      const failures: Array<{ provider: "Anthropic" | "OpenAI"; error: unknown }> = [
-        { provider: "Anthropic", error: err },
-      ];
-      try {
-        return await runOpenAiTextOCR(openai, prompt, userMessage);
-      } catch (openaiErr) {
-        failures.push({ provider: "OpenAI", error: openaiErr });
-        throw new Error(formatProviderFailures(failures));
-      }
-    }
-  }
-
-  if (openai) {
-    return runOpenAiTextOCR(openai, prompt, userMessage);
-  }
-
-  throw new Error("No text client available");
-}
-
-async function runOpenAiTextOCR(openai: OpenAI, prompt: string, userMessage: string): Promise<any> {
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      { role: "system", content: prompt },
-      { role: "user", content: userMessage },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 1500,
-  });
-  const raw = response.choices[0]?.message?.content;
-  if (!raw) throw new Error("Empty OpenAI response");
-  return JSON.parse(raw);
+  clients: ExtractionClients,
+  ctx: AiContext,
+  signal: AbortSignal
+): Promise<LooseOcrResult> {
+  if (!clients.anthropic && !clients.openai) throw new Error("No text client available");
+  return toAiResult(
+    await extractReceipt({ clients, input: { kind: "text", text: textContent }, ctx, signal })
+  );
 }
 
 function buildResult(
-  aiResult: any,
+  aiResult: LooseOcrResult,
   rawText: string,
   companyId: string,
   messageId: string | null,
-  validCategories: string[]
+  validCategories: string[],
+  ownTrn: string | null = null,
+  // False when the company's own TRN could not be loaded: the supplier TRN cannot then be told
+  // apart from the company's own, so it is not accepted (fail closed).
+  ownTrnVerified = true
 ) {
   const subtotal = parseNonNegative(aiResult.subtotal);
   const vatAmount = parseNonNegative(aiResult.vatAmount);
   // Treat null/undefined as missing (default to 5% for UAE); explicit 0 means zero-rated
-  const vatPercentage =
-    aiResult.vatPercentage === null || aiResult.vatPercentage === undefined
-      ? 5
-      : parseNonNegative(aiResult.vatPercentage);
-  let total = parseNonNegative(aiResult.total);
+  const { vatPercentage, rateDefaulted: vatRateDefaulted } = aiVatRate(
+    aiResult.vatAmount,
+    aiResult.vatPercentage
+  );
+  const total = parseNonNegative(aiResult.total);
+  // An explicit VAT 0 next to a printed positive rate with a subtotal/total gap: VAT stays 0 as
+  // read (never upgraded to the rate x subtotal) and the contradiction is raised for review.
+  const printedRate = printedRateWithZeroVat(aiResult.vatAmount, aiResult.vatPercentage);
+  const rateConflict = printedRate !== null && subtotal > 0 && total > subtotal;
 
-  // Reconcile amounts if any are missing
-  if (total === 0 && subtotal > 0) {
-    total = parseFloat((subtotal + vatAmount).toFixed(2));
-  }
-  const derivedSubtotal =
-    subtotal > 0
-      ? subtotal
-      : total > 0
-        ? parseFloat((total / (1 + vatPercentage / 100)).toFixed(2))
-        : 0;
-  const derivedVat =
-    vatAmount > 0 ? vatAmount : parseFloat(((derivedSubtotal * vatPercentage) / 100).toFixed(2));
-  const derivedTotal = total > 0 ? total : parseFloat((derivedSubtotal + derivedVat).toFixed(2));
+  // Reconcile missing amounts in integer fils (half-up) so subtotal + VAT === total exactly.
+  const {
+    subtotal: derivedSubtotal,
+    vatAmount: derivedVat,
+    total: derivedTotal,
+    mismatch: amountsMismatch,
+  } = reconcileReceiptAmounts({
+    subtotal,
+    vatAmount,
+    total,
+    vatPercentage: rateConflict ? 0 : vatPercentage,
+  });
+  const vatDerivedFrom = vatDerivedSource({ subtotal, vatAmount, total, vatPercentage });
+  // Net and gross printed with no VAT line at all: the reconciler reads the gap as VAT, but that is
+  // an assumption, not a printed figure (same rule as normalizeOcrJson on the email path).
+  const vatNotPrinted =
+    aiResult.vatAmount === null || aiResult.vatAmount === undefined || aiResult.vatAmount === "";
+  const vatGapAssumed =
+    !vatDerivedFrom && vatNotPrinted && derivedVat > 0 && subtotal > 0 && total > 0;
 
-  const category = validCategories.includes(aiResult.category) ? aiResult.category : "Other";
+  const category =
+    typeof aiResult.category === "string" && validCategories.includes(aiResult.category)
+      ? aiResult.category
+      : "Other";
 
-  let parsedDate = new Date().toISOString().split("T")[0];
-  if (aiResult.date && /^\d{4}-\d{2}-\d{2}$/.test(aiResult.date)) {
+  let parsedDate = todayDubai();
+  if (typeof aiResult.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(aiResult.date)) {
     parsedDate = aiResult.date;
   }
 
   const lineItems = Array.isArray(aiResult.lineItems)
-    ? aiResult.lineItems.map((item: any) => ({
+    ? (aiResult.lineItems as Array<Record<string, unknown>>).map((item) => ({
         description: String(item.description || "").slice(0, 500),
         quantity: parseNonNegative(item.quantity) || 1,
         unitPrice: parseNonNegative(item.unitPrice),
@@ -576,8 +651,102 @@ function buildResult(
       }))
     : [];
 
+  // A missing model confidence is LOW, never a flattering default (R05-15).
+  const confidence = normalizeModelConfidence(aiResult.confidence);
+
+  // Validation: issues the provider path already found, plus checks on the final reconciled
+  // figures (so deterministic-parser results are checked too).
+  // A note from the raw extraction that the reconciled figures no longer warrant is dropped
+  // (e.g. raw 100 / no VAT / 105 reconciles to 100 / 5 / 105).
+  const issues: ValidationIssue[] = (
+    Array.isArray(aiResult._issues) ? [...aiResult._issues] : []
+  ).filter(
+    (i) => !(i.code === "AMOUNT_MISMATCH" && !amountsMismatch && !isFeeVatAmbiguityIssue(i))
+  );
+  const have = new Set(issues.map((i) => i.code));
+  const finalIssues = sanityCheckReceipt({
+    merchant: aiResult.merchant as string | undefined,
+    date: (aiResult.date as string | null | undefined) ?? null,
+    subtotal: derivedSubtotal,
+    vatAmount: derivedVat,
+    total: derivedTotal,
+    currency: (aiResult.currency as string | null | undefined) ?? null,
+    supplierTrn: (aiResult.supplierTrn as string | null | undefined) ?? null,
+    vatPercentage,
+  });
+  for (const issue of finalIssues) if (!have.has(issue.code)) issues.push(issue);
+  // The figures never silently add up: when the subtotal/total gap is not VAT at the stated rate
+  // (service charge, fee, discount, zero-rated), the user is told. The message is rebuilt from the
+  // final figures so it always matches the form, replacing any note built from the raw extraction.
+  if (amountsMismatch) {
+    const message =
+      rateConflict && printedRate !== null
+        ? vatRateAmountConflictMessage(derivedSubtotal, derivedVat, derivedTotal, printedRate)
+        : amountMismatchMessage(
+            derivedSubtotal,
+            derivedVat,
+            derivedTotal,
+            vatPercentage,
+            hasVatFigure(vatAmount)
+          );
+    const existing = issues.find((i) => i.code === "AMOUNT_MISMATCH");
+    if (existing) existing.message = message;
+    else issues.push({ code: "AMOUNT_MISMATCH", severity: "error", message });
+  }
+  if ((vatDerivedFrom || vatGapAssumed) && !have.has("VAT_DERIVED")) {
+    issues.push({
+      code: "VAT_DERIVED",
+      severity: "warning",
+      message: vatDerivedMessage(
+        derivedVat,
+        vatPercentage,
+        vatDerivedFrom ?? "total",
+        vatRateDefaulted
+      ),
+    });
+  }
+  // VAT read (not derived) with no valid supplier TRN: the reviewer is told before saving, because
+  // saving posts an input-VAT claim and a tax invoice must show the supplier's TRN.
+  // The company's own TRN read as the supplier's counts as no valid supplier TRN. No second note
+  // when VAT_DERIVED already explains why the VAT cannot be trusted.
+  const supplierTrnText = typeof aiResult.supplierTrn === "string" ? aiResult.supplierTrn : null;
+  const supplierTrnUsable =
+    ownTrnVerified && validateUaeTrn(supplierTrnText).valid && !isOwnTrn(supplierTrnText, ownTrn);
+  if (
+    derivedVat > 0 &&
+    !vatDerivedFrom &&
+    !vatGapAssumed &&
+    !supplierTrnUsable &&
+    !have.has("VAT_DERIVED") &&
+    !have.has("VAT_NO_TRN")
+  ) {
+    issues.push({
+      code: "VAT_NO_TRN",
+      severity: "warning",
+      message: vatWithoutTrnMessage(derivedVat),
+    });
+  }
+  if (aiResult.supplierTrnIssue && !have.has("TRN_INVALID")) {
+    issues.push({
+      code: "TRN_INVALID",
+      severity: "warning",
+      message: String(aiResult.supplierTrnIssue),
+    });
+  }
+
+  const classifier = aiResult._classifier || null;
+  const band = deriveConfidenceBand({
+    extractionConfidence: typeof aiResult.confidence === "number" ? aiResult.confidence : undefined,
+    classifierConfidence:
+      classifier && classifier.method !== "openai" ? classifier.confidence : null,
+    classifierAgrees: classifier ? (classifier.agreesWithAi ?? null) : null,
+    issues,
+  });
+
   return {
-    merchant: aiResult.merchant ? String(aiResult.merchant).slice(0, 200) : "Unknown Merchant",
+    merchant: aiResult.merchant
+      ? String(aiResult.merchant).slice(0, 200)
+      : UNKNOWN_RECEIPT_MERCHANT,
     date: parsedDate,
     invoiceNumber: aiResult.invoiceNumber ? String(aiResult.invoiceNumber).slice(0, 100) : null,
     subtotal: derivedSubtotal,
@@ -589,11 +758,17 @@ function buildResult(
     currency: aiResult.currency ? String(aiResult.currency).slice(0, 10) : "AED",
     category,
     lineItems,
-    confidence:
-      typeof aiResult.confidence === "number"
-        ? Math.min(1, Math.max(0, aiResult.confidence))
-        : 0.85,
-    classifier: aiResult._classifier || null,
+    supplierTrn: typeof aiResult.supplierTrn === "string" ? aiResult.supplierTrn : null,
+    isTaxInvoice: Boolean(aiResult.isTaxInvoice),
+    simplifiedInvoice: Boolean(aiResult.simplifiedInvoice),
+    reverseChargeSuggested: Boolean(aiResult.reverseChargeSuggested),
+    confidence,
+    confidenceBand: band.band,
+    confidenceScore: band.score,
+    reviewReasons: band.reasons,
+    reviewReasonCodes: band.reasonCodes,
+    validationIssues: issues,
+    classifier,
     ocrSource: aiResult._ocrSource || "ai",
     rawText,
     companyId,
@@ -601,7 +776,7 @@ function buildResult(
   };
 }
 
-function parseNonNegative(val: any): number {
+function parseNonNegative(val: unknown): number {
   if (val === null || val === undefined) return 0;
   const n = parseFloat(String(val).replace(/,/g, ""));
   return !isNaN(n) && n >= 0 ? n : 0;

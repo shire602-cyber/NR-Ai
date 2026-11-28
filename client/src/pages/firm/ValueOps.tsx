@@ -1,30 +1,30 @@
+import { Money } from "@/components/ui/money";
+import { StatCard } from "@/components/ui/stat-card";
+import { anomalyRuleLabel } from "@/lib/anomaly-rules";
+import { formatDate as formatDisplayDate } from "@/lib/format-date";
+import { valueOpsMessage } from "@/lib/server-message";
+import { useFirmText } from "./portfolio/text";
+import { PracticeNav } from "@/components/firm/PracticeNav";
+import { T } from "@/components/layout/T";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
-  AlertTriangle,
   ArrowRight,
-  Banknote,
-  Bot,
-  BriefcaseBusiness,
   CheckCircle2,
-  ClipboardCheck,
   FileArchive,
-  FileText,
   Gauge,
-  Landmark,
-  MessageCircle,
   PackageOpen,
-  ShieldCheck,
   Sparkles,
   TrendingUp,
-  UploadCloud,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest } from "@/lib/queryClient";
+import type { CopyDescriptor } from "@shared/server-copy";
 
 type Priority = "critical" | "high" | "medium" | "low";
 type ValueLane =
@@ -130,6 +131,8 @@ interface FirmReviewItem {
   title: string;
   explanation: string;
   suggestedAction: string;
+  rule?: string | null;
+  message?: CopyDescriptor | null;
   confidence: number;
   amountAed: number;
   dueDate: string | null;
@@ -188,58 +191,45 @@ interface ClientCfoPack {
   nextActions: string[];
 }
 
-const laneConfig: Record<ValueLane, { label: string; icon: typeof ShieldCheck }> = {
-  audit_defense: { label: "Audit defense", icon: ShieldCheck },
-  bank_close: { label: "Bank close", icon: Landmark },
-  penalty_prevention: { label: "Penalty prevention", icon: AlertTriangle },
-  cash_recovery: { label: "Cash recovery", icon: Banknote },
-  nra_profitability: { label: "NRA profitability", icon: BriefcaseBusiness },
-  compliance_risk: { label: "Compliance risk", icon: ClipboardCheck },
-  ai_review: { label: "AI review", icon: Bot },
-  whatsapp_cockpit: { label: "WhatsApp cockpit", icon: MessageCircle },
-  monthly_cfo_pack: { label: "CFO pack", icon: FileText },
-  migration_concierge: { label: "Migration concierge", icon: UploadCloud },
-};
+const LANES: ValueLane[] = [
+  "audit_defense",
+  "bank_close",
+  "penalty_prevention",
+  "cash_recovery",
+  "nra_profitability",
+  "compliance_risk",
+  "ai_review",
+  "whatsapp_cockpit",
+  "monthly_cfo_pack",
+  "migration_concierge",
+];
 
-const reviewKindConfig: Record<ReviewItemKind, { label: string; icon: typeof ShieldCheck }> = {
-  bank_match: { label: "Bank match", icon: Landmark },
-  receipt_posting: { label: "Receipt posting", icon: FileText },
-  anomaly: { label: "Anomaly", icon: AlertTriangle },
-  vat_review: { label: "VAT review", icon: ClipboardCheck },
-  trial_balance: { label: "Trial balance", icon: Gauge },
-  document_request: { label: "Document request", icon: MessageCircle },
-};
-
-function formatAed(value: number): string {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency: "AED",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value || 0);
-}
-
-function formatDate(value: string | null | undefined): string {
-  if (!value) return "—";
-  return new Intl.DateTimeFormat("en-AE", { dateStyle: "medium" }).format(new Date(value));
-}
+const laneKey = (lane: ValueLane) => `firmOps.lane_${lane}`;
+const reviewKindKey = (kind: ReviewItemKind) => `firmOps.reviewKind_${kind}`;
 
 function formatPercent(value: number): string {
   return `${Math.round((value || 0) * 100)}%`;
 }
 
+// Spec 2.3/3.17: subtle pills, translated label (never the raw enum).
 function priorityClass(priority: Priority): string {
   switch (priority) {
     case "critical":
-      return "bg-danger-subtle text-danger-subtle-foreground border-destructive/30";
     case "high":
-      return "bg-warning-subtle text-warning-subtle-foreground border-warning/30";
+      return "border-transparent bg-danger-subtle text-danger-subtle-foreground";
     case "medium":
-      return "bg-warning-subtle text-warning-subtle-foreground border-warning/30";
-    case "low":
-      return "bg-muted text-foreground border-border";
+      return "border-transparent bg-warning-subtle text-warning-subtle-foreground";
+    default:
+      return "border-transparent bg-neutral-subtle text-neutral-subtle-foreground";
   }
 }
+
+const PRIORITY_LABEL: Record<Priority, string> = {
+  critical: "firmOps.priorityCritical",
+  high: "firmOps.priorityHigh",
+  medium: "firmOps.priorityMedium",
+  low: "firmOps.priorityLow",
+};
 
 function evidenceClass(status: ClientAuditPack["evidence"][number]["status"]): string {
   switch (status) {
@@ -274,30 +264,25 @@ function ScoreBar({
   );
 }
 
-function MetricCard({
-  title,
-  value,
-  icon: Icon,
-}: {
-  title: string;
-  value: string;
-  icon: typeof Gauge;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-semibold tracking-tight">{value}</div>
-      </CardContent>
-    </Card>
-  );
+/** Everything the page needs to turn a server sentence into the reader's language. */
+function useValueOpsText() {
+  const { t, locale } = useTranslation();
+  const { status } = useFirmText();
+  return {
+    t,
+    locale,
+    /** Action / review / audit-pack sentence from the API. */
+    vo: (text: string | null | undefined) => valueOpsMessage(text, t, locale, status),
+    date: (value: string | null | undefined) => (value ? formatDisplayDate(value, locale) : "—"),
+    client: (name: string) => (name === "Unknown client" ? t["firmOps.unassigned"] : name),
+  };
 }
 
 export default function ValueOps() {
+  const { t, locale, vo, date, client: clientName } = useValueOpsText();
   const [location, navigate] = useLocation();
+  const [tab, setTab] = useState("programmes");
+  const [lane, setLane] = useState<ValueLane | null>(null);
   const [selectedPack, setSelectedPack] = useState<{
     companyId: string;
     type: "audit" | "cfo";
@@ -311,11 +296,14 @@ export default function ValueOps() {
     queryKey: ["/api/firm/value-ops/review-queue"],
   });
 
-  useEffect(() => {
+  // Open the audit pack for a `?client=` deep link whenever the location changes.
+  const [packLocation, setPackLocation] = useState<string | null>(null);
+  if (packLocation !== location) {
+    setPackLocation(location);
     const [, queryString] = location.split("?");
     const client = new URLSearchParams(queryString ?? "").get("client");
     if (client) setSelectedPack({ companyId: client, type: "audit" });
-  }, [location]);
+  }
 
   const selectedClient = useMemo(
     () =>
@@ -343,8 +331,8 @@ export default function ValueOps() {
   if (dashboardQuery.isLoading) {
     return (
       <div className="flex min-h-[320px] items-center justify-center text-muted-foreground">
-        <Sparkles className="mr-2 h-5 w-5 animate-pulse" />
-        Loading value operations...
+        <Sparkles className="me-2 h-5 w-5 animate-pulse" />
+        <T k="pages.loadingValueOperations" />
       </div>
     );
   }
@@ -352,145 +340,203 @@ export default function ValueOps() {
   if (dashboardQuery.isError || !data) {
     return (
       <div className="rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm text-danger-subtle-foreground">
-        Value operations could not be loaded.
+        <T k="pages.valueOperationsCouldNotBeLoaded" />
       </div>
     );
   }
 
+  // A programme row opens its open actions; the server sends one opportunity row per lane.
+  const programmes = LANES.map((id) => data.opportunities.find((o) => o.lane === id)).filter(
+    (o): o is ValueOpsOpportunity => !!o
+  );
+  const visibleActions = lane ? data.actions.filter((a) => a.lane === lane) : data.actions;
+  const openProgramme = (id: ValueLane) => {
+    setLane(id);
+    setTab("actions");
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Firm"
-        title="Value Ops"
-        description="NRA-wide cash, compliance, close, review, and client reporting queue."
+        eyebrow={t["firm.firmLabel"]}
+        title={t["firm.valueOpsTitle"]}
+        description={t["firm.valueOpsDescription"]}
         actions={
           <Button variant="outline" onClick={() => dashboardQuery.refetch()}>
-            <Gauge className="mr-2 h-4 w-4" />
-            Refresh
+            <Gauge className="me-2 h-4 w-4" />
+            <T k="pages.refresh" />
           </Button>
         }
       />
+      <PracticeNav />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          title="Cash at risk"
-          value={formatAed(data.summary.cashAtRisk)}
-          icon={Banknote}
+        <StatCard
+          label={t["firm.valueOpsCashAtRisk"]}
+          value={<Money amount={data.summary.cashAtRisk} currency="AED" />}
         />
-        <MetricCard
-          title="Penalty-risk clients"
-          value={`${data.summary.penaltyRiskClients}`}
-          icon={AlertTriangle}
+        <StatCard
+          label={t["firm.valueOpsPenaltyRiskClients"]}
+          value={data.summary.penaltyRiskClients}
         />
-        <MetricCard
-          title="Reviewer queue"
-          value={`${data.summary.reviewerQueueItems}`}
-          icon={Bot}
-        />
-        <MetricCard
-          title="NRA service AR"
-          value={formatAed(data.summary.nraServiceAr)}
-          icon={BriefcaseBusiness}
+        <StatCard label={t["firm.valueOpsReviewerQueue"]} value={data.summary.reviewerQueueItems} />
+        <StatCard
+          label={t["firm.valueOpsServiceAr"]}
+          value={<Money amount={data.summary.nraServiceAr} currency="AED" />}
         />
       </div>
 
-      <Tabs defaultValue="board" className="space-y-4">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="board">Board</TabsTrigger>
-          <TabsTrigger value="review">AI review</TabsTrigger>
-          <TabsTrigger value="actions">Actions</TabsTrigger>
-          <TabsTrigger value="clients">Clients</TabsTrigger>
+          <TabsTrigger value="programmes">{t["firmOps.tabProgrammes"]}</TabsTrigger>
+          <TabsTrigger value="review">
+            <T k="pages.aiReview" />
+          </TabsTrigger>
+          <TabsTrigger value="actions">
+            <T k="pages.actions" />
+          </TabsTrigger>
+          <TabsTrigger value="clients">
+            <T k="pages.clients" />
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="board" className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {data.opportunities.map((opportunity) => {
-              const Icon = laneConfig[opportunity.lane].icon;
-              return (
-                <Card key={opportunity.lane}>
-                  <CardHeader className="space-y-0 pb-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <CardTitle className="text-sm leading-snug">{opportunity.title}</CardTitle>
-                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="text-2xl font-semibold">{opportunity.valueMetric}</div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{opportunity.count} open</span>
-                      <span>{formatAed(opportunity.impactAed)}</span>
-                    </div>
-                    <div className="min-h-5 truncate text-xs text-muted-foreground">
-                      {opportunity.topClient ?? "No priority client"}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+        <TabsContent value="programmes">
+          <Card>
+            <CardHeader>
+              <CardDescription>{t["firmOps.programmesHint"]}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table data-testid="value-ops-programmes">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t["firmOps.colProgramme"]}</TableHead>
+                    <TableHead data-numeric>{t["firmOps.colOpenItems"]}</TableHead>
+                    <TableHead data-numeric>{t["firmOps.colValueAtStake"]}</TableHead>
+                    <TableHead>{t["firmOps.colNextClient"]}</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {programmes.map((programme) => (
+                    <TableRow
+                      key={programme.lane}
+                      className="cursor-pointer"
+                      onClick={() => openProgramme(programme.lane)}
+                      data-testid={`value-ops-programme-${programme.lane}`}
+                    >
+                      <TableCell className="font-medium">
+                        <button
+                          type="button"
+                          className="text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openProgramme(programme.lane);
+                          }}
+                        >
+                          {t[laneKey(programme.lane)]}
+                        </button>
+                      </TableCell>
+                      <TableCell data-numeric>{programme.count}</TableCell>
+                      <TableCell data-numeric>
+                        {programme.impactAed > 0 ? (
+                          <Money amount={programme.impactAed} currency="AED" />
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {programme.topClient ? (
+                          <span translate="no">{programme.topClient}</span>
+                        ) : (
+                          t["firmOps.unassigned"]
+                        )}
+                      </TableCell>
+                      <TableCell data-numeric>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground rtl:rotate-180" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="review">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">AI Reviewer Queue</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pages.aiReviewerQueue" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Why it needs review</TableHead>
-                    <TableHead className="text-right">Confidence</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Due</TableHead>
+                    <TableHead>
+                      <T k="pages.priority" />
+                    </TableHead>
+                    <TableHead>{t["firmOps.colType"]}</TableHead>
+                    <TableHead>
+                      <T k="pages.client" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.whyItNeedsReview" />
+                    </TableHead>
+                    <TableHead data-numeric>
+                      <T k="pages.confidence" />
+                    </TableHead>
+                    <TableHead data-numeric>
+                      <T k="pages.amount" />
+                    </TableHead>
+                    <TableHead>{t["firmOps.colDue"]}</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(reviewQueueQuery.data ?? []).map((item) => {
-                    const config = reviewKindConfig[item.kind];
-                    const Icon = config.icon;
-                    return (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <Badge className={priorityClass(item.priority)}>{item.priority}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Icon className="h-4 w-4 text-muted-foreground" />
-                            <span>{config.label}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-medium">{item.companyName}</TableCell>
-                        <TableCell>
-                          <div className="font-medium">{item.title}</div>
-                          <div className="text-xs text-muted-foreground">{item.explanation}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {item.suggestedAction}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatPercent(item.confidence)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {item.amountAed > 0 ? formatAed(item.amountAed) : "—"}
-                        </TableCell>
-                        <TableCell>{formatDate(item.dueDate)}</TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" onClick={() => navigate(item.href)}>
-                            Review <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {(reviewQueueQuery.data ?? []).map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <Badge className={priorityClass(item.priority)}>
+                          <T k={PRIORITY_LABEL[item.priority] ?? PRIORITY_LABEL.low} />
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{t[reviewKindKey(item.kind)]}</TableCell>
+                      <TableCell className="font-medium">
+                        <span translate="no">{clientName(item.companyName)}</span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium">
+                          {item.kind === "anomaly" && item.rule
+                            ? anomalyRuleLabel(item.rule, locale)
+                            : vo(item.title)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{vo(item.explanation)}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {vo(item.suggestedAction)}
+                        </div>
+                      </TableCell>
+                      <TableCell data-numeric>{formatPercent(item.confidence)}</TableCell>
+                      <TableCell data-numeric>
+                        {item.amountAed > 0 ? (
+                          <Money amount={item.amountAed} currency="AED" />
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                      <TableCell>{date(item.dueDate)}</TableCell>
+                      <TableCell data-numeric>
+                        <Button variant="ghost" size="sm" onClick={() => navigate(item.href)}>
+                          <T k="pages.review" />{" "}
+                          <ArrowRight className="ms-1 h-3.5 w-3.5 rtl:rotate-180" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                   {(reviewQueueQuery.data ?? []).length === 0 && !reviewQueueQuery.isLoading && (
                     <TableRow>
                       <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                        No reviewer exceptions right now.
+                        <T k="pages.noReviewerExceptionsRightNow" />
                       </TableCell>
                     </TableRow>
                   )}
@@ -502,45 +548,68 @@ export default function ValueOps() {
 
         <TabsContent value="actions">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Priority Actions</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+              <CardTitle className="text-base">
+                <T k="pages.priorityActions" />
+              </CardTitle>
+              {lane && (
+                <Button variant="outline" size="sm" onClick={() => setLane(null)}>
+                  {formatMessage(t["firmOps.programmeFilter"], { name: t[laneKey(lane)] })}
+                  <X className="ms-2 h-3.5 w-3.5" aria-hidden />
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Lane</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead className="text-right">AED impact</TableHead>
+                    <TableHead>
+                      <T k="pages.priority" />
+                    </TableHead>
+                    <TableHead>{t["firmOps.colProgramme"]}</TableHead>
+                    <TableHead>
+                      <T k="pages.client" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.action" />
+                    </TableHead>
+                    <TableHead data-numeric>
+                      <T k="pages.aedImpact" />
+                    </TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.actions.map((action) => (
+                  {visibleActions.map((action) => (
                     <TableRow key={action.id}>
                       <TableCell>
-                        <Badge className={priorityClass(action.priority)}>{action.priority}</Badge>
+                        <Badge className={priorityClass(action.priority)}>
+                          <T k={PRIORITY_LABEL[action.priority] ?? PRIORITY_LABEL.low} />
+                        </Badge>
                       </TableCell>
-                      <TableCell>{laneConfig[action.lane].label}</TableCell>
-                      <TableCell className="font-medium">{action.companyName}</TableCell>
+                      <TableCell>{t[laneKey(action.lane)]}</TableCell>
+                      <TableCell className="font-medium">
+                        <span translate="no">{clientName(action.companyName)}</span>
+                      </TableCell>
                       <TableCell>
-                        <div className="font-medium">{action.title}</div>
-                        <div className="text-xs text-muted-foreground">{action.detail}</div>
+                        <div className="font-medium">{vo(action.title)}</div>
+                        <div className="text-xs text-muted-foreground">{vo(action.detail)}</div>
                       </TableCell>
-                      <TableCell className="text-right">{formatAed(action.impactAed)}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell data-numeric>
+                        <Money amount={action.impactAed} currency="AED" />
+                      </TableCell>
+                      <TableCell data-numeric>
                         <Button variant="ghost" size="sm" onClick={() => navigate(action.href)}>
-                          Open <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                          <T k="pages.open" />
+                          <ArrowRight className="ms-1 h-3.5 w-3.5 rtl:rotate-180" />
                         </Button>
                       </TableCell>
                     </TableRow>
                   ))}
-                  {data.actions.length === 0 && (
+                  {visibleActions.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                        No priority actions.
+                        <T k="pages.noPriorityActions" />
                       </TableCell>
                     </TableRow>
                   )}
@@ -553,18 +622,30 @@ export default function ValueOps() {
         <TabsContent value="clients">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Client Value Scorecards</CardTitle>
+              <CardTitle className="text-base">
+                <T k="pages.clientValueScorecards" />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Audit</TableHead>
-                    <TableHead>Close</TableHead>
-                    <TableHead>Risk</TableHead>
-                    <TableHead className="text-right">Overdue AR</TableHead>
-                    <TableHead className="text-right">Review items</TableHead>
+                    <TableHead>
+                      <T k="pages.client" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.audit" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.close" />
+                    </TableHead>
+                    <TableHead>{t["firmOps.colRisk"]}</TableHead>
+                    <TableHead data-numeric>
+                      <T k="pages.overdueAr" />
+                    </TableHead>
+                    <TableHead data-numeric>
+                      <T k="pages.reviewItems" />
+                    </TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
@@ -572,26 +653,37 @@ export default function ValueOps() {
                   {data.clients.map((client) => (
                     <TableRow key={client.companyId}>
                       <TableCell>
-                        <div className="font-medium">{client.companyName}</div>
+                        <div className="font-medium" translate="no">
+                          {client.companyName}
+                        </div>
                         <div className="text-xs text-muted-foreground">
-                          {client.trn ?? "No TRN"}
+                          {client.trn ?? t["firm.valueOpsNoTrn"]}
                         </div>
                       </TableCell>
                       <TableCell className="min-w-[140px]">
-                        <ScoreBar label="Defense" value={client.scores.auditDefense} inverse />
+                        <ScoreBar
+                          label={t["firm.valueOpsScoreDefense"]}
+                          value={client.scores.auditDefense}
+                          inverse
+                        />
                       </TableCell>
                       <TableCell className="min-w-[140px]">
-                        <ScoreBar label="Readiness" value={client.scores.closeReadiness} inverse />
+                        <ScoreBar
+                          label={t["components.srv.firm.label.readiness"]}
+                          value={client.scores.closeReadiness}
+                          inverse
+                        />
                       </TableCell>
                       <TableCell className="min-w-[140px]">
-                        <ScoreBar label="Compliance" value={client.scores.complianceRisk} />
+                        <ScoreBar
+                          label={t["pageLabels.compliance"]}
+                          value={client.scores.complianceRisk}
+                        />
                       </TableCell>
-                      <TableCell className="text-right">
-                        {formatAed(client.money.overdueAr)}
+                      <TableCell data-numeric>
+                        <Money amount={client.money.overdueAr} currency="AED" />
                       </TableCell>
-                      <TableCell className="text-right">
-                        {client.workload.reviewerQueueItems}
-                      </TableCell>
+                      <TableCell data-numeric>{client.workload.reviewerQueueItems}</TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">
                           <Button
@@ -601,8 +693,8 @@ export default function ValueOps() {
                               setSelectedPack({ companyId: client.companyId, type: "audit" })
                             }
                           >
-                            <FileArchive className="mr-1 h-4 w-4" />
-                            Audit
+                            <FileArchive className="me-1 h-4 w-4" />
+                            <T k="pages.audit" />
                           </Button>
                           <Button
                             variant="ghost"
@@ -611,8 +703,8 @@ export default function ValueOps() {
                               setSelectedPack({ companyId: client.companyId, type: "cfo" })
                             }
                           >
-                            <PackageOpen className="mr-1 h-4 w-4" />
-                            CFO
+                            <PackageOpen className="me-1 h-4 w-4" />
+                            {t["firmOps.cfoPackShort"]}
                           </Button>
                         </div>
                       </TableCell>
@@ -621,7 +713,7 @@ export default function ValueOps() {
                   {data.clients.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                        No managed clients.
+                        <T k="pages.noManagedClients" />
                       </TableCell>
                     </TableRow>
                   )}
@@ -636,8 +728,11 @@ export default function ValueOps() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>
-              {selectedPack?.type === "audit" ? "Audit Defense Pack" : "Monthly CFO Pack"}
-              {selectedClient ? ` · ${selectedClient.companyName}` : ""}
+              {selectedPack?.type === "audit"
+                ? t["firm.valueOpsAuditPack"]
+                : t["firm.valueOpsCfoPack"]}
+              {selectedClient ? " · " : ""}
+              {selectedClient ? <span translate="no">{selectedClient.companyName}</span> : null}
             </DialogTitle>
           </DialogHeader>
 
@@ -653,26 +748,52 @@ export default function ValueOps() {
   );
 }
 
+const EVIDENCE_LABEL: Record<ClientAuditPack["evidence"][number]["status"], string> = {
+  ready: "firmOps.evidenceReady",
+  attention: "firmOps.evidenceAttention",
+  missing: "firmOps.evidenceMissing",
+};
+
 function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boolean }) {
+  const { t, vo, date } = useValueOpsText();
+  const { status } = useFirmText();
   if (loading)
-    return <div className="py-10 text-center text-muted-foreground">Loading pack...</div>;
+    return (
+      <div className="py-10 text-center text-muted-foreground">
+        <T k="pages.loadingPack" />
+      </div>
+    );
   if (!pack)
-    return <div className="py-10 text-center text-muted-foreground">No pack available.</div>;
+    return (
+      <div className="py-10 text-center text-muted-foreground">
+        <T k="pages.noPackAvailable" />
+      </div>
+    );
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">VAT status</div>
-          <div className="font-medium">{pack.vatReturn?.status ?? "No return"}</div>
+          <div className="text-xs text-muted-foreground">
+            <T k="pages.vatStatus" />
+          </div>
+          <div className="font-medium">
+            {pack.vatReturn ? status(pack.vatReturn.status) : t["firm.valueOpsNoReturn"]}
+          </div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Due date</div>
-          <div className="font-medium">{formatDate(pack.vatReturn?.dueDate)}</div>
+          <div className="text-xs text-muted-foreground">
+            <T k="pages.dueDate2" />
+          </div>
+          <div className="font-medium">{date(pack.vatReturn?.dueDate)}</div>
         </div>
         <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Payable tax</div>
-          <div className="font-medium">{formatAed(pack.vatReturn?.payableTax ?? 0)}</div>
+          <div className="text-xs text-muted-foreground">
+            <T k="pages.payableTax" />
+          </div>
+          <div className="font-medium">
+            <Money amount={pack.vatReturn?.payableTax ?? 0} currency="AED" />
+          </div>
         </div>
       </div>
 
@@ -683,11 +804,11 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
             className="flex items-start justify-between gap-3 rounded-md border p-3"
           >
             <div>
-              <div className="font-medium">{item.label}</div>
-              <div className="text-sm text-muted-foreground">{item.detail}</div>
+              <div className="font-medium">{vo(item.label)}</div>
+              <div className="text-sm text-muted-foreground">{vo(item.detail)}</div>
             </div>
             <Badge className={evidenceClass(item.status)}>
-              {item.status} · {item.count}
+              {t[EVIDENCE_LABEL[item.status]]} · {item.count}
             </Badge>
           </div>
         ))}
@@ -695,18 +816,24 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
 
       {pack.reviewerNotes.length > 0 && (
         <div className="rounded-md border border-warning/30 bg-warning-subtle p-3">
-          <div className="mb-2 font-medium text-warning-subtle-foreground">Reviewer notes</div>
+          <div className="mb-2 font-medium text-warning-subtle-foreground">
+            <T k="pages.reviewerNotes" />
+          </div>
           <ul className="space-y-1 text-sm text-warning-subtle-foreground">
-            {pack.reviewerNotes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
+            {pack.reviewerNotes.map((note) => {
+              // "<label>: <detail>" as the server composes it; each half has its own sentence.
+              const at = note.indexOf(": ");
+              const text =
+                at > 0 ? `${vo(note.slice(0, at))}: ${vo(note.slice(at + 2))}` : vo(note);
+              return <li key={note}>{text}</li>;
+            })}
           </ul>
         </div>
       )}
       {pack.reviewerNotes.length === 0 && (
         <div className="flex items-center gap-2 rounded-md border border-success/30 bg-success-subtle p-3 text-sm text-success-subtle-foreground">
           <CheckCircle2 className="h-4 w-4" />
-          Evidence pack is ready for reviewer sign-off.
+          <T k="pages.evidencePackIsReadyForReviewerSignOff" />
         </div>
       )}
     </div>
@@ -714,62 +841,66 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
 }
 
 function CfoPackView({ pack, loading }: { pack?: ClientCfoPack; loading: boolean }) {
+  const { t, vo } = useValueOpsText();
   if (loading)
-    return <div className="py-10 text-center text-muted-foreground">Loading pack...</div>;
+    return (
+      <div className="py-10 text-center text-muted-foreground">
+        <T k="pages.loadingPack" />
+      </div>
+    );
   if (!pack)
-    return <div className="py-10 text-center text-muted-foreground">No pack available.</div>;
+    return (
+      <div className="py-10 text-center text-muted-foreground">
+        <T k="pages.noPackAvailable" />
+      </div>
+    );
+
+  const metric = (label: string, amount: number) => (
+    <div className="rounded-md border p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="font-medium">
+        <Money amount={amount} currency="AED" />
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Revenue</div>
-          <div className="font-medium">{formatAed(pack.metrics.revenue)}</div>
-        </div>
-        <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Expenses</div>
-          <div className="font-medium">{formatAed(pack.metrics.expenses)}</div>
-        </div>
-        <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Net</div>
-          <div className="font-medium">{formatAed(pack.metrics.net)}</div>
-        </div>
-        <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Open AR</div>
-          <div className="font-medium">{formatAed(pack.metrics.openAr)}</div>
-        </div>
-        <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">Overdue AR</div>
-          <div className="font-medium">{formatAed(pack.metrics.overdueAr)}</div>
-        </div>
-        <div className="rounded-md border p-3">
-          <div className="text-xs text-muted-foreground">VAT payable</div>
-          <div className="font-medium">{formatAed(pack.metrics.vatPayable)}</div>
-        </div>
+        {metric(t["pages.revenue"], pack.metrics.revenue)}
+        {metric(t["pages.expenses"], pack.metrics.expenses)}
+        {metric(t["firmOps.net"], pack.metrics.net)}
+        {metric(t["pages.openAr"], pack.metrics.openAr)}
+        {metric(t["pages.overdueAr"], pack.metrics.overdueAr)}
+        {metric(t["pages.vatPayable2"], pack.metrics.vatPayable)}
       </div>
 
       <div className="rounded-md border p-3">
         <div className="mb-2 flex items-center gap-2 font-medium">
           <TrendingUp className="h-4 w-4" />
-          Narrative
+          <T k="pages.narrative" />
         </div>
         <ul className="space-y-2 text-sm text-muted-foreground">
           {pack.narrative.map((line) => (
-            <li key={line}>{line}</li>
+            <li key={line}>{vo(line)}</li>
           ))}
         </ul>
       </div>
 
       <div className="rounded-md border p-3">
-        <div className="mb-2 font-medium">Next actions</div>
+        <div className="mb-2 font-medium">
+          <T k="pages.nextActions" />
+        </div>
         {pack.nextActions.length > 0 ? (
           <ul className="space-y-2 text-sm text-muted-foreground">
             {pack.nextActions.map((line) => (
-              <li key={line}>{line}</li>
+              <li key={line}>{vo(line)}</li>
             ))}
           </ul>
         ) : (
-          <div className="text-sm text-muted-foreground">No immediate actions.</div>
+          <div className="text-sm text-muted-foreground">
+            <T k="pages.noImmediateActions" />
+          </div>
         )}
       </div>
     </div>

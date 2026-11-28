@@ -1,132 +1,358 @@
 import type { Express, Request, Response } from "express";
+import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
+import { withLedgerTx, type LedgerTx } from "../ledger";
+import { ledgerQueryable } from "../ledger/tx";
+import { DomainError } from "../errors";
+import { strictBody } from "../http/strict-body";
+import { zText, zUuid } from "../../shared/validators/primitives";
 import {
-  getCloseChecklist,
-  generateClosingEntries,
-  lockPeriod,
-  unlockPeriod,
-  listLockedPeriods,
+  CLOSE_STEP_KEYS,
   aiValidation,
+  assertFiscalYearEnd,
+  closeFiscalYear,
+  createReopenRequest,
+  decideReopenRequest,
+  getChecklistWithSignOffs,
+  getReopenRequest,
+  listReopenRequests,
+  signOffStep,
+  withdrawStepSignOff,
+  type CloseStepKey,
+  generateClosingEntries,
   getCloseHistory,
+  getCloseSettings,
+  listFiscalYearCloses,
+  listLockedPeriods,
+  lockPeriod,
+  reopenFiscalYear,
+  unlockPeriod,
+  updateCloseSettings,
+  type ChecklistItem,
 } from "../services/month-end.service";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
+import {
+  assertNotInHardClosedYear,
+  canManageClose,
+  getLockThroughDate,
+  isFirmOrAdmin,
+  lockPeriodPolicy,
+  resolveCloseActor,
+  type CloseActor,
+} from "../services/period-lock.service";
+import { fiscalYearStart, loadCompany, monthEnd, monthStart, parseReportDate } from "../reporting";
+import { todayDubai } from "@shared/accounting-date";
+import { assertDifferentActor, companyHasSingleMember } from "../middleware/companyRolePolicy";
+
+function parseStepKey(raw: unknown): CloseStepKey {
+  if (typeof raw === "string" && (CLOSE_STEP_KEYS as readonly string[]).includes(raw)) {
+    return raw as CloseStepKey;
+  }
+  throw new DomainError("UNKNOWN_CLOSE_STEP", 404, undefined, "Unknown close step");
+}
+
+const signOffBody = z.object({ period: z.string().max(20), note: zText(500).optional() });
+const reopenRequestBody = z.object({
+  periodEnd: z.unknown().optional(),
+  reason: zText(500, { min: 3 }),
+});
+const reopenDecisionBody = z.object({ note: zText(500).optional() });
+
+/** Derive periodStart and periodEnd from a YYYY-MM value; 400 on garbage (R08-11). */
+function parsePeriod(period: unknown): { periodStart: string; periodEnd: string } {
+  const raw = typeof period === "string" ? period.trim() : "";
+  const m = /^(\d{4})-(\d{2})$/.exec(raw);
+  const month = m ? Number(m[2]) : 0;
+  if (!m || month < 1 || month > 12) {
+    throw new DomainError(
+      "INVALID_PERIOD",
+      400,
+      { period: raw.slice(0, 20) },
+      "period must be YYYY-MM"
+    );
+  }
+  const periodStart = `${m[1]}-${m[2]}-01`;
+  return { periodStart, periodEnd: monthEnd(periodStart) };
+}
+
+async function requireAccess(req: Request, companyId: string): Promise<void> {
+  const hasAccess = await storage.hasCompanyAccess(req.user!.id, companyId);
+  if (!hasAccess) throw new DomainError("ACCESS_DENIED", 403, undefined, "Access denied");
+}
+
+async function requireCloseRole(req: Request, companyId: string): Promise<CloseActor> {
+  await requireAccess(req, companyId);
+  const actor = await resolveCloseActor(companyId, req.user!);
+  if (!canManageClose(actor)) {
+    throw new DomainError(
+      "CLOSE_ROLE_REQUIRED",
+      403,
+      undefined,
+      "Only an owner, admin or accountant can lock or close periods"
+    );
+  }
+  return actor;
+}
 
 /**
- * Derive periodStart and periodEnd from a YYYY-MM query parameter.
+ * R08-05: locking requires the close checklist to pass, or an explicit
+ * override with a reason (recorded on the lock and in the audit log).
  */
-function parsePeriod(period: string): { periodStart: string; periodEnd: string } {
-  const [year, month] = period.split("-").map(Number);
-  if (!year || !month || month < 1 || month > 12) {
-    throw new Error("Invalid period format. Use YYYY-MM.");
+async function enforceChecklist(
+  companyId: string,
+  periodEnd: string,
+  override: { overrideChecklist?: boolean; reason?: string | null },
+  tx: LedgerTx
+): Promise<{ checklist: ChecklistItem[]; overridden: boolean }> {
+  const settings = await getCloseSettings(companyId, ledgerQueryable(tx));
+  // W4-A: a judgment step signed off by a preparer counts as complete.
+  const checklist = await getChecklistWithSignOffs(companyId, monthStart(periodEnd), periodEnd, tx);
+  const incomplete = checklist.filter((c) => (c.effectiveStatus ?? c.status) !== "complete");
+  if (!settings.requireChecklistToLock || incomplete.length === 0) {
+    return { checklist, overridden: false };
   }
-  const periodStart = `${year}-${String(month).padStart(2, "0")}-01`;
-  // Last day of the month
-  const lastDay = new Date(year, month, 0).getDate();
-  const periodEnd = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-  return { periodStart, periodEnd };
+  if (!override.overrideChecklist) {
+    throw new DomainError(
+      "CLOSE_CHECKLIST_INCOMPLETE",
+      422,
+      { incomplete: incomplete.map((c) => ({ id: c.id, title: c.title, details: c.details })) },
+      `Close checklist incomplete: ${incomplete.length} item(s) outstanding. Complete them or override with a reason.`
+    );
+  }
+  if (!override.reason || override.reason.trim().length < 3) {
+    throw new DomainError(
+      "OVERRIDE_REASON_REQUIRED",
+      400,
+      undefined,
+      "A reason is required to override the close checklist"
+    );
+  }
+  return { checklist, overridden: true };
+}
+
+const zReason = zText(500, { min: 3 });
+
+const closingEntriesBody = z.object({
+  periodStart: z.unknown().optional(),
+  periodEnd: z.unknown().optional(),
+});
+
+const lockBody = z.object({
+  periodEnd: z.unknown().optional(),
+  lockType: z.enum(["soft", "hard"]).optional(),
+  lockScope: z.enum(["month", "through"]).optional(),
+  reason: zReason.optional(),
+  overrideChecklist: z.boolean().optional(),
+});
+
+const unlockBody = z.object({
+  period: z.string().max(20).optional(),
+  periodEnd: z.unknown().optional(),
+  reason: zReason.optional(),
+});
+
+const legacyUnlockBody = unlockBody.extend({ companyId: zUuid });
+
+const settingsBody = z.object({
+  postYearEndClosingEntry: z.boolean().optional(),
+  requireChecklistToLock: z.boolean().optional(),
+});
+
+const yearEndBody = z.object({
+  fiscalYearEnd: z.unknown().optional(),
+  hardClose: z.boolean().optional(),
+  reason: zReason.optional(),
+  overrideChecklist: z.boolean().optional(),
+});
+
+const reopenBody = z.object({ fiscalYearEnd: z.unknown().optional(), reason: zReason });
+
+function resolveUnlockPeriodEnd(body: { period?: string; periodEnd?: unknown }): string {
+  if (body.period !== undefined) return parsePeriod(body.period).periodEnd;
+  const end = parseReportDate(body.periodEnd, "periodEnd");
+  if (!end)
+    throw new DomainError(
+      "PERIOD_REQUIRED",
+      400,
+      undefined,
+      "period (YYYY-MM) or periodEnd is required"
+    );
+  return end;
+}
+
+/**
+ * Unlock policy (R02-11): firm staff / platform admins may unlock anything.
+ * A company owner (or admin) may unlock with a reason unless the period sits
+ * in a hard-closed fiscal year. Everyone else gets 403.
+ */
+async function authorizeUnlock(
+  req: Request,
+  companyId: string,
+  periodEnd: string,
+  reason: string | undefined
+): Promise<CloseActor> {
+  await requireAccess(req, companyId);
+  const actor = await resolveCloseActor(companyId, req.user!);
+  if (isFirmOrAdmin(actor)) return actor;
+  if (actor.companyRole !== "owner" && actor.companyRole !== "admin") {
+    throw new DomainError(
+      "UNLOCK_FORBIDDEN",
+      403,
+      undefined,
+      "Only the company owner or firm staff can unlock periods"
+    );
+  }
+  if (!reason) {
+    throw new DomainError(
+      "UNLOCK_REASON_REQUIRED",
+      400,
+      undefined,
+      "A reason is required to unlock a period"
+    );
+  }
+  await assertNotInHardClosedYear(companyId, periodEnd);
+  return actor;
+}
+
+async function doUnlock(
+  req: Request,
+  res: Response,
+  companyId: string,
+  periodEnd: string,
+  reason?: string
+) {
+  const actor = await authorizeUnlock(req, companyId, periodEnd, reason);
+  const userId = req.user!.id;
+  const record = await unlockPeriod(companyId, periodEnd, { userId, reason: reason ?? null });
+  if (!record) {
+    throw new DomainError(
+      "PERIOD_NOT_LOCKED",
+      404,
+      undefined,
+      "No locked period found for that date"
+    );
+  }
+  const { recordAudit } = await import("../services/audit.service");
+  await recordAudit({
+    userId,
+    companyId,
+    action: "period.unlock",
+    entityType: "period",
+    entityId: periodEnd,
+    before: { periodEnd, status: "locked", lockType: record.lockType },
+    after: {
+      periodEnd,
+      status: "open",
+      unlockedBy: userId,
+      reason: reason ?? null,
+      actor: actor.kind,
+    },
+    req,
+  });
+  res.json(record);
 }
 
 export function registerMonthEndRoutes(app: Express) {
-  // =====================================
-  // Month-End Close Routes
-  // =====================================
-
-  /**
-   * GET /api/companies/:companyId/month-end/checklist?period=YYYY-MM
-   * Returns the 7-item close checklist with completion status.
-   */
+  // GET /api/companies/:companyId/month-end/checklist?period=YYYY-MM
   app.get(
     "/api/companies/:companyId/month-end/checklist",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = req.user!.id;
-      const period = req.query.period as string;
-
-      if (!period || !/^\d{4}-\d{2}$/.test(period)) {
-        return res.status(400).json({ message: "period query parameter required (YYYY-MM)" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const { periodStart, periodEnd } = parsePeriod(period);
-      const checklist = await getCloseChecklist(companyId, periodStart, periodEnd);
-      res.json({ period, periodStart, periodEnd, checklist });
+      const { periodStart, periodEnd } = parsePeriod(req.query.period);
+      await requireAccess(req, companyId);
+      const checklist = await getChecklistWithSignOffs(companyId, periodStart, periodEnd);
+      res.json({ period: req.query.period, periodStart, periodEnd, checklist });
     })
   );
 
   /**
    * POST /api/companies/:companyId/month-end/generate-closing-entries
-   * Generate and post closing journal entries for the period.
-   * Body: { periodStart: string, periodEnd: string }
+   * Returns the computed close summary for the period. Posts NOTHING
+   * (R08-01/R08-02): statements roll earnings forward by computation.
    */
   app.post(
     "/api/companies/:companyId/month-end/generate-closing-entries",
     authMiddleware,
     requireCustomer,
+    strictBody(closingEntriesBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = req.user!.id;
-      const { periodStart, periodEnd } = req.body;
-
-      if (!periodStart || !periodEnd) {
-        return res.status(400).json({ message: "periodStart and periodEnd are required" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // generateClosingEntries posts a JE on periodEnd. Re-running it inside an
-      // already-locked period would silently mutate locked-period totals.
-      await assertPeriodNotLocked(companyId, periodEnd);
-
-      const entry = await generateClosingEntries(companyId, periodStart, periodEnd, userId);
-      res.json(entry);
+      await requireAccess(req, companyId);
+      const summary = await generateClosingEntries(
+        companyId,
+        req.body.periodStart,
+        req.body.periodEnd
+      );
+      res.json(summary);
     })
   );
 
-  /**
-   * POST /api/companies/:companyId/month-end/lock-period
-   * Lock the period to prevent further modifications.
-   * Body: { periodEnd: string }
-   */
+  // POST /api/companies/:companyId/month-end/lock-period
   app.post(
     "/api/companies/:companyId/month-end/lock-period",
     authMiddleware,
     requireCustomer,
+    strictBody(lockBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = req.user!.id;
-      const { periodEnd } = req.body;
+      const body = lockBody.parse(req.body);
+      const periodEnd = parseReportDate(body.periodEnd, "periodEnd");
+      if (!periodEnd)
+        throw new DomainError(
+          "PERIOD_REQUIRED",
+          400,
+          undefined,
+          "periodEnd is required (YYYY-MM-DD)"
+        );
+      await requireCloseRole(req, companyId);
+      const { record, snapshot, overridden } = await withLedgerTx(async (tx) => {
+        await lockPeriodPolicy(tx, companyId, "exclusive");
+        const { checklist, overridden } = await enforceChecklist(companyId, periodEnd, body, tx);
+        const snapshot = checklist.map((c) => ({
+          id: c.id,
+          title: c.title,
+          status: c.status,
+          details: c.details,
+          signOff: c.signOff ?? null,
+        }));
+        const record = await lockPeriod(
+          companyId,
+          periodEnd,
+          userId,
+          {
+            lockType: body.lockType ?? "hard",
+            lockScope: body.lockScope ?? "through",
+            reason: body.reason ?? null,
+            checklistOverride: overridden,
+            checklistSnapshot: snapshot,
+          },
+          tx
+        );
 
-      if (!periodEnd) {
-        return res.status(400).json({ message: "periodEnd is required" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const record = await lockPeriod(companyId, periodEnd, userId);
+        return { record, snapshot, overridden };
+      });
 
       const { recordAudit } = await import("../services/audit.service");
       await recordAudit({
         userId,
         companyId,
-        action: "period.lock",
+        action: overridden ? "period.lock_override" : "period.lock",
         entityType: "period",
         entityId: periodEnd,
         before: null,
-        after: { periodEnd, lockedBy: userId },
+        after: {
+          periodEnd,
+          lockedBy: userId,
+          lockType: record.lockType,
+          lockScope: record.lockScope,
+          checklistOverride: overridden,
+          reason: body.reason ?? null,
+          checklist: snapshot,
+        },
         req,
       });
 
@@ -134,53 +360,369 @@ export function registerMonthEndRoutes(app: Express) {
     })
   );
 
-  /**
-   * GET /api/companies/:companyId/month-end/ai-validation?period=YYYY-MM
-   * AI-powered readiness check for month-end close.
-   */
+  // ── W4-A (R08-23): per-step sign-off ────────────────────────────────────
+  app.post(
+    "/api/companies/:companyId/month-end/steps/:stepKey/sign-off",
+    authMiddleware,
+    requireCustomer,
+    strictBody(signOffBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const stepKey = parseStepKey(req.params.stepKey);
+      const { periodEnd } = parsePeriod(req.body.period);
+      await requireCloseRole(req, companyId);
+      const signOff = await signOffStep(
+        companyId,
+        periodEnd,
+        stepKey,
+        req.user!.id,
+        req.body.note ?? null
+      );
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "close.step_sign_off",
+        entityType: "period",
+        entityId: periodEnd,
+        after: signOff,
+        req,
+      });
+      res.status(201).json(signOff);
+    })
+  );
+
+  app.delete(
+    "/api/companies/:companyId/month-end/steps/:stepKey/sign-off",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const stepKey = parseStepKey(req.params.stepKey);
+      const { periodEnd } = parsePeriod(req.query.period);
+      await requireCloseRole(req, companyId);
+      const removed = await withdrawStepSignOff(companyId, periodEnd, stepKey);
+      if (!removed) throw new DomainError("SIGN_OFF_NOT_FOUND", 404);
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "close.step_sign_off_withdrawn",
+        entityType: "period",
+        entityId: periodEnd,
+        before: { stepKey },
+        req,
+      });
+      res.status(204).end();
+    })
+  );
+
+  // ── W4-A (R08-23): reopen workflow (request with reason → approval) ─────
+  app.get(
+    "/api/companies/:companyId/month-end/reopen-requests",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      res.json(await listReopenRequests(companyId));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/month-end/reopen-requests",
+    authMiddleware,
+    requireCustomer,
+    strictBody(reopenRequestBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireCloseRole(req, companyId);
+      const periodEnd = parseReportDate(req.body.periodEnd, "periodEnd");
+      if (!periodEnd) throw new DomainError("PERIOD_REQUIRED", 400);
+      const request = await createReopenRequest(
+        companyId,
+        periodEnd,
+        req.body.reason,
+        req.user!.id
+      );
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "period.reopen_requested",
+        entityType: "period",
+        entityId: periodEnd,
+        after: request,
+        req,
+      });
+      res.status(201).json(request);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/month-end/reopen-requests/:requestId/:decision",
+    authMiddleware,
+    requireCustomer,
+    strictBody(reopenDecisionBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, requestId, decision } = req.params;
+      if (decision !== "approve" && decision !== "reject") {
+        throw new DomainError("NOT_FOUND", 404);
+      }
+      if (!zUuid.safeParse(requestId).success) throw new DomainError("NOT_FOUND", 404);
+      await requireAccess(req, companyId);
+      const request = await getReopenRequest(companyId, requestId);
+      if (!request) throw new DomainError("NOT_FOUND", 404);
+      // Approver: owner/admin or firm staff (same policy as unlock), and not the requester.
+      const actor = await authorizeUnlock(req, companyId, request.periodEnd, request.reason);
+      const single = await companyHasSingleMember(companyId);
+      assertDifferentActor(request.requestedBy, req.user!.id, {
+        allowSingleOwner: single || isFirmOrAdmin(actor),
+      });
+      const note = (req.body.note as string | undefined) ?? null;
+      const { decided, unlocked } = await withLedgerTx(async (tx) => {
+        const decided = await decideReopenRequest(
+          companyId,
+          requestId,
+          decision === "approve" ? "approved" : "rejected",
+          req.user!.id,
+          note,
+          ledgerQueryable(tx)
+        );
+        const unlocked =
+          decided.status === "approved"
+            ? await unlockPeriod(
+                companyId,
+                decided.periodEnd,
+                { userId: req.user!.id, reason: `Reopen approved: ${decided.reason}` },
+                tx
+              )
+            : null;
+        return { decided, unlocked };
+      });
+      const { recordAudit } = await import("../services/audit.service");
+      if (decided.status === "approved") {
+        await recordAudit({
+          userId: req.user!.id,
+          companyId,
+          action: "period.unlock",
+          entityType: "period",
+          entityId: decided.periodEnd,
+          before: { periodEnd: decided.periodEnd, status: "locked" },
+          after: {
+            periodEnd: decided.periodEnd,
+            status: "open",
+            reopenRequestId: decided.id,
+            requestedBy: decided.requestedBy,
+            approvedBy: req.user!.id,
+            reason: decided.reason,
+          },
+          req,
+        });
+      }
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: `period.reopen_${decided.status}`,
+        entityType: "period",
+        entityId: decided.periodEnd,
+        before: { status: "pending" },
+        after: decided,
+        req,
+      });
+      res.json({ request: decided, period: unlocked });
+    })
+  );
+
+  // GET /api/companies/:companyId/month-end/ai-validation?period=YYYY-MM
   app.get(
     "/api/companies/:companyId/month-end/ai-validation",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = req.user!.id;
-      const period = req.query.period as string;
-
-      if (!period || !/^\d{4}-\d{2}$/.test(period)) {
-        return res.status(400).json({ message: "period query parameter required (YYYY-MM)" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const { periodStart, periodEnd } = parsePeriod(period);
+      const { periodStart, periodEnd } = parsePeriod(req.query.period);
+      await requireAccess(req, companyId);
       const validation = await aiValidation(companyId, periodStart, periodEnd);
-      res.json({ period, ...validation });
+      res.json({ period: req.query.period, ...validation });
     })
   );
 
-  /**
-   * GET /api/companies/:companyId/month-end/history
-   * List all month_end_close records for the company.
-   */
+  // GET /api/companies/:companyId/month-end/history
   app.get(
     "/api/companies/:companyId/month-end/history",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = req.user!.id;
+      await requireAccess(req, companyId);
+      res.json(await getCloseHistory(companyId));
+    })
+  );
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+  // GET / PUT /api/companies/:companyId/month-end/settings
+  app.get(
+    "/api/companies/:companyId/month-end/settings",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      const [settings, lockThroughDate, actor] = await Promise.all([
+        getCloseSettings(companyId),
+        getLockThroughDate(companyId),
+        resolveCloseActor(companyId, req.user!),
+      ]);
+      res.json({
+        ...settings,
+        lockThroughDate,
+        permissions: {
+          canLock: canManageClose(actor),
+          canUnlock:
+            isFirmOrAdmin(actor) || actor.companyRole === "owner" || actor.companyRole === "admin",
+          canReopenHardClose: isFirmOrAdmin(actor),
+        },
+      });
+    })
+  );
+
+  app.put(
+    "/api/companies/:companyId/month-end/settings",
+    authMiddleware,
+    requireCustomer,
+    strictBody(settingsBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const actor = await requireCloseRole(req, companyId);
+      if (!isFirmOrAdmin(actor) && actor.companyRole !== "owner" && actor.companyRole !== "admin") {
+        throw new DomainError(
+          "CLOSE_SETTINGS_FORBIDDEN",
+          403,
+          undefined,
+          "Only the owner can change close settings"
+        );
       }
+      const next = await updateCloseSettings(companyId, req.body, req.user!.id);
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "close.settings_update",
+        entityType: "company",
+        entityId: companyId,
+        before: null,
+        after: next,
+        req,
+      });
+      res.json(next);
+    })
+  );
 
-      const history = await getCloseHistory(companyId);
-      res.json(history);
+  // Year-end close (R11-14)
+  app.get(
+    "/api/companies/:companyId/month-end/year-end-close",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      res.json(await listFiscalYearCloses(companyId));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/month-end/year-end-close",
+    authMiddleware,
+    requireCustomer,
+    strictBody(yearEndBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const body = yearEndBody.parse(req.body);
+      const fye = parseReportDate(body.fiscalYearEnd, "fiscalYearEnd");
+      if (!fye) throw new DomainError("FISCAL_YEAR_END_REQUIRED", 400);
+      await requireCloseRole(req, companyId);
+      const { result, overridden, snapshot } = await withLedgerTx(async (tx) => {
+        await lockPeriodPolicy(tx, companyId, "exclusive");
+        await assertFiscalYearEnd(companyId, fye, ledgerQueryable(tx));
+        const { checklist, overridden } = await enforceChecklist(companyId, fye, body, tx);
+        const snapshot = checklist.map(({ id, title, status, effectiveStatus, signOff }) => ({
+          id,
+          title,
+          status,
+          effectiveStatus: effectiveStatus ?? status,
+          signOff: signOff
+            ? {
+                stepKey: signOff.stepKey,
+                signedOffBy: signOff.signedOffBy,
+                signedOffAt: signOff.signedOffAt,
+                note: signOff.note,
+              }
+            : null,
+        }));
+        const result = await closeFiscalYear(
+          companyId,
+          fye,
+          req.user!.id,
+          {
+            hardClose: body.hardClose === true,
+            reason: body.reason ?? null,
+            checklistOverride: overridden,
+            checklistSnapshot: snapshot,
+          },
+          tx
+        );
+        return { result, overridden, snapshot };
+      });
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "fiscal_year.close",
+        entityType: "fiscal_year",
+        entityId: fye,
+        before: null,
+        after: {
+          fiscalYearEnd: fye,
+          hardClose: body.hardClose === true,
+          posted: result.posted,
+          closingEntryId: result.closingEntryId,
+          netIncome: result.summary.netIncome,
+          checklistOverride: overridden,
+          reason: body.reason ?? null,
+          checklist: snapshot,
+        },
+        req,
+      });
+      res.status(201).json(result);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/month-end/year-end-close/reopen",
+    authMiddleware,
+    requireCustomer,
+    strictBody(reopenBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const body = reopenBody.parse(req.body);
+      const fye = parseReportDate(body.fiscalYearEnd, "fiscalYearEnd");
+      if (!fye) throw new DomainError("FISCAL_YEAR_END_REQUIRED", 400);
+      const actor = await authorizeUnlock(req, companyId, fye, body.reason);
+      const record = await reopenFiscalYear(companyId, fye, req.user!.id, body.reason, {
+        canReopenHardClose: isFirmOrAdmin(actor),
+      });
+      const { recordAudit } = await import("../services/audit.service");
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "fiscal_year.reopen",
+        entityType: "fiscal_year",
+        entityId: fye,
+        before: { status: "closed" },
+        after: { status: "reopened", reason: body.reason, actor: actor.kind },
+        req,
+      });
+      res.json(record);
     })
   );
 
@@ -188,82 +730,79 @@ export function registerMonthEndRoutes(app: Express) {
   // Period Lock Routes
   // =====================================
 
-  /**
-   * POST /api/period-lock/unlock
-   * Unlock a previously-closed period. firm_owner only — unlocking re-opens
-   * a closed month for editing and is a sensitive accounting action.
-   * Body: { companyId: string, period: string (YYYY-MM) }
-   */
+  // Canonical: POST /api/companies/:companyId/period-lock/unlock { period | periodEnd, reason }
   app.post(
-    "/api/period-lock/unlock",
+    "/api/companies/:companyId/period-lock/unlock",
+    authMiddleware,
+    strictBody(unlockBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const companyId = zUuid.parse(req.params.companyId);
+      const periodEnd = resolveUnlockPeriodEnd(req.body);
+      await doUnlock(req, res, companyId, periodEnd, req.body.reason);
+    })
+  );
+
+  // GET /api/companies/:companyId/period-lock -> lock-through date + locked rows + fiscal-year closes
+  app.get(
+    "/api/companies/:companyId/period-lock",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = req.user!.id;
-      const { companyId, period } = req.body ?? {};
-
-      if (!companyId || typeof companyId !== "string") {
-        return res.status(400).json({ message: "companyId is required" });
-      }
-      if (!period || typeof period !== "string" || !/^\d{4}-\d{2}$/.test(period)) {
-        return res.status(400).json({ message: "period (YYYY-MM) is required" });
-      }
-
-      // firm_owner only — admins also allowed for support, but firm_admin is not
-      // sufficient. This mirrors the elevated-permission pattern used for
-      // financial-control actions elsewhere.
-      if (!req.user!.isAdmin && req.user!.firmRole !== "firm_owner") {
-        return res.status(403).json({ message: "Only firm owners can unlock periods" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const { periodEnd } = parsePeriod(period);
-      const record = await unlockPeriod(companyId, periodEnd);
-      if (!record) {
-        return res.status(404).json({ message: "No locked period found for that month" });
-      }
-
-      const { recordAudit } = await import("../services/audit.service");
-      await recordAudit({
-        userId,
-        companyId,
-        action: "period.unlock",
-        entityType: "period",
-        entityId: periodEnd,
-        before: { periodEnd, status: "locked" },
-        after: { periodEnd, status: "open", unlockedBy: userId },
-        req,
+      const companyId = zUuid.parse(req.params.companyId);
+      await requireAccess(req, companyId);
+      const company = await loadCompany(companyId);
+      const [lockThroughDate, locks, fiscalYears] = await Promise.all([
+        getLockThroughDate(companyId),
+        listLockedPeriods(companyId),
+        listFiscalYearCloses(companyId),
+      ]);
+      res.json({
+        lockThroughDate,
+        fiscalYearStartMonth: company.fiscalYearStartMonth,
+        currentFiscalYearStart: fiscalYearStart(
+          todayDubai(),
+          company.fiscalYearStartMonth
+        ),
+        locks,
+        fiscalYears,
       });
-
-      res.json(record);
     })
   );
 
   /**
-   * GET /api/period-lock/list?companyId=...
-   * List all currently-locked periods for a company.
+   * Legacy alias: POST /api/period-lock/unlock { companyId, period (YYYY-MM), reason }
+   * Same policy as the canonical route (owners can now unlock with a reason).
    */
+  app.post(
+    "/api/period-lock/unlock",
+    authMiddleware,
+    strictBody(legacyUnlockBody, { allowServerOwned: ["companyId"] }),
+    asyncHandler(async (req: Request, res: Response) => {
+      res.setHeader("Deprecation", "true");
+      res.setHeader(
+        "Link",
+        `</api/companies/${req.body.companyId}/period-lock/unlock>; rel="successor-version"`
+      );
+      const periodEnd = resolveUnlockPeriodEnd(req.body);
+      await doUnlock(req, res, req.body.companyId, periodEnd, req.body.reason);
+    })
+  );
+
+  // GET /api/period-lock/list?companyId=...
   app.get(
     "/api/period-lock/list",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = req.user!.id;
-      const companyId = req.query.companyId as string | undefined;
-
-      if (!companyId) {
-        return res.status(400).json({ message: "companyId query parameter is required" });
+      const company = zUuid.safeParse(req.query.companyId);
+      if (!company.success) {
+        throw new DomainError(
+          "COMPANY_ID_REQUIRED",
+          400,
+          undefined,
+          "companyId query parameter is required"
+        );
       }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const periods = await listLockedPeriods(companyId);
-      res.json(periods);
+      await requireAccess(req, company.data);
+      res.json(await listLockedPeriods(company.data));
     })
   );
 }

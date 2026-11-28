@@ -1,3 +1,5 @@
+// i18n-ignore-file: bilingual FTA VAT 201 export; the English box labels ship next to descriptionAr by design.
+import { csvCell as sharedCsvCell } from "@shared/csv";
 import type { ExportData } from "./export";
 
 export interface Vat201ExportReturn {
@@ -51,8 +53,6 @@ export interface Vat201ExportReturn {
   box12TotalDueTax: number;
   box13RecoverableTax: number;
   box14PayableTax: number;
-  adjustmentAmount?: number | null;
-  adjustmentReason?: string | null;
 }
 
 export interface Vat201ExportCompany {
@@ -296,8 +296,6 @@ export function prepareVat201ForExport(
         { field: "Due date", value: dueDate },
         { field: "Status", value: status },
         { field: "Net VAT payable", value: numberValue(vatReturn, "box14PayableTax") },
-        { field: "Adjustment amount", value: vatReturn.adjustmentAmount ?? "" },
-        { field: "Adjustment reason", value: vatReturn.adjustmentReason ?? "" },
         { field: "Notes", value: vatReturn.notes ?? "" },
         {
           field: "Submission note",
@@ -307,4 +305,109 @@ export function prepareVat201ForExport(
       ],
     },
   ];
+}
+
+// ─── FTA portal layout (W4-E, R07-15) ─────────────────────────────────────
+//
+// One row per input field of the EmaraTax VAT 201 form, in the order the portal asks for them,
+// so a preparer can key (or paste) the figures field by field. This is a preparation file; it
+// is not an FTA upload format and nothing is transmitted to the FTA.
+
+export interface Vat201PortalRow {
+  order: number;
+  box: string;
+  field: "Amount" | "VAT amount" | "Adjustment";
+  description: string;
+  descriptionAr: string;
+  value: number;
+}
+
+const PORTAL_AR: Record<string, string> = {
+  "1a": "التوريدات الخاضعة للنسبة الأساسية في أبوظبي",
+  "1b": "التوريدات الخاضعة للنسبة الأساسية في دبي",
+  "1c": "التوريدات الخاضعة للنسبة الأساسية في الشارقة",
+  "1d": "التوريدات الخاضعة للنسبة الأساسية في عجمان",
+  "1e": "التوريدات الخاضعة للنسبة الأساسية في أم القيوين",
+  "1f": "التوريدات الخاضعة للنسبة الأساسية في رأس الخيمة",
+  "1g": "التوريدات الخاضعة للنسبة الأساسية في الفجيرة",
+  "2": "المبالغ المستردة للسياح بموجب نظام استرداد الضريبة للسياح",
+  "3": "التوريدات الخاضعة لآلية الاحتساب العكسي",
+  "4": "التوريدات الخاضعة لنسبة الصفر",
+  "5": "التوريدات المعفاة",
+  "6": "السلع المستوردة إلى الدولة",
+  "7": "التعديلات على السلع المستوردة إلى الدولة",
+  "8": "المجموع",
+  "9": "النفقات الخاضعة للنسبة الأساسية",
+  "10": "التوريدات الخاضعة لآلية الاحتساب العكسي",
+  "11": "المجموع",
+  "12": "إجمالي الضريبة المستحقة للفترة",
+  "13": "إجمالي الضريبة القابلة للاسترداد للفترة",
+  "14": "صافي الضريبة المستحقة الدفع للفترة",
+};
+
+export function vat201PortalRows(vatReturn: Vat201ExportReturn): Vat201PortalRow[] {
+  const out: Vat201PortalRow[] = [];
+  for (const row of VAT201_ROWS) {
+    const push = (field: Vat201PortalRow["field"], key?: Vat201Key) => {
+      if (!key) return;
+      out.push({
+        order: out.length + 1,
+        box: row.box,
+        field,
+        description: row.label,
+        descriptionAr: PORTAL_AR[row.box] ?? "",
+        value: numberValue(vatReturn, key) ?? 0,
+      });
+    };
+    push("Amount", row.amountKey);
+    push("VAT amount", row.vatKey);
+    push("Adjustment", row.adjustmentKey);
+  }
+  return out;
+}
+
+const csvCell = (v: string | number): string =>
+  sharedCsvCell(typeof v === "number" ? v.toFixed(2) : v);
+
+/** CSV in portal field order (UTF-8, with Arabic descriptions). */
+export function vat201PortalCsv(
+  vatReturn: Vat201ExportReturn,
+  company: Vat201ExportCompany | null | undefined
+): string {
+  const head = [
+    ["TRN", company?.trnVatNumber || ""],
+    ["Period start", isoDate(vatReturn.periodStart)],
+    ["Period end", isoDate(vatReturn.periodEnd)],
+    ["Due date", isoDate(vatReturn.dueDate)],
+    ["Note", "Preparation file for EmaraTax. Not transmitted to the FTA."],
+  ].map((r) => r.map(csvCell).join(","));
+  const rows = vat201PortalRows(vatReturn).map((r) =>
+    [
+      String(r.order),
+      csvCell(r.box),
+      r.field,
+      csvCell(r.description),
+      csvCell(r.descriptionAr),
+      csvCell(r.value),
+    ].join(",")
+  );
+  return [...head, "", "Order,Box,Field,Description,Description (AR),Value (AED)", ...rows].join(
+    "\r\n"
+  );
+}
+
+/** Portal-order sheet for the xlsx export. */
+export function prepareVat201PortalSheet(vatReturn: Vat201ExportReturn): ExportData {
+  return {
+    sheetName: "FTA Portal Order",
+    columns: [
+      { header: "Order", key: "order", width: 8 },
+      { header: "Box", key: "box", width: 8 },
+      { header: "Field", key: "field", width: 14 },
+      { header: "Description", key: "description", width: 64 },
+      { header: "الوصف", key: "descriptionAr", width: 48 },
+      { header: "Value (AED)", key: "value", width: 18 },
+    ],
+    rows: vat201PortalRows(vatReturn).map((r) => ({ ...r })),
+  };
 }

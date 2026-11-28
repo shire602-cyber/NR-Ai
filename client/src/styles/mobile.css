@@ -13,18 +13,16 @@
     display: flex;
     position: fixed;
     bottom: 0;
-    left: 0;
-    right: 0;
+    inset-inline: 0;
     z-index: 50;
-    height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+    height: calc(3.75rem + env(safe-area-inset-bottom, 0px));
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: hsl(var(--background));
     border-top: 1px solid hsl(var(--border));
     align-items: stretch;
     justify-content: space-around;
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-    background: hsl(var(--background) / 0.95);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+    background: hsl(var(--background) / 0.9);
   }
 
   .mobile-nav-tab {
@@ -32,14 +30,14 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.125rem;
+    gap: 0.25rem;
     flex: 1;
     padding: 0.375rem 0.25rem;
     border: none;
     background: none;
     cursor: pointer;
     color: hsl(var(--muted-foreground));
-    transition: color 0.15s ease;
+    transition: color var(--duration-fast) var(--ease-standard);
     min-width: 44px;
     min-height: 44px;
     -webkit-tap-highlight-color: transparent;
@@ -47,8 +45,13 @@
     position: relative;
   }
 
+  /* Spec 3.21: active = brand icon + brand label; no filled pill behind the icon. */
   .mobile-nav-tab--active {
-    color: hsl(var(--primary));
+    color: hsl(var(--accent));
+  }
+
+  .mobile-nav-tab--active .mobile-nav-tab-label {
+    font-weight: 600;
   }
 
   .mobile-nav-tab-icon {
@@ -60,19 +63,10 @@
     height: 24px;
   }
 
-  .mobile-nav-indicator {
-    position: absolute;
-    inset: -4px -8px;
-    background: hsl(var(--primary) / 0.1);
-    border-radius: 999px;
-    z-index: -1;
-  }
-
   .mobile-nav-tab-label {
-    font-size: 0.625rem;
+    font-size: 0.6875rem;
     font-weight: 500;
     line-height: 1;
-    letter-spacing: 0.01em;
   }
 
   /* More sheet overlay */
@@ -80,7 +74,7 @@
     position: fixed;
     inset: 0;
     z-index: 45;
-    background: rgba(0, 0, 0, 0.4);
+    background: hsl(var(--neutral-950) / 0.45);
     -webkit-backdrop-filter: blur(2px);
     backdrop-filter: blur(2px);
   }
@@ -88,95 +82,138 @@
   /* More sheet */
   .mobile-nav-more-sheet {
     position: fixed;
-    bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
-    left: 0;
-    right: 0;
+    bottom: calc(3.75rem + env(safe-area-inset-bottom, 0px));
+    inset-inline: 0;
     z-index: 46;
-    background: hsl(var(--background));
+    background: hsl(var(--card));
     border-top: 1px solid hsl(var(--border));
-    border-top-left-radius: 1rem;
-    border-top-right-radius: 1rem;
-    padding: 0.75rem 1rem 1rem;
-    max-height: 60vh;
+    border-start-start-radius: 1.25rem;
+    border-start-end-radius: 1.25rem;
+    box-shadow: var(--shadow-xl);
+    padding: 0.625rem 1rem 1rem;
+    max-height: 70vh;
     overflow-y: auto;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
   }
 
   .mobile-nav-more-handle {
-    width: 2rem;
+    width: 2.25rem;
     height: 0.25rem;
-    background: hsl(var(--muted-foreground) / 0.3);
+    background: hsl(var(--border-strong));
     border-radius: 999px;
-    margin: 0 auto 0.75rem;
+    margin: 0 auto 0.875rem;
   }
 
-  .mobile-nav-more-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.5rem;
+  .mobile-nav-more-heading {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 600;
+    color: hsl(var(--muted-foreground));
+    margin: 0 0.25rem 0.25rem;
   }
 
-  .mobile-nav-more-item {
+  /* Spec 3.5: one column of 44 px rows — icon, full label, chevron — grouped by the sidebar
+     headings. Labels wrap rather than truncate. */
+  .mobile-nav-more-group + .mobile-nav-more-group {
+    margin-top: 1rem;
+  }
+  .mobile-nav-more-rows {
     display: flex;
     flex-direction: column;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .mobile-nav-more-row {
+    display: flex;
+    width: 100%;
     align-items: center;
-    justify-content: center;
-    gap: 0.125rem;
-    padding: 0.7rem 0.75rem;
-    border: 1px solid hsl(var(--border));
+    gap: 0.75rem;
+    min-height: 44px;
+    padding: 0.5rem 0.5rem;
     border-radius: 0.5rem;
-    background: hsl(var(--background));
     color: hsl(var(--foreground));
     font-size: 0.875rem;
     font-weight: 500;
-    cursor: pointer;
-    min-height: 58px;
-    min-width: 0;
-    text-align: center;
+    line-height: 1.25rem;
+    text-align: start;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
-    transition: background-color 0.15s ease;
+    transition: background-color var(--duration-fast) var(--ease-standard);
   }
-
-  .mobile-nav-more-label,
-  .mobile-nav-more-description {
-    display: block;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .mobile-nav-more-row:active {
+    background: hsl(var(--secondary));
   }
-
-  .mobile-nav-more-description {
+  .mobile-nav-more-row--active {
+    background: hsl(var(--secondary));
+  }
+  .mobile-nav-more-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
     color: hsl(var(--muted-foreground));
-    font-size: 0.6875rem;
-    font-weight: 400;
-    line-height: 1.2;
+  }
+  .mobile-nav-more-row--active .mobile-nav-more-icon {
+    color: hsl(var(--accent));
+  }
+  .mobile-nav-more-label {
+    min-width: 0;
+    flex: 1;
+  }
+  .mobile-nav-more-chevron {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    color: hsl(var(--muted-foreground));
   }
 
-  .mobile-nav-more-item:active {
-    background: hsl(var(--accent));
+  .mobile-nav-more-section {
+    margin-top: 1rem;
+    border-top: 1px solid hsl(var(--border));
+    padding-top: 0.75rem;
   }
 
-  .mobile-nav-more-item--active {
-    background: hsl(var(--primary) / 0.1);
-    border-color: hsl(var(--primary) / 0.3);
-    color: hsl(var(--primary));
+  .mobile-nav-theme {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border-radius: 0.625rem;
+    background: hsl(var(--muted));
+  }
+  .mobile-nav-theme-option {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-height: 44px;
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
+  }
+  .mobile-nav-theme-option--active {
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    box-shadow: var(--shadow-xs);
   }
 
   /* Add bottom padding to main content so it doesn't hide behind nav */
   main {
-    padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
 
 /* ─── Touch-Friendly Targets ─────────────────────────────────────────────── */
 
 @media (max-width: 767px) {
-  /* Ensure all interactive elements meet 44px minimum tap target */
-  button,
+  /* Ensure all interactive elements meet 44px minimum tap target. Checkboxes, radios and
+     switches keep their visual size (spec G3: a 20 px box inside a 44 px hit area) — their
+     hit area comes from an invisible ::after, not from stretching the box. */
+  button:not([role="checkbox"]):not([role="radio"]):not([role="switch"]),
   a,
-  input,
+  input:not([type="checkbox"]):not([type="radio"]),
   select,
   textarea,
   [role="button"],
@@ -184,6 +221,13 @@
   [role="tab"] {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
   }
 
   /* Smaller buttons that visually look smaller but have adequate tap area */
@@ -202,13 +246,14 @@
 
 @media (max-width: 767px) {
   .table-wrapper,
-  [class*="table"] {
+  :where(div, section)[class*="table"] {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     max-width: 100vw;
   }
 
-  table {
+  /* Tables designed to fit a phone (compact dashboard lists) opt out with .mobile-fit. */
+  table:not(.mobile-fit) {
     min-width: 600px;
   }
 
@@ -322,15 +367,16 @@
 /* ─── Mobile Form Adjustments ────────────────────────────────────────────── */
 
 @media (max-width: 767px) {
-  /* Stack form fields vertically */
+  /* Stack form fields vertically. Grids that are designed for phones (KPI 2x2, date
+     pairs, segmented controls) opt out with .mobile-keep-cols. */
   .form-row,
-  .grid-cols-2,
-  .grid-cols-3 {
+  .grid-cols-2:not(.mobile-keep-cols),
+  .grid-cols-3:not(.mobile-keep-cols) {
     grid-template-columns: 1fr !important;
   }
 
-  /* Full-width modals on mobile */
-  [role="dialog"] {
+  /* Full-width modals on mobile (sized dialogs, D5b, are sheets and size themselves) */
+  [role="dialog"]:not([data-size]) {
     width: calc(100vw - 2rem) !important;
     max-width: 100% !important;
     max-height: calc(100vh - 2rem) !important;
@@ -424,10 +470,6 @@
 
 /* ─── RTL-Compatible Mobile Styles ───────────────────────────────────────── */
 
-[dir="rtl"] .mobile-nav-more-grid {
-  direction: rtl;
-}
-
 [dir="rtl"] .mobile-nav-tab {
   direction: rtl;
 }
@@ -505,5 +547,148 @@
 
   .mobile-nav-more-sheet {
     background: hsl(var(--background));
+  }
+}
+
+/* ─── Row-card tables (D3) ───────────────────────────────────────────────── */
+/* Below 768px a <Table className="row-cards"> renders each row as a two-line card
+   (CTO D3 rule): line 1 = [data-cell="title"] + [data-cell="amount"] + [data-cell="actions"],
+   line 2 = [data-cell="meta"] cells joined by "·", then [data-cell="status"] at the end.
+   An optional [data-cell="detail"] wraps on its own full-width line below the status.
+   Cells without data-cell are hidden on phones (the ⋯ menu or detail view carries them);
+   colSpan rows (empty/loading states) span the whole card. */
+@media (max-width: 767px) {
+  table.row-cards {
+    display: block;
+    min-width: 0;
+  }
+  table.row-cards > thead {
+    display: none;
+  }
+  table.row-cards > tbody,
+  table.row-cards > tfoot {
+    display: block;
+  }
+  table.row-cards > tbody > tr,
+  table.row-cards > tfoot > tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 0.5rem;
+    row-gap: 0.25rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid hsl(var(--border) / 0.7);
+  }
+  table.row-cards > tbody > tr:last-child {
+    border-bottom: 0;
+  }
+  table.row-cards > tbody > tr::before,
+  table.row-cards > tfoot > tr::before {
+    content: "";
+    order: 2;
+    flex-basis: 100%;
+    height: 0;
+  }
+  table.row-cards > tbody > tr > td,
+  table.row-cards > tfoot > tr > td {
+    display: none;
+    height: auto;
+    padding: 0;
+    border: 0;
+  }
+  table.row-cards > tbody > tr > td[colspan] {
+    display: block;
+    flex-basis: 100%;
+  }
+  table.row-cards td[data-cell="title"] {
+    display: block;
+    order: 1;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+    color: hsl(var(--foreground));
+  }
+  /* A dir="auto" name inside the title truncates in its own direction (Latin names in RTL
+     rows lose their tail, not their head). */
+  table.row-cards td[data-cell="title"] > [dir="auto"]:first-child {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  table.row-cards td[data-cell="amount"] {
+    display: block;
+    order: 1;
+    flex: none;
+    font-weight: 600;
+    text-align: end;
+  }
+  table.row-cards td[data-cell="actions"] {
+    display: block;
+    order: 1;
+    flex: none;
+    margin-inline-end: -0.5rem;
+  }
+  table.row-cards td[data-cell="meta"] {
+    display: block;
+    order: 3;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    color: hsl(var(--muted-foreground));
+  }
+  /* Wrapping uses flex-basis, so a long document number would push the status onto a third
+     line. Earlier meta cells are capped; the last one has a zero basis and takes what is left
+     (truncated), which keeps the status on line 2. */
+  table.row-cards td[data-cell="meta"] {
+    max-width: 55%;
+  }
+  table.row-cards td[data-cell="meta"]:not(:has(~ td[data-cell="meta"])) {
+    flex: 1 1 0;
+    max-width: none;
+  }
+  table.row-cards td[data-cell="meta"] ~ td[data-cell="meta"]::before {
+    content: "·";
+    margin-inline-end: 0.5rem;
+  }
+  table.row-cards td[data-cell="status"] {
+    display: block;
+    order: 4;
+    flex: none;
+    margin-inline-start: auto;
+  }
+  table.row-cards td[data-cell="status"] ~ td[data-cell="status"] {
+    margin-inline-start: 0;
+  }
+  table.row-cards td[data-cell="detail"] {
+    display: block;
+    order: 5;
+    flex: 0 0 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* R2-22: a date (or other short fact) in a row-card's second line is never truncated. Mark
+   the cell data-keep; the document number before it takes the leftover width and elides its
+   middle (<MiddleTruncate>). Doubled attribute selector outranks the last-meta rule above. */
+@media (max-width: 767px) {
+  table.row-cards td[data-cell="meta"][data-keep][data-keep] {
+    flex: none;
+    overflow: visible;
+    text-overflow: clip;
+    max-width: none;
+  }
+  table.row-cards td[data-cell="meta"]:has(~ td[data-cell="meta"][data-keep]) {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
   }
 }

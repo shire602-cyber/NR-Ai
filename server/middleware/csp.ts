@@ -1,3 +1,4 @@
+import { portalInviteLogPath } from "../http/portal-invite-privacy";
 import crypto from "crypto";
 import type { Request, Response, NextFunction } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
@@ -23,18 +24,26 @@ export function cspNonce(_req: Request, res: Response, next: NextFunction): void
  * Development: relaxed CSP — Vite needs inline scripts and HMR over ws://, so we
  * keep the directives but allow 'unsafe-inline' and 'unsafe-eval' for scripts.
  */
+// helmet hands raw http types to its directive callback, not express types.
+const nonceFn = (_req: IncomingMessage, res: ServerResponse): string => {
+  const expressRes = res as unknown as Response;
+  return `'nonce-${(expressRes.locals?.cspNonce as string) ?? ""}'`;
+};
+
 export function buildCspDirectives() {
   const prod = isProduction();
-  // helmet hands raw http types to its directive callback, not express types.
-  const nonceFn = (_req: IncomingMessage, res: ServerResponse): string => {
-    const expressRes = res as unknown as Response;
-    return `'nonce-${(expressRes.locals?.cspNonce as string) ?? ""}'`;
-  };
+  // W5-E: the Turnstile widget (script + iframe) is allowed only when CAPTCHA is configured.
+  const turnstile = process.env.TURNSTILE_SECRET_KEY ? ["https://challenges.cloudflare.com"] : [];
 
   return {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: prod ? ["'self'", nonceFn] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      scriptSrc: prod
+        ? ["'self'", nonceFn, ...turnstile]
+        : ["'self'", "'unsafe-inline'", "'unsafe-eval'", ...turnstile],
+      // Broken-path sweep: bill / receipt previews show the file from a blob: URL in an iframe
+      // (the PDF viewer); without blob: the fallback default-src 'self' blocked it.
+      frameSrc: ["'self'", "blob:", ...turnstile],
       // D4 — the ENFORCED policy keeps `'unsafe-inline'` for styles. The client
       // uses 219 React `style={{ … }}` props across 22 files (inline style
       // ATTRIBUTES), and Radix/framer-motion inject `<style>` ELEMENTS at
@@ -69,14 +78,13 @@ export function buildCspDirectives() {
  * Browsers evaluate it, block nothing, and POST any violation to
  * /api/csp-report.
  *
- * How to finish the job:
- *   1. Deploy. Exercise the app normally for a week.
- *   2. Grep the logs for "CSP violation reported" with
- *      effectiveDirective "style-src-elem" / "style-src-attr".
- *   3. Zero violations  -> promote these directives into buildCspDirectives()
- *                          and delete the report-only policy.
- *      Some violations  -> they name the exact file and line injecting the
- *                          style; nonce or remove those, then re-check.
+ * Exercise representative flows with the report-only header and confirm the
+ * report endpoint receives browser reports. Filter "CSP violation reported"
+ * log records by the `directive` field for `style-src-elem`, `style-src-attr`
+ * or the `style-src` fallback. The accompanying request ID identifies the
+ * report POST. Reproduce violations in browser DevTools to locate the
+ * injection site. Promote the policy only after verifying the reporting path
+ * and exercising the relevant flows without violations.
  *
  * `styleSrcAttr` deliberately keeps 'unsafe-inline': React's `style={{…}}`
  * needs it and removing it would require rewriting 219 call sites. The value
@@ -87,10 +95,19 @@ export function buildCspReportOnlyDirectives() {
   const prod = isProduction();
   return {
     reportOnly: true,
+    // R17-18 / R18-05: never merge helmet's default directives. They add
+    // `upgrade-insecure-requests` (ignored, and logged as a console error, in a
+    // report-only policy) and a script-src without the per-request nonce, which
+    // made this policy differ from the enforced one. Everything is listed
+    // explicitly instead.
+    useDefaults: false,
     directives: {
       // Only the style directives differ; everything else mirrors the enforced
       // policy so a violation here unambiguously means "the style split broke".
       defaultSrc: ["'self'"],
+      // Same script policy as the enforced header: report-only must not be more
+      // permissive than what is actually enforced.
+      scriptSrc: prod ? ["'self'", nonceFn] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       // The -elem / -attr pair is what we are actually testing. `styleSrc` is
       // only the fallback for browsers without CSP3 support; pin it to today's
       // enforced value (rather than letting helmet merge its looser
@@ -105,6 +122,7 @@ export function buildCspReportOnlyDirectives() {
         ? ["'self'"]
         : ["'self'", "ws://localhost:*", "http://localhost:*", "ws://127.0.0.1:*"],
       workerSrc: ["'self'", "blob:"],
+      frameSrc: ["'self'", "blob:"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
@@ -114,25 +132,45 @@ export function buildCspReportOnlyDirectives() {
   };
 }
 
+const cspReportDirectives = new Set([
+  "base-uri",
+  "connect-src",
+  "default-src",
+  "font-src",
+  "form-action",
+  "frame-ancestors",
+  "frame-src",
+  "img-src",
+  "manifest-src",
+  "media-src",
+  "object-src",
+  "script-src",
+  "script-src-attr",
+  "script-src-elem",
+  "style-src",
+  "style-src-attr",
+  "style-src-elem",
+  "worker-src",
+]);
+
 /**
- * CSP violation report endpoint. The browser POSTs JSON describing the
- * blocked resource. We log a structured warning so it shows up in pino output
- * and any downstream log aggregator without spamming at error level.
+ * CSP violation report endpoint. Reports log the recognized directive and
+ * the report request ID. Use browser diagnostics for source URLs and lines.
  */
 export function cspReportHandler(req: Request, res: Response): void {
-  const report = (req.body && (req.body["csp-report"] || req.body)) || {};
-  log.warn(
-    {
-      blockedUri: report["blocked-uri"],
-      violatedDirective: report["violated-directive"],
-      effectiveDirective: report["effective-directive"],
-      documentUri: report["document-uri"],
-      sourceFile: report["source-file"],
-      lineNumber: report["line-number"],
-      ip: req.ip,
-      ua: req.headers["user-agent"],
-    },
-    "CSP violation reported"
-  );
+  // CSP reports may include full URLs and are also accepted from unauthenticated clients.
+  const report = req.body?.["csp-report"] ?? req.body;
+  const directive = report?.["effective-directive"];
+  if (typeof directive === "string" && cspReportDirectives.has(directive)) {
+    log.warn({ requestId: req.id, directive }, "CSP violation reported");
+  } else {
+    for (const field of ["document-uri", "blocked-uri", "source-file"]) {
+      if (typeof report?.[field] !== "string") continue;
+      const path = portalInviteLogPath(report[field]);
+      if (!path) continue;
+      log.warn({ requestId: req.id, path }, "CSP violation reported");
+      break;
+    }
+  }
   res.status(204).end();
 }
