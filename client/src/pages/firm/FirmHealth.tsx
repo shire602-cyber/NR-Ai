@@ -261,7 +261,14 @@ export default function FirmHealth() {
           </CardHeader>
           <CardContent>
             <p className="text-h1 font-semibold tabular-nums">
-              {healthFailed ? "—" : (summary?.totalClients ?? 0)}
+              {healthFailed ? (
+                <>
+                  <span aria-hidden>—</span>
+                  <span className="sr-only">{t["firm.notAvailable"]}</span>
+                </>
+              ) : (
+                (summary?.totalClients ?? 0)
+              )}
             </p>
           </CardContent>
         </Card>
@@ -275,7 +282,14 @@ export default function FirmHealth() {
           </CardHeader>
           <CardContent>
             <p className="text-h1 font-semibold tabular-nums">
-              {healthFailed ? "—" : (summary?.healthy ?? 0)}
+              {healthFailed ? (
+                <>
+                  <span aria-hidden>—</span>
+                  <span className="sr-only">{t["firm.notAvailable"]}</span>
+                </>
+              ) : (
+                (summary?.healthy ?? 0)
+              )}
             </p>
           </CardContent>
         </Card>
@@ -289,7 +303,14 @@ export default function FirmHealth() {
           </CardHeader>
           <CardContent>
             <p className="text-h1 font-semibold tabular-nums">
-              {healthFailed ? "—" : (summary?.attention ?? 0)}
+              {healthFailed ? (
+                <>
+                  <span aria-hidden>—</span>
+                  <span className="sr-only">{t["firm.notAvailable"]}</span>
+                </>
+              ) : (
+                (summary?.attention ?? 0)
+              )}
             </p>
           </CardContent>
         </Card>
@@ -303,7 +324,14 @@ export default function FirmHealth() {
           </CardHeader>
           <CardContent>
             <p className="text-h1 font-semibold tabular-nums">
-              {healthFailed ? "—" : (summary?.critical ?? 0)}
+              {healthFailed ? (
+                <>
+                  <span aria-hidden>—</span>
+                  <span className="sr-only">{t["firm.notAvailable"]}</span>
+                </>
+              ) : (
+                (summary?.critical ?? 0)
+              )}
             </p>
           </CardContent>
         </Card>

@@ -16,14 +16,19 @@ import { ApiError } from "../../client/src/lib/queryClient";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
-const net = vi.hoisted(() => ({ respond: (_path: string): unknown => null }));
+const net = vi.hoisted(() => ({
+  respond: (_path: string): unknown => null,
+  calls: [] as Array<{ method: string; url: string; body: unknown }>,
+}));
 vi.mock("../../client/src/lib/queryClient", async (orig) => {
   const actual = await orig<typeof import("../../client/src/lib/queryClient")>();
   return {
     ...actual,
-    apiRequest: async (_m: string, url: string) => {
+    apiRequest: async (method: string, url: string, body?: unknown) => {
+      net.calls.push({ method, url, body });
       const r = net.respond(url);
       if (r === "fail") throw new actual.ApiError("Server exploded", 500, {});
+      if (r === "hang") return new Promise(() => {});
       return (r as { ok: unknown }).ok;
     },
   };
@@ -59,10 +64,12 @@ async function mount(
   Component: ComponentType<Record<string, unknown>>,
   props: Record<string, unknown>,
   locale: "en" | "ar",
-  responder: (path: string) => unknown
+  responder: (path: string) => unknown,
+  location = "/"
 ) {
   useI18n.setState({ locale });
   net.respond = responder;
+  net.calls = [];
   const client = new QueryClient({
     defaultOptions: {
       queries: {
@@ -81,13 +88,13 @@ async function mount(
   node = document.createElement("div");
   document.body.appendChild(node);
   root = createRoot(node);
-  const { hook } = memoryLocation({ path: "/" });
+  const { hook, searchHook } = memoryLocation({ path: location });
   await act(async () => {
     root!.render(
       createElement(
         QueryClientProvider,
         { client },
-        createElement(Router, { hook }, createElement(Component, props))
+        createElement(Router, { hook, searchHook }, createElement(Component, props))
       )
     );
   });
@@ -170,5 +177,121 @@ describe.each(["en", "ar"] as const)("Firm, anomaly and debit note load errors (
     await mount(DebitNoteEditor as never, {}, locale, () => ok([]));
     expect(tid("debit-note-accounts-load-error")).toBeNull();
     expect(tid("debit-note-bills-load-error")).toBeNull();
+  });
+
+  describe("debit note editor: loading, bill detail and apply-now guards", () => {
+    const bill = {
+      id: "b1",
+      vendor_id: null,
+      vendor_name: "Acme Supplies",
+      bill_number: "B-1",
+      currency: "AED",
+      status: "approved",
+      total_amount: "105.00",
+      open_balance: 105,
+      line_items: [
+        { description: "Parts", amount: "100.00", vat_rate: "5", account_id: null, quantity: "1" },
+      ],
+    };
+    const responder =
+      (over: { bills?: unknown; detail?: unknown } = {}) =>
+      (p: string) => {
+        if (p.endsWith("/debit-notes/n1/apply")) return ok({ bill_status: "paid" });
+        if (p.endsWith("/debit-notes")) return ok({ id: "n1", total_amount: "105.00" });
+        if (p === "/api/bills/b1") return over.detail ?? ok(bill);
+        if (p.endsWith("/bills")) return over.bills ?? ok([bill]);
+        return ok([]);
+      };
+    const posts = () => net.calls.filter((c) => c.method === "POST");
+    const save = () => tid("button-save-debit-note") as HTMLButtonElement;
+    const fillReason = async () => {
+      const el = tid("debit-note-reason") as HTMLTextAreaElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+          el,
+          "Damaged goods"
+        );
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    const clickSave = async () => {
+      await act(async () => save().click());
+      await settle(5);
+    };
+
+    it("keeps Save disabled while the bills list is still loading and posts nothing", async () => {
+      const { default: DebitNoteEditor } = await import("../../client/src/pages/DebitNoteEditor");
+      await mount(
+        DebitNoteEditor as never,
+        {},
+        locale,
+        responder({ bills: "hang" }),
+        "/?billId=b1"
+      );
+      expect(save().disabled).toBe(true);
+      await fillReason();
+      await clickSave();
+      expect(posts()).toHaveLength(0);
+    });
+
+    it("enables Save once the lists and the linked bill have loaded, then applies the note", async () => {
+      const { default: DebitNoteEditor } = await import("../../client/src/pages/DebitNoteEditor");
+      await mount(DebitNoteEditor as never, {}, locale, responder(), "/?billId=b1");
+      expect(save().disabled).toBe(false);
+      await fillReason();
+      await clickSave();
+      const [create, apply] = posts();
+      expect(create.url).toMatch(/\/debit-notes$/);
+      expect(apply.url).toMatch(/\/debit-notes\/n1\/apply$/);
+      expect((apply.body as { bill_id: string }).bill_id).toBe("b1");
+    });
+
+    it("blocks with a message, and posts nothing, when apply-now cannot find the bill balance", async () => {
+      const { default: DebitNoteEditor } = await import("../../client/src/pages/DebitNoteEditor");
+      await mount(
+        DebitNoteEditor as never,
+        {},
+        locale,
+        responder({ bills: ok([]) }),
+        "/?billId=b1"
+      );
+      await fillReason();
+      await clickSave();
+      expect(posts()).toHaveLength(0);
+      const alert = tid("debit-note-error");
+      expect(alert).not.toBeNull();
+      expect(alert!.textContent!.length).toBeGreaterThan(10);
+    });
+
+    it("a failed bill-detail load shows an inline error with retry and blocks saving", async () => {
+      const { default: DebitNoteEditor } = await import("../../client/src/pages/DebitNoteEditor");
+      await mount(
+        DebitNoteEditor as never,
+        {},
+        locale,
+        responder({ detail: "fail" }),
+        "/?billId=b1"
+      );
+      const panel = tid("debit-note-bill-load-error");
+      expect(panel).not.toBeNull();
+      expect(retryButton(panel!)).toBeDefined();
+      expect(save().disabled).toBe(true);
+      expect(posts()).toHaveLength(0);
+    });
+  });
+
+  it("firm health: failed summary shows an em dash with a screen-reader label, not zeros", async () => {
+    const { default: FirmHealth } = await import("../../client/src/pages/firm/FirmHealth");
+    await mount(FirmHealth as never, {}, locale, (p) =>
+      p === "/api/firm/health" ? "fail" : ok({ deadlines: [] })
+    );
+    const cards = [...node!.querySelectorAll("p.text-h1")];
+    expect(cards).toHaveLength(4);
+    for (const c of cards) {
+      expect(c.textContent).toContain("—");
+      const sr = c.querySelector(".sr-only");
+      expect(sr?.textContent).toBe(locale === "ar" ? "غير متاح" : "Not available");
+      expect(c.textContent).not.toMatch(/\d/);
+    }
   });
 });
