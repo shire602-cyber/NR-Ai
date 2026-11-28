@@ -245,8 +245,47 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
     expect(res.body.vatAmount).toBe(5);
     const notes = res.body.validationIssues.filter((i: any) => i.code === "AMOUNT_MISMATCH");
     expect(notes).toHaveLength(1);
-    expect(notes[0].message).toMatch(/Subtotal 100 \+ VAT 5 does not equal total 115.5/);
-    expect(notes[0].message).not.toMatch(/VAT 0 /);
+    expect(notes[0].message).toMatch(/Subtotal 100\.00 \+ VAT 5\.00 does not equal total 115\.50/);
+    expect(notes[0].message).not.toMatch(/VAT 0.00 /);
+  });
+
+  it("a raw AMOUNT_MISMATCH note is dropped when the reconciled figures add up (100 / no VAT / 105)", async () => {
+    const { client } = anthropicReturning({
+      ...goodExtraction,
+      subtotal: 100,
+      vatAmount: 0,
+      vatPercentage: 5,
+      total: 105,
+    });
+    const res = await post(appWith({ anthropic: client }), {
+      imageData: PNG_URL,
+      companyId: COMPANY,
+    });
+    expect(res.status).toBe(200);
+    expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual([100, 5, 105]);
+    expect(res.body.validationIssues.map((i: any) => i.code)).not.toContain("AMOUNT_MISMATCH");
+    expect(res.body.reviewReasons.join(" ")).not.toMatch(/does not equal/);
+  });
+
+  it("a subtotal-only receipt gets a VAT_DERIVED review note and leaves the high band", async () => {
+    const { client } = anthropicReturning({
+      ...goodExtraction,
+      subtotal: 100,
+      vatAmount: 0,
+      vatPercentage: 5,
+      total: 0,
+    });
+    const res = await post(appWith({ anthropic: client }), {
+      imageData: PNG_URL,
+      companyId: COMPANY,
+    });
+    expect(res.status).toBe(200);
+    expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual([100, 5, 105]);
+    const notes = res.body.validationIssues.filter((i: any) => i.code === "VAT_DERIVED");
+    expect(notes).toHaveLength(1);
+    expect(notes[0].message).toMatch(/VAT 5\.00 was calculated at 5%/);
+    expect(res.body.reviewReasonCodes).toContain("VAT_DERIVED");
+    expect(res.body.confidenceBand).not.toBe("high");
   });
 
   it("R05-23 a classifier disagreement drops a confident extraction to the review band", async () => {

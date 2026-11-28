@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { toFils } from "../../shared/money";
-import { reconcileReceiptAmounts } from "../../shared/receipt-amounts";
+import {
+  amountMismatchMessage,
+  isVatDerived,
+  reconcileReceiptAmounts,
+  vatDerivedMessage,
+} from "../../shared/receipt-amounts";
 import { parseReceiptOcrText } from "../../shared/receipt-ocr-parser";
 
 const f = (n: number) => toFils(n); // strict: throws if a figure is not exactly 2dp
@@ -228,7 +233,9 @@ describe("parseReceiptOcrText amounts", () => {
     expect([p.subtotal, p.vatAmount, p.total]).toEqual([100, 5, 115.5]);
     expect(p.validationIssues.map((i) => i.code)).toEqual(["AMOUNT_MISMATCH"]);
     expect(p.reviewReasonCodes).toContain("AMOUNT_MISMATCH");
-    expect(p.reviewReasons.join(" ")).toMatch(/Subtotal 100 \+ VAT 5 does not equal total 115.5/);
+    expect(p.reviewReasons.join(" ")).toMatch(
+      /Subtotal 100\.00 \+ VAT 5\.00 does not equal total 115\.50/
+    );
     expect(p.confidenceBand).not.toBe("high");
   });
 
@@ -255,5 +262,53 @@ describe("parseReceiptOcrText amounts", () => {
     const r = parseReceiptOcrText("Shop\nTotal AED 10.01", { fallbackDate: "2026-06-29" });
     expect(f(r.subtotal) + f(r.vatAmount)).toBe(f(r.total));
     expect(r.total).toBe(10.01);
+  });
+});
+
+describe("amountMismatchMessage / vatDerivedMessage wording", () => {
+  it("formats amounts to 2 decimals (115.5 -> 115.50)", () => {
+    expect(amountMismatchMessage(100, 5, 115.5, 5)).toMatch(
+      /^Subtotal 100\.00 \+ VAT 5\.00 does not equal total 115\.50\./
+    );
+  });
+
+  it("does not claim there is no VAT line when a VAT figure was read", () => {
+    const m = amountMismatchMessage(100, 7, 120, 5, true);
+    expect(m).not.toMatch(/no VAT line/);
+    expect(m).toMatch(/Check all three figures/);
+  });
+
+  it("uses natural zero-rated wording at 0%", () => {
+    const m = amountMismatchMessage(100, 0, 110, 0);
+    expect(m).toMatch(/zero-rated, so the total should equal the subtotal/);
+    expect(m).not.toMatch(/0% VAT/);
+  });
+
+  it("flags a derived VAT only for a subtotal-only input", () => {
+    const base = { subtotal: 100, vatAmount: 0, total: 0, vatPercentage: 5 };
+    expect(isVatDerived(base)).toBe(true);
+    expect(isVatDerived({ ...base, total: 105 })).toBe(false);
+    expect(isVatDerived({ ...base, vatAmount: 5 })).toBe(false);
+    expect(isVatDerived({ ...base, vatPercentage: 0 })).toBe(false);
+    expect(vatDerivedMessage(5, 5)).toMatch(/VAT 5\.00 was calculated at 5%/);
+  });
+
+  it("the parser path never derives VAT from a subtotal alone (its total falls back to the subtotal)", () => {
+    const p = parseReceiptOcrText("Cafe\nSubtotal AED 100.00");
+    expect([p.subtotal, p.vatAmount, p.total]).toEqual([100, 0, 100]);
+    expect(p.validationIssues.map((i) => i.code)).not.toContain("VAT_DERIVED");
+  });
+
+  it("the VAT_DERIVED review-note catalog key exists in en and ar", async () => {
+    const en = (await import("../../client/src/locales/en/pageLabels.json")).default as Record<
+      string,
+      string
+    >;
+    const ar = (await import("../../client/src/locales/ar/pageLabels.json")).default as Record<
+      string,
+      string
+    >;
+    expect(en["pageLabels.receiptIssueVatDerived"]).toBeTruthy();
+    expect(ar["pageLabels.receiptIssueVatDerived"]).toBeTruthy();
   });
 });

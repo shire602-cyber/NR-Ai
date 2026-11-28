@@ -101,12 +101,44 @@ export function reconcileReceiptAmounts(input: ReceiptAmountsInput): {
   };
 }
 
-/** Review note for a `mismatch` result; worded to fit a surcharge, a discount or a VAT-free gap. */
+/**
+ * True when only a subtotal was supplied, so `reconcileReceiptAmounts` calculated VAT (and the
+ * total) from the rate. The caller adds a review note: the VAT is an assumption, not a read figure.
+ */
+export function isVatDerived(input: ReceiptAmountsInput): boolean {
+  return (
+    fils(input.subtotal) > 0 &&
+    fils(input.vatAmount) === 0 &&
+    fils(input.total) === 0 &&
+    input.vatPercentage > 0
+  );
+}
+
+function money2(n: number): string {
+  return n.toFixed(2);
+}
+
+/**
+ * Review note for a `mismatch` result; worded to fit a surcharge, a discount or a VAT-free gap.
+ * `vatRead` is true when the receipt (or the caller) supplied a VAT figure, so the note does not
+ * claim the receipt has no VAT line.
+ */
 export function amountMismatchMessage(
   subtotal: number,
   vatAmount: number,
   total: number,
-  vatPercentage: number
+  vatPercentage: number,
+  vatRead = false
 ): string {
-  return `Subtotal ${subtotal} + VAT ${vatAmount} does not equal total ${total}; the receipt shows no VAT line matching ${vatPercentage}% of the subtotal`;
+  const base = `Subtotal ${money2(subtotal)} + VAT ${money2(vatAmount)} does not equal total ${money2(total)}`;
+  if (vatRead) return `${base}. Check all three figures against the receipt.`;
+  if (vatPercentage > 0) {
+    return `${base}. The difference is not ${vatPercentage}% VAT on the subtotal; check for a service charge, fee or discount.`;
+  }
+  return `${base}. This receipt is zero-rated, so the total should equal the subtotal; check for a fee or discount.`;
+}
+
+/** Review note when VAT was calculated from the subtotal because the receipt gave no VAT or total. */
+export function vatDerivedMessage(vatAmount: number, vatPercentage: number): string {
+  return `VAT ${money2(vatAmount)} was calculated at ${vatPercentage}% of the subtotal because the receipt shows no VAT or total. Check it against the receipt.`;
 }
