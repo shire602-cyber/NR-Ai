@@ -108,7 +108,8 @@ export function normalizeOcrJson(
     subtotal: sIn,
     vatAmount: vIn,
     total: tIn,
-    vatPercentage: rateConflict ? 0 : vatPercentage,
+    // A printed 0.00 stays 0 even when the subtotal or the total is missing (never derived).
+    vatPercentage: printedRate !== null ? 0 : vatPercentage,
   };
   const {
     subtotal: derivedSubtotal,

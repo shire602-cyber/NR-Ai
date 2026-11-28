@@ -18,6 +18,7 @@ export const GUARDS = [
   "scripts/check-raw-body.mjs",
   "scripts/check-ledger-writes.mjs",
   "scripts/check-i18n-ratchet.mjs",
+  "scripts/check-locale-duplicate-keys.mjs",
 ];
 
 let failed = 0;

@@ -611,6 +611,9 @@ function buildResult(
   // read (never upgraded to the rate x subtotal) and the contradiction is raised for review.
   const printedRate = printedRateWithZeroVat(aiResult.vatAmount, aiResult.vatPercentage);
   const rateConflict = printedRate !== null && subtotal > 0 && total > subtotal;
+  // A printed 0.00 stays 0 even when the subtotal or the total is missing: it is never worked
+  // into rate x subtotal, so no VAT is calculated and no "no VAT amount" note is raised.
+  const reconcileRate = printedRate !== null ? 0 : vatPercentage;
 
   // Reconcile missing amounts in integer fils (half-up) so subtotal + VAT === total exactly.
   const {
@@ -622,9 +625,14 @@ function buildResult(
     subtotal,
     vatAmount,
     total,
-    vatPercentage: rateConflict ? 0 : vatPercentage,
+    vatPercentage: reconcileRate,
   });
-  const vatDerivedFrom = vatDerivedSource({ subtotal, vatAmount, total, vatPercentage });
+  const vatDerivedFrom = vatDerivedSource({
+    subtotal,
+    vatAmount,
+    total,
+    vatPercentage: reconcileRate,
+  });
   // Net and gross printed with no VAT line at all: the reconciler reads the gap as VAT, but that is
   // an assumption, not a printed figure (same rule as normalizeOcrJson on the email path).
   const vatNotPrinted =

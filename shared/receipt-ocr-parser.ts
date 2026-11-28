@@ -374,7 +374,12 @@ function readZeroVatLines(
   return null;
 }
 
-function findLargestLikelyAmount(lines: string[]): number {
+// Payment lines: the amount handed over or given back is never the receipt's total.
+const TENDER_LINE =
+  /\b(?:cash|paid|tender(?:ed)?|change|card|visa|master\s*card|amex|received|refund)\b|نقد|بطاقة|الباقي|المتبقي|المدفوع|مدفوع|فيزا/i;
+
+function findLargestLikelyAmount(allLines: string[]): number {
+  const lines = allLines.filter((line) => !TENDER_LINE.test(line));
   const amounts: number[] = [];
   for (const line of lines) {
     const hasAmountSignal =
@@ -483,28 +488,41 @@ export function parseReceiptOcrText(
   const fallbackDate = options.fallbackDate || uaeToday();
 
   const AMT = `(?:${CUR})?\\s*(-?\\d[\\d,]*\\.?\\d{0,2})`;
-  const total = findFirstAmount(matchText, [
-    // A Grand Total / Net Payable / Total Due line is the receipt's total even when a Sub Total,
-    // Net Total or plain Total line comes first.
-    /\b(?:grand\s+total|net\s+payable|total\s+due)\b(?!\s*(?:vat|tax|gst)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
-    // "Sub Total", "Net Total" and "Total Before Tax / Excl. VAT" are not the grand total.
-    /(?<!\b(?:sub|net)[ \t]*)\b(?:amount\s+due|balance\s+due|total\s+amount|total)\b(?!\s*(?:vat|tax|gst|before|excl|exclusive)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
+  // Cash / card / change lines are never read as the total, so the fallbacks skip them.
+  const tenderFreeText = lines.filter((line) => !TENDER_LINE.test(line)).join("\n");
+  const amountsOf = (pattern: RegExp): number[] =>
+    Array.from(matchText.matchAll(pattern))
+      .map((match) => parseAmount(match[1]))
+      .filter((amount) => amount > 0 && amount < 100000000);
+  // Document precedence. A Grand Total / Net Payable / Total Due line is the receipt's total even
+  // when a Sub Total, Net Total or plain Total line comes first (the last one wins: it follows a
+  // discount line). Then plain Total / Amount Due lines. "Net Total" is the total only when no such
+  // line exists. "Sub Total" / "Sub-Total" and totals "before tax", "excluding VAT" or "exclusive
+  // of VAT" (English and Arabic) are net figures, never the total.
+  const grandTotals = amountsOf(
+    /\b(?:grand\s+total|net\s+payable|total\s+due)\b(?!\s*(?:vat|tax|gst)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi
+  );
+  const plainTotals = amountsOf(
+    /(?<!\b(?:sub|net)[ \t-]*)\b(?:amount\s+due|balance\s+due|total\s+amount|total)\b(?!\s*\(?\s*(?:vat|tax|gst|before|excl\w*|exclusive|without|w\/o|ex[ \t.]+(?:vat|tax))\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi
+  );
+  const netTotals = amountsOf(
+    /\bnet[ \t-]*total\b(?!\s*\(?\s*(?:vat|tax|gst|before|excl\w*|exclusive|without|w\/o)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi
+  );
+  const otherTotal = findFirstAmount(tenderFreeText, [
     new RegExp(
-      `(?:المبلغ الاجمالي|الاجمالي الكلي|المجموع الكلي|المبلغ المستحق|صافي المبلغ|الاجمالي|اجمالي المبلغ|اجمالي)(?!\\s*(?:الفرعي|الضريبه|الضريبة|ضريبة))[^\\d-]{0,30}${AMT}`,
+      `(?:المبلغ الاجمالي|الاجمالي الكلي|المجموع الكلي|المبلغ المستحق|صافي المبلغ|الاجمالي|اجمالي المبلغ|اجمالي)(?!\\s*(?:الفرعي|الضريبه|الضريبة|ضريبة|قبل|بدون|دون|غير\\s+شامل))[^\\d-]{0,30}${AMT}`,
       "g"
     ),
     /\b(?:AED|DHS?|USD|EUR|GBP|SAR)\s*(-?\d[\d,]*\.?\d{0,2})\s*(?:grand\s+total|net\s+payable|total)?\b/gi,
     new RegExp(
-      `(\\d[\\d,]*\\.?\\d{0,2})\\s*${CUR}?\\s*(?:المبلغ الاجمالي|الاجمالي الكلي|المجموع الكلي|الاجمالي|اجمالي)(?!\\s*(?:الفرعي|الضريبه|الضريبة|ضريبة))`,
+      `(\\d[\\d,]*\\.?\\d{0,2})\\s*${CUR}?\\s*(?:المبلغ الاجمالي|الاجمالي الكلي|المجموع الكلي|الاجمالي|اجمالي)(?!\\s*(?:الفرعي|الضريبه|الضريبة|ضريبة|قبل|بدون|دون))`,
       "g"
     ),
   ]);
-  const readTotal = total || findLargestLikelyAmount(lines);
-  const feesInTotal = feeTotal > 0 && (readTotal === 0 || readTotal > feeTotal) ? feeTotal : 0;
   const subtotal = findFirstAmount(matchText, [
-    /\b(?:sub\s*total|subtotal|(?:amount|total)\s+before\s+(?:vat|tax)|net\s+amount|taxable\s+amount|excl\.?\s*vat)\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
+    /\b(?:sub[\s-]*total|(?:amount|total)\s+before\s+(?:vat|tax)|net\s+amount|taxable\s+amount|excl\.?\s*vat|excluding\s+(?:vat|tax)|exclusive\s+of\s+(?:vat|tax))\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     new RegExp(
-      `(?:المجموع الفرعي|الاجمالي الفرعي|المبلغ قبل الضريبة|المبلغ الخاضع للضريبة|المبلغ بدون ضريبة)[^\\d-]{0,30}${AMT}`,
+      `(?:المجموع الفرعي|الاجمالي الفرعي|(?:المبلغ|الاجمالي|المجموع|اجمالي) قبل الضريب[ةه]|المبلغ الخاضع للضريب[ةه]|(?:المبلغ|الاجمالي|المجموع) بدون (?:ال)?ضريب[ةه])[^\\d-]{0,30}${AMT}`,
       "g"
     ),
   ]);
@@ -513,13 +531,35 @@ export function parseReceiptOcrText(
   const readVatAmount = findFirstAmount(vatSearchText, [
     // The optional "5%" label must be consumed so the percentage is never read as the VAT amount.
     // Not "Before Tax" / "Excl. VAT" (a net figure) and not "TAX INVOICE" / "VAT No" headers.
-    /(?<!\b(?:before|excl\.?|excluding|exclusive\s+of)\s+)\b(?:vat|tax|gst)\b(?!\s+(?:invoice|receipt|registration|reg\b|number|no\b|id\b|code))(?:\s*@?\s*\d+(?:\.\d+)?\s*%)?[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
+    /(?<!\b(?:before|excl\.?|excluding|exclusive\s+of|w\/o|without|ex|incl\.?|including|inclusive\s+of|with)\s+)\b(?:vat|tax|gst)\b(?!\s+(?:invoice|receipt|registration|reg\b|number|no\b|id\b|code))(?:\s*@?\s*\d+(?:\.\d+)?\s*%)?[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
+    // Not "before tax" / "excluding tax" / "including tax" (a net or gross figure, not the VAT).
     new RegExp(
-      `(?:ضريب[ةه]\\s+القيم[ةه]\\s+المضاف[ةه]|(?:ال)?ضريب[ةه])(?:\\s*@?\\s*\\d+(?:\\.\\d+)?\\s*%)?[^\\d-]{0,30}${AMT}`,
+      `(?<!(?:قبل|بدون|دون|شامل|شاملة|غير\\s+شامل)\\s+(?:ال)?)(?:ضريب[ةه]\\s+القيم[ةه]\\s+المضاف[ةه]|(?:ال)?ضريب[ةه])(?:\\s*@?\\s*\\d+(?:\\.\\d+)?\\s*%)?[^\\d-]{0,30}${AMT}`,
       "g"
     ),
     /\b5\s*%\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
   ]);
+
+  // Resolve the total once VAT and subtotal are known. Several plain Total lines (a discount
+  // between them): take the one that is the net line plus the read VAT. A Sub Total with VAT and
+  // no total line is the net: total = sub + VAT (flagged below). Never a cash / change figure.
+  const plainTotal = (() => {
+    if (plainTotals.length <= 1 || readVatAmount <= 0) return plainTotals[0] ?? 0;
+    const near = (a: number, b: number) => Math.abs(a - b) < 0.015;
+    const fit = plainTotals.find(
+      (c) =>
+        (subtotal > 0 && near(c, subtotal + readVatAmount)) ||
+        plainTotals.some((d) => d !== c && near(c, d + readVatAmount))
+    );
+    return fit ?? plainTotals[0];
+  })();
+  const printedTotal =
+    grandTotals[grandTotals.length - 1] ?? (plainTotal || netTotals[0] || otherTotal || 0);
+  const totalFromSubtotal =
+    printedTotal === 0 && subtotal > 0 && readVatAmount > 0 ? round2(subtotal + readVatAmount) : 0;
+  const total = printedTotal || totalFromSubtotal;
+  const readTotal = total || (subtotal > 0 ? 0 : findLargestLikelyAmount(lines));
+  const feesInTotal = feeTotal > 0 && (readTotal === 0 || readTotal > feeTotal) ? feeTotal : 0;
 
   // A VAT line that prints zero ("VAT 0% AED 0.00", "VAT 0.00") is a read figure, not a missing
   // one, so VAT stays 0 and is never worked back at 5%. A positive printed rate next to a zero

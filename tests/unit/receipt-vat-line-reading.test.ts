@@ -52,10 +52,11 @@ const CASES: Row[] = [
   // from the total and flagged VAT_DERIVED (was VAT 12345 / VAT 1).
   [`Cafe\nVAT Reg 0012345\n${T}`, 100, 5, 105, 5, ["VAT_DERIVED"]],
   [`Cafe\nVAT: 0012345\n${T}`, 100, 12345, 105, 5, ["AMOUNT_MISMATCH"]],
-  [`Cafe\nTotal incl. VAT 105.00`, 100, 105, 105, 5, ["AMOUNT_MISMATCH"]],
+  // "Total incl. VAT 105.00" is a gross total with no VAT line: VAT is worked back and flagged (was VAT 105).
+  [`Cafe\nTotal incl. VAT 105.00`, 100, 5, 105, 5, ["VAT_DERIVED"]],
   [`Cafe\nTAX INVOICE 0001\n${T}`, 100, 5, 105, 5, ["VAT_DERIVED"]],
   [`Cafe\nVAT 5%\n0.00\n${T}`, 100, 5, 105, 5, ["VAT_DERIVED"]],
-  [`مقهى\nالاجمالي شامل الضريبة 105.00 درهم`, 100, 105, 105, 5, ["AMOUNT_MISMATCH"]],
+  [`مقهى\nالاجمالي شامل الضريبة 105.00 درهم`, 100, 5, 105, 5, ["VAT_DERIVED"]],
 ];
 
 describe("parseReceiptOcrText: VAT line reading (PR 231 review 6097208226)", () => {
