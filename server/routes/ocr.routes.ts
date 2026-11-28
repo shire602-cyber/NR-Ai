@@ -28,6 +28,7 @@ import {
   summarizeOcrProviderError,
 } from "../services/ocr-provider-clients";
 import {
+  isFeeVatAmbiguityIssue,
   parseReceiptOcrText,
   UNKNOWN_RECEIPT_MERCHANT,
   validateUaeTrn,
@@ -49,6 +50,8 @@ import {
   amountMismatchMessage,
   aiVatRate,
   hasVatFigure,
+  printedRateWithZeroVat,
+  vatRateAmountConflictMessage,
   reconcileReceiptAmounts,
   vatDerivedMessage,
   vatDerivedSource,
@@ -260,13 +263,26 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
         result._ocrSource = result._ocrSource || ocrSource;
         await waitForStep(enrichWithInternalClassifier(result));
         let ownTrn: string | null = null;
+        let ownTrnVerified = false;
         try {
-          ownTrn = (await waitForStep(storage.getCompany(companyId)))?.trnVatNumber ?? null;
+          const company = await waitForStep(storage.getCompany(companyId));
+          if (company) {
+            ownTrn = company.trnVatNumber ?? null;
+            ownTrnVerified = true;
+          }
         } catch (err: unknown) {
           log.warn({ err: errorMessage(err) || err }, "Company TRN lookup for receipt scan failed");
         }
         return res.json(
-          buildResult(result, rawText, companyId, sanitizedMessageId, validCategories, ownTrn)
+          buildResult(
+            result,
+            rawText,
+            companyId,
+            sanitizedMessageId,
+            validCategories,
+            ownTrn,
+            ownTrnVerified
+          )
         );
       };
 
@@ -578,7 +594,10 @@ function buildResult(
   companyId: string,
   messageId: string | null,
   validCategories: string[],
-  ownTrn: string | null = null
+  ownTrn: string | null = null,
+  // False when the company's own TRN could not be loaded: the supplier TRN cannot then be told
+  // apart from the company's own, so it is not accepted (fail closed).
+  ownTrnVerified = true
 ) {
   const subtotal = parseNonNegative(aiResult.subtotal);
   const vatAmount = parseNonNegative(aiResult.vatAmount);
@@ -588,6 +607,10 @@ function buildResult(
     aiResult.vatPercentage
   );
   const total = parseNonNegative(aiResult.total);
+  // An explicit VAT 0 next to a printed positive rate with a subtotal/total gap: VAT stays 0 as
+  // read (never upgraded to the rate x subtotal) and the contradiction is raised for review.
+  const printedRate = printedRateWithZeroVat(aiResult.vatAmount, aiResult.vatPercentage);
+  const rateConflict = printedRate !== null && subtotal > 0 && total > subtotal;
 
   // Reconcile missing amounts in integer fils (half-up) so subtotal + VAT === total exactly.
   const {
@@ -595,7 +618,12 @@ function buildResult(
     vatAmount: derivedVat,
     total: derivedTotal,
     mismatch: amountsMismatch,
-  } = reconcileReceiptAmounts({ subtotal, vatAmount, total, vatPercentage });
+  } = reconcileReceiptAmounts({
+    subtotal,
+    vatAmount,
+    total,
+    vatPercentage: rateConflict ? 0 : vatPercentage,
+  });
   const vatDerivedFrom = vatDerivedSource({ subtotal, vatAmount, total, vatPercentage });
   // Net and gross printed with no VAT line at all: the reconciler reads the gap as VAT, but that is
   // an assumption, not a printed figure (same rule as normalizeOcrJson on the email path).
@@ -632,7 +660,9 @@ function buildResult(
   // (e.g. raw 100 / no VAT / 105 reconciles to 100 / 5 / 105).
   const issues: ValidationIssue[] = (
     Array.isArray(aiResult._issues) ? [...aiResult._issues] : []
-  ).filter((i) => !(i.code === "AMOUNT_MISMATCH" && !amountsMismatch));
+  ).filter(
+    (i) => !(i.code === "AMOUNT_MISMATCH" && !amountsMismatch && !isFeeVatAmbiguityIssue(i))
+  );
   const have = new Set(issues.map((i) => i.code));
   const finalIssues = sanityCheckReceipt({
     merchant: aiResult.merchant as string | undefined,
@@ -649,13 +679,16 @@ function buildResult(
   // (service charge, fee, discount, zero-rated), the user is told. The message is rebuilt from the
   // final figures so it always matches the form, replacing any note built from the raw extraction.
   if (amountsMismatch) {
-    const message = amountMismatchMessage(
-      derivedSubtotal,
-      derivedVat,
-      derivedTotal,
-      vatPercentage,
-      hasVatFigure(vatAmount)
-    );
+    const message =
+      rateConflict && printedRate !== null
+        ? vatRateAmountConflictMessage(derivedSubtotal, derivedVat, derivedTotal, printedRate)
+        : amountMismatchMessage(
+            derivedSubtotal,
+            derivedVat,
+            derivedTotal,
+            vatPercentage,
+            hasVatFigure(vatAmount)
+          );
     const existing = issues.find((i) => i.code === "AMOUNT_MISMATCH");
     if (existing) existing.message = message;
     else issues.push({ code: "AMOUNT_MISMATCH", severity: "error", message });
@@ -678,7 +711,7 @@ function buildResult(
   // when VAT_DERIVED already explains why the VAT cannot be trusted.
   const supplierTrnText = typeof aiResult.supplierTrn === "string" ? aiResult.supplierTrn : null;
   const supplierTrnUsable =
-    validateUaeTrn(supplierTrnText).valid && !isOwnTrn(supplierTrnText, ownTrn);
+    ownTrnVerified && validateUaeTrn(supplierTrnText).valid && !isOwnTrn(supplierTrnText, ownTrn);
   if (
     derivedVat > 0 &&
     !vatDerivedFrom &&

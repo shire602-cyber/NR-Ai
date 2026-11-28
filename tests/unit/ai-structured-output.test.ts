@@ -6,6 +6,7 @@ import {
   StructuredOutputError,
   normalizeModelConfidence,
   RECEIPT_JSON_SCHEMA,
+  readPrintedAmount,
 } from "../../server/services/ai/structured-output";
 import { deriveConfidenceBand } from "../../shared/receipt-confidence";
 
@@ -199,5 +200,28 @@ describe("null VAT is 'not printed' for the sanity check and the retry message",
     });
     expect(feedbacks[1]).toMatch(/PRINTED/);
     expect(feedbacks[1]).toMatch(/Never calculate, estimate or fill in/);
+  });
+});
+
+describe("readPrintedAmount reads a raw VAT figure exactly like the schema", () => {
+  it.each([
+    [5, 5],
+    ["5.00", 5],
+    ["1,234.50", 1234.5],
+    ["0x5", 0],
+    [0, 0],
+    ["", null],
+    [null, null],
+    [undefined, null],
+    ["N/A", null],
+    ["-5", null],
+    [-5, null],
+    [Number.POSITIVE_INFINITY, null],
+    [{}, null],
+  ])("%j -> %j", (raw, expected) => {
+    expect(readPrintedAmount(raw)).toBe(expected);
+    // Same answer as the schema field itself: a value the schema accepts is the value returned.
+    const parsed = receiptExtractionSchema.shape.vatAmount.safeParse(raw);
+    expect(parsed.success ? parsed.data : null).toBe(expected);
   });
 });

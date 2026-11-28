@@ -614,6 +614,34 @@ describe("email intake: derived VAT never auto-posts", () => {
       expect(db.postedEntries).toHaveLength(0);
     });
 
+    it.each(["0x5", "-5", "abc", "5,00"])(
+      "first answer vatAmount %j with a bad date is read like the schema (not printed), retry returns 5: held",
+      async (printed) => {
+        enableAutopilot();
+        anthropicCreate.mockReset();
+        anthropicCreate
+          .mockResolvedValueOnce(tool({ ...base, date: "2099-01-01", vatAmount: printed }))
+          .mockResolvedValue(tool({ ...base, vatAmount: 5, vatPercentage: 5 }));
+        const res = await postWebhook(samplePayload, sign(samplePayload));
+        expect(anthropicCreate).toHaveBeenCalledTimes(2);
+        expect(res.body).toMatchObject({ autoPosted: 0, queuedForReview: 1 });
+        expect(db.postedEntries).toHaveLength(0);
+      }
+    );
+
+    it("a first answer that printed VAT as the string '5.00' and keeps it still auto-posts", async () => {
+      enableAutopilot();
+      anthropicCreate.mockReset();
+      anthropicCreate
+        .mockResolvedValueOnce(
+          tool({ ...base, date: "2099-01-01", vatAmount: "5.00", vatPercentage: 5 })
+        )
+        .mockResolvedValue(tool({ ...base, vatAmount: 5, vatPercentage: 5 }));
+      const res = await postWebhook(samplePayload, sign(samplePayload));
+      expect(anthropicCreate).toHaveBeenCalledTimes(2);
+      expect(res.body).toMatchObject({ autoPosted: 1, queuedForReview: 0 });
+    });
+
     it("every retry message carries the never-fill-in-unprinted-figures wording", async () => {
       enableAutopilot();
       anthropicCreate.mockReset();

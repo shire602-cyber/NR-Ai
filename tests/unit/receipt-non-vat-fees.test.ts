@@ -301,14 +301,7 @@ describe("fee words on lines that carry the total, subtotal or VAT amount", () =
       110,
       ["NON_VAT_FEE", "VAT_DERIVED"],
     ],
-    [
-      "fee-only receipt",
-      "Hotel\nTourism dirham 20.00\nTotal 20.00",
-      19.05,
-      0.95,
-      20,
-      ["NON_VAT_FEE", "VAT_DERIVED"],
-    ],
+    ["fee-only receipt", "Hotel\nTourism dirham 20.00\nTotal 20.00", 20, 0, 20, ["NON_VAT_FEE"]],
     [
       "tourism tax only",
       "Grand Hotel\nTourism tax 10.00\nTotal 110.00",
@@ -501,5 +494,161 @@ describe("VAT on a fee line is never silently added to the VAT line", () => {
   it("a VAT-on-service-charge line that is not a fee line is flagged, never silently wrong", () => {
     const r = parse("Cafe\nSubtotal 100\nVAT on service charge 0.50\nVAT 5.00\nTotal 115.50");
     expect(r.codes).toContain("AMOUNT_MISMATCH");
+  });
+});
+
+describe("indefinite Arabic fee wording and parenthesised English fee labels", () => {
+  it.each([
+    ["ضريبة سياحية", "فندق\nالغرفة 100.00\nضريبة سياحية 10.00\nالاجمالي 110.00"],
+    ["رسوم سياحية", "فندق\nالغرفة 100.00\nرسوم سياحية 10.00\nالاجمالي 110.00"],
+  ])("%s is a fee, never VAT 10.00", (_label, text) => {
+    const r = parse(text);
+    expect(r.vat).not.toBe(10);
+    expect(r.codes).toContain("NON_VAT_FEE");
+    expectAddsUp(r);
+  });
+
+  it.each([
+    [
+      "رسوم بلدية",
+      "فندق\nالغرفة 100.00\nرسوم بلدية 7.00\nضريبة القيمة المضافة 5.00\nالاجمالي 112.00",
+    ],
+    [
+      "ضريبة بلدية",
+      "فندق\nالغرفة 100.00\nضريبة بلدية 7.00\nضريبة القيمة المضافة 5.00\nالاجمالي 112.00",
+    ],
+  ])("%s keeps the printed VAT 5.00 and the fee in the net", (_label, text) => {
+    const r = parse(text);
+    expect(r).toMatchObject({ subtotal: 107, vat: 5, total: 112, codes: ["NON_VAT_FEE"] });
+    expectAddsUp(r);
+  });
+
+  it("an indefinite Arabic service charge (رسوم خدمة) is a fee, not VAT", () => {
+    const r = parse(
+      "مطعم\nالطعام 100.00\nرسوم خدمة 10.00\nضريبة القيمة المضافة 5.50\nالاجمالي 115.50"
+    );
+    expect(r).toMatchObject({ subtotal: 110, vat: 5.5, total: 115.5, codes: ["NON_VAT_FEE"] });
+  });
+
+  it.each([
+    [
+      "Tourism Dirham (2 nights) 20.00",
+      "Hotel\nRoom 100.00\nTourism Dirham (2 nights) 20.00\nVAT 5.00\nTotal 125.00",
+      120,
+      125,
+    ],
+    [
+      "Tourism Dirham 4 nights 80.00",
+      "Hotel\nRoom 100.00\nTourism Dirham 4 nights 80.00\nVAT 5.00\nTotal 185.00",
+      180,
+      185,
+    ],
+  ])("%s", (_label, text, subtotal, total) => {
+    const r = parse(text);
+    expect(r).toMatchObject({ subtotal, vat: 5, total, codes: ["NON_VAT_FEE"] });
+    expectAddsUp(r);
+  });
+
+  it("Service charge (VAT incl) 10.00 is a fee line, not a VAT line of 10.00", () => {
+    const r = parse("Rest\nFood 100.00\nService charge (VAT incl) 10.00\nTotal 110.00");
+    expect(r.vat).not.toBe(10);
+    expect(r.codes).toContain("NON_VAT_FEE");
+    expectAddsUp(r);
+  });
+});
+
+describe("a receipt that is only fees has no VAT to work back", () => {
+  it("Tourism dirham 20 / Total 20 is VAT 0 with NON_VAT_FEE only", () => {
+    const r = parse("Hotel\nTourism dirham 20.00\nTotal 20.00");
+    expect(r).toMatchObject({ subtotal: 20, vat: 0, total: 20, percentage: 0 });
+    expect(r.codes).toEqual(["NON_VAT_FEE"]);
+    expectAddsUp(r);
+  });
+
+  it("several fees that make up the whole total (tourism 20 + municipality 7 = 27)", () => {
+    const r = parse("Hotel\nTourism dirham 20.00\nMunicipality fee 7.00\nTotal 27.00");
+    expect(r).toMatchObject({ subtotal: 27, vat: 0, total: 27 });
+    expect(r.codes).toEqual(["NON_VAT_FEE"]);
+  });
+
+  it("the Arabic fee-only receipt", () => {
+    const r = parse("فندق\nدرهم السياحة 20.00\nالاجمالي 20.00");
+    expect(r).toMatchObject({ subtotal: 20, vat: 0, total: 20 });
+    expect(r.codes).toEqual(["NON_VAT_FEE"]);
+  });
+
+  it("a fee plus a taxed item is not fee-only: VAT is still worked back from the rest", () => {
+    const r = parse("Hotel\nTourism dirham 20.00\nTotal 125.00");
+    expect(r.vat).toBeGreaterThan(0);
+  });
+});
+
+describe("total and VAT labels that are not the grand total or the VAT", () => {
+  it("Total Before Tax 100 is the net, not VAT", () => {
+    const r = parse("Shop\nTotal Before Tax 100.00\nTax 5.00\nTotal 105.00");
+    expect(r).toMatchObject({ subtotal: 100, vat: 5, total: 105, codes: [] });
+  });
+
+  it("Net Total 100 / VAT 5 / Total Due 105 reads 105 as the total", () => {
+    expect(parse("Shop\nNet Total 100.00\nVAT 5.00\nTotal Due 105.00")).toMatchObject({
+      subtotal: 100,
+      vat: 5,
+      total: 105,
+      codes: [],
+    });
+  });
+
+  it("Net Total 100 / VAT 5% 5 / Total 105 reads the plain Total as the grand total", () => {
+    expect(parse("Shop\nNet Total 100.00\nVAT 5% 5.00\nTotal 105.00")).toMatchObject({
+      subtotal: 100,
+      vat: 5,
+      total: 105,
+      codes: [],
+    });
+  });
+
+  it.each(["Sub Total", "Subtotal"])("%s 55 / VAT 2.75 / Total 57.75 reads 57.75", (label) => {
+    expect(parse(`Shop\n${label} 55.00\nVAT 2.75\nTotal 57.75`)).toMatchObject({
+      subtotal: 55,
+      vat: 2.75,
+      total: 57.75,
+      codes: [],
+    });
+  });
+
+  it("a Grand Total after a plain Total line wins", () => {
+    expect(parse("Shop\nTotal 100.00\nVAT 5.00\nGrand Total 105.00")).toMatchObject({
+      subtotal: 100,
+      vat: 5,
+      total: 105,
+    });
+  });
+
+  it("a Total after Total Excl. VAT is the gross", () => {
+    expect(
+      parse("Shop\nTotal Excl. VAT 100.00\nTotal VAT Amount 5.00\nTotal Incl. VAT 105.00")
+    ).toMatchObject({ subtotal: 100, vat: 5, total: 105 });
+  });
+
+  it("an ENOC-style fuel receipt: 'TAX INVOICE' + 'Super 98' is not VAT 98", () => {
+    const r = parse(
+      "ENOC\nTAX INVOICE\nSuper 98 40.12L 120.00\nTotal Amount AED 126.00\nVAT 5% AED 6.00\nCard 126.00"
+    );
+    expect(r).toMatchObject({ subtotal: 120, vat: 6, total: 126, codes: [] });
+  });
+
+  it("'Total Tax Invoice No 12345' header is not VAT 12345", () => {
+    expect(
+      parse("Shop\nTotal Tax Invoice No 12345\nItem 100.00\nVAT 5.00\nNet payable 105.00")
+    ).toMatchObject({ subtotal: 100, vat: 5, total: 105 });
+  });
+
+  it("ordinary receipts are unchanged (grocery with a thousands separator)", () => {
+    expect(parse("Shop\nSubtotal 1,000.00\nVAT 5% 50.00\nTotal 1,050.00")).toMatchObject({
+      subtotal: 1000,
+      vat: 50,
+      total: 1050,
+      codes: [],
+    });
   });
 });

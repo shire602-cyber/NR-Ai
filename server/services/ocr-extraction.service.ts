@@ -19,6 +19,8 @@ import {
   aiVatRate,
   amountMismatchMessage,
   hasVatFigure,
+  printedRateWithZeroVat,
+  vatRateAmountConflictMessage,
   reconcileReceiptAmounts,
   vatDerivedMessage,
   vatDerivedSource,
@@ -93,12 +95,21 @@ export function normalizeOcrJson(
     raw?.vatPercentage
   );
   const tIn = parseNonNegative(raw?.total);
+  // An explicit VAT 0 next to a printed positive rate with a gap: VAT stays 0 as read (same
+  // reading as the interactive route and the parser) and the contradiction is held for review.
+  const printedRate = printedRateWithZeroVat(raw?.vatAmount, raw?.vatPercentage);
+  const rateConflict = printedRate !== null && sIn > 0 && tIn > sIn;
 
   // Same reconciliation as the interactive OCR route (shared/receipt-amounts.ts, integer fils,
   // half-up) so every path agrees to the fil and subtotal + VAT === total. Intake can AUTO-POST,
   // so the figures must balance or runAutopilot would build an unbalanced entry. Net (subtotal)
   // is runAutopilot's contract.
-  const amountsIn = { subtotal: sIn, vatAmount: vIn, total: tIn, vatPercentage };
+  const amountsIn = {
+    subtotal: sIn,
+    vatAmount: vIn,
+    total: tIn,
+    vatPercentage: rateConflict ? 0 : vatPercentage,
+  };
   const {
     subtotal: derivedSubtotal,
     vatAmount: derivedVat,
@@ -113,13 +124,16 @@ export function normalizeOcrJson(
     reviewIssues.push({
       code: "AMOUNT_MISMATCH",
       severity: "error",
-      message: amountMismatchMessage(
-        derivedSubtotal,
-        derivedVat,
-        derivedTotal,
-        vatPercentage,
-        hasVatFigure(vIn)
-      ),
+      message:
+        rateConflict && printedRate !== null
+          ? vatRateAmountConflictMessage(derivedSubtotal, derivedVat, derivedTotal, printedRate)
+          : amountMismatchMessage(
+              derivedSubtotal,
+              derivedVat,
+              derivedTotal,
+              vatPercentage,
+              hasVatFigure(vIn)
+            ),
     });
   }
   // Net and gross printed with no VAT figure at all: the reconciler reads the gap as VAT, but that

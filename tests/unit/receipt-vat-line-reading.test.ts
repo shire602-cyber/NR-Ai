@@ -48,10 +48,12 @@ const CASES: Row[] = [
   [`Cafe\nItem VAT 0.00\nVAT 5.00\n${T}`, 100, 5, 105, 5, []],
   [`Cafe\nVAT 0.50\n${T}`, 104.5, 0.5, 105, 5, []],
   // Other pre-existing readings, unchanged.
-  [`Cafe\nVAT Reg 0012345\n${T}`, 100, 12345, 105, 5, ["AMOUNT_MISMATCH"]],
+  // "VAT Reg" / "TAX INVOICE" are headers, not VAT lines: no VAT is printed, so it is worked back
+  // from the total and flagged VAT_DERIVED (was VAT 12345 / VAT 1).
+  [`Cafe\nVAT Reg 0012345\n${T}`, 100, 5, 105, 5, ["VAT_DERIVED"]],
   [`Cafe\nVAT: 0012345\n${T}`, 100, 12345, 105, 5, ["AMOUNT_MISMATCH"]],
   [`Cafe\nTotal incl. VAT 105.00`, 100, 105, 105, 5, ["AMOUNT_MISMATCH"]],
-  [`Cafe\nTAX INVOICE 0001\n${T}`, 104, 1, 105, 5, []],
+  [`Cafe\nTAX INVOICE 0001\n${T}`, 100, 5, 105, 5, ["VAT_DERIVED"]],
   [`Cafe\nVAT 5%\n0.00\n${T}`, 100, 5, 105, 5, ["VAT_DERIVED"]],
   [`مقهى\nالاجمالي شامل الضريبة 105.00 درهم`, 100, 105, 105, 5, ["AMOUNT_MISMATCH"]],
 ];
