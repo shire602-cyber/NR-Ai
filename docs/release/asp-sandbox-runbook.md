@@ -4,6 +4,9 @@ Owner-run. Both accredited ASPs are built from their published documentation and
 doc-derived contract fixtures. Neither has been exercised against its real sandbox yet. This runbook
 lists what each needs, how to run the sandbox dry run, and what to ask each ASP for.
 
+**A-Cube, short owner version:** [einvoicing-acube-sandbox-runbook.md](../einvoicing-acube-sandbox-runbook.md)
+(`npm run test:acube-sandbox`).
+
 **Ground rules**
 
 - **One company and one ASP at a time.** Choose the ASP in the company’s e-invoicing settings
