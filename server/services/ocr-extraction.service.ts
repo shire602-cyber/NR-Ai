@@ -3,7 +3,7 @@
 // The interactive OCR endpoint (ocr.routes) extracts inline and returns JSON to
 // the client. Email intake has no client in the loop, so it needs a callable
 // extractor: image/PDF bytes → a normalised OcrReceipt that runAutopilot can
-// persist. The amount-reconciliation rules mirror ocr.routes' buildResult so a
+// persist. The amount-reconciliation rules are the shared ones ocr.routes uses so a
 // document produces the same figures whichever path it came in through.
 //
 // normalizeOcrJson is pure (no model, no I/O) and unit-tested. The vision call
@@ -14,7 +14,18 @@ import { createLogger } from "../config/logger";
 import type { OcrReceipt } from "./receipt-autopilot.service";
 import { createOcrClients, summarizeOcrProviderError } from "./ocr-provider-clients";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
-import { deriveConfidenceBand } from "../../shared/receipt-confidence";
+import { deriveConfidenceBand, type ValidationIssue } from "../../shared/receipt-confidence";
+import {
+  aiVatRate,
+  amountMismatchMessage,
+  hasVatFigure,
+  printedRateWithZeroVat,
+  vatRateAmountConflictMessage,
+  reconcileReceiptAmounts,
+  vatDerivedMessage,
+  vatDerivedSource,
+  vatWithoutTrnMessage,
+} from "../../shared/receipt-amounts";
 import { extractReceipt, RECEIPT_EXTRACTION_PROMPT } from "./ai/receipt-extraction";
 import { normalizeModelConfidence, type ReceiptExtraction } from "./ai/structured-output";
 import { errorCode } from "../errors";
@@ -78,36 +89,80 @@ export function normalizeOcrJson(
   const raw = input as LooseOcrJson | null | undefined;
   const sIn = parseNonNegative(raw?.subtotal);
   const vIn = parseNonNegative(raw?.vatAmount);
-  const vatPercentage =
-    raw?.vatPercentage === null || raw?.vatPercentage === undefined
-      ? 5
-      : parseNonNegative(raw?.vatPercentage);
+  // A missing rate defaults to 5% (UAE); an explicit 0 rate or an explicit VAT amount of 0 means zero-rated.
+  const { vatPercentage, rateDefaulted: vatRateDefaulted } = aiVatRate(
+    raw?.vatAmount,
+    raw?.vatPercentage
+  );
   const tIn = parseNonNegative(raw?.total);
-  const round2 = (x: number) => parseFloat(x.toFixed(2));
+  // An explicit VAT 0 next to a printed positive rate with a gap: VAT stays 0 as read (same
+  // reading as the interactive route and the parser) and the contradiction is held for review.
+  const printedRate = printedRateWithZeroVat(raw?.vatAmount, raw?.vatPercentage);
+  const rateConflict = printedRate !== null && sIn > 0 && tIn > sIn;
 
-  // Reconcile to a self-consistent triple where subtotal + vat == total. The
-  // interactive route can leave total==subtotal for a subtotal-only receipt;
-  // intake AUTO-POSTS, so the figures must balance or runAutopilot would build
-  // an unbalanced entry. Net (subtotal) is runAutopilot's contract.
-  let derivedSubtotal: number;
-  let derivedVat: number;
-  let derivedTotal: number;
-  if (tIn > 0 && sIn > 0) {
-    derivedSubtotal = sIn;
-    derivedTotal = tIn;
-    derivedVat = vIn > 0 ? vIn : round2(tIn - sIn);
-  } else if (tIn > 0) {
-    derivedTotal = tIn;
-    derivedSubtotal = round2(tIn / (1 + vatPercentage / 100));
-    derivedVat = vIn > 0 ? vIn : round2(derivedTotal - derivedSubtotal);
-  } else if (sIn > 0) {
-    derivedSubtotal = sIn;
-    derivedVat = vIn > 0 ? vIn : round2((sIn * vatPercentage) / 100);
-    derivedTotal = round2(sIn + derivedVat);
-  } else {
-    derivedSubtotal = 0;
-    derivedVat = 0;
-    derivedTotal = 0;
+  // Same reconciliation as the interactive OCR route (shared/receipt-amounts.ts, integer fils,
+  // half-up) so every path agrees to the fil and subtotal + VAT === total. Intake can AUTO-POST,
+  // so the figures must balance or runAutopilot would build an unbalanced entry. Net (subtotal)
+  // is runAutopilot's contract.
+  const amountsIn = {
+    subtotal: sIn,
+    vatAmount: vIn,
+    total: tIn,
+    vatPercentage: rateConflict ? 0 : vatPercentage,
+  };
+  const {
+    subtotal: derivedSubtotal,
+    vatAmount: derivedVat,
+    total: derivedTotal,
+    mismatch: amountsMismatch,
+  } = reconcileReceiptAmounts(amountsIn);
+  const vatDerivedFrom = vatDerivedSource(amountsIn);
+
+  // Review reasons the person in the queue needs to see (same codes/wording as ocr.routes).
+  const reviewIssues: ValidationIssue[] = [];
+  if (amountsMismatch) {
+    reviewIssues.push({
+      code: "AMOUNT_MISMATCH",
+      severity: "error",
+      message:
+        rateConflict && printedRate !== null
+          ? vatRateAmountConflictMessage(derivedSubtotal, derivedVat, derivedTotal, printedRate)
+          : amountMismatchMessage(
+              derivedSubtotal,
+              derivedVat,
+              derivedTotal,
+              vatPercentage,
+              hasVatFigure(vIn)
+            ),
+    });
+  }
+  // Net and gross printed with no VAT figure at all: the reconciler reads the gap as VAT, but that
+  // is an assumption, not a printed figure (same review rule as a total-only receipt).
+  const vatNotPrinted =
+    raw?.vatAmount === null || raw?.vatAmount === undefined || raw?.vatAmount === "";
+  const vatGapAssumed = !vatDerivedFrom && vatNotPrinted && derivedVat > 0 && sIn > 0 && tIn > 0;
+  if (vatDerivedFrom || vatGapAssumed) {
+    // The VAT is an assumption, not a read figure: a receipt with no VAT amount is not a tax
+    // invoice, so it must never auto-post an input-VAT claim.
+    reviewIssues.push({
+      code: "VAT_DERIVED",
+      severity: "warning",
+      message: vatDerivedMessage(
+        derivedVat,
+        vatPercentage,
+        vatDerivedFrom ?? "total",
+        vatRateDefaulted
+      ),
+    });
+  }
+  const trn = validateUaeTrn(typeof raw?.supplierTrn === "string" ? raw.supplierTrn : null);
+  if (derivedVat > 0 && !trn.trn && !vatDerivedFrom && !vatGapAssumed) {
+    // A VAT figure with no valid supplier TRN cannot be trusted as a read tax-invoice figure.
+    reviewIssues.push({
+      code: "VAT_NO_TRN",
+      severity: "warning",
+      message: vatWithoutTrnMessage(derivedVat),
+    });
   }
 
   const category =
@@ -126,7 +181,6 @@ export function normalizeOcrJson(
       }))
     : [];
 
-  const trn = validateUaeTrn(typeof raw?.supplierTrn === "string" ? raw.supplierTrn : null);
   // A missing model confidence is LOW (R05-15); the band decides whether intake may auto-post.
   const extractionConfidence = normalizeModelConfidence(raw?.confidence);
   const band = deriveConfidenceBand({ extractionConfidence });
@@ -135,7 +189,8 @@ export function normalizeOcrJson(
     merchant: raw?.merchant ? String(raw.merchant).slice(0, 200) : "Unknown Merchant",
     supplierTrn: trn.trn,
     extractionConfidence,
-    needsReview: band.band !== "high" || (opts.issueCount ?? 0) > 0,
+    needsReview: band.band !== "high" || (opts.issueCount ?? 0) > 0 || reviewIssues.length > 0,
+    reviewIssues,
     amount: derivedSubtotal, // net (subtotal) — runAutopilot's contract
     vatAmount: derivedVat,
     total: derivedTotal,

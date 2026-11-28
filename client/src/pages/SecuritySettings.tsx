@@ -11,12 +11,14 @@ import {
   describeUserAgent,
   VISIBLE_DEVICE_ROWS,
 } from "@/pages/settings/sessions";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { StaleDataNotice } from "@/components/ui/stale-data-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -157,6 +159,34 @@ function useStepUp() {
     setCode("");
   };
   return { withStepUp, open: !!pending, code, setCode, error, submit, cancel };
+}
+
+/** A failed load is not an empty card: say so, keep any earlier data, and offer a retry. */
+function QueryFailure({
+  query,
+  testId,
+}: {
+  query: Pick<
+    UseQueryResult<unknown>,
+    "error" | "isLoadingError" | "isRefetchError" | "refetch" | "isFetching"
+  >;
+  testId: string;
+}) {
+  if (query.isLoadingError) {
+    return (
+      <LoadErrorState
+        compact
+        error={query.error}
+        onRetry={() => void query.refetch()}
+        retrying={query.isFetching}
+        testId={testId}
+      />
+    );
+  }
+  if (query.isRefetchError) {
+    return <StaleDataNotice testId={`${testId}-stale`} onRetry={() => void query.refetch()} />;
+  }
+  return null;
 }
 
 export default function SecuritySettings() {
@@ -321,6 +351,7 @@ export default function SecuritySettings() {
             <CardDescription>{t["security.mfaDescription"]}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <QueryFailure query={overview} testId="security-overview-error" />
             {recoveryCodes && (
               <div className="rounded-md border p-3" data-testid="recovery-codes">
                 <p className="font-medium">{t["security.mfaRecoveryTitle"]}</p>
@@ -440,6 +471,7 @@ export default function SecuritySettings() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
+            <QueryFailure query={overview} testId="security-email-error" />
             {ov && !ov.emailVerification.verified && (
               <>
                 {/* WP-E: when verification is not enforced there is nothing to tell the customer
@@ -493,59 +525,62 @@ export default function SecuritySettings() {
             </Dialog>
           </CardHeader>
           <CardContent>
-            <ul className="divide-y text-sm" data-testid="security-devices">
-              {(showAllDevices ? deviceGroups : deviceGroups.slice(0, VISIBLE_DEVICE_ROWS)).map(
-                (g) => (
-                  <li key={g.key} className="flex items-center justify-between gap-2 py-2">
-                    <div className="min-w-0">
-                      {describeUserAgent(g.lead.userAgent) ? (
-                        <p
-                          className="truncate font-medium"
-                          dir="ltr"
-                          translate="no"
-                          title={g.lead.userAgent ?? undefined}
-                        >
-                          {describeUserAgent(g.lead.userAgent)}
-                        </p>
-                      ) : (
-                        <p
-                          className="truncate font-medium"
-                          title={g.lead.userAgent ?? undefined}
-                          data-testid="device-unknown"
-                        >
-                          {t["security.unknownDevice"]}
-                        </p>
-                      )}
-                      <p className="text-caption text-muted-foreground">
-                        <bdi dir="ltr">{g.lead.ipAddress ?? "—"}</bdi> ·{" "}
-                        {formatMessage(t["security.sessionLastUsed"], {
-                          date: fmt(g.lead.lastUsedAt ?? g.lead.createdAt, locale),
-                        })}
-                        {g.count > 1 && (
-                          <>
-                            {" · "}
-                            {formatMessage(t["settingsPages.sessionCount"], { count: g.count })}
-                          </>
+            <QueryFailure query={sessions} testId="security-sessions-error" />
+            {sessions.isLoadingError ? null : (
+              <ul className="divide-y text-sm" data-testid="security-devices">
+                {(showAllDevices ? deviceGroups : deviceGroups.slice(0, VISIBLE_DEVICE_ROWS)).map(
+                  (g) => (
+                    <li key={g.key} className="flex items-center justify-between gap-2 py-2">
+                      <div className="min-w-0">
+                        {describeUserAgent(g.lead.userAgent) ? (
+                          <p
+                            className="truncate font-medium"
+                            dir="ltr"
+                            translate="no"
+                            title={g.lead.userAgent ?? undefined}
+                          >
+                            {describeUserAgent(g.lead.userAgent)}
+                          </p>
+                        ) : (
+                          <p
+                            className="truncate font-medium"
+                            title={g.lead.userAgent ?? undefined}
+                            data-testid="device-unknown"
+                          >
+                            {t["security.unknownDevice"]}
+                          </p>
                         )}
-                      </p>
-                    </div>
-                    {g.current ? (
-                      <Badge variant="success" dot>
-                        {t["security.sessionCurrent"]}
-                      </Badge>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void Promise.all(g.ids.map((id) => revoke(id)))}
-                      >
-                        {t["security.sessionRevoke"]}
-                      </Button>
-                    )}
-                  </li>
-                )
-              )}
-            </ul>
+                        <p className="text-caption text-muted-foreground">
+                          <bdi dir="ltr">{g.lead.ipAddress ?? "—"}</bdi> ·{" "}
+                          {formatMessage(t["security.sessionLastUsed"], {
+                            date: fmt(g.lead.lastUsedAt ?? g.lead.createdAt, locale),
+                          })}
+                          {g.count > 1 && (
+                            <>
+                              {" · "}
+                              {formatMessage(t["settingsPages.sessionCount"], { count: g.count })}
+                            </>
+                          )}
+                        </p>
+                      </div>
+                      {g.current ? (
+                        <Badge variant="success" dot>
+                          {t["security.sessionCurrent"]}
+                        </Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void Promise.all(g.ids.map((id) => revoke(id)))}
+                        >
+                          {t["security.sessionRevoke"]}
+                        </Button>
+                      )}
+                    </li>
+                  )
+                )}
+              </ul>
+            )}
             {deviceGroups.length > VISIBLE_DEVICE_ROWS && (
               <Button
                 variant="link"
@@ -568,7 +603,8 @@ export default function SecuritySettings() {
             <CardTitle>{t["security.historyTitle"]}</CardTitle>
           </CardHeader>
           <CardContent>
-            {history.data?.events.length ? (
+            <QueryFailure query={history} testId="security-history-error" />
+            {history.isLoadingError ? null : history.data?.events.length ? (
               <ul className="divide-y text-sm">
                 {history.data.events.map((e) => (
                   <li key={e.id} className="flex flex-wrap justify-between gap-2 py-2">

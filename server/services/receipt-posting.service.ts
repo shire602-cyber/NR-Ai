@@ -30,7 +30,9 @@ import { documentCurrency, loadBaseCurrency, withLedgerTx } from "../ledger";
 import type { LedgerTx } from "../ledger/types";
 import { has, resolve } from "../platform/service-registry";
 import type { FxGetRate } from "./fx";
+import { recordAudit } from "./audit.service";
 import { companyIsVatRegistered } from "../tax/vat-registration";
+import { uaeToday } from "@shared/uae-date";
 
 /** systemVat (B1: NC1): the VAT line this service derives; the kernel lets it sit on 1050 / 2020. */
 type JournalLineInsert = Omit<InsertJournalLine, "entryId"> & { systemVat?: boolean };
@@ -80,9 +82,11 @@ function assertSupplyType(type: string, vatFils: number, index?: number): string
   return type;
 }
 
-function receiptEntryDate(receipt: Pick<Receipt, "date">): Date {
-  const parsed = new Date(receipt.date ?? new Date());
-  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+export function receiptEntryDate(receipt: Pick<Receipt, "date">, now: Date = new Date()): Date {
+  // An undated receipt takes the Dubai business day (UTC midnight), not the raw instant.
+  const today = () => new Date(`${uaeToday(now)}T00:00:00.000Z`);
+  const parsed = receipt.date ? new Date(receipt.date) : today();
+  return Number.isNaN(parsed.getTime()) ? today() : parsed;
 }
 
 function assertAccountUsable(account: Account | undefined, kind: "expense" | "payment"): Account {
@@ -131,7 +135,7 @@ export async function resolveReceiptRate(
         companyId,
         receiptCurrency,
         baseCurrency,
-        date.toISOString().slice(0, 10),
+        uaeToday(date),
         { tx }
       );
       return { receiptCurrency, baseCurrency, rate: found.rate, source: "lookup" as const };
@@ -221,10 +225,12 @@ export async function planReceiptJournal(
 
   const existingRate = Number(receipt.exchangeRate);
   const lockedRate = receipt.exchangeRateSource === "manual" || receipt.posted;
+  // Computed once: the entry date and the FX lookup must not split at Dubai midnight.
+  const entryDate = receiptEntryDate(receipt);
   const quoted = await resolveReceiptRate(
     receipt.companyId,
     receipt.currency,
-    receiptEntryDate(receipt),
+    entryDate,
     lockedRate && existingRate > 0 ? existingRate : null,
     tx
   );
@@ -425,7 +431,7 @@ export async function planReceiptJournal(
   const vatBaseSum = sumFils(treatmentLines.map((t) => t.vatBaseFils));
   const types = new Set(treatmentLines.map((t) => t.supplyType));
   return {
-    entryDate: receiptEntryDate(receipt),
+    entryDate,
     ...journalMemo("receipt", { party: label }),
     lines,
     exchangeRate: fxRate,
@@ -522,6 +528,22 @@ export async function postReceipt(
       },
       tx
     );
+    await recordAudit({
+      userId,
+      companyId: current.companyId,
+      action: "receipt.post",
+      entityType: "receipt",
+      entityId: current.id,
+      before: { posted: false },
+      after: {
+        posted: true,
+        journalEntryId: result.entry.id,
+        merchant: current.merchant,
+        amount: current.amount,
+      },
+      tx,
+      required: true,
+    });
     return { receipt: result.receipt, entryId: result.entry.id };
   });
 }

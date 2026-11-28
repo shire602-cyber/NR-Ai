@@ -3414,9 +3414,21 @@ export default function Invoices() {
                     {invoicePayments.map((p: InvoicePayment) => (
                       <TableRow key={p.id}>
                         <TableCell>{formatDate(p.date, locale)}</TableCell>
-                        <TableCell className="capitalize">{p.method}</TableCell>
+                        <TableCell
+                          className={
+                            p.method === "write_off" || p.method === "write_off_reinstatement"
+                              ? undefined
+                              : "capitalize"
+                          }
+                        >
+                          {p.method === "write_off"
+                            ? t["invoices.methodWriteOff"]
+                            : p.method === "write_off_reinstatement"
+                              ? t["invoices.methodWriteOffReinstatement"]
+                              : p.method}
+                        </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {p.reference || "—"}
+                          {p.method === "write_off_reinstatement" ? "—" : p.reference || "—"}
                         </TableCell>
                         <MoneyCell
                           amount={Number(p.amount)}

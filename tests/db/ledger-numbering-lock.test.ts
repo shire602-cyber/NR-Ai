@@ -12,9 +12,10 @@ process.env.DB_POOL_MAX = "5";
 
 import { beforeAll, describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 let t: Tenant;
 let a: string;

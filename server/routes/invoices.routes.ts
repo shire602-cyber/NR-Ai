@@ -1088,6 +1088,7 @@ export function registerInvoiceRoutes(app: Express) {
         date: body.date,
         reason: body.reason,
         userId,
+        blockIfVatReliefClaimed: true,
       });
       if (result.reinstatedFils === 0) {
         throw new DomainError("NO_WRITE_OFF", 409, undefined, "This invoice has no write-off.");

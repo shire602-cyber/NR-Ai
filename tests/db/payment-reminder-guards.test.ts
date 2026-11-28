@@ -4,9 +4,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const DATE = new Date().toISOString().slice(0, 10);
+const DATE = dubaiToday();
 const base = (t: Tenant) => `/api/companies/${t.company.id}`;
 
 async function setup(t: Tenant, status: string | null) {

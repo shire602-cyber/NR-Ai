@@ -23,3 +23,10 @@ secret:
     # The assertion's variable held an input element. Match only the CSS class reported there.
     - name: "Tailwind padding class in portal join RTL test, commit a99f5ba4 (incident 40680664)"
       match: c7c74e1eaff1bb6a4ce31f8e9b0d7118af1a83fae60d24e52329b9ba5997f9fb
+    # Incident 41448070 ("Generic Password"), 3 occurrences: the mock-only login password passed to
+    # the local A-Cube mock server in tests/unit/einvoice-acube-mock-server.test.ts and
+    # tests/db/einvoice-acube-mock-server.test.ts in commit 5a352ef7 (PR #205). Not a credential:
+    # the mock runs on 127.0.0.1 and accepts any password. The literal was replaced by
+    # FAKE_PASSWORD in PR #209; this entry only clears the historical commit.
+    - name: "Mock-only A-Cube password in einvoice-acube-mock-server tests, commit 5a352ef7 (incident 41448070)"
+      match: de60158d10fb23ea391ef20b5906369f6cc118d871b7c3ee8d4ea7cd0f690bd1

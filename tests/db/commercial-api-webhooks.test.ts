@@ -8,9 +8,10 @@
 import crypto from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 async function createKey(t: Tenant, scopes: string[], extra: Record<string, unknown> = {}) {
   const r = await t.as.post(`/api/companies/${t.company.id}/api-keys`, {

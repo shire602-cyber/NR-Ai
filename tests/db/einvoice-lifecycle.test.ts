@@ -8,9 +8,10 @@ import { describe, expect, it } from "vitest";
 import { recordTestAppointment } from "./einvoice-appointment-fixture";
 import { useHarness, type Tenant } from "./harness";
 import type { EInvoiceProvider } from "../../server/services/einvoice-provider";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 const SELLER_COLUMNS = {
   trn_vat_number: "100123456700003",

@@ -35,6 +35,7 @@ import { createRequire } from "node:module";
 import { chromium, devices, request } from "playwright-core";
 import { classifyLines } from "./lib/latin-text.mjs";
 import { readPortalInviteMail } from "./lib/portal-invite-mail.mjs";
+import { dubaiIso } from "../helpers/dates.mjs";
 
 const BASE = (process.env.BASE_URL || "http://localhost:5000").replace(/\/$/, "");
 const SHOT_DIR = process.env.SHOT_DIR || "";
@@ -120,7 +121,7 @@ async function seed() {
     email: `ap+${RUN}@desertrose.example`,
   });
   const today = Date.now();
-  const day = (n) => new Date(today + n * 86400000).toISOString().slice(0, 10);
+  const day = (n) => dubaiIso(new Date(today + n * 86400000));
   const lines = Array.from({ length: 12 }, (_, i) => ({
     description: `Consulting line ${i + 1}`,
     quantity: i + 1,

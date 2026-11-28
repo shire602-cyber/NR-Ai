@@ -6,10 +6,11 @@ import crypto from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { installInviteMailbox, inviteToken as inviteTokenOf } from "./invite-mailbox";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiIso } from "../helpers/dates";
 
 const h = useHarness();
 const DAY = 86_400_000;
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+const iso = (d: Date) => dubaiIso(d);
 
 beforeEach(async () => {
   const { resetPortalThrottle } = await import("../../server/services/portal-access.service");

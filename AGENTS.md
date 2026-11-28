@@ -18,6 +18,23 @@ the week's token budget for the work that needs it.
   looks like; the council then reviews what came back before anything is pushed or reported.
 - Small lookups a review needs (one file, one grep) may stay with the council.
 
+## Ship your own work (all agents, owner rule 2026-11-28)
+
+The owner does not merge, push or release. Every agent finishes its own commits end to end:
+
+- Commit, push your branch, open the PR into the test branch `claude/eloquent-maxwell-kjxxjc`.
+- Merge it yourself once every CI check is green and the council review of the diff passes:
+  `gh pr merge N --merge --match-head-commit <sha>`. Never merge with a red or pending check, and
+  never ask the owner to merge.
+- Red CI, a conflict or review comments are yours to fix: merge the base into your branch, fix,
+  push, wait for green, merge. No force-push, rebase or `reset --hard`.
+- Releasing (test branch into `main`, which deploys) is also done by agents, never the owner, after
+  the test-branch tip is green and staging is verified per
+  [docs/release/DEPLOY-RUNBOOK.md](docs/release/DEPLOY-RUNBOOK.md).
+- Draft PRs that hold intentionally failing audit tests are not merged until their fixes land.
+- Merge only your own PRs unless the owner names others. Report each merge with its PR link and
+  merge commit.
+
 ## Project layout
 
 - `client/` React/Vite frontend (`@` aliases `client/src`). UI copy lives in namespaced catalogs

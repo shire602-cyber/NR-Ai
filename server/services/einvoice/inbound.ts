@@ -16,6 +16,7 @@ import {
   type EInvoiceInboundDocument,
 } from "../../../shared/schema";
 import { allocate } from "../../../shared/money";
+import { hasStoredBillQuantityPrecision } from "../../../shared/bill-line-edit";
 import { DomainError } from "../../errors";
 import { db, pool, type AppDatabase } from "../../db";
 import { rowsOf, withLedgerTx } from "../../ledger/tx";
@@ -231,7 +232,7 @@ const SUPPLY_FOR_CATEGORY: Record<string, string> = {
 const major = (f: number) => (f / 100).toFixed(2);
 
 /** Raw input for service "bills.prepareDraftFromInbound" (validated there by inboundBillSchema). */
-export function toInboundBill(p: ParsedInboundDocument): Record<string, unknown> {
+export function toInboundBill(p: ParsedInboundDocument) {
   const reverseCharge = p.lines.some((l) => l.category === "AE");
   return {
     vendorName: p.supplierName.slice(0, 255),
@@ -717,7 +718,16 @@ export async function processInboundEInvoice(args: {
     const actorId = await companyOwnerId(company.id);
     if (!actorId) throw new DomainError("EINVOICE_INBOUND_NO_OWNER", 409);
     const prepare = resolve<PrepareDraft>("bills.prepareDraftFromInbound");
-    const write = await prepare(company.id, actorId, toInboundBill(parsed));
+    const draft = toInboundBill(parsed);
+    if (draft.lines.some((line) => !hasStoredBillQuantityPrecision(line.quantity))) {
+      throw new DomainError(
+        "INBOUND_BILL_QUANTITY_PRECISION",
+        422,
+        undefined,
+        "Enter the bill using the line totals from the original invoice. A quantity exceeds the precision supported by the bill editor. Contact support if you need help."
+      );
+    }
+    const write = await prepare(company.id, actorId, draft);
     return await withLedgerTx(async (tx) => {
       await assertInboundOwnershipCurrent(company.id, args.onboardedEntity, buyer, tx);
       const row = await find(tx);
@@ -744,10 +754,12 @@ export async function processInboundEInvoice(args: {
     });
   } catch (err) {
     if (err instanceof InboundProviderChangedError) throw err;
-    const note =
-      err instanceof DomainError && err.code === "EINVOICE_INBOUND_NO_OWNER"
-        ? "Company has no member to own the draft bill"
-        : "Inbound draft bill could not be created";
+    let note = "Inbound draft bill could not be created";
+    if (err instanceof DomainError) {
+      if (err.code === "EINVOICE_INBOUND_NO_OWNER")
+        note = "Company has no member to own the draft bill";
+      if (err.code === "INBOUND_BILL_QUANTITY_PRECISION") note = err.code;
+    }
     await db
       .update(einvoiceInboundDocuments)
       .set({ status: "failed", error: note })

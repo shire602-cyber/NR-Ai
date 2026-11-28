@@ -689,7 +689,11 @@ async function diffTable(
   const portalColumn = portalProtection ? `, (${portalProtection}) AS backup_portal_protected` : "";
   const changed = t.columns
     .map((c) => {
-      const differs = `to_jsonb(cur.${q(c)}) IS DISTINCT FROM to_jsonb(s.${q(c)})`;
+      // Counters only move up (GREATEST), so a lower backup value changes nothing.
+      const differs =
+        counterColumn(t.name, false) === c
+          ? `cur.${q(c)} < s.${q(c)}`
+          : `to_jsonb(cur.${q(c)}) IS DISTINCT FROM to_jsonb(s.${q(c)})`;
       return portalProtection && preservesPortalValue(t, c)
         ? `(NOT cur.backup_portal_protected AND ${differs})`
         : differs;
@@ -1327,7 +1331,108 @@ async function replaceRemovesCheckoutBankRate(
   );
 }
 
-async function validateReplaceExternalState(
+/** Backup rows of a table as JSON ("[]" when the snapshot has none). */
+function snapshotRowsJson(plan: RestoreTable[], name: string): string {
+  return plan.find(({ table }) => table.name === name)?.json ?? "[]";
+}
+
+export const REPLACE_ISSUED_DOCUMENT_CATEGORIES = [
+  "invoices",
+  "credit_debit_notes",
+  "sent_or_submitted_invoices",
+  "journal_entries",
+  "receipts",
+  "payments",
+  "vat_returns",
+  "tax_return_archive",
+  "locked_periods",
+] as const;
+
+/**
+ * Replace restore deletes and re-inserts the company's rows from the backup. Issued tax
+ * documents newer than the backup (or issued after it was taken) would vanish and their numbers
+ * would be issued again, so replace is refused. "Newer than the backup" is decided by comparing
+ * the live row with the backup's own rows, not clocks: a live row whose id is not in the backup,
+ * or that was still a draft / unfiled / open there, counts. Drafts never block. Counted per
+ * category so the caller can tell the user what is in the way.
+ *
+ * State must match as well as ids: drafts are issued/posted in place under the same id (invoices
+ * draft -> issued, journals draft -> posted via the ledger kernel, posted -> void via voidEntry,
+ * receipts, VAT returns, period closes), so every category compares the backup row's state, not
+ * only its presence. Payment rows are insert-only (a reversal is a new journal entry and a
+ * deleted payment), so id presence is enough there.
+ *
+ * Numbering gap: replace deletes newer drafts that already hold a number (drafts consume
+ * invoice_number_sequences) while the counters keep their GREATEST value, so a gap in numbering
+ * is possible. A gap is deliberate; reusing a number would be worse.
+ */
+export async function countIssuedAfterBackup(
+  client: Queryable,
+  companyId: string,
+  plan: RestoreTable[]
+): Promise<Record<string, number>> {
+  // Backup rows are bound as parameters ($2...), never inlined.
+  let values: unknown[] = [];
+  const snap = (name: string) => {
+    values.push(snapshotRowsJson(plan, name));
+    return `json_populate_recordset(NULL::${q(name)}, $${values.length}::json)`;
+  };
+  const queries: Record<string, () => string> = {
+    invoices: () => `SELECT count(*) FROM invoices t WHERE t.company_id = $1
+        AND t.status <> 'draft' AND t.invoice_type NOT IN ('credit_note', 'debit_note')
+        AND NOT EXISTS (SELECT 1 FROM ${snap("invoices")} s WHERE s.id = t.id AND s.status <> 'draft')`,
+    credit_debit_notes: () => `SELECT (SELECT count(*) FROM invoices t WHERE t.company_id = $1
+        AND t.status <> 'draft' AND t.invoice_type IN ('credit_note', 'debit_note')
+        AND NOT EXISTS (SELECT 1 FROM ${snap("invoices")} s WHERE s.id = t.id AND s.status <> 'draft'))
+      + (SELECT count(*) FROM credit_notes t WHERE t.company_id = $1 AND t.status <> 'draft'
+        AND NOT EXISTS (SELECT 1 FROM ${snap("credit_notes")} s WHERE s.id = t.id AND s.status <> 'draft'))`,
+    sent_or_submitted_invoices: () => `SELECT count(*) FROM invoices t WHERE t.company_id = $1
+        AND NOT EXISTS (SELECT 1 FROM ${snap("invoices")} s WHERE s.id = t.id AND s.status <> 'draft')
+        AND (t.einvoice_submitted_at IS NOT NULL
+          OR t.einvoice_status IN ('submitted', 'accepted')
+          OR EXISTS (SELECT 1 FROM einvoice_archive a WHERE a.invoice_id = t.id)
+          OR EXISTS (SELECT 1 FROM invoice_events e WHERE e.invoice_id = t.id AND e.kind = 'emailed'
+                       AND e.status IN ('sent', 'queued', 'delivered'))
+          OR EXISTS (SELECT 1 FROM email_outbox o WHERE o.related_entity_type = 'invoice'
+                       AND o.related_entity_id = t.id AND (o.sent_at IS NOT NULL OR o.status = 'sent')))
+        AND t.status = 'draft'`,
+    journal_entries: () => `SELECT count(*) FROM journal_entries t WHERE t.company_id = $1
+        AND t.status IN ('posted', 'void')
+        AND NOT EXISTS (SELECT 1 FROM ${snap("journal_entries")} s WHERE s.id = t.id
+          AND s.status = t.status)`,
+    receipts: () => `SELECT count(*) FROM receipts t WHERE t.company_id = $1 AND t.posted
+        AND NOT EXISTS (SELECT 1 FROM ${snap("receipts")} s WHERE s.id = t.id AND s.posted)`,
+    payments: () => `SELECT (SELECT count(*) FROM invoice_payments t WHERE t.company_id = $1
+        AND NOT EXISTS (SELECT 1 FROM ${snap("invoice_payments")} s WHERE s.id = t.id))
+      + (SELECT count(*) FROM bill_payments t JOIN vendor_bills b ON b.id = t.bill_id
+        WHERE b.company_id = $1
+        AND NOT EXISTS (SELECT 1 FROM ${snap("bill_payments")} s WHERE s.id = t.id))`,
+    vat_returns: () => `SELECT (SELECT count(*) FROM vat_returns t WHERE t.company_id = $1
+        AND (t.status IN ('submitted', 'filed', 'amended') OR t.submitted_at IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM ${snap("vat_returns")} s WHERE s.id = t.id
+          AND (s.status IN ('submitted', 'filed', 'amended') OR s.submitted_at IS NOT NULL)))
+      + (SELECT count(*) FROM vat_workpapers t WHERE t.company_id = $1
+        AND t.status IN ('filed', 'locked')
+        AND NOT EXISTS (SELECT 1 FROM ${snap("vat_workpapers")} s WHERE s.id = t.id
+          AND s.status IN ('filed', 'locked')))`,
+    tax_return_archive: () => `SELECT count(*) FROM tax_return_archive t WHERE t.company_id = $1
+        AND NOT EXISTS (SELECT 1 FROM ${snap("tax_return_archive")} s WHERE s.id = t.id)`,
+    locked_periods: () => `SELECT (SELECT count(*) FROM month_end_close t WHERE t.company_id = $1
+        AND t.status = 'locked'
+        AND NOT EXISTS (SELECT 1 FROM ${snap("month_end_close")} s WHERE s.id = t.id AND s.status = 'locked'))
+      + (SELECT count(*) FROM fiscal_year_closes t WHERE t.company_id = $1 AND t.status = 'closed'
+        AND NOT EXISTS (SELECT 1 FROM ${snap("fiscal_year_closes")} s WHERE s.id = t.id AND s.status = 'closed'))`,
+  };
+  const counts: Record<string, number> = {};
+  for (const [category, build] of Object.entries(queries)) {
+    values = [companyId];
+    const { rows } = await client.query(build(), values);
+    counts[category] = Number(Object.values(rows[0] ?? {})[0] ?? 0);
+  }
+  return counts;
+}
+
+async function validatePaymentAndPayrollState(
   client: Queryable,
   companyId: string,
   plan: RestoreTable[]
@@ -1505,6 +1610,29 @@ async function validateReplaceExternalState(
   }
 }
 
+/**
+ * Everything replace restore must check before it deletes anything. The payment-link and payroll
+ * checks run first so their specific conflicts keep their own message; the issued-document
+ * guard then refuses any remaining replace that would drop or renumber issued documents.
+ */
+async function validateReplaceExternalState(
+  client: Queryable,
+  companyId: string,
+  plan: RestoreTable[]
+): Promise<void> {
+  await validatePaymentAndPayrollState(client, companyId, plan);
+  const issued = await countIssuedAfterBackup(client, companyId, plan);
+  const blocking = Object.fromEntries(Object.entries(issued).filter(([, n]) => n > 0));
+  if (Object.keys(blocking).length) {
+    throw new DomainError(
+      "BACKUP_REPLACE_ISSUED_DOCUMENTS",
+      409,
+      { categories: blocking },
+      "Replace restore is unavailable: this company has issued, sent, posted or filed documents that are newer than the backup or were already sent to customers, and replacing would delete them and reuse their numbers."
+    );
+  }
+}
+
 async function deleteTableRows(
   client: Queryable,
   { table: t, json }: RestoreTable,
@@ -1531,6 +1659,21 @@ async function deleteTableRows(
   );
 }
 
+/**
+ * Document number counters. A restore must never lower one: a replace restore would otherwise
+ * hand out numbers already printed on issued tax documents. Rows are kept (not deleted) and an
+ * incoming value only raises the live one. invoice_number_sequences covers invoice, cash_sale,
+ * credit_note, debit_note and quote (per year); purchase_doc_sequences covers expense claims
+ * (and any other purchase document type). Clone keeps its original behaviour (invoice counters
+ * only). Journal entry numbers (JE-YYYYMMDD-NNN) have no counter row: they are derived from the
+ * live maximum, and replace restore refuses when posted journals newer than the backup exist.
+ */
+function counterColumn(table: string, clone: boolean): string | undefined {
+  if (table === "invoice_number_sequences") return "last_value";
+  if (table === "purchase_doc_sequences" && !clone) return "next_value";
+  return undefined;
+}
+
 async function insertTableRows(
   client: Queryable,
   { table: t, json }: RestoreTable,
@@ -1547,7 +1690,8 @@ async function insertTableRows(
   const replacement = (column: string) => {
     const incoming = `EXCLUDED.${q(column)}`;
     const current = `t.${q(column)}`;
-    if (clone && t.name === CLONE_COUNTERS && column === "last_value") {
+    // Number counters never move backwards (issued tax documents keep their numbers).
+    if (counterColumn(t.name, clone) === column) {
       return `GREATEST(${current}, ${incoming})`;
     }
     // Changing these fields can enable or invalidate an existing portal grant.
@@ -1586,7 +1730,7 @@ async function applyRestore(
 ): Promise<void> {
   const replaces = (t: ManifestTable) => mode === "replace" && !t.appendOnly;
   for (const entry of [...plan].reverse()) {
-    if (replaces(entry.table) && !(clone && entry.table.name === CLONE_COUNTERS))
+    if (replaces(entry.table) && !counterColumn(entry.table.name, clone))
       await deleteTableRows(client, entry, companyId, clone);
   }
   const deferred: { entry: RestoreTable; keys: unknown[] }[] = [];
@@ -1807,7 +1951,9 @@ export async function restoreCompanyBackup(
     const diffs: TableDiff[] = [];
     for (const entry of plan) {
       const replace = args.mode === "replace" && !entry.table.appendOnly;
-      const d = await diffTable(client, entry, args.companyId, replace ? plan : undefined);
+      let d = await diffTable(client, entry, args.companyId, replace ? plan : undefined);
+      // Counter rows are kept (never lowered), not deleted.
+      if (counterColumn(entry.table.name, false)) d = { ...d, delete: 0 };
       if (d.insert || (replace && (d.update || d.delete))) {
         diffs.push(replace ? d : { ...d, update: 0, delete: 0 });
       }

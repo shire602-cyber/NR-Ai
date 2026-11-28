@@ -17,11 +17,12 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiIso, dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 const year = () => new Date().getUTCFullYear();
-const daysAgo = (n: number) => new Date(Date.now() - n * 86400_000).toISOString().slice(0, 10);
+const daysAgo = (n: number) => dubaiIso(new Date(Date.now() - n * 86400_000));
 
 function setEnforcement(v: "true" | "false" | undefined) {
   if (v === undefined) delete process.env.BILLING_ENFORCEMENT;

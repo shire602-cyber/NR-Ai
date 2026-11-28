@@ -242,10 +242,16 @@ export async function buildCustomerStatement(args: {
         WHERE i.company_id = $1 AND i.contact_id = $2 AND i.invoice_type = 'credit_note'
           AND i.status IN ('sent', 'posted', 'partial', 'paid') AND ${LOCAL("i.date")} <= $3::date
        UNION ALL
-       SELECT p.id, ${LOCAL("p.date")}::text, NULL, 'payment', coalesce(p.reference, i.number),
-              CASE WHEN p.method = 'write_off' THEN 'Bad debt written off — ' ELSE 'Payment — ' END
-                || i.number, upper(coalesce(i.currency, 'AED')), '0',
-              ROUND(p.amount * 100)::bigint::text, p.created_at
+       SELECT p.id, ${LOCAL("p.date")}::text, NULL, 'payment',
+              CASE WHEN p.method = 'write_off_reinstatement' THEN i.number
+                   ELSE coalesce(p.reference, i.number) END,
+              CASE WHEN p.method = 'write_off' THEN 'Bad debt written off — '
+                   WHEN p.method = 'write_off_reinstatement' THEN 'Bad debt write-off reinstated — '
+                   ELSE 'Payment — ' END
+                || i.number, upper(coalesce(i.currency, 'AED')),
+              CASE WHEN p.amount < 0 THEN ROUND(-p.amount * 100)::bigint::text ELSE '0' END,
+              CASE WHEN p.amount < 0 THEN '0' ELSE ROUND(p.amount * 100)::bigint::text END,
+              p.created_at
          FROM invoice_payments p JOIN invoices i ON i.id = p.invoice_id
         WHERE p.company_id = $1 AND i.contact_id = $2 AND ${LOCAL("p.date")} <= $3::date
        UNION ALL

@@ -14,6 +14,7 @@ import { sifLeaveDays } from "../../server/services/payroll/wps";
 import { transitionCtReturnSchema } from "../../shared/validators/corporate-tax";
 import { createFixedAssetBody } from "../../shared/validators/fixed-assets";
 import { employeeCreateSchema } from "../../shared/validators/payroll";
+import { dubaiIso } from "../helpers/dates";
 
 describe("[X4][J3] company fiscal year defaults (budget, corporate tax)", () => {
   it("a November-start company's fiscal year runs 1 Nov - 31 Oct", () => {
@@ -114,7 +115,7 @@ describe("[X4][J3] record a corporate tax return as filed", () => {
         filedOn: "2026-01-15",
       }).success
     ).toBe(true);
-    const future = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+    const future = dubaiIso(new Date(Date.now() + 5 * 86_400_000));
     expect(
       transitionCtReturnSchema.safeParse({
         to: "filed",

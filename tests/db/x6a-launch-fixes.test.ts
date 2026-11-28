@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const TRN = "100000000000003";
@@ -390,7 +391,7 @@ describe("[X6a e-invoicing item 5] pre-flight validate and generate run one rule
       customerName: "Acme Gulf FZ-LLC",
       customerTrn: BUYER_TRN,
       contactId: c.body.id,
-      date: new Date().toISOString().slice(0, 10),
+      date: dubaiToday(),
       paymentTerms: "net30",
       lines: [{ description: "Consulting", quantity: 2, unitPrice: 500, vatRate: 5 }],
     });

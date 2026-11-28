@@ -7,9 +7,10 @@
 import { describe, expect, it } from "vitest";
 import { useHarness } from "./harness";
 import { fixtureCompany, PINT_AE_FIXTURES } from "../fixtures/pint-ae/fixtures";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 const SELLER = {
   trn_vat_number: "100123456700003",

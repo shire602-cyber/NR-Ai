@@ -1,10 +1,10 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 through 0149)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 through 0159)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
 For the Vercel production deployment, follow the [Vercel and UAE PostgreSQL runbook](vercel-uae-production-config.md).
 
-Owner-run. The first deploy of this branch applies 66 migrations (through 0149) that rewrite some production data
+Owner-run. The first deploy of this branch applies 72 journal entries (0089 through 0159) that rewrite some production data
 (users, roles, FX rates, bank GL links and reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items
 (A-Cube, email, Stripe, WPS, GPSSA, FAF) are listed in section 9 and stay off until proven.
@@ -15,35 +15,25 @@ merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived o
 2. Immediately before deploy take a manual dump and verify it restores (see
    [docs/BACKUP_RESTORE_DRILL.md](../BACKUP_RESTORE_DRILL.md)):
    ```
-   pg_dump "$DATABASE_URL" -Fc -f prod-pre-0089-$(date +%Y%m%d-%H%M).dump
-   pg_restore --list prod-pre-0089-*.dump | head      # readable archive
-   createdb restore_check && pg_restore -d restore_check prod-pre-0089-*.dump
-   psql restore_check -c "SELECT count(*) FROM companies"   # matches production
+   archive="prod-pre-0089-$(date +%Y%m%d-%H%M).dump"
+   pg_dump "$DATABASE_URL" -Fc -f "$archive" &&
+     pg_restore --list "$archive" > archive.list
    ```
+   Verify the restore on the disposable cluster using section 2e.
 3. Record the dump name, size, checksum and the production row counts for `companies`, `users`,
    `company_users`, `journal_entries`, `invoices`. Keep the dump until the post-deploy smoke passes
    and the findings review (section 3) is signed off. Never commit dumps.
 
 ## 2. Migration rehearsal on a restored production snapshot
 
-Restore the dump from section 1 (or a Railway snapshot) into a scratch database, never production.
-Use the release environment with `DATABASE_URL` pointed at that restored copy.
+Run the driver in section 2e with the custom-format archive from section 1. It restores the
+archive into a fresh database on the verified disposable cluster. Keep the per-file timings,
+release log and boot results with the rehearsal record.
 
-```
-export DATABASE_URL=postgres://.../rehearsal   # the restored copy
-npm run build
-time node dist/migrate.js                       # applies migrations and runs the release schema guard
-PORT=<free port> npm start                      # boot check: /health/ready 200, /api/version
-```
-
-Record timings per migration (the migrate log) and fail the rehearsal on any error or boot failure.
-Use a direct PostgreSQL connection for the release runner. The release schema guard builds the required VAT-group audit membership index concurrently. Its dedicated session gives each statement at least five minutes and holds an advisory lock to serialize retries. A failed build exits the release command with a nonzero status. Use the query below to verify the index after a successful release.
-
-```sql
-SELECT indisvalid
-  FROM pg_index
- WHERE indexrelid = to_regclass('public.idx_audit_logs_vat_group_member_ids');
-```
+Use a direct PostgreSQL connection for the release runner. The release schema guard verifies the
+definition and validity of the VAT-group audit membership index. It uses a dedicated session with
+at least five minutes for each statement and an advisory lock to serialize retries. A failed build
+exits the release command with a nonzero status.
 
 ### 2a. Capture BEFORE migrating (pre-state counts)
 
@@ -76,8 +66,10 @@ SELECT count(*) FILTER (WHERE match_type NOT IN ('exact','contains','starts_with
   FROM reconciliation_rules;
 -- 0103: plaintext portal tokens that will be hashed (links then expire within 90 days)
 SELECT count(*) FROM customer_contacts WHERE portal_access_token IS NOT NULL;
--- 0113: companies that get a Free subscription row
-SELECT count(*) FROM companies c WHERE NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.company_id = c.id);
+-- 0113: record both totals for the post-migration comparison
+SELECT count(*) AS free_rows_before FROM subscriptions WHERE plan_id = 'free';
+SELECT count(*) AS companies_without_subscription_before FROM companies c
+ WHERE NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.company_id = c.id);
 -- 0109: audit rows that will be chained as legacy
 SELECT count(*) FROM audit_logs;
 ```
@@ -106,10 +98,14 @@ SELECT (SELECT count(*) FROM firms) AS firms, (SELECT count(*) FROM firm_members
        (SELECT count(*) FROM firm_company_grants) AS company_grants;
 -- 0109: audit chain sealed
 SELECT count(*) FILTER (WHERE legacy) AS legacy_chained, count(*) AS total FROM audit_logs;
--- 0113: Free backfill (must equal the pre-state figure) and no company left without a row
-SELECT count(*) FROM subscriptions WHERE plan_id = 'free';
-SELECT count(*) FROM companies c WHERE NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.company_id = c.id);
+-- 0113: subtract free_rows_before from free_rows_after
+SELECT count(*) AS free_rows_after FROM subscriptions WHERE plan_id = 'free';
+SELECT count(*) AS companies_without_subscription_after FROM companies c
+ WHERE NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.company_id = c.id);
 ```
+
+The increase in Free rows must equal `companies_without_subscription_before`.
+The post-migration `companies_without_subscription_after` count must be zero.
 
 ### 2c. Read-only scripts (`scripts/qa/`, READ ONLY transactions, safe on the snapshot or production)
 
@@ -219,24 +215,17 @@ migration finding still records the missing pointers for operator review.
 
 #### Skipped `uq_employees_*` unique indexes (0118)
 
-Migration `0118_x4_payroll.sql` creates three partial unique indexes on `employees`, but each one is
-SKIPPED with only a `RAISE NOTICE` when the existing data already holds duplicates. A skipped index
-means duplicates can still be entered, so confirm all three exist after migrating:
+Migration `0118_x4_payroll.sql` can skip a partial unique index when it finds duplicate
+employee data. The driver checks that each index is valid and unique on `public.employees`
+and matches the expressions and partial predicate in the migration. A name collision can
+also leave an incorrect definition in place.
 
-```sql
-SELECT 'uq_employees_company_employee_number' AS expected, to_regclass('uq_employees_company_employee_number') IS NOT NULL AS present
-UNION ALL SELECT 'uq_employees_company_iban', to_regclass('uq_employees_company_iban') IS NOT NULL
-UNION ALL SELECT 'uq_employees_company_emirates_id', to_regclass('uq_employees_company_emirates_id') IS NOT NULL;
-```
+If the check fails, inspect the existing definition and search the migration log for
+`0118: duplicate employee`. Use the expressions and predicates in the migration to find
+duplicates, then have the owner review any data or index corrections. Require a passing
+rehearsal before sign-off.
 
-Any `present = false` row: find the duplicates (group `employees` by `company_id` and the column
-named in the index; see the `CREATE UNIQUE INDEX` predicate in `migrations/0118_x4_payroll.sql`),
-have the owner merge or correct them, then create the missing index by running its
-`CREATE UNIQUE INDEX IF NOT EXISTS ...` statement from that file by hand with `psql` (the migrator
-will not re-apply an already-applied file). Also search the migrate log for `0118: duplicate employee`. Do not
-sign off the release while one is missing.
-
-Run them on the pre-migration snapshot as well, so the owner can compare. Rehearsal table to fill in
+Rehearsal table to fill in
 and attach to the PR:
 
 | Item                                                          | Migration   | Pre | Post |
@@ -248,7 +237,8 @@ and attach to the PR:
 | Portal tokens hashed                                          | 0103        |     |      |
 | Firm backfill (firms, members, links, grants)                 | 0108        |     |      |
 | Audit rows chained as legacy                                  | 0109        |     |      |
-| Free subscription rows backfilled                             | 0113        |     |      |
+| Total Free subscription rows                                  | 0113        |     |      |
+| Companies without a subscription                              | 0113        |     |      |
 | `ledger_repair_findings` / `identity_migration_findings` rows | 0090 / 0092 |     |      |
 | Total migrate time, slowest file                              | all         |     |      |
 
@@ -257,25 +247,54 @@ historic unbalanced entries and duplicate reversals need accountant review per t
 
 ### 2e. Scripted rehearsal and the 2026-11-18 record
 
-`docs/release/rehearsal/rehearse.sh` runs sections 1, 2a-2d, the idempotency re-runs and the
-section 7 restore in one command against a restored snapshot (never production). The production-like
-rehearsal record, with its findings (two missing indexes on the settlement rule, 0097 deactivating
-every pre-existing rule, 0109 time per audit row), is in [MIGRATION-REHEARSAL.md](MIGRATION-REHEARSAL.md).
+Build the candidate with `npm run build`. Start a dedicated PostgreSQL cluster bound to
+`127.0.0.1` on a dedicated port. Obtain its system identifier from inside the disposable
+instance (for example, run `SELECT system_identifier FROM pg_control_system();` through its
+local admin connection). Use a local role that can read the control information and create
+databases. Configure passwordless access for that role on the disposable cluster's loopback
+listener. The driver verifies the identifier against the TCP connection before creating databases.
+
+Run the boot check in an isolated environment with a disposable Redis instance bound to loopback
+and `redis-cli` on the path. Production startup requires the shared throttle backend. The rehearsal uses local receipt
+storage. Set `cluster_id` to the identifier you recorded and run from the repository root:
+
+```bash
+PGURL=postgres://rehearsal@127.0.0.1:55432 \
+  REHEARSAL_CLUSTER_ID="$cluster_id" \
+  REHEARSAL_REDIS_URL=redis://127.0.0.1:56379 \
+  SNAPSHOT_FILE=./pre-release.dump OUT=./rehearsal-out \
+  bash docs/release/rehearsal/rehearse.sh
+```
+
+Use a fresh `OUT` path and a trusted custom-format archive created with `pg_dump -Fc`. The
+driver restores it into a new database and creates fresh backup-restore, timing, rerun and
+rollback databases. Each run has a random database name prefix recorded in `steps.log`.
+Dispose of the PostgreSQL and Redis instances after collecting the evidence.
+
+The driver checks the backup and both restores, the two migration paths and their schema
+equivalence, required post-migration schema, and idempotency in journal order. It runs the
+production release command, pings Redis and starts the built server on a free port. It checks
+both the HTTP status and response bodies from `/health/ready` and `/api/version`. A failed gate
+returns a nonzero exit. Review the gate statuses in `steps.log`, the individual logs and
+`schema.diff` in `OUT`, and the QA findings
+before signing off. The earlier production-like run and its findings are in
+[MIGRATION-REHEARSAL.md](MIGRATION-REHEARSAL.md).
 
 ## 3. Environment to set on Railway BEFORE the deploy
 
-| Variable                                       | Value / reason                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TOKEN_ENCRYPTION_KEY`                         | Random 32+ byte secret, **separate from `SESSION_SECRET`**. The secret vault falls back to `SESSION_SECRET` when unset (`server/services/secret-vault.ts`); set it before any secrets are stored, because rotating it later makes stored secrets unreadable.                                                                                                                                                         |
-| `TRUST_PROXY_HOPS`                             | Number of proxies in front of the app (Railway: normally `1`). Needed for `req.ip` and per-IP rate limits; the server warns in production when unset and refuses `true`.                                                                                                                                                                                                                                             |
-| `RBAC_ENFORCE`                                 | `enforce` (default). Do not start on `report`: it reopens the audited R01-02 role hole. Keep `report` only as the rollback in section 7.                                                                                                                                                                                                                                                                             |
-| `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`, or `REDIS_URL` | Required on every production instance. Prefer the HTTPS REST URL and writable token (Upstash-compatible). Railway can use the TCP Redis URL (`redis://` or `rediss://`, for example `${{ Redis.REDIS_URL }}`). Missing configuration blocks startup. A Redis outage causes throttled requests to fail closed. Memory fallback is available only in development and test. |
-| Durable file storage                           | Configure a private object store as described below and set `STORAGE_STRICT=true` to require durable storage at startup. |
-| `JWT_SECRET`, `SESSION_SECRET`, `DATABASE_URL` | Already required. `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true` only after rotation.                                                                                                                                                                                                                                                                                                                                      |
-| `AUTH_PUBLIC_URL`                              | Public base URL used in emails and webhooks.                                                                                                                                                                                                                                                                                                                                                                         |
-| `FRONTEND_URL`                                 | The public origin of the app (for example `https://app.example.com`), comma-separated extras in `CORS_ORIGIN`. In production the server refuses any request whose `Origin` is not listed (403 `ORIGIN_NOT_ALLOWED`), and browsers send `Origin` for module scripts, so **unset means every page loads blank** (all JS/CSS assets 403). `curl`-based checks do not catch it; open the site in a browser after deploy. |
-| `AUTO_MIGRATE_ON_BOOT`                         | Keep `false` and run `node dist/migrate.js` in the release phase.                                                                                                                                                                                                                                                                                                                                                    |
-| Commit SHA on `/api/version`                   | See below.                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Variable                                                                | Value / reason                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TOKEN_ENCRYPTION_KEY`                                                  | Random 32+ byte secret, **separate from `SESSION_SECRET`**. The secret vault falls back to `SESSION_SECRET` when unset (`server/services/secret-vault.ts`); set it before any secrets are stored, because rotating it later makes stored secrets unreadable.                                                                                                                                                         |
+| `TRUST_PROXY_HOPS`                                                      | Number of proxies in front of the app (Railway: normally `1`). Needed for `req.ip` and per-IP rate limits; the server warns in production when unset and refuses `true`.                                                                                                                                                                                                                                             |
+| `RBAC_ENFORCE`                                                          | `enforce` (default). Do not start on `report`: it reopens the audited R01-02 role hole. Keep `report` only as the rollback in section 7.                                                                                                                                                                                                                                                                             |
+| `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`, or `REDIS_URL` | Required on every production instance. Prefer the HTTPS REST URL and writable token (Upstash-compatible). Railway can use the TCP Redis URL (`redis://` or `rediss://`, for example `${{ Redis.REDIS_URL }}`). Missing configuration blocks startup. A Redis outage causes throttled requests to fail closed. Memory fallback is available only in development and test.                                             |
+| Durable file storage                                                    | Configure a private object store as described below and set `STORAGE_STRICT=true` to require durable storage at startup.                                                                                                                                                                                                                                                                                             |
+| `JWT_SECRET`, `SESSION_SECRET`, `DATABASE_URL`                          | Already required. `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true` only after rotation.                                                                                                                                                                                                                                                                                                                                      |
+| `AUTH_PUBLIC_URL`                                                       | Public base URL used in emails and webhooks.                                                                                                                                                                                                                                                                                                                                                                         |
+| `FRONTEND_URL`                                                          | The public origin of the app (for example `https://app.example.com`), comma-separated extras in `CORS_ORIGIN`. In production the server refuses any request whose `Origin` is not listed (403 `ORIGIN_NOT_ALLOWED`), and browsers send `Origin` for module scripts, so **unset means every page loads blank** (all JS/CSS assets 403). `curl`-based checks do not catch it; open the site in a browser after deploy. |
+| `AUTO_MIGRATE_ON_BOOT`                                                  | Keep `false` and run `node dist/migrate.js` in the release phase.                                                                                                                                                                                                                                                                                                                                                    |
+| `BACKGROUND_JOBS_ENABLED`                                               | Unset (on) in production. Only the exact value `false` stops the cron scheduler and the outbox pollers. Staging sets it to `false` (with `sleepApplication: true` from the `staging` override in `railway.json`) so the service can sleep when idle; the first request after sleeping takes a few seconds. HTTP serving is unaffected.                                                                               |
+| Commit SHA on `/api/version`                                            | See below.                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 **File storage.** Firm VAT evidence uploads and downloads require a private object store. Set
 `BLOB_READ_WRITE_TOKEN` for a private Vercel Blob store, or set `S3_BUCKET`, `S3_ACCESS_KEY_ID`, and
@@ -379,7 +398,7 @@ without a CAPTCHA.
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089 through 0149, then run it a second time to confirm it is a no-op.
+0089 through 0159 in journal order, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):

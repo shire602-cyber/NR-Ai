@@ -11,7 +11,9 @@ import {
   type ReminderSetting,
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
+import { getEnv } from "../config/env";
 import { errorCode } from "../errors";
+import { recordAudit } from "./audit.service";
 import { assertPeriodNotLocked, lockPeriodPolicy } from "./period-lock.service";
 import { allocateInvoiceNumber } from "./invoice-numbering.service";
 import { salesLinesSchema, type SalesLineInput } from "../../shared/validators/invoices";
@@ -19,6 +21,7 @@ import { dueDateFromTerms, prepareSalesLines, termsFromDays } from "./invoice-li
 import { issueInvoice, resolveCustomerHeader } from "./invoice-posting.service";
 import { getRate } from "./fx/rates";
 import { fromFils, mulRate } from "../../shared/money";
+import { uaeToday } from "../../shared/uae-date";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { generateInvoicePDF } from "./pdf-invoice.service";
 import { resolveEmailLanguage } from "./email-layout";
@@ -596,6 +599,12 @@ function registerBuiltInJobs() {
 }
 
 export function initScheduler() {
+  if (!getEnv().BACKGROUND_JOBS_ENABLED) {
+    log.info(
+      "Background jobs disabled (BACKGROUND_JOBS_ENABLED=false): no scheduled jobs or outbox pollers started"
+    );
+    return;
+  }
   log.info("Initializing background scheduler...");
   registerBuiltInJobs();
   const started = startRegisteredJobs();
@@ -616,16 +625,16 @@ function advanceByInterval(date: Date, interval: string): Date {
   const next = new Date(date);
   switch (interval) {
     case "weekly":
-      next.setDate(next.getDate() + 7);
+      next.setUTCDate(next.getUTCDate() + 7);
       break;
     case "monthly":
-      next.setMonth(next.getMonth() + 1);
+      next.setUTCMonth(next.getUTCMonth() + 1);
       break;
     case "quarterly":
-      next.setMonth(next.getMonth() + 3);
+      next.setUTCMonth(next.getUTCMonth() + 3);
       break;
     case "yearly":
-      next.setFullYear(next.getFullYear() + 1);
+      next.setUTCFullYear(next.getUTCFullYear() + 1);
       break;
   }
   return next;
@@ -647,6 +656,9 @@ function advanceByInterval(date: Date, interval: string): Date {
  * subsystem that the recurring-invoices.routes.ts API never wrote to, so
  * recurring schedules created through the UI were never picked up.
  */
+/** Most periods one template may catch up in a single tick; the rest follow on the next tick. */
+const MAX_CATCH_UP_PERIODS_PER_TICK = 24;
+
 export async function generateDueRecurringInvoices(): Promise<number> {
   // Process one template at a time, holding a row lock per iteration so
   // concurrent cron runners can't pick the same template (SELECT ... FOR
@@ -676,6 +688,10 @@ export async function generateDueRecurringInvoices(): Promise<number> {
     for (const row of skipped.rows as Array<{ id: string }>) seen.add(String(row.id));
   }
   const generatedBy = new Map<string, number>();
+  // Catch-up: periods handled per template this tick, and the draft invoices created for missed
+  // (older) periods, summarised on the template and in the audit log at the end of the tick.
+  const periodsThisTick = new Map<string, number>();
+  const catchUpDrafts = new Map<string, { companyId: string; periods: string[]; ids: string[] }>();
 
   while (true) {
     type ProcessResult =
@@ -685,6 +701,10 @@ export async function generateDueRecurringInvoices(): Promise<number> {
           skipped: false;
           template: typeof recurringInvoicesTable.$inferSelect;
           invoice: typeof invoicesTable.$inferSelect;
+          /** The template has more due periods this tick: fetch it again (catch-up). */
+          again: boolean;
+          /** A missed (older) period: created as a draft for review, never issued or sent. */
+          catchUpPeriod: string | null;
         };
 
     let result: ProcessResult;
@@ -712,10 +732,34 @@ export async function generateDueRecurringInvoices(): Promise<number> {
           return { skipped: true as const };
         };
 
-        if (template.endDate && new Date(template.endDate) < now) {
-          log.info({ templateId: template.id }, "Recurring template past endDate — disabled");
+        // The end date is a calendar day and INCLUSIVE. Each pass handles one period: the period
+        // whose run date is `template.nextRunDate`. A template that fell behind is fetched again
+        // (see `again`) until every period up to min(today, end date) is handled. The latest such
+        // period (the current one) behaves as always: dated today, issued when the template
+        // auto-issues. Every older missed period becomes a DRAFT dated today with supply_date set
+        // to the period, for the user to review and issue (nothing is backdated, posted or sent).
+        // Compare calendar days, not instants.
+        const todayDubai = uaeToday(now);
+        const runDay = new Date(template.nextRunDate).toISOString().slice(0, 10);
+        const endDay = template.endDate
+          ? new Date(template.endDate).toISOString().slice(0, 10)
+          : null;
+        if (endDay && runDay > endDay) {
+          log.info({ templateId: template.id }, "Recurring template past endDate - disabled");
           return note("ended", "End date reached; template disabled", true);
         }
+        const advancedNextRunDate = advanceByInterval(
+          new Date(template.nextRunDate),
+          template.frequency
+        );
+        const advancedDay = advancedNextRunDate.toISOString().slice(0, 10);
+        // Deactivate once the next run would fall after the (inclusive) end date.
+        const finished = endDay !== null && advancedDay > endDay;
+        const hasLaterPeriod = !finished && advancedDay <= todayDubai;
+        const again =
+          hasLaterPeriod &&
+          (periodsThisTick.get(template.id) ?? 0) + 1 < MAX_CATCH_UP_PERIODS_PER_TICK;
+        const catchUpPeriod = hasLaterPeriod ? runDay : null;
 
         let parsedLines: SalesLineInput[];
         try {
@@ -746,7 +790,7 @@ export async function generateDueRecurringInvoices(): Promise<number> {
           return note("invalid", `Template lines are invalid: ${(err as Error)?.message}`, true);
         }
 
-        const dateIso = now.toISOString().slice(0, 10);
+        const dateIso = todayDubai;
         const invoiceDate = new Date(`${dateIso}T00:00:00.000Z`);
         await lockPeriodPolicy(tx, template.companyId, "shared");
         try {
@@ -820,6 +864,10 @@ export async function generateDueRecurringInvoices(): Promise<number> {
             dueDate: header.dueDate ? new Date(`${header.dueDate}T00:00:00.000Z`) : null,
             placeOfSupplyEmirate: header.placeOfSupplyEmirate,
             date: invoiceDate,
+            supplyDate: catchUpPeriod ? new Date(`${catchUpPeriod}T00:00:00.000Z`) : null,
+            // Customer-safe: invoice notes reach the UBL cbc:Note and the buyer. The template link
+            // and the "review and issue" instruction live only in the audit row and last-run message.
+            notes: catchUpPeriod ? `Services for the period starting ${catchUpPeriod}` : null,
             currency,
             exchangeRate: rate,
             baseCurrencyAmount: Number(fromFils(baseFils)),
@@ -849,23 +897,44 @@ export async function generateDueRecurringInvoices(): Promise<number> {
           });
         }
 
-        const advancedNextRunDate = advanceByInterval(
-          new Date(template.nextRunDate),
-          template.frequency
-        );
         await tx
           .update(recurringInvoicesTable)
           .set({
+            ...(finished ? { isActive: false } : {}),
             nextRunDate: advancedNextRunDate,
             lastGeneratedInvoiceId: insertedInvoice.id,
             totalGenerated: sql`${recurringInvoicesTable.totalGenerated} + 1`,
-            lastRunStatus: "generated",
-            lastRunMessage: `Generated ${newNumber} as draft`,
+            lastRunStatus: catchUpPeriod ? "catch_up_draft" : "generated",
+            lastRunMessage: catchUpPeriod
+              ? `Created ${newNumber} as a draft for the missed ${catchUpPeriod} period - review and issue it`
+              : `Generated ${newNumber} as draft`,
             lastRunAt: now,
           })
           .where(eq(recurringInvoicesTable.id, template.id));
 
-        return { skipped: false as const, template, invoice: insertedInvoice };
+        if (catchUpPeriod) {
+          // One audit row per draft, committed or rolled back with the draft itself, so a crash
+          // mid-tick never leaves a draft without its trail.
+          await recordAudit({
+            companyId: template.companyId,
+            action: "recurring_invoice.catch_up_drafts",
+            entityType: "recurring_invoice",
+            entityId: template.id,
+            after: { period: catchUpPeriod, invoiceId: insertedInvoice.id, number: newNumber },
+            extra: {
+              message: `Created draft ${newNumber} for the missed ${catchUpPeriod} period - review and issue it`,
+            },
+            tx,
+          });
+        }
+
+        return {
+          skipped: false as const,
+          template,
+          invoice: insertedInvoice,
+          again,
+          catchUpPeriod,
+        };
       });
     } catch (err) {
       // Per-template error boundary: one failure must not starve the others.
@@ -881,6 +950,19 @@ export async function generateDueRecurringInvoices(): Promise<number> {
     if (result.skipped) continue;
 
     const { template, invoice } = result;
+    periodsThisTick.set(template.id, (periodsThisTick.get(template.id) ?? 0) + 1);
+    if (result.again) seen.delete(template.id);
+    if (result.catchUpPeriod) {
+      const entry = catchUpDrafts.get(template.id) ?? {
+        companyId: template.companyId,
+        periods: [],
+        ids: [],
+      };
+      entry.periods.push(result.catchUpPeriod);
+      entry.ids.push(invoice.id);
+      catchUpDrafts.set(template.id, entry);
+      continue;
+    }
     generatedBy.set(template.companyId, (generatedBy.get(template.companyId) ?? 0) + 1);
     const outcome = await finishGeneratedInvoice(template, invoice);
     await db
@@ -893,11 +975,45 @@ export async function generateDueRecurringInvoices(): Promise<number> {
     );
   }
 
+  for (const [templateId, drafts] of catchUpDrafts) {
+    await summariseCatchUpDrafts(templateId, drafts);
+  }
   for (const [companyId, generated] of generatedBy) {
     await recordAutomationRun("recurringInvoices", companyId, "ok", { generated });
   }
   log.info({ processed }, "Recurring invoice generation cycle complete");
   return processed;
+}
+
+/**
+ * Missed periods were created as drafts: say so on the template (keeping the current period's
+ * outcome when one was issued in the same tick) and the per-draft audit rows are written inside each period's transaction.
+ */
+async function summariseCatchUpDrafts(
+  templateId: string,
+  drafts: { companyId: string; periods: string[]; ids: string[] }
+): Promise<void> {
+  try {
+    const n = drafts.periods.length;
+    const summary = `Created ${n} draft invoice${n === 1 ? "" : "s"} for missed periods ${drafts.periods.join(", ")} - review and issue them`;
+    const [row] = await db
+      .select({
+        status: recurringInvoicesTable.lastRunStatus,
+        message: recurringInvoicesTable.lastRunMessage,
+      })
+      .from(recurringInvoicesTable)
+      .where(eq(recurringInvoicesTable.id, templateId));
+    const catchUpOnly = !row || row.status === "catch_up_draft";
+    await db
+      .update(recurringInvoicesTable)
+      .set({
+        ...(catchUpOnly ? { lastRunStatus: "catch_up_drafts" } : {}),
+        lastRunMessage: catchUpOnly || !row?.message ? summary : `${row.message} | ${summary}`,
+      })
+      .where(eq(recurringInvoicesTable.id, templateId));
+  } catch (err) {
+    log.error({ err, templateId }, "Could not record the recurring catch-up draft summary");
+  }
 }
 
 /**

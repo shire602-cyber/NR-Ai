@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { DomainError } from "../errors";
+import { calendarParts, uaeToday } from "@shared/uae-date";
 
 export type InvoiceDocType = "invoice" | "cash_sale" | "credit_note" | "debit_note" | "quote";
 
@@ -47,9 +48,27 @@ export function defaultNumberingSettings(docType: InvoiceDocType): NumberingSett
   return { docType, prefix: PREFIX[docType], padding: 5, yearlyReset: true };
 }
 
+/**
+ * Clock default for the document date: the Dubai day at UTC midnight (a date-only value), so the
+ * year is exact even in the last second of 31 Dec UTC (calendarParts reads a 23:59:59Z instant
+ * as an end-of-day date-only value and would stay on the old year).
+ */
+function dubaiDayDefault(): Date {
+  return new Date(`${uaeToday()}T00:00:00.000Z`);
+}
+
 /** Year key of the sequence row: the calendar year, or 0 for one continuous sequence. */
 function sequenceYear(s: NumberingSettings, date: Date): number {
-  return s.yearlyReset ? date.getUTCFullYear() : 0;
+  return s.yearlyReset ? numberingYear(date) : 0;
+}
+
+/**
+ * Calendar year a document date numbers in. A date-only value (UTC midnight) keeps its own day;
+ * an ordinary instant such as the default `new Date()` is read on the Dubai calendar, so a
+ * document issued at 21:30Z on 31 Dec already numbers in the new year.
+ */
+function numberingYear(date: Date): number {
+  return calendarParts(date)?.year ?? date.getUTCFullYear();
 }
 
 export function formatDocumentNumber(s: NumberingSettings, year: number, n: number): string {
@@ -116,7 +135,7 @@ export async function getNumberingSettings(
 export async function allocateInvoiceNumber(
   companyId: string,
   docType: InvoiceDocType,
-  date: Date = new Date(),
+  date: Date = dubaiDayDefault(),
   executor: Executor = db
 ): Promise<string> {
   // Take the same company key-share lock as the invoice FK before writing the
@@ -140,7 +159,7 @@ export async function allocateInvoiceNumber(
   // this number. Skip past them inside the caller's tx (the upsert holds the sequence row lock),
   // so a number is never issued twice and nothing below an issued number is left open.
   for (let i = 0; i < MAX_COLLISION_SKIPS; i++) {
-    const candidate = formatDocumentNumber(settings, date.getUTCFullYear(), allocated);
+    const candidate = formatDocumentNumber(settings, numberingYear(date), allocated);
     if (!(await numberExists(companyId, docType, candidate, executor))) return candidate;
     const bumped = await executor.execute(sql`
       UPDATE invoice_number_sequences SET last_value = last_value + 1, updated_at = now()
@@ -214,12 +233,12 @@ async function lastIssued(
 export async function peekNextInvoiceNumber(
   companyId: string,
   docType: InvoiceDocType,
-  date: Date = new Date(),
+  date: Date = dubaiDayDefault(),
   executor: Executor = db
 ): Promise<string> {
   const settings = await getNumberingSettings(companyId, docType, executor);
   const next = (await lastIssued(companyId, docType, sequenceYear(settings, date), executor)) + 1;
-  return formatDocumentNumber(settings, date.getUTCFullYear(), next);
+  return formatDocumentNumber(settings, numberingYear(date), next);
 }
 
 export interface NumberingView extends NumberingSettings {
@@ -233,7 +252,7 @@ export interface NumberingView extends NumberingSettings {
 export async function numberingView(
   companyId: string,
   docType: InvoiceDocType,
-  date: Date = new Date()
+  date: Date = dubaiDayDefault()
 ): Promise<NumberingView> {
   const settings = await getNumberingSettings(companyId, docType);
   const last = await lastIssued(companyId, docType, sequenceYear(settings, date), db);
@@ -241,7 +260,7 @@ export async function numberingView(
     ...settings,
     lastIssued: last,
     nextNumber: last + 1,
-    nextFormatted: formatDocumentNumber(settings, date.getUTCFullYear(), last + 1),
+    nextFormatted: formatDocumentNumber(settings, numberingYear(date), last + 1),
   };
 }
 
@@ -290,7 +309,7 @@ export async function saveNumberingSettings(
   docType: InvoiceDocType,
   input: { prefix: string; padding: number; yearlyReset: boolean; nextNumber?: number },
   userId: string,
-  date: Date = new Date()
+  date: Date = dubaiDayDefault()
 ): Promise<NumberingView> {
   await db.transaction(async (tx: Executor) => {
     await tx.execute(sql`SELECT id FROM companies WHERE id = ${companyId} FOR KEY SHARE`);

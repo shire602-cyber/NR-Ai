@@ -24,6 +24,7 @@ import {
   sealCompanyCredentials,
 } from "../../server/services/einvoice/providers/company-credentials";
 import { PINT_AE_FIXTURES, fixtureCompany, type PintAeFixture } from "../fixtures/pint-ae/fixtures";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const TRN = "100123456700003";
@@ -31,7 +32,7 @@ const TIN = "1001234567";
 const SECRET = crypto.randomUUID();
 const API_KEY = crypto.randomUUID();
 const WEBHOOK = "/api/webhooks/einvoice/complyance/sandbox";
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 const SELLER_COLUMNS = {
   einvoice_scope: "b2b",

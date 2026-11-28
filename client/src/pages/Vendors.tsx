@@ -223,9 +223,29 @@ export default function Vendors() {
 
   const backfill = useMutation({
     mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/vendors/backfill`, {}),
-    onSuccess: (r: { billsLinked: number }) => {
+    onSuccess: (r: {
+      billsLinked: number;
+      legacyBillsSkipped: { count: number } | null;
+      filedBillsSkipped: { count: number } | null;
+    }) => {
       invalidate();
-      toast({ title: `${c.linked}: ${r.billsLinked}` });
+      const skippedMessages = [];
+      if (r.filedBillsSkipped) {
+        skippedMessages.push(
+          formatMessage(t["pages.vendorsBackfillFiledSkipped"], {
+            count: r.filedBillsSkipped.count,
+          })
+        );
+      }
+      if (r.legacyBillsSkipped) {
+        skippedMessages.push(
+          formatMessage(t["pages.vendorsBackfillSkipped"], { count: r.legacyBillsSkipped.count })
+        );
+      }
+      toast({
+        title: `${c.linked}: ${r.billsLinked}`,
+        description: skippedMessages.join(" ") || undefined,
+      });
     },
     onError: (e: Error) => toast({ variant: "destructive", title: e.message }),
   });

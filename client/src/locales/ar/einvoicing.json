@@ -206,6 +206,7 @@
   "einvoicing.err_ACUBE_WITHDRAWN": "سُحبت الفاتورة الإلكترونية.",
   "einvoicing.err_ACUBE_UNKNOWN_STATUS": "أبلغ A-Cube عن حالة لا يعرفها [[brand]]؛ تظهر كفاشلة حتى يتم التحقق منها.",
   "einvoicing.err_ACUBE_NO_DOCUMENT_ID": "قبل A-Cube الطلب لكنه لم يُرجع مستندًا للمتابعة. ستُعاد المحاولة.",
+  "einvoicing.err_ACUBE_DOCUMENT_ID_MISMATCH": "أعاد A-Cube مستندًا لا يطابق المستند المطلوب. لم يتم تغيير أي شيء وستُعاد المراجعة.",
   "einvoicing.err_TRANSPORT_ERROR": "انقطع الاتصال بمزود الخدمة. تُعاد المحاولة تلقائيًا ولا يُرسل المستند مرتين.",
   "einvoicing.err_EINVOICE_VALIDATION": "وجد مزود الفوترة الإلكترونية مشكلة في الفاتورة الإلكترونية ولم يرسلها.",
   "einvoicing.err_EINVOICE_DELIVERY_FAILED": "تعذّر تسليم الفاتورة الإلكترونية إلى العميل. تحقّق من عنوان العميل للفوترة الإلكترونية.",

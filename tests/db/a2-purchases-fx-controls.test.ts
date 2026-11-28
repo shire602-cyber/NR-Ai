@@ -10,14 +10,15 @@
  */
 import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
+import { dubaiIso, dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const TRN = "100000000000003";
 /** WQ2 (4.7): a supplier's TRN differs from the company's own (a self-TRN bill is refused). */
 const SUPPLIER_TRN = "100222333400003";
 const VAT_CO = { trn_vat_number: TRN, emirate: "dubai" };
-const today = () => new Date().toISOString().slice(0, 10);
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+const today = () => dubaiToday();
+const daysAgo = (n: number) => dubaiIso(new Date(Date.now() - n * 86_400_000));
 
 const tenant = (over: Parameters<typeof h.createTenant>[0] = {}) =>
   h.createTenant({ ...over, companyColumns: { ...VAT_CO, ...(over?.companyColumns ?? {}) } });

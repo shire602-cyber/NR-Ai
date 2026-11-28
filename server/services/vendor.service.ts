@@ -3,17 +3,19 @@
  * case-insensitive name; bills and purchase orders link `vendor_id` while the free-text
  * `vendor_name` stays on legacy rows (backfilled by exact name).
  */
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import { DomainError } from "../errors";
 import { assertChosenAccountsNotControl } from "../ledger/control-accounts";
-import { ledgerQueryable } from "../ledger/tx";
+import { ledgerQueryable, withLedgerTx } from "../ledger/tx";
 import type { LedgerTx } from "../ledger/types";
+import { isLegacyBill } from "../../shared/bill-line-edit";
 import { vendors, type Vendor } from "../../shared/schema";
 import { scopedGet } from "../tenancy";
 import { agedPayablesWithVendors, type AgingReport } from "../reporting";
 import { fromFils, toFils } from "../../shared/money";
 import type { VendorCreateInput, VendorUpdateInput } from "../../shared/validators/vendors";
+import { filsOf, isoDateOf, legacyBillEditError, txRows } from "./bill-posting.service";
 
 export async function listVendors(companyId: string, opts: { includeInactive?: boolean } = {}) {
   const rows = await db
@@ -208,13 +210,13 @@ export async function resolveVendor(
 }
 
 /**
- * Link legacy bills / POs (vendor_id NULL) to vendors by exact case-insensitive name. With
+ * Link unlinked bills / POs to vendors by exact case-insensitive name. With
  * `createMissing`, a vendor is created for each unmatched distinct name first.
  */
 export async function backfillVendorLinks(
   companyId: string,
   opts: { createMissing?: boolean } = {}
-): Promise<{ vendorsCreated: number; billsLinked: number; purchaseOrdersLinked: number }> {
+) {
   let vendorsCreated = 0;
   if (opts.createMissing) {
     const names = await pool.query(
@@ -236,13 +238,93 @@ export async function backfillVendorLinks(
       vendorsCreated += ins.rowCount ?? 0;
     }
   }
-  const bills = await pool.query(
-    `UPDATE vendor_bills b SET vendor_id = v.id
-       FROM vendors v
-      WHERE b.company_id = $1 AND v.company_id = $1 AND b.vendor_id IS NULL
-        AND lower(trim(b.vendor_name)) = lower(v.name)`,
-    [companyId]
-  );
+  const billBackfill = await withLedgerTx(async (tx) => {
+    const candidates = await txRows<{
+      id: string;
+      bill_date: string | Date;
+      vat_amount: string | null;
+      reverse_charge: boolean;
+      is_import: boolean;
+      import_vat_amount: string;
+    }>(
+      tx,
+      `SELECT b.id, b.bill_date, b.vat_amount, b.reverse_charge, b.is_import, b.import_vat_amount
+         FROM vendor_bills b JOIN vendors v
+           ON v.company_id = b.company_id AND lower(trim(b.vendor_name)) = lower(v.name)
+        WHERE b.company_id = $1 AND b.vendor_id IS NULL ORDER BY b.id FOR UPDATE OF b`,
+      [companyId]
+    );
+    if (!candidates.length) {
+      return { billsLinked: 0, legacyBillsSkipped: null, filedBillsSkipped: null };
+    }
+
+    // Read the lines after locking the headers so a concurrent edit has finished replacing them.
+    const billLines = await txRows<{
+      bill_id: string;
+      lines: {
+        vat_amount: string | null;
+        reverse_charge: boolean;
+        vat_supply_type: string | null;
+      }[];
+    }>(
+      tx,
+      `SELECT bill_id, json_agg(json_build_object(
+          'vat_amount', vat_amount::text, 'reverse_charge', reverse_charge,
+          'vat_supply_type', vat_supply_type
+        )) AS lines
+         FROM bill_line_items WHERE bill_id = ANY($1::uuid[]) GROUP BY bill_id`,
+      [sql.param(candidates.map((bill) => bill.id))]
+    );
+    const linesByBill = new Map(billLines.map((row) => [row.bill_id, row.lines]));
+    const eligibleIds: string[] = [];
+    const errorsByDate = new Map<string, DomainError>();
+    const skipped = new Map<
+      string,
+      { count: number; status: number; code: string; message: string }
+    >();
+    for (const bill of candidates) {
+      if (
+        !isLegacyBill(
+          filsOf(bill.vat_amount),
+          (linesByBill.get(bill.id) ?? []).map((line) => ({
+            ...line,
+            vatFils: filsOf(line.vat_amount),
+          })),
+          {
+            isImport: bill.is_import,
+            reverseCharge: bill.reverse_charge,
+            declaredVatFils: filsOf(bill.import_vat_amount),
+          }
+        )
+      ) {
+        eligibleIds.push(bill.id);
+        continue;
+      }
+      const date = isoDateOf(bill.bill_date);
+      let error = errorsByDate.get(date);
+      if (!error) {
+        error = await legacyBillEditError(tx, companyId, date);
+        errorsByDate.set(date, error);
+      }
+      const summary = skipped.get(error.code);
+      if (summary) summary.count++;
+      else skipped.set(error.code, { count: 1, status: error.statusCode, ...error.toJSON() });
+    }
+    const bills = await txRows<{ id: string }>(
+      tx,
+      `UPDATE vendor_bills b SET vendor_id = v.id
+         FROM vendors v
+        WHERE b.company_id = $1 AND v.company_id = $1 AND b.vendor_id IS NULL
+          AND lower(trim(b.vendor_name)) = lower(v.name) AND b.id = ANY($2::uuid[])
+        RETURNING b.id`,
+      [companyId, sql.param(eligibleIds)]
+    );
+    return {
+      billsLinked: bills.length,
+      legacyBillsSkipped: skipped.get("LEGACY_BILL_RECLASSIFY_REQUIRED") ?? null,
+      filedBillsSkipped: skipped.get("LEGACY_BILL_IN_FILED_RETURN") ?? null,
+    };
+  });
   const pos = await pool.query(
     `UPDATE purchase_orders p SET vendor_id = v.id
        FROM vendors v
@@ -252,7 +334,7 @@ export async function backfillVendorLinks(
   );
   return {
     vendorsCreated,
-    billsLinked: bills.rowCount ?? 0,
+    ...billBackfill,
     purchaseOrdersLinked: pos.rowCount ?? 0,
   };
 }

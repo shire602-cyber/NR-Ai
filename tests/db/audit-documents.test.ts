@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { useHarness } from "./harness";
 import { all, attr, first, parseXml, text } from "../../server/services/einvoice/dom";
+import { dubaiIso, dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 
@@ -19,7 +20,7 @@ it("exports UAE tax in AED for an invoice issued in the company's USD functional
     },
   });
   const api = `/api/companies/${seller.company.id}`;
-  const date = new Date().toISOString().slice(0, 10);
+  const date = dubaiToday();
   const rate = await seller.as.post(`${api}/exchange-rates`, {
     fromCurrency: "AED",
     rate: 0.25,
@@ -80,8 +81,7 @@ it("[PR174] converts an AED-ledger sale at the earlier supply date's rate", asyn
     },
   });
   const api = `/api/companies/${seller.company.id}`;
-  const day = (offset: number) =>
-    new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+  const day = (offset: number) => dubaiIso(new Date(Date.now() + offset * 86_400_000));
   for (const [rate, effectiveDate] of [
     [4, day(-10)],
     [4.2, day(0)],
@@ -194,7 +194,7 @@ it("[PR174] exports an AED-ledger foreign invoice at its stored manual rate when
     },
   });
   const api = `/api/companies/${seller.company.id}`;
-  const date = new Date().toISOString().slice(0, 10);
+  const date = dubaiToday();
   const contact = await seller.as.post(`${api}/customer-contacts`, {
     name: "Gulf Trading LLC",
     trnNumber: "100765432100003",

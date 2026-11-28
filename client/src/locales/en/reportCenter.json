@@ -1001,5 +1001,6 @@
   "reportCenter.partyLoadPausedBody": "The request will resume automatically.",
   "reportCenter.partyStatementLoading": "Loading statement",
   "reportCenter.partyStatementOpening": "Opening balance",
-  "reportCenter.partyStatementClosing": "Closing balance"
+  "reportCenter.partyStatementClosing": "Closing balance",
+  "reportCenter.balanceReportsFileName": "Balance Reports"
 }

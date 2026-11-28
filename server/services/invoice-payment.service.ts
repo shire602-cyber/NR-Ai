@@ -21,6 +21,7 @@ import { db } from "../db";
 import {
   accounts,
   auditLogs,
+  badDebtReliefClaims,
   bankTransactionMatches,
   bankTransactions,
   customerCreditAllocations,
@@ -142,6 +143,9 @@ export interface RecordPaymentInput {
  */
 export async function recordInvoicePayment(input: RecordPaymentInput) {
   const exec: LedgerTx = input.tx ?? db;
+  // One Dubai business day for the journal, the FX rate, the bank rate and any write-off
+  // reinstatement; the invoice_payments row keeps the raw instant.
+  const paymentDay = uaeToday(input.date);
   const loadInvoice = async (): Promise<Invoice | undefined> => {
     if (!input.tx) return storage.getInvoice(input.invoiceId, input.companyId);
     const [row] = await exec
@@ -152,7 +156,9 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
   };
   let invoice = await loadInvoice();
   if (!invoice) throw new DomainError("INVOICE_NOT_FOUND", 404, undefined, "Invoice not found");
-  if ((input.method ?? "").toLowerCase() === WRITE_OFF_METHOD) {
+  if (
+    [WRITE_OFF_METHOD, WRITE_OFF_REINSTATEMENT_METHOD].includes((input.method ?? "").toLowerCase())
+  ) {
     throw new DomainError(
       "PAYMENT_METHOD_RESERVED",
       422,
@@ -177,7 +183,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
       await reinstateWriteOffs({
         companyId: input.companyId,
         invoiceId: target.id,
-        date: input.date.toISOString().slice(0, 10),
+        date: paymentDay,
         reason: "Bad debt recovered: payment received",
         userId: input.createdBy,
         neededFils: wanted,
@@ -218,13 +224,9 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
   const currency = documentCurrency(invoice.currency, baseCurrency);
   if (!paymentExchangeRate && currency !== baseCurrency) {
     try {
-      const r = await getRate(
-        input.companyId,
-        currency,
-        baseCurrency,
-        input.date.toISOString().slice(0, 10),
-        { tx: input.tx }
-      );
+      const r = await getRate(input.companyId, currency, baseCurrency, paymentDay, {
+        tx: input.tx,
+      });
       if (!r.stale) paymentExchangeRate = r.rate;
     } catch {
       paymentExchangeRate = null;
@@ -247,7 +249,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
               input.companyId,
               bankCur,
               baseCurrency,
-              input.date.toISOString().slice(0, 10),
+              paymentDay,
               currency,
               input.tx
             ),
@@ -504,6 +506,21 @@ export async function reverseInvoicePayment(
       throw reversalReviewRequired();
     }
     if (!payment) return { reversed: false, invoice: null };
+    // A write-off is never deleted: undoing it records a dated reinstatement (history is kept).
+    if (payment.method === WRITE_OFF_METHOD) {
+      if (expected) throw reversalReviewRequired();
+      // Manual by nature: same owner rule as the reinstate route, so no caller can bypass it.
+      await assertNoActiveVatReliefClaim(tx, invoice.id, input.companyId);
+      return reinstateWriteOffRow(tx, invoice, payment, input);
+    }
+    if (payment.method === WRITE_OFF_REINSTATEMENT_METHOD) {
+      throw new DomainError(
+        "REINSTATEMENT_NOT_REVERSIBLE",
+        422,
+        { method: payment.method },
+        "A write-off reinstatement cannot be reversed; write the invoice off again."
+      );
+    }
 
     // Check globally unique IDs without a tenant filter so corrupted links cannot hide a claim.
     // A legacy allocation can claim the exact invoice/journal even with a missing or wrong payment ID.
@@ -1077,6 +1094,14 @@ export async function refundCustomerCredit(args: {
 // write-off first (bad debt recovered), then settles as a normal payment.
 
 export const WRITE_OFF_METHOD = "write_off";
+/**
+ * Undoing a write-off never edits or deletes the write-off row: it adds a NEGATIVE settlement row
+ * of this method dated on the reinstatement date (its `reference` is the write-off row's id and
+ * its journal is the reversal of the write-off journal, dated the same). The settlement rule sums
+ * invoice_payments up to `asOf`, so every earlier date keeps its original A/R and aging, and the
+ * invoice is open again from the reinstatement date on.
+ */
+export const WRITE_OFF_REINSTATEMENT_METHOD = "write_off_reinstatement";
 export const WRITE_OFF_SOURCE = "invoice_write_off";
 export const ALLOWANCE_SOURCE = "doubtful_debt_allowance";
 export const BAD_DEBT_EXPENSE_CODE = "5120";
@@ -1126,7 +1151,7 @@ async function ensureReceivableAccount(companyId: string, code: "5120" | "1045")
   } as Parameters<typeof storage.createAccount>[0]);
 }
 
-/** Written-off amount (document-currency fils) still standing on an invoice. */
+/** Written-off amount (document-currency fils) still standing on an invoice (net of reinstatements). */
 export async function invoiceWrittenOffFils(
   tx: LedgerTx,
   companyId: string,
@@ -1135,7 +1160,7 @@ export async function invoiceWrittenOffFils(
   const res = await tx.execute(
     sql`SELECT COALESCE(SUM(ROUND(amount * 100)), 0)::text AS f FROM invoice_payments
          WHERE company_id = ${companyId} AND invoice_id = ${invoiceId}
-           AND method = ${WRITE_OFF_METHOD}`
+           AND method IN (${WRITE_OFF_METHOD}, ${WRITE_OFF_REINSTATEMENT_METHOD})`
   );
   const rows = ((res as { rows?: unknown[] }).rows ?? res) as Array<{ f: string }>;
   return Number(rows[0]?.f ?? 0);
@@ -1265,9 +1290,107 @@ export async function writeOffInvoice(input: WriteOffInput) {
 }
 
 /**
+ * Owner rule: a manual write-off reinstatement is refused while an active VAT bad-debt relief
+ * claim (FDL 8/2017 Art. 64) exists for the invoice. Call under the invoice lock.
+ */
+async function assertNoActiveVatReliefClaim(
+  tx: LedgerTx,
+  invoiceId: string,
+  companyId: string
+): Promise<void> {
+  const [claim] = await tx
+    .select({ id: badDebtReliefClaims.id })
+    .from(badDebtReliefClaims)
+    .where(
+      and(
+        eq(badDebtReliefClaims.invoiceId, invoiceId),
+        eq(badDebtReliefClaims.companyId, companyId),
+        eq(badDebtReliefClaims.status, "claimed")
+      )
+    )
+    .limit(1);
+  if (claim) {
+    throw new DomainError(
+      "REINSTATE_BLOCKED_VAT_RELIEF_CLAIMED",
+      409,
+      { claimId: claim.id },
+      "This invoice has an active VAT bad-debt relief claim. Reverse the VAT bad-debt relief claim first, then reinstate the write-off."
+    );
+  }
+}
+
+/**
+ * Reinstate one write-off row inside `tx` (lock order: invoice, then the row). Adds a negative
+ * settlement row dated `input.date` and reverses the write-off journal on that date through the
+ * kernel; the write-off row and its journal stay as they were, so reports as of any earlier date
+ * do not change. Idempotent: a row that already has a reinstatement is a no-op.
+ */
+async function reinstateWriteOffRow(
+  tx: LedgerTx,
+  invoice: Invoice,
+  writeOff: typeof invoicePayments.$inferSelect,
+  input: { companyId: string; actorId: string; reason: string; date?: string | null }
+): Promise<{ reversed: boolean; invoice: Invoice | null }> {
+  const [done] = await tx
+    .select({ id: invoicePayments.id })
+    .from(invoicePayments)
+    .where(
+      and(
+        eq(invoicePayments.invoiceId, invoice.id),
+        eq(invoicePayments.companyId, input.companyId),
+        eq(invoicePayments.method, WRITE_OFF_REINSTATEMENT_METHOD),
+        eq(invoicePayments.reference, writeOff.id)
+      )
+    )
+    .limit(1);
+  if (done) return { reversed: false, invoice: null };
+  const writeOffDay = uaeToday(writeOff.date);
+  const date = input.date || writeOffDay;
+  if (date < writeOffDay) {
+    throw new DomainError(
+      "REINSTATE_BEFORE_WRITE_OFF",
+      422,
+      { writeOffDate: writeOffDay, date },
+      "A write-off cannot be reinstated before the date it was written off."
+    );
+  }
+  let journalEntryId: string | null = null;
+  if (writeOff.journalEntryId) {
+    const { reversal } = await reverseEntry(
+      writeOff.journalEntryId,
+      {
+        reason: input.reason,
+        source: "payment_reversal",
+        sourceId: invoice.id,
+        date,
+      },
+      { actorId: input.actorId, tx, companyId: input.companyId }
+    );
+    journalEntryId = reversal.id;
+  }
+  await tx.insert(invoicePayments).values({
+    invoiceId: invoice.id,
+    companyId: input.companyId,
+    amount: -Number(writeOff.amount),
+    date: new Date(`${date}T00:00:00.000Z`),
+    method: WRITE_OFF_REINSTATEMENT_METHOD,
+    reference: writeOff.id,
+    notes: input.reason,
+    paymentAccountId: null,
+    exchangeRate: null,
+    journalEntryId,
+    createdBy: input.actorId,
+  });
+  const updated = await refreshSettlementStatus(tx, invoice.id);
+  return { reversed: true, invoice: (updated as Invoice) ?? null };
+}
+
+/**
  * Reinstate the written-off balance of an invoice (newest write-off first) until at least
  * `neededFils` is open again, or all of it when `neededFils` is null: the bad debt is recovered
- * or the write-off was wrong. Each write-off journal is reversed on `date`.
+ * or the write-off was wrong. Each write-off journal is reversed on `date` and a negative
+ * settlement row is added on `date`; nothing dated earlier changes. A receipt dated before the
+ * write-off (`neededFils` set) reinstates on the write-off date instead.
  */
 export async function reinstateWriteOffs(input: {
   companyId: string;
@@ -1276,10 +1399,19 @@ export async function reinstateWriteOffs(input: {
   reason: string;
   userId: string;
   neededFils?: number | null;
+  /**
+   * Manual reinstatement only: refuse while an active VAT bad-debt relief claim (FDL 8/2017
+   * Art. 64) exists for the invoice. Checked under the invoice lock, which claim creation and
+   * reversal also take, so a concurrent claim cannot slip through. The receipt-triggered caller
+   * leaves this unset (the payment hook reverses the relief itself).
+   */
+  blockIfVatReliefClaimed?: boolean;
   tx?: LedgerTx;
 }): Promise<{ reinstatedFils: number; invoice: Invoice | null }> {
   return withLedgerTx(async (tx) => {
     const invoice = await lockInvoice(tx, input.invoiceId, input.companyId);
+    if (input.blockIfVatReliefClaimed)
+      await assertNoActiveVatReliefClaim(tx, invoice.id, input.companyId);
     const rows = await tx
       .select()
       .from(invoicePayments)
@@ -1297,13 +1429,12 @@ export async function reinstateWriteOffs(input: {
     for (const r of rows) {
       if (input.neededFils != null && open >= input.neededFils) break;
       const f = toFils(r.amount, { rounding: "halfUp" });
-      const out = await reverseInvoicePayment({
+      const writeOffDay = uaeToday(r.date);
+      const out = await reinstateWriteOffRow(tx, invoice, r, {
         companyId: input.companyId,
-        paymentId: r.id,
         actorId: input.userId,
         reason: input.reason,
-        date: input.date,
-        tx,
+        date: input.neededFils != null && input.date < writeOffDay ? writeOffDay : input.date,
       });
       if (out.reversed) {
         reinstated += f;

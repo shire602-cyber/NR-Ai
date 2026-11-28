@@ -9,10 +9,11 @@ import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 import { installInviteMailbox, inviteMail, inviteToken } from "./invite-mailbox";
 import type { OutgoingEmail } from "../../server/outbox";
 import type { PoolClient } from "pg";
+import { dubaiIso } from "../helpers/dates";
 
 const h = useHarness();
 const DAY = 86_400_000;
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+const iso = (d: Date) => dubaiIso(d);
 const uniq = () => randomBytes(4).toString("hex");
 const PASSWORD = FAKE_PASSWORD;
 const TOKEN_RE = /#t=([0-9a-f]{64})/;

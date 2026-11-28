@@ -340,9 +340,18 @@ export class ReceiptStorage extends SalesStorage {
     return row !== undefined;
   }
 
-  async deleteReceipt(id: string, companyId: string, tx?: typeof db): Promise<void> {
-    await (tx ?? db)
+  /**
+   * Delete an unposted receipt. The `posted = false` predicate is evaluated against the locked
+   * row, so a delete racing /post either wins before the post claims it or deletes nothing.
+   * Returns false when no row was deleted (missing, other tenant, or posted).
+   */
+  async deleteReceipt(id: string, companyId: string, tx?: typeof db): Promise<boolean> {
+    const rows = await (tx ?? db)
       .delete(receipts)
-      .where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)));
+      .where(
+        and(eq(receipts.id, id), eq(receipts.companyId, companyId), eq(receipts.posted, false))
+      )
+      .returning({ id: receipts.id });
+    return rows.length > 0;
   }
 }

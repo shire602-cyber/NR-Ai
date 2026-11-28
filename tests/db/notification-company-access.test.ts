@@ -3,6 +3,7 @@ import { useHarness } from "./harness";
 import type { OutgoingEmail } from "../../server/outbox/providers";
 import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { BANK_STATEMENT_REVIEW_TITLE } from "../../shared/notification-copy";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
 const retiredArabicTitle = ["الربط", "البنكي"].join(" ");
@@ -259,7 +260,7 @@ describe("Notification access after team removal", () => {
       [member.user.id, retiredEnglishTitle, retiredArabicTitle]
     );
     const { enqueueEmail } = await import("../../server/outbox/outbox");
-    const day = new Date().toISOString().slice(0, 10);
+    const day = dubaiToday();
     const queued = await enqueueEmail({
       to: member.email,
       subject: "Old daily summary",
@@ -292,7 +293,7 @@ describe("Notification access after team removal", () => {
       const tenant = await h.createTenant();
       const { enqueueEmail } = await import("../../server/outbox/outbox");
       const { renderBilingualEmail } = await import("../../server/services/email-layout");
-      const day = new Date().toISOString().slice(0, 10);
+      const day = dubaiToday();
       await h.sql(
         `INSERT INTO notifications (user_id, company_id, type, title, message, event_key)
        VALUES ($1, $2, 'system', $3, $4, 'bank.sync_failed:legacy-csv-reminder')`,
@@ -389,7 +390,7 @@ describe("Notification access after team removal", () => {
   it("cancels and clears a queued digest if its last company becomes inaccessible", async () => {
     const { member, remove, revoked } = await memberWithNotifications();
     const { enqueueEmail } = await import("../../server/outbox/outbox");
-    const day = new Date().toISOString().slice(0, 10);
+    const day = dubaiToday();
     const queued = await enqueueEmail({
       to: member.email,
       subject: "Daily summary",

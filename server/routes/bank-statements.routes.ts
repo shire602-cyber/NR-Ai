@@ -20,6 +20,7 @@ import { createAndEmitNotification } from "../services/socket.service";
 import { notificationCopy } from "../../shared/server-copy";
 import { bankStatementCopy, statementRecognized } from "../../shared/bank-statement-copy";
 import {
+  looksBinary,
   parseBankCsvText,
   toLegacyTransactions,
   type BankParseResult,
@@ -471,6 +472,18 @@ export function registerBankStatementRoutes(app: Express) {
       const { companyId } = req.params;
       await assertAccess(req, companyId);
       const { csvContent } = req.body as { csvContent: string };
+      // csvContent is a JS string: PDF magic survives UTF-8, but PNG/JPEG magic bytes (0x89, 0xFF)
+      // become code points, so also test the Latin-1 bytes when every character fits in one byte.
+      const utf8 = Buffer.from(csvContent, "utf8");
+      const singleByte = Array.from(csvContent).every((c) => c.charCodeAt(0) <= 0xff);
+      if (looksBinary(utf8) || (singleByte && looksBinary(Buffer.from(csvContent, "latin1")))) {
+        throw new DomainError(
+          "STATEMENT_CSV_REQUIRED",
+          400,
+          undefined,
+          "Choose a bank CSV export."
+        );
+      }
       const { transactions, format, errors, skippedRows } = parseBankCsv(csvContent);
       res.json({
         transactionCount: transactions.length,

@@ -8,10 +8,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiIso } from "../helpers/dates";
 
 const h = useHarness();
 const DAY = 86_400_000;
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+const iso = (d: Date) => dubaiIso(d);
 
 async function contact(
   t: Tenant,

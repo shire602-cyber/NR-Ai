@@ -9,9 +9,10 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { accountByCode, useHarness } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 const offs: Array<() => void> = [];
 afterEach(() => {
   for (const off of offs.splice(0)) off();

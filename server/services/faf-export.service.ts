@@ -17,7 +17,9 @@ import { computeVat201, type VatContribution } from "../tax/vat-engine";
 import { generalLedger, loadAccounts } from "../reporting";
 import { pool } from "../db";
 import { DomainError } from "../errors";
+import { csvCell } from "@shared/csv";
 import { FAF_MAX_DAYS, fafSpanDays } from "@shared/faf-range";
+import { uaeToday } from "@shared/uae-date";
 
 export const FAF_VERSION = "FAFv1.0.0";
 export const FAF_PRODUCT = "Muhasib.ai";
@@ -292,7 +294,7 @@ export async function buildFaf(input: {
     vat.boxesFils.box9ExpensesVat +
     vat.boxesFils.box9ExpensesAdj +
     vat.boxesFils.box10ReverseChargeVat;
-  const creation = (input.now ?? new Date()).toISOString().slice(0, 10);
+  const creation = uaeToday(input.now ?? new Date());
 
   return {
     label: FAF_LABEL,
@@ -339,10 +341,7 @@ export async function buildFaf(input: {
 
 // ─── Text layout ─────────────────────────────────────────────────────────────
 
-function cell(v: string | number): string {
-  const s = typeof v === "number" ? String(v) : v;
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
+const cell = (v: string | number): string => csvCell(v);
 
 const money = (fils: number) => (fils / 100).toFixed(2);
 

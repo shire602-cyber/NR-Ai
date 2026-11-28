@@ -242,9 +242,40 @@ One model for every migrating company (D1, accounting re-audit 3: N1-N4, N7, N14
   inviter; the bulk dialog says so. The customer's display name is edited via
   `PATCH /api/client-portal/profile` (name only). The portal data is prefetched on sign-in (`client/src/lib/portal-prefetch.ts`).
 
-
 ### Reviewing legacy firm access
 
 Offboarding and role downgrades that would leave higher company permissions in place return `UNRESOLVED_FIRM_ACCESS` with the company and membership IDs when a historical firm grant cannot be matched to its original membership. The transaction preserves the unresolved grant so the company owner can review it.
 
 The owner can list reviewable memberships with `GET /api/companies/:companyId/team/firm-access-review`. Use `POST` on the same path with `membershipId` and a `decision` of `independent` or `revoke`. Confirming independence keeps the company's direct membership. Revoking removes that membership. Retry offboarding after the listed memberships have been reviewed.
+
+## Recurring invoices: catch-up
+
+- Nothing is backdated and nothing missed is auto-issued. A template that fell behind handles every
+  run date up to and including min(today in Dubai, end date), oldest first, up to 24 periods per
+  template per tick (the rest follow on the next tick). The template ends only after the last
+  in-range period is handled; the schedule advances past each period in the same transaction as its
+  invoice, under the existing `FOR UPDATE SKIP LOCKED` claim, so no period is created twice.
+- The current period (the latest run date at or before today and the end date) behaves as always:
+  dated today (Dubai), issued when the template auto-issues, emailed when auto-send is on.
+- Every older missed period becomes a DRAFT dated today, with `supply_date` set to that period and a
+  customer-safe note ("Services for the period starting <date>"; invoice notes reach the UBL
+  `cbc:Note` and the buyer, so no template id or instruction goes there). It is not issued, has no journal entry and sends no email, so
+  period locks, filed VAT returns and missing historic FX rates cannot stall the template. (Drafts
+  take a number from the current series, like any recurring draft.) The user reviews and issues
+  them. The template and period link lives in the audit rows and the template's last-run message.
+- Issuing a catch-up draft later: its tax point is `LEAST(date, supply_date)`, i.e. the supply-date
+  VAT period, not the issue date. If that VAT period is filed the issue is refused with 409
+  `VAT_PERIOD_FILED` (the blocker is `supply_date`, not the invoice date: the user must change the
+  supply date or correct the figures through an Art. 70 correction or voluntary disclosure). If the
+  period is open, the output VAT lands in that period while the revenue entry is dated on the
+  invoice date. Whether a periodic supply should instead take the invoice date (Art. 26) is an
+  open accountant check; the current behaviour never posts silently into a filed period.
+- When drafts were created, the template's last-run message says "Created N draft invoices for
+  missed periods <dates> - review and issue them" and `recurring_invoice.catch_up_drafts` is
+  written to the audit log, one row per draft inside that period's transaction (so a crash
+  mid-tick never leaves a draft without its trail; en/ar labels in `adminConsole.json`). The
+  template's summary message is written after the tick, best effort; each draft's own
+  transaction already sets the template's last-run message.
+- Known, pre-existing: `advanceByInterval` month-end drift (31 Jan becomes 3 Mar) is unchanged.
+- Extending the end date of an ended (deactivated) template does not restart it: it stays paused
+  until the user resumes it.

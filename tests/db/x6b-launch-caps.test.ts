@@ -6,9 +6,10 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { dubaiToday } from "../helpers/dates";
 
 const h = useHarness();
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => dubaiToday();
 
 function env(billing: string | undefined, caps: string | undefined) {
   if (billing === undefined) delete process.env.BILLING_ENFORCEMENT;
