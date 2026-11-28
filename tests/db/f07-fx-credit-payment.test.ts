@@ -342,8 +342,7 @@ it("C: trial balance, customer statement and aged A/R agree with the GL after US
   expect(Number(finalVat.body.box4ZeroRatedAmount), "Box 4 amount").toBe(0);
 });
 
-// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
-it.skip("C: VAT 201 Box 1 amount clears after partial and final USD credits", async () => {
+it("C: VAT 201 Box 1 amount clears after partial and final USD credits", async () => {
   const { t, creditPartial, creditFinal } = await issueCaseC();
   await creditPartial();
   await creditFinal();
@@ -452,8 +451,7 @@ it("E: reverse-charge header invoice issues and accepts partial and final credit
   expect(Number(vat.body.box1bDubaiVat), "Box 1 VAT is 0").toBe(0);
 });
 
-// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
-it.skip("E: reverse-charge header flag — split credits tie Box 1 to the fil", async () => {
+it("E: reverse-charge header flag — split credits tie Box 1 to the fil", async () => {
   const { t, creditFirst, creditFinal } = await issueCaseE();
 
   await creditFirst();
@@ -591,8 +589,7 @@ it("G: mixed margin-scheme invoice issues and accepts partial and final credits"
   expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
 });
 
-// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
-it.skip("G: foreign margin-scheme mixed invoice — Box 1 margin/VAT and Box 4 through partial and final credits", async () => {
+it("G: foreign margin-scheme mixed invoice — Box 1 margin/VAT and Box 4 through partial and final credits", async () => {
   const { t, creditFirst, creditFinal } = await issueCaseG();
 
   await creditFirst();
@@ -762,8 +759,7 @@ it("I: mixed standard and reverse-charge invoice issues and accepts split credit
   expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after final credit").toBe(0);
 });
 
-// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
-it.skip("I: mixed standard + explicit RC — split credits tie Box 1 amount and VAT to the fil", async () => {
+it("I: mixed standard + explicit RC — split credits tie Box 1 amount and VAT to the fil", async () => {
   const { t, creditFirst, creditFinal } = await issueCaseI();
 
   await creditFirst();
@@ -884,8 +880,7 @@ it("J: mixed standard and reverse-charge invoice accepts odd-cent split credits"
   expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after final credit").toBe(0);
 });
 
-// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
-it.skip("J: mixed standard + explicit RC — odd-cent split credits tie Box 1 to the fil (Sol repro)", async () => {
+it("J: mixed standard + explicit RC — odd-cent split credits tie Box 1 to the fil (Sol repro)", async () => {
   const { t, creditFirst, creditSecond, creditFinal } = await issueCaseJ();
 
   await creditFirst();
@@ -961,8 +956,7 @@ it("K: odd-cent mixed standard and reverse-charge invoice issues and accepts a f
   expect(Number(vatFinal.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
 });
 
-// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
-it.skip("K: mixed standard + explicit RC at 3.6725 — per-family rounding diverges from GL, full credit leaves 0", async () => {
+it("K: mixed standard + explicit RC at 3.6725 — per-family rounding diverges from GL, full credit leaves 0", async () => {
   const { t } = await issueCaseK();
 
   const vatInit = await generateVat201(t);
@@ -1096,8 +1090,7 @@ it("M: legacy invoice with NULL memo_key issues and accepts a full credit", asyn
   expect(Number(vatFinalM.body.box1bDubaiVat), "Box 1 VAT = 0 after full credit").toBe(0);
 });
 
-// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
-it.skip("M: NULL memo_key invoice (legacy pre-0131) — NULL extension finds GL, full credit nets to 0", async () => {
+it("M: NULL memo_key invoice (legacy pre-0131) — NULL extension finds GL, full credit nets to 0", async () => {
   const { t, clearMemoKey } = await issueCaseM();
 
   await clearMemoKey();
@@ -1160,15 +1153,38 @@ it("N: standard-rated invoice on account 4060 issues and accepts a full credit",
 
   const vatFinalN = await generateVat201(t);
   expect(Number(vatFinalN.body.box4ZeroRatedAmount), "Box 4 = 0 after CN").toBe(0);
+  expect(Number(vatFinalN.body.box1bDubaiVat), "Box 1 VAT = 0 after CN").toBe(0);
+  expect(Number(vatFinalN.body.box8TotalVat), "Box 8 VAT = 0 after CN").toBe(0);
 });
 
-// requires the VAT 201 remainder override in PR #186 (claude/vat201-remainder-override)
-it.skip("N: standard-rated line on zero_rated account (4060) — GL-classification wins, Box 1 = 0, Box 4 = AED 367.29", async () => {
+it("N: standard-rated line on zero_rated account (4060) — GL-classification wins, Box 1 = 0, Box 4 = AED 367.29", async () => {
   const { t } = await issueCaseN();
 
   const vatInitN = await generateVat201(t);
   expect(Number(vatInitN.body.box1bDubaiAmount), "Box 1b = 0 (not double-counted)").toBe(0);
   expect(Number(vatInitN.body.box4ZeroRatedAmount), "Box 4 = GL amount").toBe(367.29);
+  expect(Number(vatInitN.body.box1bDubaiVat), "Posted output VAT still belongs in Box 1").toBe(18.36);
+  expect(Number(vatInitN.body.box8TotalVat)).toBe(18.36);
+});
+
+it("reports a VAT-only rounding remainder on the final zero-rated credit", async () => {
+  const t = await h.createTenant({
+    companyColumns: { emirate: "dubai", trn_vat_number: "100000000000003" },
+  });
+  const id = await issueUsd(t, [std(0.7), zero(1)]);
+  const url = `${base(t)}/invoices/${id}/credit-note`;
+  for (const net of [0.3, 0.4]) {
+    const partial = await t.as.post(url, { date, lines: [std(net)] });
+    expect(partial.status, partial.text).toBe(201);
+  }
+  const final = await t.as.post(url, { date });
+  expect(final.status, final.text).toBe(201);
+  const posted = await legs([final.body.journalEntryId]);
+  expect(posted["2020"]).toBe(0.01);
+  expect(Object.keys(posted).sort()).toEqual(["1040", "2020", "4060"]);
+  const vat = await generateVat201(t);
+  expect(Number(vat.body.box1bDubaiVat)).toBe(0);
+  expect(Number(vat.body.box8TotalVat)).toBe(0);
 });
 
 it("O: three-account invoice (std 4020, zero_rated 4060, exempt 4070) — Box 8 = Box 1 + Box 4 + Box 5 (no double-count)", async () => {

@@ -23,8 +23,16 @@ import { db } from "../db";
 import { DomainError } from "../errors";
 import { invoiceLines, invoices, type InvoiceLine } from "../../shared/schema";
 import { toFils } from "../../shared/money";
-import { classifySupply, type Vat201Family } from "../../shared/vat-classification";
-import { SALES_CODES, totalsForStoredDocument } from "../services/invoice-posting.service";
+import {
+  classifySupply,
+  type RevenueAccountRole,
+  type Vat201Family,
+} from "../../shared/vat-classification";
+import {
+  revenueRoleForCode,
+  SALES_CODES,
+  totalsForStoredDocument,
+} from "../services/invoice-posting.service";
 import { ledgerLines } from "../reporting";
 import { localDateSql } from "../reporting/settlement";
 import { isForeignCurrency, loadBaseCurrency, type LedgerTx } from "../ledger";
@@ -62,6 +70,13 @@ import {
   type ReconCategory,
   type VatReconciliation,
 } from "./vat-reconciliation";
+
+const POSTED_ROLE_FAMILY: Record<RevenueAccountRole, Vat201Family> = {
+  standard_sales: "standard",
+  zero_rated_sales: "zero_rated",
+  exempt_sales: "exempt",
+  out_of_scope_revenue: "out_of_scope",
+};
 
 export const VAT_ENGINE_VERSION = "w4e-1";
 
@@ -656,23 +671,73 @@ async function collectInvoices(
     )
     .map(({ invoice }) => invoice.id);
   const postedRemainderVat = new Map<string, number>();
+  const postedRemainderNet = new Map<string, Map<Vat201Family, number>>();
   if (foreignCreditIds.length) {
-    // A final credit reverses the remaining posted base VAT, which can differ from
-    // converting the printed VAT at the invoice rate because of earlier rounding.
+    // A final credit reverses the remaining posted base VAT and revenue, which can differ from
+    // converting the printed amounts at the invoice rate because of earlier rounding. One grouped
+    // read: posted VAT, and posted net per revenue account (classified with the posting's own
+    // code-to-role mapping, `revenueRoleForCode`).
     const { rows } = await ledgerQueryable(tx).query(
-      `SELECT je.source_id, COALESCE(SUM(jl.debit - jl.credit)
-                FILTER (WHERE a.id IS NOT NULL), 0) AS vat
+      `SELECT je.source_id, a.code, a.type, a.is_vat_account,
+              COALESCE(SUM(jl.debit - jl.credit), 0) AS net
          FROM journal_entries je
          JOIN journal_lines jl ON jl.entry_id = je.id
-         LEFT JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
-                             AND a.code = $3 AND a.is_vat_account
+         JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
         WHERE je.company_id = $1 AND je.source = 'invoice' AND je.source_id = ANY($2::uuid[])
-          AND je.memo_key = 'creditNoteReversal'
+          AND (je.memo_key IN ('creditNoteReversal', 'creditNotePartial') OR je.memo_key IS NULL)
           AND je.status = 'posted' AND je.entry_kind <> 'reversal' AND je.reversed_by_entry_id IS NULL
-        GROUP BY je.source_id`,
-      [companyId, foreignCreditIds, SALES_CODES.VAT_OUTPUT]
+        GROUP BY je.source_id, a.code, a.type, a.is_vat_account`,
+      [companyId, foreignCreditIds]
     );
-    for (const row of rows) postedRemainderVat.set(row.source_id, fils(row.vat));
+    for (const row of rows) {
+      if (!postedRemainderVat.has(row.source_id)) postedRemainderVat.set(row.source_id, 0);
+      if (row.is_vat_account && row.code === SALES_CODES.VAT_OUTPUT) {
+        postedRemainderVat.set(
+          row.source_id,
+          (postedRemainderVat.get(row.source_id) ?? 0) + fils(row.net)
+        );
+      } else if (row.type === "income") {
+        const family = POSTED_ROLE_FAMILY[revenueRoleForCode(String(row.code))];
+        const byFamily = postedRemainderNet.get(row.source_id) ?? new Map<Vat201Family, number>();
+        byFamily.set(family, (byFamily.get(family) ?? 0) + fils(row.net));
+        postedRemainderNet.set(row.source_id, byFamily);
+      }
+    }
+  }
+
+  const foreignInvoiceIds = docs
+    .filter(
+      ({ invoice }) =>
+        invoice.invoiceType !== "credit_note" && isForeignCurrency(invoice.currency, baseCurrency)
+    )
+    .map(({ invoice }) => invoice.id);
+  const postedInvoiceNet = new Map<string, Map<Vat201Family, number>>();
+  if (foreignInvoiceIds.length) {
+    // A foreign-currency invoice (or debit note) posts one toBase(bucket, rate) per revenue-account
+    // bucket. When std and RC lines share one account the bucket is combined (toBase(std+rc, rate));
+    // when they use different accounts each bucket is rounded independently. Querying the actual
+    // posted credit amounts gives the correct Box 1 whatever the layout, without duplicating the
+    // bucket computation here. income-account filter: skip AR, VAT payable, etc.
+    const { rows: invRows } = await ledgerQueryable(tx).query(
+      `SELECT je.source_id, a.code,
+              COALESCE(SUM(jl.credit - jl.debit), 0) AS net
+         FROM journal_entries je
+         JOIN journal_lines jl ON jl.entry_id = je.id
+         JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
+        WHERE je.company_id = $1 AND je.source = 'invoice' AND je.source_id = ANY($2::uuid[])
+          AND (je.memo_key IN ('salesInvoice', 'debitNote') OR je.memo_key IS NULL)
+          AND je.status = 'posted' AND je.entry_kind <> 'reversal' AND je.reversed_by_entry_id IS NULL
+          AND a.type = 'income'
+        GROUP BY je.source_id, a.code`,
+      [companyId, foreignInvoiceIds]
+    );
+    for (const row of invRows) {
+      const family = POSTED_ROLE_FAMILY[revenueRoleForCode(String(row.code))];
+      if (!family) continue;
+      const byFamily = postedInvoiceNet.get(row.source_id) ?? new Map<Vat201Family, number>();
+      byFamily.set(family, (byFamily.get(family) ?? 0) + fils(row.net));
+      postedInvoiceNet.set(row.source_id, byFamily);
+    }
   }
 
   for (const { invoice: inv, taxPoint } of docs) {
@@ -724,10 +789,129 @@ async function collectInvoices(
       }).vat201Family;
       netByFamily.set(fam, (netByFamily.get(fam) ?? 0) + net);
     });
-    const postedVat = postedRemainderVat.get(inv.id);
+    const hasMarginScheme = totals.lines.some((lt) => lt.marginFils !== null);
+    // Single pass: collect the set of VAT 201 families and accumulate per-family doc base
+    // (document fils converted to base currency). Uses per-line resolved family so explicit
+    // reverse_charge supply types on lines are caught even when inv.reverseCharge is unset.
+    // stdDocBase and rcDocBase are used in the mixed-doc proportional split below.
+    let hasRcLines = false;
+    let hasStandardLines = false;
+    let stdDocBase = 0;
+    let rcDocBase = 0;
+    for (let li = 0; li < totals.lines.length; li++) {
+      const lt = totals.lines[li];
+      const dl = docLines[li];
+      const fam = classifySupply({
+        supplyType: dl?.vatSupplyType,
+        vatRate: dl?.vatRate,
+        reverseCharge: inv.reverseCharge,
+      }).vat201Family;
+      if (fam === "reverse_charge") {
+        hasRcLines = true;
+        const lineNetFils =
+          lt.marginFils !== null
+            ? Math.abs(lt.marginFils)
+            : dl?.netAmount !== null && dl?.netAmount !== undefined
+              ? Math.abs(fils(dl.netAmount))
+              : Math.abs(lt.netFils);
+        rcDocBase += toBaseFils(lineNetFils, rate);
+      } else if (fam === "standard") {
+        hasStandardLines = true;
+        const lineNetFils =
+          lt.marginFils !== null
+            ? Math.abs(lt.marginFils)
+            : dl?.netAmount !== null && dl?.netAmount !== undefined
+              ? Math.abs(fils(dl.netAmount))
+              : Math.abs(lt.netFils);
+        stdDocBase += toBaseFils(lineNetFils, rate);
+      }
+    }
+    // VAT override: margin VAT is on the VAT-exclusive margin only.
+    // For mixed docs the standard portion still carries VAT, so we use the posted remainder
+    // unconditionally (pure RC has no posted VAT — postedRemainderVat returns 0 for it).
+    const postedVat = !hasMarginScheme ? postedRemainderVat.get(inv.id) : undefined;
     const vatBase = postedVat ?? toBaseFils(totals.vatFils, rate);
-    // The last credit can clear base-currency VAT rounding with only zero-rated lines left.
-    if (postedVat && !netByFamily.has("standard")) netByFamily.set("standard", 0);
+    // Net override: apply the GL remainder per tax family, adjusted for the document's mix.
+    // Source of rawPostedNet:
+    //   - CN:      postedRemainderNet — debit-side of creditNoteReversal/creditNotePartial JEs
+    //              (SUM debit−credit); OR je.memo_key IS NULL for legacy pre-0131 entries.
+    //   - Invoice: postedInvoiceNet   — credit-side of salesInvoice/debitNote JEs (SUM credit−debit);
+    //              OR je.memo_key IS NULL for legacy pre-0131 entries.
+    // In both cases rawPostedNet["standard"] holds the combined GL amount for all income accounts
+    // that classify as standard_sales (accounts 4010, 4020, etc.), regardless of bucket layout.
+    // The block below applies three adjustments:
+    // - Pure RC (all lines reverse_charge): standard entry came entirely from RC lines; remap
+    //   standard→reverse_charge so credits absorb rounding in the correct family.
+    // - Mixed standard+RC on standard_sales accounts only: rawPostedNet["standard"] bundles both
+    //   families; split proportionally using this doc's per-family doc base (stdDocBase / rcDocBase)
+    //   so stdGL + rcGL = totalGL. Guard: skip if zero_rated/exempt/out_of_scope already allocated.
+    // - Margin lines: taxable base is the VAT-exclusive margin; strip standard so the GL revenue
+    //   (which includes purchase cost) is not used. Zero-rated / exempt families are kept.
+    // After the block, the GL-classification cleanup (below) removes line-level families absent from
+    // postedNet to prevent double-counting when a line's vatSupplyType disagrees with its GL account
+    // (e.g. a standard-rated line posted to a zero_rated_sales account).
+    const rawPostedNet = postedRemainderNet.get(inv.id) ?? postedInvoiceNet.get(inv.id);
+    let postedNet: Map<Vat201Family, number> | undefined;
+    if (rawPostedNet) {
+      let mapped: Map<Vat201Family, number> = rawPostedNet;
+      if (hasMarginScheme) {
+        mapped = new Map([...mapped].filter(([f]) => f !== "standard"));
+      }
+      if (hasRcLines) {
+        if (!hasStandardLines) {
+          // Pure RC: safe to remap standard→reverse_charge.
+          mapped = new Map(
+            [...mapped].map(
+              ([f, v]) => [f === "standard" ? "reverse_charge" : f, v] as [Vat201Family, number]
+            )
+          );
+        } else if (
+          !mapped.has("zero_rated") &&
+          !mapped.has("exempt") &&
+          !mapped.has("out_of_scope")
+        ) {
+          // Mixed std+RC, all on standard_sales accounts: rawPostedNet["standard"] bundles
+          // both families; split proportionally using per-doc doc base.
+          const totalGL = mapped.get("standard") ?? 0;
+          const totalDocBase = stdDocBase + rcDocBase;
+          if (totalGL > 0 && totalDocBase > 0) {
+            const rcGL = Math.round((totalGL * rcDocBase) / totalDocBase);
+            const stdGL = totalGL - rcGL;
+            const others = new Map([...mapped].filter(([f]) => f !== "standard"));
+            mapped = new Map<Vat201Family, number>([
+              ...others,
+              ["standard", stdGL],
+              ["reverse_charge", rcGL],
+            ]);
+          } else {
+            // Fallback: discard to avoid overcounting if GL entry is 0 or no doc base.
+            mapped = new Map([...mapped].filter(([f]) => f !== "standard"));
+          }
+        }
+        // else: mixed with non-standard revenue accounts. GL families already per-account;
+        // the GL-classification cleanup removes line-level families not in postedNet.
+      }
+      postedNet = mapped.size > 0 ? mapped : undefined;
+    }
+    // GL classification wins: when rawPostedNet is available, remove line-level families
+    // absent from postedNet so each revenue amount is reported in exactly one Box (the one
+    // matching the posted account code, not the line's vatSupplyType). Applies to both
+    // invoices and CNs. Exception: "standard" is kept for margin-scheme docs because it
+    // represents the VAT-exclusive margin, which the GL standard entry doesn't carry.
+    if (postedNet) {
+      for (const family of [...netByFamily.keys()]) {
+        if (family === "standard" && hasMarginScheme) continue;
+        if (!postedNet.has(family)) netByFamily.delete(family);
+      }
+    }
+    if (postedNet) {
+      for (const [family, net] of postedNet) {
+        if (net !== 0 && !netByFamily.has(family)) netByFamily.set(family, 0);
+      }
+    }
+    // Revenue can be allocated to another box while output VAT still belongs in Box 1.
+    // This also covers a final zero-rated credit that clears the last fil of posted VAT.
+    if (vatBase !== 0 && !netByFamily.has("standard")) netByFamily.set("standard", 0);
     const emirate = normaliseEmirate(inv.placeOfSupplyEmirate);
     const needsEmirate = [...netByFamily].some(
       ([family, net]) =>
@@ -744,7 +928,7 @@ async function collectInvoices(
       continue;
     }
     for (const [family, netDoc] of netByFamily) {
-      const netBase = toBaseFils(netDoc, rate);
+      const netBase = postedNet?.get(family) ?? toBaseFils(netDoc, rate);
       if (family === "out_of_scope") {
         excluded.outOfScopeFils += sign * netBase;
         excluded.outOfScope.push({
