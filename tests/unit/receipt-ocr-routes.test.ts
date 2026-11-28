@@ -670,3 +670,19 @@ describe("non-VAT fee receipts add up through buildResult", () => {
     }
   );
 });
+
+describe("text-parser fallback keeps the parser's review issues", () => {
+  it("tourism-only receipt with no AI provider returns NON_VAT_FEE and VAT_DERIVED", async () => {
+    const res = await post(appWith({}), {
+      companyId: COMPANY,
+      content: "Grand Hotel\nTourism tax 10.00\nTotal 110.00",
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.ocrSource).toBe("text-parser");
+    expect(res.body).toMatchObject({ subtotal: 105.24, vatAmount: 4.76, total: 110 });
+    const codes = res.body.validationIssues.map((i: any) => i.code);
+    expect(codes).toContain("NON_VAT_FEE");
+    expect(codes).toContain("VAT_DERIVED");
+    expect(codes.filter((c: string) => c === "VAT_DERIVED")).toHaveLength(1);
+  });
+});
