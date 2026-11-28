@@ -334,6 +334,7 @@
   "serverErrors.IMPORT_UNKNOWN_COLUMNS": "The file has columns we do not recognise. Use the template columns.",
   "serverErrors.INBOUND_ALREADY_CONVERTED": "This supplier credit note has already been recorded as a vendor credit.",
   "serverErrors.INBOUND_ARCHIVE_MISSING": "The original supplier document file is missing, so it cannot be converted.",
+  "serverErrors.INBOUND_BILL_QUANTITY_PRECISION": "A line on this e-invoice has a quantity with more than 2 decimal places, which a bill cannot store. Enter the bill manually using the line totals from the original invoice, or ask the supplier to resend it.",
   "serverErrors.INBOUND_DOCUMENT_NOT_FOUND": "The supplier document could not be found.",
   "serverErrors.INBOUND_NOT_CREDIT_NOTE": "This supplier document is not a credit note.",
   "serverErrors.INBOUND_NOT_REVIEWABLE": "Only a received, validated supplier document can be converted.",
@@ -730,7 +731,7 @@
   "serverErrors.VAT_ADJUSTMENT_NOT_FOUND": "The VAT adjustment could not be found.",
   "serverErrors.VAT_AMENDMENT_CONFLICT": "The amendment could not be created because of a database rule on VAT returns. Contact support.",
   "serverErrors.VAT_INPUT_ACCOUNT_MISSING": "The Accounts Payable account is missing from your chart of accounts. Add it, then try again.",
-  "serverErrors.VAT_NO_TRN": "This receipt includes VAT but doesn't show a valid supplier TRN. You can only recover VAT with a tax invoice from a VAT-registered supplier.",
+  "serverErrors.VAT_NO_TRN": "This receipt includes VAT but doesn't show a valid supplier TRN. You can only recover VAT with a tax invoice from a VAT-registered supplier, so it was held for review.",
   "serverErrors.VAT_DERIVED": "VAT on this receipt may have been calculated rather than printed, so it was held for review.",
   "serverErrors.VAT_PERIOD_NOT_FOUND": "The VAT period could not be found.",
   "serverErrors.VAT_RATE_SUPPLY_MISMATCH": "The VAT rate does not match the supply type on a bill line.",
@@ -1113,5 +1114,6 @@
   "serverErrors.DEBIT_NOTE_ASSET_RECOSTED": "This debit note lowered the cost of a fixed asset. Adjust the asset before voiding the note.",
   "serverErrors.FX_RECONCILIATION_UNSUPPORTED": "This foreign-currency account cannot be reconciled yet because some ledger entries on it have no amount in the account currency. Reconcile it after correcting those entries, or use a base-currency statement.",
   "serverErrors.FAF_RANGE_TOO_LONG": "The FTA audit file covers at most 366 days. Choose a shorter date range.",
-  "serverErrors.INVALID_RANGE": "The start date must be on or before the end date."
+  "serverErrors.INVALID_RANGE": "The start date must be on or before the end date.",
+  "serverErrors.INBOUND_BILL_QUANTITY_PRECISION": "Enter the bill using the line totals from the original invoice. A quantity exceeds the precision supported by the bill editor. Contact support if you need help."
 }

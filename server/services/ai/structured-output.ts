@@ -81,14 +81,26 @@ const amount = z.preprocess((v) => {
  * kept as null, NOT coerced to 0, so an explicit "VAT 0.00" (0) stays distinguishable from a VAT
  * amount that was never shown (null). Downstream reconciliation derives and flags missing figures.
  */
-const printedAmount = z.preprocess((v) => {
+function coercePrintedAmount(v: unknown): unknown {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "string") {
     const n = parseFloat(v.replace(/,/g, ""));
     return Number.isNaN(n) ? v : n;
   }
   return v;
-}, z.number().finite().min(0).nullable());
+}
+
+/**
+ * The printed figure the schema would accept for a raw model value (same parsing as
+ * `printedAmount`), or null when it is blank, unparseable, negative or not finite. Callers that
+ * compare a raw first answer with the validated one must use this, not `Number()`.
+ */
+export function readPrintedAmount(v: unknown): number | null {
+  const parsed = printedAmount.safeParse(v);
+  return parsed.success ? parsed.data : null;
+}
+
+const printedAmount = z.preprocess(coercePrintedAmount, z.number().finite().min(0).nullable());
 
 const lineItemSchema = z.object({
   description: z.string().max(500).catch(""),

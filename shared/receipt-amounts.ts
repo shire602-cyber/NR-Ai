@@ -147,6 +147,25 @@ export function aiVatRate(
     : { vatPercentage: 5, rateDefaulted: true };
 }
 
+/**
+ * The printed VAT rate when the model read an explicit VAT amount of 0 next to a positive rate
+ * ("VAT 5%  0.00"), else null. The receipt contradicts itself: the 0.00 stays as read (never
+ * upgraded to rate x subtotal) and the caller raises AMOUNT_MISMATCH when subtotal and total leave
+ * a gap, the same reading as the deterministic parser (`vatRateAmountConflictMessage`).
+ */
+export function printedRateWithZeroVat(
+  rawVatAmount: unknown,
+  rawVatPercentage: unknown
+): number | null {
+  if (rawVatAmount === null || rawVatAmount === undefined || String(rawVatAmount).trim() === "") {
+    return null;
+  }
+  if (parseFloat(String(rawVatAmount).replace(/,/g, "")) !== 0) return null;
+  if (rawVatPercentage === null || rawVatPercentage === undefined) return null;
+  const rate = parseFloat(String(rawVatPercentage).replace(/,/g, ""));
+  return !isNaN(rate) && rate > 0 ? rate : null;
+}
+
 /** True when a VAT figure was supplied, measured in whole fils like the reconciler. */
 export function hasVatFigure(vatAmount: number): boolean {
   return fils(vatAmount) > 0;

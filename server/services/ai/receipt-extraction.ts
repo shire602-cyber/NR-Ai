@@ -25,6 +25,7 @@ import {
   ANTHROPIC_RECEIPT_TOOL,
   VALID_RECEIPT_CATEGORIES,
   openAiReceiptResponseFormat,
+  readPrintedAmount,
   receiptExtractionSchema,
   runStructured,
   sanityCheckReceipt,
@@ -268,8 +269,8 @@ export async function extractReceipt(args: {
     // Compare with the RAW first model answer (before schema validation): when the first answer
     // was unparseable or failed the schema, nothing it said counts as a printed VAT figure.
     const rawFirst = result.firstRaw as { vatAmount?: unknown } | null | undefined;
-    const firstVat = Number(rawFirst?.vatAmount) || 0;
-    const finalVat = Number(data.vatAmount) || 0;
+    const firstVat = readPrintedAmount(rawFirst?.vatAmount) ?? 0;
+    const finalVat = readPrintedAmount(data.vatAmount) ?? 0;
     if (result.attempts > 1 && finalVat > 0 && Math.abs(firstVat - finalVat) > 0.005) {
       issues.push({
         code: "VAT_DERIVED",
