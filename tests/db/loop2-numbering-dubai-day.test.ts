@@ -42,6 +42,32 @@ it("a number issued after 20:00Z on 31 Dec takes the new Dubai year and its own 
   );
 });
 
+it.each(["2026-12-31T21:30:00Z", "2026-12-31T23:59:59.500Z"])(
+  "peek, view and save numbering settings use the Dubai year 2027 at %s",
+  async (now) => {
+    const { allocateInvoiceNumber, peekNextInvoiceNumber, numberingView, saveNumberingSettings } =
+      await service();
+    const t = await h.createTenant({ name: `ClockDefaults${now.slice(11, 13)}` });
+    const cid = t.company.id;
+    expect(await allocateInvoiceNumber(cid, "invoice", new Date("2026-12-31"))).toBe(
+      "INV-2026-00001"
+    );
+    thaw = freezeTime(now);
+    expect(await peekNextInvoiceNumber(cid, "invoice")).toBe("INV-2027-00001");
+    const view = await numberingView(cid, "invoice");
+    expect(view.nextFormatted).toBe("INV-2027-00001");
+    expect(view.lastIssued).toBe(0);
+    const saved = await saveNumberingSettings(
+      cid,
+      "invoice",
+      { prefix: "INV", padding: 5, yearlyReset: true, nextNumber: 7 },
+      t.user.id
+    );
+    expect(saved.nextFormatted).toBe("INV-2027-00007");
+    expect(await peekNextInvoiceNumber(cid, "invoice")).toBe("INV-2027-00007");
+  }
+);
+
 it("an explicit date-only value keeps its own calendar year whatever the clock says", async () => {
   const { allocateInvoiceNumber } = await service();
   const t = await h.createTenant({ name: "DateOnlyNumbering" });

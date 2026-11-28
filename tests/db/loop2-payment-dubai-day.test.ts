@@ -5,6 +5,7 @@
  * instant. Receipt posting computes its entry date once for the entry and the FX lookup.
  */
 import { afterEach, expect, it, vi } from "vitest";
+import { ACCOUNT_CODES } from "../../server/constants";
 import { accountByCode, freezeTime, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -126,10 +127,18 @@ it("payment at 2026-11-27T21:30Z: journal, FX rate and bank rate all use 2026-11
   expect(fils(arLines[0].credit)).toBe(36725);
   expect(fils(arLines[0].debit)).toBe(0);
   // Realised FX: cash AED 37000 - A/R relieved 36725 = 275 fils gain, a credit.
-  const fxLines = lines.filter((l) => l.account_id !== gl[0].id && l.account_id !== ar.id);
+  const fxAccount = await accountByCode(t, ACCOUNT_CODES.FX_GAIN);
+  const fxLines = lines.filter((l) => l.account_id === fxAccount.id);
   expect(fxLines).toHaveLength(1);
   expect(fils(fxLines[0].credit)).toBe(37000 - 36725);
   expect(fils(fxLines[0].debit)).toBe(0);
+  // Cash leg in the bank's own currency: 370.00 AED / 4.1 = 90.2439 EUR. cashLegFor divides and
+  // rounds half-up to whole fils (the foreign amount is stored with two decimals): 90.24.
+  const [cashForeign] = await h.sql<{ fd: string }>(
+    `SELECT foreign_debit::text AS fd FROM journal_lines WHERE entry_id = $1 AND account_id = $2`,
+    [row.entry, gl[0].id]
+  );
+  expect(fils(cashForeign.fd)).toBe(9024);
   expect(lines).toHaveLength(3);
 });
 
