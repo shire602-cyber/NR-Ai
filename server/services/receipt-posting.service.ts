@@ -82,9 +82,9 @@ function assertSupplyType(type: string, vatFils: number, index?: number): string
   return type;
 }
 
-export function receiptEntryDate(receipt: Pick<Receipt, "date">): Date {
+export function receiptEntryDate(receipt: Pick<Receipt, "date">, now: Date = new Date()): Date {
   // An undated receipt takes the Dubai business day (UTC midnight), not the raw instant.
-  const today = () => new Date(`${uaeToday()}T00:00:00.000Z`);
+  const today = () => new Date(`${uaeToday(now)}T00:00:00.000Z`);
   const parsed = receipt.date ? new Date(receipt.date) : today();
   return Number.isNaN(parsed.getTime()) ? today() : parsed;
 }
@@ -135,7 +135,7 @@ export async function resolveReceiptRate(
         companyId,
         receiptCurrency,
         baseCurrency,
-        date.toISOString().slice(0, 10),
+        uaeToday(date),
         { tx }
       );
       return { receiptCurrency, baseCurrency, rate: found.rate, source: "lookup" as const };
@@ -225,10 +225,12 @@ export async function planReceiptJournal(
 
   const existingRate = Number(receipt.exchangeRate);
   const lockedRate = receipt.exchangeRateSource === "manual" || receipt.posted;
+  // Computed once: the entry date and the FX lookup must not split at Dubai midnight.
+  const entryDate = receiptEntryDate(receipt);
   const quoted = await resolveReceiptRate(
     receipt.companyId,
     receipt.currency,
-    receiptEntryDate(receipt),
+    entryDate,
     lockedRate && existingRate > 0 ? existingRate : null,
     tx
   );
@@ -429,7 +431,7 @@ export async function planReceiptJournal(
   const vatBaseSum = sumFils(treatmentLines.map((t) => t.vatBaseFils));
   const types = new Set(treatmentLines.map((t) => t.supplyType));
   return {
-    entryDate: receiptEntryDate(receipt),
+    entryDate,
     ...journalMemo("receipt", { party: label }),
     lines,
     exchangeRate: fxRate,
