@@ -1,3 +1,4 @@
+import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 /**
  * A-Cube adapter against a real local HTTP server (tests/fixtures/pint-ae/asp/acube/mock-server.ts).
  *
@@ -39,7 +40,7 @@ const env = (extra: Record<string, string> = {}) =>
     EINVOICE_PROVIDER: "acube",
     ACUBE_ENV: "sandbox",
     ACUBE_EMAIL: "sandbox@example.test",
-    ACUBE_PASSWORD: "pw-for-mock-only",
+    ACUBE_PASSWORD: FAKE_PASSWORD,
     ACUBE_BASE_URL: mock.baseUrl,
     ACUBE_LOGIN_URL: mock.loginUrl,
     ACUBE_TIMEOUT_MS: "5000",
@@ -74,7 +75,7 @@ describe("A-Cube mock server: happy path (invoice)", () => {
     const login = mock.requests.find((r) => r.path === "/login")!;
     expect(JSON.parse(login.body)).toEqual({
       email: "sandbox@example.test",
-      password: "pw-for-mock-only",
+      password: FAKE_PASSWORD,
       environment: "sandbox",
     });
 
