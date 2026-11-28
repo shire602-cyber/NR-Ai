@@ -222,8 +222,14 @@ if [ "$migrate_rc" -eq 0 ]; then
   qa() {
     local name=$1 output=$2
     shift 2
-    app "$SNAP" "$@" > "$OUT/$output" 2>&1
-    gate "$name" "$?"
+    # stdout is the findings file; stderr (including the finding summary) goes beside it so a
+    # --json file stays parseable.
+    app "$SNAP" "$@" --fail-on-findings > "$OUT/$output" 2> "$OUT/$output.err"
+    qa_rc=$?
+    if [ "$qa_rc" -ne 0 ]; then
+      log "${name}_findings_file=$OUT/$output (stderr: $OUT/$output.err; exit 1 = findings, 2 = usage)"
+    fi
+    gate "$name" "$qa_rc"
   }
   qa closing findings-closing.json node scripts/qa/find-bad-closing-entries.mjs --json
   qa rates findings-rates.txt node scripts/qa/find-inverted-rates.mjs

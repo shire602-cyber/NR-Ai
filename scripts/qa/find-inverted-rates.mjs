@@ -11,10 +11,13 @@
 //                 company.
 //   - rewritten / quarantined: rows 0094 already handled (when run after the migration).
 //
-// Usage: DATABASE_URL=postgres://... node scripts/qa/find-inverted-rates.mjs [--json]
-// Exit code is always 0 unless the database cannot be read.
+// Usage: DATABASE_URL=postgres://... node scripts/qa/find-inverted-rates.mjs [--json] [--fail-on-findings]
+// Exit code is 0 unless the database cannot be read. With --fail-on-findings it is 1 when rows still
+// need action: inverted, ambiguous, or (before 0094) unscoped. Rows 0094 already handled
+// (rewritten, legacy_unscoped quarantined) are informational and never fail the run.
 
 import pg from "pg";
+import { findingsExitCode } from "./fail-on-findings.mjs";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -83,6 +86,15 @@ try {
     rewritten: rows.filter((r) => r.legacy_inverted && !r.legacy_unscoped).map(fmt),
   };
   await client.query("ROLLBACK");
+  process.exitCode = findingsExitCode(
+    process.argv,
+    {
+      inverted: report.inverted,
+      ambiguous: report.ambiguous,
+      unscoped: migrated ? [] : report.unscoped,
+    },
+    "find-inverted-rates"
+  );
 
   if (asJson) {
     console.log(JSON.stringify(report, null, 2));

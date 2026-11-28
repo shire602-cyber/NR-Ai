@@ -15,9 +15,13 @@
 // It never writes: everything runs in a READ ONLY transaction.
 //
 // Usage:
-//   DATABASE_URL=postgres://... node scripts/qa/find-bad-closing-entries.mjs [--company <uuid>] [--json]
+//   DATABASE_URL=postgres://... node scripts/qa/find-bad-closing-entries.mjs [--company <uuid>] [--json] [--fail-on-findings]
+//
+// Exit codes: 0 for a completed report (also when it lists findings), 1 when --fail-on-findings is
+// given and at least one closing entry exceeds its period, 2 for bad usage.
 
 import pg from "pg";
+import { findingsExitCode } from "./fail-on-findings.mjs";
 
 const args = process.argv.slice(2);
 const json = args.includes("--json");
@@ -153,3 +157,5 @@ if (json) {
     }
   }
 }
+
+process.exitCode = findingsExitCode(args, { findings }, "find-bad-closing-entries");

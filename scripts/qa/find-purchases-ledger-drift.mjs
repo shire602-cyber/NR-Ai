@@ -16,10 +16,12 @@
 //   - claims_paid_without_cash: paid expense claims with no reimbursement journal (R04-03).
 //
 // The repair proposal is a dry-run plan (reverse + repost through the ledger kernel); this script
-// never writes. Usage: DATABASE_URL=postgres://... node scripts/qa/find-purchases-ledger-drift.mjs [--json]
-// Exit code is always 0 unless the database cannot be read.
+// never writes. Usage: DATABASE_URL=postgres://... node scripts/qa/find-purchases-ledger-drift.mjs [--json] [--fail-on-findings]
+// Exit code is 0 unless the database cannot be read; with --fail-on-findings it is 1 when any of the
+// five lists is non-empty (proposals are derived from them and not counted twice).
 
 import pg from "pg";
+import { findingsExitCode } from "./fail-on-findings.mjs";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -136,6 +138,17 @@ try {
     proposals,
     note: "Dry run only. Nothing was changed. Apply repairs through the app (revise / approve / mark-paid) or the ledger kernel.",
   };
+  process.exitCode = findingsExitCode(
+    process.argv,
+    {
+      billsOn5130,
+      paidBeforeApproval,
+      editedAfterApproval,
+      duplicateClaimNumbers,
+      claimsPaidWithoutCash,
+    },
+    "find-purchases-ledger-drift"
+  );
   if (asJson) {
     console.log(JSON.stringify(report, null, 2));
   } else {

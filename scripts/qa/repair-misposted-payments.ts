@@ -11,8 +11,11 @@
 // invoices.recordPayment). Matched payments and payments in a locked period are skipped.
 // Take a backup first (docs/release/DEPLOY-RUNBOOK.md).
 //
+// --fail-on-findings (dry run only): exit 1 when at least one mis-posted payment is listed, so the
+// release rehearsal can gate on findings. It never writes; --apply ignores it.
+//
 // Usage:
-//   DATABASE_URL=postgres://... npx tsx scripts/qa/repair-misposted-payments.ts [--company <uuid>] [--json]
+//   DATABASE_URL=postgres://... npx tsx scripts/qa/repair-misposted-payments.ts [--company <uuid>] [--json] [--fail-on-findings]
 //   DATABASE_URL=postgres://... npx tsx scripts/qa/repair-misposted-payments.ts --company <uuid> --apply [--actor <user uuid>]
 
 const args = process.argv.slice(2);
@@ -37,6 +40,7 @@ if (!process.env.DATABASE_URL) {
   process.exit(2);
 }
 
+const { findingsExitCode } = await import("./fail-on-findings.mjs");
 const { findMispostedPayments, repairMispostedPayments } =
   await import("../../server/services/payment-account-repair.service");
 const { closePool } = await import("../../server/db");
@@ -44,6 +48,7 @@ const { closePool } = await import("../../server/db");
 try {
   const findings = await findMispostedPayments(companyId);
   if (!flag("--apply")) {
+    process.exitCode = findingsExitCode(args, { findings }, "repair-misposted-payments");
     if (flag("--json")) console.log(JSON.stringify(findings, null, 2));
     else {
       console.log(`${findings.length} mis-posted payment(s) (read-only; pass --apply to repair)`);
