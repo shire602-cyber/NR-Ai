@@ -6,6 +6,7 @@
 import type { Request, Response } from "express";
 import { storage } from "../storage";
 import { DomainError } from "../errors";
+import { csvCell } from "../../shared/csv";
 import { buildGenericWorkbook, type GenericExportSheet } from "../services/excel-export.service";
 
 export async function assertReportAccess(req: Request, companyId: string): Promise<void> {
@@ -32,15 +33,6 @@ export function readFormat(value: unknown): ExportFormat {
     undefined,
     "format must be json, xlsx or csv"
   );
-}
-
-function csvCell(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "number") return Number.isFinite(v) ? String(v) : "";
-  let s = v instanceof Date ? v.toISOString().slice(0, 10) : String(v);
-  // Formula-injection guard for spreadsheet consumers.
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 export function toCsv(sheet: GenericExportSheet): string {

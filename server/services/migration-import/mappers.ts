@@ -6,6 +6,7 @@
  * Fixtures for each layout live in tests/fixtures/import/.
  */
 import { parse } from "csv-parse/sync";
+import { csvCell } from "../../../shared/csv";
 
 export const IMPORT_KINDS = [
   "chart_of_accounts",
@@ -306,10 +307,8 @@ export function splitCodeAndName(
   return { code: c, name: (name ?? "").trim() };
 }
 
-export function csvEscape(v: unknown): string {
-  const s = v == null ? "" : String(v);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
+/** Template/export CSV cell: shared formula-injection guard (S05). */
+export const csvEscape = (v: unknown): string => csvCell(v);
 
 /** Template CSV (generic layout) for a kind. */
 export function templateCsv(kind: ImportKind): string {

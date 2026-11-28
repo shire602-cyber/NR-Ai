@@ -23,6 +23,7 @@ import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { ACCOUNT_CODES } from "../constants";
 import { fromFils, mulRate, sumFils } from "../../shared/money";
+import { csvCell } from "../../shared/csv";
 import {
   postJournal,
   reverseBySource,
@@ -1850,12 +1851,6 @@ export async function applyDebitNote(args: {
 }
 
 // ─── Batch payment export (CSV, export only — nothing is paid) ──────────────
-
-const csvCell = (v: unknown) => {
-  const s = v === null || v === undefined ? "" : String(v);
-  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
-  return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-};
 
 export async function batchPaymentCsv(companyId: string, billIds: string[]) {
   const r = await pool.query(
