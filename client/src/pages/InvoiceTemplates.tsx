@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   DropdownMenu,
@@ -154,10 +155,14 @@ function DocumentsSettings({
   const tt = t as Record<string, string>;
   const { toast } = useToast();
   const templatesKey = ["/api/companies", companyId, "invoice-templates"];
-  const { data: templates, isLoading: templatesLoading } = useQuery<InvoiceTemplate[]>({
+  const templatesQuery = useQuery<InvoiceTemplate[]>({
     queryKey: templatesKey,
     enabled: !!companyId && templatesAllowed,
   });
+  const { data: templates, isLoading: templatesLoading } = templatesQuery;
+  // Saving without knowing the current default would create a second, blank-branded default.
+  const templatesLoaded = templates !== undefined;
+  const templatesFailed = templatesQuery.isError && !templatesLoaded;
   const defaultTemplate = templates?.find((tpl) => tpl.isDefault) ?? templates?.[0] ?? null;
   const [draft, setDraft] = useState<TemplateDraft>({
     primaryColor: DOCUMENT_ACCENT_DEFAULT,
@@ -212,6 +217,7 @@ function DocumentsSettings({
   // (b) + (c) Accent, terms and bank details live on the default template.
   const saveTemplate = useMutation({
     mutationFn: async (data: TemplateDraft) => {
+      if (!templatesLoaded) throw new Error(tt["invoiceDesign.documents.notLoaded"]);
       if (defaultTemplate) {
         return apiRequest("PUT", `/api/invoice-templates/${defaultTemplate.id}`, data);
       }
@@ -420,6 +426,13 @@ function DocumentsSettings({
         {templatesAllowed ? (
           templatesLoading ? (
             <Skeleton className="h-64" />
+          ) : templatesFailed ? (
+            <LoadErrorState
+              error={templatesQuery.error}
+              onRetry={() => void templatesQuery.refetch()}
+              retrying={templatesQuery.isFetching}
+              testId="invoice-templates-load-error"
+            />
           ) : (
             <SectionCard
               title={tt["invoiceDesign.documents.styleTitle"]}
@@ -428,7 +441,11 @@ function DocumentsSettings({
                 <div className="flex justify-end">
                   <Button
                     onClick={() => saveTemplate.mutate(draft)}
-                    disabled={saveTemplate.isPending || !HEX_COLOR.test(draft.primaryColor)}
+                    disabled={
+                      saveTemplate.isPending ||
+                      !templatesLoaded ||
+                      !HEX_COLOR.test(draft.primaryColor)
+                    }
                     data-testid="button-save-template"
                   >
                     {saveTemplate.isPending ? t["forms.saving"] : t["pageLabels.saveSettings"]}

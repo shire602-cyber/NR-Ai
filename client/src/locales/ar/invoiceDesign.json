@@ -49,6 +49,7 @@
   "invoiceDesign.documents.footerText": "نص التذييل",
   "invoiceDesign.documents.terms": "شروط الدفع",
   "invoiceDesign.documents.bankDetails": "البيانات البنكية",
+  "invoiceDesign.documents.notLoaded": "لم يتم تحميل القوالب بعد. أعد المحاولة قبل الحفظ.",
   "invoiceDesign.documents.standardName": "قياسي",
   "invoiceDesign.documents.sampleCustomer": "عميل تجريبي",
   "invoiceDesign.documents.sampleLine": "خدمات استشارية",
