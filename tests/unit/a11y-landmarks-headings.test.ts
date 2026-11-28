@@ -116,6 +116,15 @@ describe("landmarks", () => {
     expect(foot).not.toBeNull();
     expect(foot!.tagName).toBe("ASIDE");
     expect(foot!.closest("main")).toBeNull();
+    const label = foot!.getAttribute("aria-label");
+    expect(label).toBe(catalogs.en["marketing.authFooterLabel"]);
+    expect(label?.trim().length).toBeGreaterThan(0);
+    for (const other of container.querySelectorAll("aside")) {
+      if (other !== foot) expect(other.getAttribute("aria-label")).not.toBe(label);
+    }
+    // The brand panel aside is top level (not inside main or another landmark).
+    const panel = container.querySelector("aside.mk-auth__panel");
+    expect(panel?.parentElement?.closest("main, aside, nav, header, footer, section")).toBeNull();
   });
 });
 
