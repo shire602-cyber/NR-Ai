@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import pg from "pg";
 import { dubaiIso, dubaiToday } from "../helpers/dates.mjs";
+import { classifyLines, toLines } from "./lib/latin-text.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 // Fable N1: browse in UAE time so a business date formatted as a browser-zone instant (a 30 Sep
@@ -120,6 +121,9 @@ const NOT_FOUND = (t) =>
   /not found/i.test(t) && t.trim().length < 300 && !/no [a-z ]*found/i.test(t);
 
 /** A mounted workspace can show its header while its records are still loading. */
+// RTL smoke routes that must also have zero English text lines in Arabic mode.
+const ENGLISH_CHECKED_RTL_ROUTES = new Set(["/vat-bad-debt-relief"]);
+
 async function renderedMainText(page) {
   await page.waitForFunction(
     () => {
@@ -1419,6 +1423,7 @@ async function main() {
       "/dashboard",
       "/invoices",
       "/vat-filing",
+      "/vat-bad-debt-relief",
       "/reports",
       "/settings/company",
     ]) {
@@ -1429,9 +1434,15 @@ async function main() {
       const mainText = await renderedMainText(page);
       const dir = await page.evaluate(() => document.documentElement.getAttribute("dir"));
       const blank = mainText.trim().length < 40;
-      if (dir !== "rtl" || routeErrors.length || apiFailures.length || blank) {
+      // Routes whose Arabic catalog is complete must render zero English lines
+      // (same detector as `npm run e2e:arabic-runtime`).
+      const english = ENGLISH_CHECKED_RTL_ROUTES.has(route)
+        ? classifyLines(toLines(mainText), [], 5)
+        : { english: 0, samples: [] };
+      if (dir !== "rtl" || routeErrors.length || apiFailures.length || blank || english.english) {
         await fail(`rtl route ${route}`, {
           dir,
+          english: english.english ? english.samples : undefined,
           blank: blank || undefined,
           js: routeErrors.slice(0, 3),
           api: [...new Set(apiFailures)].slice(0, 4),
