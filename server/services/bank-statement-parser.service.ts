@@ -1455,6 +1455,55 @@ export function parseBankOfx(
   };
 }
 
+/**
+ * Content sniff for uploads that are clearly not text. Statements arrive as base64 JSON, so there
+ * is no MIME header to check. Returns true for known binary magic (PDF, PNG, JPEG, GIF, legacy
+ * OLE/XLS) or a sample with NUL bytes / many control characters. UTF-8/UTF-16 text (with or
+ * without BOM), Windows-1256 and Latin-1 are text. ZIP (xlsx) is handled by the caller.
+ */
+export function looksBinary(bytes: Buffer): boolean {
+  if (bytes.length === 0) return false;
+  const startsWith = (...sig: number[]) => sig.every((b, i) => bytes[i] === b);
+  if (
+    startsWith(0x25, 0x50, 0x44, 0x46) || // %PDF
+    startsWith(0x89, 0x50, 0x4e, 0x47) || // PNG
+    startsWith(0xff, 0xd8, 0xff) || // JPEG
+    startsWith(0x47, 0x49, 0x46, 0x38) || // GIF8
+    startsWith(0xd0, 0xcf, 0x11, 0xe0) // OLE (legacy .xls/.doc)
+  ) {
+    return true;
+  }
+  if (startsWith(0x50, 0x4b, 0x03, 0x04)) return true;
+  // UTF-16 BOM: NULs are legitimate.
+  if (startsWith(0xff, 0xfe) || startsWith(0xfe, 0xff)) return false;
+  const sample = bytes.subarray(0, Math.min(bytes.length, 4096));
+  // UTF-16 without BOM (same heuristic as decodeStatementBytes).
+  const head = sample.subarray(0, Math.min(sample.length, 200));
+  let nulOdd = 0;
+  let nulEven = 0;
+  for (let i = 0; i < head.length; i++) {
+    if (head[i] === 0) {
+      if (i % 2 === 1) nulOdd++;
+      else nulEven++;
+    }
+  }
+  if (head.length > 8 && (nulOdd > head.length / 4 || nulEven > head.length / 4)) {
+    let ctl = 0;
+    for (let i = 0; i < head.length; i++) {
+      const b = head[i];
+      if (b !== 0 && b < 0x20 && b !== 0x09 && b !== 0x0a && b !== 0x0d) ctl++;
+    }
+    return ctl > head.length / 10;
+  }
+  let control = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const b = sample[i];
+    if (b === 0) return true;
+    if (b < 0x20 && b !== 0x09 && b !== 0x0a && b !== 0x0d && b !== 0x0c && b !== 0x1a) control++;
+  }
+  return control > sample.length * 0.1;
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 export function detectBankFileKind(bytes: Buffer, text: string | null): BankFileKind {

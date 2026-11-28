@@ -50,4 +50,13 @@ describe("AU6 manual bank connection CSV import", () => {
       persistedRows: 0,
     });
   });
+
+  it("refuses a PDF upload with 400 STATEMENT_CSV_REQUIRED and saves no rows", async () => {
+    const result = await importStatement("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n");
+    expect(result).toMatchObject({
+      status: 400,
+      body: { code: "STATEMENT_CSV_REQUIRED" },
+      persistedRows: 0,
+    });
+  });
 });
