@@ -211,6 +211,24 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
     expect(res.body.validationIssues.map((i: any) => i.code)).toContain("AMOUNT_MISMATCH");
   });
 
+  it("a zero-rated receipt whose total exceeds the subtotal keeps VAT 0 and flags the mismatch", async () => {
+    const { client } = anthropicReturning({
+      ...goodExtraction,
+      subtotal: 100,
+      vatAmount: 0,
+      vatPercentage: 0,
+      total: 110,
+    });
+    const res = await post(appWith({ anthropic: client }), {
+      imageData: PNG_URL,
+      companyId: COMPANY,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.vatAmount).toBe(0);
+    expect(res.body.total).toBe(110);
+    expect(res.body.validationIssues.map((i: any) => i.code)).toContain("AMOUNT_MISMATCH");
+  });
+
   it("R05-23 a classifier disagreement drops a confident extraction to the review band", async () => {
     classifier.result = {
       category: "Utilities",

@@ -574,6 +574,7 @@ function buildResult(
     subtotal: derivedSubtotal,
     vatAmount: derivedVat,
     total: derivedTotal,
+    mismatch: amountsMismatch,
   } = reconcileReceiptAmounts({ subtotal, vatAmount, total, vatPercentage });
 
   const category =
@@ -613,6 +614,15 @@ function buildResult(
     vatPercentage,
   });
   for (const issue of finalIssues) if (!have.has(issue.code)) issues.push(issue);
+  // The figures never silently add up: when the subtotal/total gap is not VAT at the stated rate
+  // (service charge, fee, discount, zero-rated), VAT stays rate x subtotal and the user is told.
+  if (amountsMismatch && !issues.some((i) => i.code === "AMOUNT_MISMATCH")) {
+    issues.push({
+      code: "AMOUNT_MISMATCH",
+      severity: "error",
+      message: `Subtotal ${derivedSubtotal} + VAT ${derivedVat} does not equal total ${derivedTotal}: the difference is not VAT at ${vatPercentage}%`,
+    });
+  }
   if (aiResult.supplierTrnIssue && !have.has("TRN_INVALID")) {
     issues.push({
       code: "TRN_INVALID",
