@@ -71,3 +71,49 @@ it("[TRIAL-RO] expired trial: reads pass, every write is 402, plan choice stays 
     expect(chosen.status, chosen.text).toBe(200);
   }
 });
+
+it("[TRIAL-RO-BACKUP] expired trial: a backup can be created and downloaded, restore stays locked", async () => {
+  vi.stubEnv("BILLING_ENFORCEMENT", "true");
+  const t = await h.createTenant();
+  const base = `/api/companies/${t.company.id}`;
+  const existing = await t.as.post(`${base}/backups`, { name: "Before expiry" });
+  expect(existing.status, existing.text).toBe(201);
+  await h.sql(
+    "UPDATE subscriptions SET trial_ends_at = now() - interval '1 day' WHERE company_id = $1",
+    [t.company.id]
+  );
+
+  const created = await t.as.post(`${base}/backups`, { name: "Locked export" });
+  expect(created.status, created.text).toBe(201);
+  const listed = await t.as.get(`${base}/backups`);
+  expect(listed.status, listed.text).toBe(200);
+  expect(listed.body).toHaveLength(2);
+  const download = await t.as.get(`/api/backups/${created.body.id}/download`);
+  expect(download.status, download.text).toBe(200);
+
+  const refused = [
+    ["post", `/api/backups/${created.body.id}/restore`, { mode: "merge" }],
+    ["post", `/api/backups/${created.body.id}/clone`, {}],
+    ["delete", `/api/backups/${created.body.id}`, undefined],
+    ["post", `${base}/vendors`, { name: "Blocked vendor" }],
+    [
+      "post",
+      `${base}/invoices`,
+      {
+        customerName: "Blocked",
+        date: dubaiToday(),
+        lines: [{ description: "Service", quantity: 1, unitPrice: 100, vatRate: 5 }],
+      },
+    ],
+  ] as const;
+  for (const [method, path, body] of refused) {
+    const res = await (t.as as any)[method](path, ...(body === undefined ? [] : [body]));
+    expect(res.status, `${method} ${path} ${res.text}`).toBe(402);
+    expect(res.body.code).toBe("PLAN_REQUIRED");
+  }
+
+  // Another tenant's company stays a 404/403, never opened by the allowance.
+  const other = await h.createTenant();
+  const cross = await other.as.post(`${base}/backups`, { name: "Not mine" });
+  expect([403, 404]).toContain(cross.status);
+});
