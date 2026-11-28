@@ -285,6 +285,10 @@ const FEE_LINE = new RegExp(
 // "Opp. Municipality Tax Office"): not a fee, but its "tax" must not become the VAT label either.
 const FEE_NAME_LINE = new RegExp(`(?<![a-z])(?:${FEE_LABEL_SOURCE})`, "i");
 
+// A line that is itself a total/subtotal/VAT label keeps its (next-line) amount even when it
+// names a fee ("Total incl service charge" with the figure on the following line).
+const AMOUNT_LABEL_LINE = /total|\bvat\b|المجموع|الاجمالي|اجمالي|القيم[ةه] المضاف[ةه]/i;
+
 function lastAmount(text: string): number {
   const withoutRates = text.replace(/\d+(?:[.,]\d+)?[ \t]*%/g, " ");
   const nums = Array.from(withoutRates.matchAll(/\d[\d,]*(?:\.\d+)?/g));
@@ -296,11 +300,14 @@ function splitFeeLines(lines: string[]): {
   rest: string[];
   feeTotal: number;
   feeVat: number;
+  /** Fee amounts whose own line carries no VAT amount (assumed outside the taxable base). */
+  feeNoVat: number;
   feeCount: number;
 } {
   const rest: string[] = [];
   let feeTotal = 0;
   let feeVat = 0;
+  let feeNoVat = 0;
   let feeCount = 0;
   for (const line of lines) {
     const m = FEE_LINE.exec(line);
@@ -308,14 +315,23 @@ function splitFeeLines(lines: string[]): {
       feeCount += 1;
       feeTotal += parseAmount(m[1]);
       // "Service charge 10% 10.00 VAT 0.50": the VAT printed on the fee line stays VAT.
-      if (m[2]) feeVat += lastAmount(m[2]);
-    } else if (!/d/.test(line) && FEE_NAME_LINE.test(line)) {
+      const lineVat = m[2] ? lastAmount(m[2]) : 0;
+      feeVat += lineVat;
+      if (lineVat <= 0) feeNoVat += parseAmount(m[1]);
+    } else if (!/\d/.test(line) && FEE_NAME_LINE.test(line) && !AMOUNT_LABEL_LINE.test(line)) {
+      // A name or address with a fee phrase and no amount ("Behind Municipality Tax Building").
       continue;
     } else {
       rest.push(line);
     }
   }
-  return { rest, feeTotal: round2(feeTotal), feeVat: round2(feeVat), feeCount };
+  return {
+    rest,
+    feeTotal: round2(feeTotal),
+    feeVat: round2(feeVat),
+    feeNoVat: round2(feeNoVat),
+    feeCount,
+  };
 }
 
 function asNumber(raw: string | undefined): number | null {
@@ -448,13 +464,13 @@ export function parseReceiptOcrText(
     .map((line) => line.trim())
     .filter(Boolean);
   // Fee lines never feed the VAT, subtotal or total readers.
-  const { rest: lines, feeTotal, feeVat, feeCount } = splitFeeLines(allLines);
+  const { rest: lines, feeTotal, feeVat, feeNoVat, feeCount } = splitFeeLines(allLines);
   const matchText = lines.length !== allLines.length ? lines.join("\n") : normalizedText;
   const fallbackDate = options.fallbackDate || uaeToday();
 
   const AMT = `(?:${CUR})?\\s*(-?\\d[\\d,]*\\.?\\d{0,2})`;
   const total = findFirstAmount(matchText, [
-    /\b(?:grand\s+total|net\s+payable|amount\s+due|total\s+due|balance\s+due|total\s+amount|total)\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
+    /\b(?:grand\s+total|net\s+payable|amount\s+due|total\s+due|balance\s+due|total\s+amount|total)\b(?!\s*(?:vat|tax|gst)\b)[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     new RegExp(
       `(?:المبلغ الاجمالي|الاجمالي الكلي|المجموع الكلي|المبلغ المستحق|صافي المبلغ|الاجمالي|اجمالي المبلغ|اجمالي)(?!\\s*(?:الفرعي|الضريبه|الضريبة|ضريبة))[^\\d-]{0,30}${AMT}`,
       "g"
@@ -489,8 +505,25 @@ export function parseReceiptOcrText(
   // A VAT line that prints zero ("VAT 0% AED 0.00", "VAT 0.00") is a read figure, not a missing
   // one, so VAT stays 0 and is never worked back at 5%. A positive printed rate next to a zero
   // amount ("VAT 5% 0.00") contradicts itself: the rate is kept, VAT stays 0 and it goes to review.
-  // VAT printed on a fee line ("Service charge 10% 10.00 VAT 0.50") is real VAT and is added.
-  const vatAmount = round2(readVatAmount + feeVat);
+  // VAT printed on a fee line ("Service charge 10% 10.00 VAT 0.50") is real VAT.
+  // A standalone VAT line is the receipt's VAT total and already includes VAT printed on a fee
+  // line. The fee-line VAT is added only when the sum, and not the standalone figure alone, is
+  // what fits the taxable base at 5% and the printed total; if neither fits it is left for review.
+  let vatAmount = readVatAmount;
+  let feeVatAmbiguous = false;
+  if (feeVat > 0 && readVatAmount > 0) {
+    const fits = (vat: number) =>
+      total > 0 &&
+      Math.abs(Math.round(vat * 100) - Math.round((((total - vat - feeNoVat) * 5) / 100) * 100)) <=
+        1;
+    if (!fits(readVatAmount)) {
+      const summed = round2(readVatAmount + feeVat);
+      if (fits(summed)) vatAmount = summed;
+      else feeVatAmbiguous = true;
+    }
+  } else if (feeVat > 0) {
+    vatAmount = feeVat;
+  }
   const zeroVatRead = vatAmount === 0 ? readZeroVatLines(lines) : null;
   const vatRate =
     zeroVatRead?.kind === "zero" ? 0 : zeroVatRead?.kind === "conflict" ? zeroVatRead.rate : 5;
@@ -553,17 +586,19 @@ export function parseReceiptOcrText(
         zeroVatRead.rate
       ),
     });
-  } else if (amountsMismatch) {
+  } else if (amountsMismatch || feeVatAmbiguous) {
     validationIssues.push({
       code: "AMOUNT_MISMATCH",
       severity: "error",
-      message: amountMismatchMessage(
-        derivedSubtotal,
-        derivedVat,
-        derivedTotal,
-        vatRate,
-        hasVatFigure(vatAmount)
-      ),
+      message: amountsMismatch
+        ? amountMismatchMessage(
+            derivedSubtotal,
+            derivedVat,
+            derivedTotal,
+            vatRate,
+            hasVatFigure(vatAmount)
+          )
+        : `VAT is printed on a fee line (${feeVat.toFixed(2)}) and on its own line (${readVatAmount.toFixed(2)}). The VAT line was used; check whether the fee-line VAT is already included in it.`,
     });
   }
   // A total-only receipt has its VAT worked back at 5%; flag it so it goes to review.

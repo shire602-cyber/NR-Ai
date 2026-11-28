@@ -241,3 +241,265 @@ describe("VAT printed on a fee line stays VAT", () => {
     expect(note).toMatch(/service charge is not VAT itself, but VAT may be charged on it/i);
   });
 });
+
+// Review round 3: every case the reviewer's harnesses (run-r3, run-r4) used, with exact figures.
+describe("fee words on lines that carry the total, subtotal or VAT amount", () => {
+  const cases: Array<[string, string, number, number, number, string[]]> = [
+    [
+      "total line that names the service charge",
+      "Restaurant\nFood 100.00\nService charge 10.00\nVAT 5.50\nTotal incl service charge 115.50",
+      110,
+      5.5,
+      115.5,
+      ["NON_VAT_FEE"],
+    ],
+    [
+      "subtotal line that names the service charge",
+      "Restaurant\nSubtotal incl. service charge 110.00\nVAT 5.50\nTotal 115.50",
+      110,
+      5.5,
+      115.5,
+      [],
+    ],
+    [
+      "store name with a d and a fee phrase",
+      "Grand City Tax Advisors\nSubtotal 100.00\nVAT 5.00\nTotal 105.00",
+      100,
+      5,
+      105,
+      [],
+    ],
+    [
+      "store name without a d and a fee phrase",
+      "City Tax Consultants\nSubtotal 100.00\nVAT 5.00\nTotal 105.00",
+      100,
+      5,
+      105,
+      [],
+    ],
+    [
+      "address line with a fee phrase and no amount never gives the next line as VAT",
+      "Cafe\nBehind Municipality Tax Building\nItem 100.00\nTotal 105.00",
+      100,
+      5,
+      105,
+      ["VAT_DERIVED"],
+    ],
+    [
+      "tourism dirham line with a zero VAT amount",
+      "Hotel\nRoom 100.00\nTourism dirham 10.00 VAT 0.00\nVAT 5.00\nTotal 115.00",
+      110,
+      5,
+      115,
+      ["NON_VAT_FEE"],
+    ],
+    [
+      "tourism dirham with a total only",
+      "Hotel\nRoom charge 100.00\nTourism dirham 10.00\nTotal 110.00",
+      105.24,
+      4.76,
+      110,
+      ["NON_VAT_FEE", "VAT_DERIVED"],
+    ],
+    [
+      "fee-only receipt",
+      "Hotel\nTourism dirham 20.00\nTotal 20.00",
+      19.05,
+      0.95,
+      20,
+      ["NON_VAT_FEE", "VAT_DERIVED"],
+    ],
+    [
+      "tourism tax only",
+      "Grand Hotel\nTourism tax 10.00\nTotal 110.00",
+      105.24,
+      4.76,
+      110,
+      ["NON_VAT_FEE", "VAT_DERIVED"],
+    ],
+    [
+      "municipality tax only in Arabic",
+      "فندق\nضريبة البلدية 10.00\nالاجمالي 110.00",
+      105.24,
+      4.76,
+      110,
+      ["NON_VAT_FEE", "VAT_DERIVED"],
+    ],
+    [
+      "subtotal, VAT, tourism fee, total",
+      "Hotel\nSubtotal 100\nVAT 5\nTourism fee 10\nTotal 115",
+      110,
+      5,
+      115,
+      ["NON_VAT_FEE"],
+    ],
+    [
+      "restaurant service charge with a subtotal",
+      "Restaurant\nSubtotal 100.00\nService charge 10.00\nVAT 5% 5.50\nTotal 115.50",
+      110,
+      5.5,
+      115.5,
+      ["NON_VAT_FEE"],
+    ],
+    [
+      "restaurant service charge without a subtotal",
+      "Restaurant\nFood 100.00\nService charge 10.00\nVAT 5% 5.50\nTotal 115.50",
+      110,
+      5.5,
+      115.5,
+      ["NON_VAT_FEE"],
+    ],
+    [
+      "a sold service item and service fee product line",
+      "Garage\nCar Service 200.00\nService fee 20.00\nSubtotal 220.00\nVAT 11.00\nTotal 231.00",
+      220,
+      11,
+      231,
+      [],
+    ],
+    [
+      "tourism package item",
+      "Travel Agency\nTourism package 500.00\nVAT 25.00\nTotal 525.00",
+      500,
+      25,
+      525,
+      [],
+    ],
+    [
+      "Carrefour City Centre",
+      "Carrefour City Centre Deira\nSubtotal 100.00\nVAT 5.00\nTotal 105.00",
+      100,
+      5,
+      105,
+      [],
+    ],
+    [
+      "TDF inside a product code",
+      "Shop\nItem TDF-200 cable 100.00\nVAT 5.00\nTotal 105.00",
+      100,
+      5,
+      105,
+      [],
+    ],
+    [
+      "Dubai Municipality address",
+      "Cafe\nNear Dubai Municipality, Deira\nSubtotal 100.00\nVAT 5.00\nTotal 105.00",
+      100,
+      5,
+      105,
+      [],
+    ],
+    [
+      "Municipality Tax Office address",
+      "Cafe\nOpp. Municipality Tax Office\nSubtotal 100.00\nVAT 5.00\nTotal 105.00",
+      100,
+      5,
+      105,
+      [],
+    ],
+    [
+      "room, service charge, municipality fee, tourism dirham and VAT",
+      "Hotel\nRoom 100.00\nService charge 10.00\nMunicipality fee 7.00\nVAT 5.50\nTourism dirham 15.00\nTotal 137.50",
+      132,
+      5.5,
+      137.5,
+      ["NON_VAT_FEE"],
+    ],
+    [
+      "Arabic hotel bill",
+      "فندق\nالمجموع الفرعي 100.00\nرسوم الخدمة 10.00\nضريبة القيمة المضافة 5.50\nدرهم السياحة 10.00\nالاجمالي 125.50",
+      120,
+      5.5,
+      125.5,
+      ["NON_VAT_FEE"],
+    ],
+    ["no fee", "Cafe\nSubtotal 100\nVAT 5\nTotal 105", 100, 5, 105, []],
+  ];
+  it.each(cases)("%s", (_name, text, subtotal, vat, total, codes) => {
+    const r = parse(text);
+    expect(r).toMatchObject({ subtotal, vat, total });
+    expect(r.codes).toEqual(codes);
+    expectAddsUp(r);
+  });
+
+  it("a header with a fee phrase and no amount does not make the next line's number the VAT", () => {
+    const r = parse("Grand City Tax Advisors\n100\nSubtotal 100.00\nVAT 5.00\nTotal 105.00");
+    expect(r.vat).toBe(5);
+  });
+
+  it("a total label naming a fee, with the figure on the next line, is still read", () => {
+    const r = parse("Restaurant\nFood 100.00\nVAT 5.00\nTotal incl service charge\n105.00");
+    expect(r).toMatchObject({ vat: 5, total: 105 });
+  });
+
+  it("'Total VAT 5.50' is the VAT, never the total", () => {
+    const r = parse(
+      "Restaurant\nFood 100.00\nService charge 10% 10.00 VAT 0.50\nTotal VAT 5.50\nTotal 115.50"
+    );
+    expect(r).toMatchObject({ subtotal: 110, vat: 5.5, total: 115.5, codes: ["NON_VAT_FEE"] });
+    expectAddsUp(r);
+  });
+});
+
+describe("VAT on a fee line is never silently added to the VAT line", () => {
+  it("the standalone VAT already includes the fee-line VAT: not summed (no subtotal)", () => {
+    const r = parse(
+      "Restaurant\nFood 100.00\nService charge 10% 10.00 VAT 0.50\nVAT 5.50\nTotal 115.50"
+    );
+    expect(r).toMatchObject({ subtotal: 110, vat: 5.5, total: 115.5, codes: ["NON_VAT_FEE"] });
+    expectAddsUp(r);
+  });
+
+  it("same receipt with the VAT line first", () => {
+    const r = parse(
+      "Restaurant\nFood 100.00\nVAT 5.50\nService charge 10% 10.00 VAT 0.50\nTotal 115.50"
+    );
+    expect(r).toMatchObject({ subtotal: 110, vat: 5.5, total: 115.5, codes: ["NON_VAT_FEE"] });
+    expectAddsUp(r);
+  });
+
+  it("same receipt with a printed subtotal", () => {
+    const r = parse(
+      "Restaurant\nSubtotal 100.00\nService charge 10% 10.00 VAT 0.50\nVAT 5.50\nTotal 115.50"
+    );
+    expect(r).toMatchObject({ subtotal: 110, vat: 5.5, total: 115.5 });
+    expect(r.codes).toEqual(["NON_VAT_FEE"]);
+  });
+
+  it("the standalone VAT covers the food only: the fee-line VAT is added because the sum reconciles", () => {
+    const r = parse(
+      "Restaurant\nFood 100.00\nService charge 10% 10.00 VAT 0.50\nVAT 5.00\nTotal 115.50"
+    );
+    expect(r).toMatchObject({ subtotal: 110, vat: 5.5, total: 115.5, codes: ["NON_VAT_FEE"] });
+    expectAddsUp(r);
+  });
+
+  it("the same receipt in the other order", () => {
+    const r = parse(
+      "Restaurant\nFood 100.00\nVAT 5.00\nService charge 10% 10.00 VAT 0.50\nTotal 115.50"
+    );
+    expect(r).toMatchObject({ subtotal: 110, vat: 5.5, total: 115.5, codes: ["NON_VAT_FEE"] });
+  });
+
+  it("neither figure fits: the standalone VAT is kept and the receipt is flagged for review", () => {
+    const text =
+      "Restaurant\nFood 100.00\nService charge 10% 10.00 VAT 0.50\nVAT 5.20\nTotal 115.70";
+    const r = parse(text);
+    expect(r.vat).toBe(5.2);
+    expect(r.codes).toContain("AMOUNT_MISMATCH");
+    const full = parseReceiptOcrText(text, { fallbackDate: "2026-01-01" });
+    expect(full.validationIssues.find((i) => i.code === "AMOUNT_MISMATCH")!.message).toMatch(
+      /fee line.*0\.50.*5\.20/
+    );
+  });
+
+  it("with no standalone VAT line the fee-line VAT is the VAT", () => {
+    const r = parse("Restaurant\nFood 100.00\nService charge 10% 10.00 VAT 0.50\nTotal 110.50");
+    expect(r).toMatchObject({ subtotal: 110, vat: 0.5, total: 110.5 });
+  });
+
+  it("a VAT-on-service-charge line that is not a fee line is flagged, never silently wrong", () => {
+    const r = parse("Cafe\nSubtotal 100\nVAT on service charge 0.50\nVAT 5.00\nTotal 115.50");
+    expect(r.codes).toContain("AMOUNT_MISMATCH");
+  });
+});
