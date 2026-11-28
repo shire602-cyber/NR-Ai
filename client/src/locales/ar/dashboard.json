@@ -116,6 +116,8 @@
   "dashboard.needsPayroll": "مسيرات رواتب بانتظار الاعتماد: {count}",
   "dashboard.needsPayrollOne": "مسير رواتب واحد بانتظار الاعتماد",
   "dashboard.needsPartial": "تعذّر تحميل بعض الفحوصات.",
+  "dashboard.needsLoadFailedTitle": "تعذّر تحميل بعض الفحوصات",
+  "dashboard.needsLoadFailedBody": "تعذّر علينا التحقق مما يحتاج إلى انتباهك. أعد المحاولة.",
   "dashboard.loadForbiddenBody": "ليس لديك صلاحية الوصول إلى هذا. اطلب من مالك الشركة منحك إياها.",
   "dashboard.needsNothing": "لا شيء يحتاج إليك الآن",
   "dashboard.modelHandoffAck": "تم الإقرار بفجوات التسليم",

@@ -72,6 +72,7 @@ async function mount(
         queryFn: async ({ queryKey }) => {
           const r = responder(queryKey.filter(Boolean).join("/"));
           if (r === "fail") throw new ApiError(500, "Server exploded", {});
+          if (r === "forbid") throw new ApiError("Forbidden", 403, {});
           if (r === "hang") return new Promise(() => {});
           return (r as { ok: unknown }).ok;
         },
@@ -92,6 +93,7 @@ async function mount(
     );
   });
   await settle();
+  return client;
 }
 
 const tid = (id: string) => node!.querySelector(`[data-testid="${id}"]`);
@@ -131,7 +133,8 @@ describe.each(["en", "ar"] as const)("App screen load errors (%s)", (locale) => 
       isError: true,
       isFetching: false,
       error: new ApiError(500, "Server exploded", {}),
-      errorUpdateCount: 1,
+      errorUpdatedAt: 5,
+      dataUpdatedAt: 0,
       refetch,
     };
     await mount(NeedsYouStrip as never, { ...strip, complianceQuery }, locale, (p) =>
@@ -156,6 +159,79 @@ describe.each(["en", "ar"] as const)("App screen load errors (%s)", (locale) => 
     expect(bankCalls).toBe(2);
     expect(tid("needs-you-clear")).toBeNull();
     expect(tid("needs-you-load-error")).not.toBeNull();
+  });
+
+  it("needs-you strip: after a recovered error, a later refetch keeps the all-clear", async () => {
+    const { NeedsYouStrip } = await import("../../client/src/pages/dashboard/NeedsYouStrip");
+    let bank: unknown = "fail";
+    const client = await mount(NeedsYouStrip as never, strip, locale, (p) =>
+      p.includes("bank-statements") ? bank : ok({ permissions: [] })
+    );
+    expect(tid("needs-you-load-error")).not.toBeNull();
+    bank = ok([]);
+    await act(async () => retryButton()!.click());
+    await settle(5);
+    expect(tid("needs-you-clear")).not.toBeNull();
+    bank = "hang";
+    await act(async () => void client.invalidateQueries());
+    await settle(5);
+    expect(tid("needs-you-clear")).not.toBeNull();
+    expect(tid("needs-you-load-error")).toBeNull();
+    expect(tid("needs-you-partial")).toBeNull();
+  });
+
+  it("needs-you strip: a 403 list stays forbidden while it refetches", async () => {
+    const { NeedsYouStrip } = await import("../../client/src/pages/dashboard/NeedsYouStrip");
+    let bank: unknown = "forbid";
+    const client = await mount(NeedsYouStrip as never, strip, locale, (p) =>
+      p.includes("bank-statements") ? bank : ok({ permissions: [] })
+    );
+    expect(tid("needs-you-clear")).not.toBeNull();
+    bank = "hang";
+    await act(async () => void client.invalidateQueries());
+    await settle(5);
+    expect(tid("needs-you-clear")).not.toBeNull();
+    expect(tid("needs-you-load-error")).toBeNull();
+  });
+
+  it("needs-you strip: error card uses strip wording, not page wording", async () => {
+    const { NeedsYouStrip } = await import("../../client/src/pages/dashboard/NeedsYouStrip");
+    await mount(NeedsYouStrip as never, strip, locale, (p) =>
+      p.includes("bank-statements") ? "fail" : ok({ permissions: [] })
+    );
+    expect(node!.textContent).not.toMatch(/couldn.t load this page/i);
+    expect(node!.textContent).toMatch(
+      locale === "en" ? /Some checks could not load/ : /تعذّر تحميل بعض الفحوصات/
+    );
+  });
+
+  it("dashboard hero forwards the compliance query to the strip", async () => {
+    const { DashboardHero } = await import("../../client/src/pages/dashboard/DashboardHero");
+    const complianceQuery = {
+      isError: true,
+      isFetching: false,
+      error: new ApiError(500, "Server exploded", {}),
+      errorUpdatedAt: 5,
+      dataUpdatedAt: 0,
+      refetch: vi.fn(),
+    };
+    const m = {
+      t: {},
+      locale,
+      stats: null,
+      periodChoice: "month",
+      setPeriodChoice: () => {},
+      companyName: "Co",
+      selectedCompanyId: "c1",
+      recentInvoices: [],
+      compliance: null,
+      complianceQuery,
+    };
+    await mount(DashboardHero as never, { m }, locale, (p) =>
+      p.includes("bank-statements") ? ok([]) : ok({ permissions: [] })
+    );
+    expect(tid("needs-you-load-error")).not.toBeNull();
+    expect(tid("needs-you-clear")).toBeNull();
   });
 
   it("needs-you strip: successful empty load still shows the all-clear", async () => {

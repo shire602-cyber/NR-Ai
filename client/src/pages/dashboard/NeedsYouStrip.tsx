@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { uaeToday } from "@shared/uae-date";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { canPerform, companyAccessQueryKey, type CompanyAccess } from "@/lib/auth";
@@ -21,7 +21,7 @@ import {
 
 type LoadState = Pick<
   UseQueryResult,
-  "isError" | "isFetching" | "error" | "errorUpdateCount" | "refetch"
+  "isError" | "isFetching" | "error" | "errorUpdatedAt" | "dataUpdatedAt" | "refetch"
 >;
 
 const TONE_DOT: Record<NeedsYouChip["tone"], string> = {
@@ -29,6 +29,13 @@ const TONE_DOT: Record<NeedsYouChip["tone"], string> = {
   warning: "bg-warning",
   info: "bg-info",
 };
+
+/** Last non-null error a query reported (state, adjusted during render; no ref reads). */
+function useRetainedError(error: unknown): unknown {
+  const [last, setLast] = useState<unknown>(error ?? null);
+  if (error && error !== last) setLast(error);
+  return error ?? last;
+}
 
 /**
  * Linked action chips under the period tabs (replaces the one-line insight sentence).
@@ -75,19 +82,40 @@ export function NeedsYouStrip({
     retry: false,
     staleTime: 60_000,
   });
+  // A refetch of a query that has no data clears `error`; remember the last settled error so a
+  // 403 stays "forbidden" and a 500 keeps its copy while the retry runs.
+  const retained = {
+    bank: useRetainedError(bank.error),
+    access: useRetainedError(access.error),
+    payroll: useRetainedError(payroll.error),
+    compliance: useRetainedError(complianceQuery?.error),
+  };
   if (!companyId || invoices === undefined) return null;
   // A list the role cannot read (403) contributes no chip; any other failure (including the
   // access lookup and the compliance overview, whose failure skips payroll / the VAT chip) means
   // the strip cannot say "nothing needs you", so it must not show the all-clear. A query that
   // is refetching after an error counts as still failed, so a retry does not flash the all-clear.
-  const reads: LoadState[] = [bank, access, payroll, ...(complianceQuery ? [complianceQuery] : [])];
-  const failedRead = reads.find(
-    (q) =>
-      (q.isError || (q.isFetching && q.errorUpdateCount > 0)) &&
-      classifyLoadError(q.error) !== "forbidden"
+  const reads: Array<[keyof typeof retained, LoadState]> = [
+    ["bank", bank],
+    ["access", access],
+    ["payroll", payroll],
+    ...(complianceQuery
+      ? ([["compliance", complianceQuery]] as Array<[keyof typeof retained, LoadState]>)
+      : []),
+  ];
+  // Failed = the last settled result is an error: either it is in error now, or it is refetching
+  // and the last settle was an error (errorUpdatedAt newer than dataUpdatedAt). A recovered query
+  // has newer data, so later refetches never count as failed.
+  const failed = reads.filter(
+    ([key, q]) =>
+      (q.isError || (q.isFetching && (q.errorUpdatedAt ?? 0) > (q.dataUpdatedAt ?? 0))) &&
+      classifyLoadError(q.error ?? retained[key]) !== "forbidden"
   );
+  const failedRead = failed[0]
+    ? { key: failed[0][0], error: failed[0][1].error ?? retained[failed[0][0]] }
+    : undefined;
   const retryFailed = () => {
-    for (const q of reads) if (q.isError) void q.refetch();
+    for (const [, q] of reads) if (q.isError) void q.refetch();
   };
   const chips = buildNeedsYouChips(
     {
@@ -114,7 +142,9 @@ export function NeedsYouStrip({
           compact
           error={failedRead.error}
           onRetry={retryFailed}
-          retrying={reads.some((q) => q.isFetching)}
+          retrying={reads.some(([, q]) => q.isFetching)}
+          title={tt["dashboard.needsLoadFailedTitle"]}
+          description={tt["dashboard.needsLoadFailedBody"]}
           forbiddenDescription={tt["dashboard.loadForbiddenBody"]}
           testId="needs-you-load-error"
         />
