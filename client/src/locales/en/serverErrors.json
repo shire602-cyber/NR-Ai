@@ -100,6 +100,7 @@
   "serverErrors.BILL_LINE_NOT_FOUND": "The bill line could not be found.",
   "serverErrors.BILL_LOCKED": "Open this bill to review it. It is already posted and locked. Contact support if you need help making a correction.",
   "serverErrors.DEBIT_NOTE_MIXED_BILL_VAT": "Ask your accountant to record this correction. The bill includes both supplier VAT and reverse charge. Contact support if you need help.",
+  "serverErrors.INBOUND_BILL_QUANTITY_PRECISION": "Enter the bill using the line totals from the original invoice. A quantity exceeds the precision supported by the bill editor. Contact support if you need help.",
   "serverErrors.BILL_NOT_APPROVED": "Approve the bill before doing this.",
   "serverErrors.BILL_NOT_FOUND": "The bill could not be found.",
   "serverErrors.BILL_NOT_PAYABLE": "Only approved or partly paid bills can be paid.",
