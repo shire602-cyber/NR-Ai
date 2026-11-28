@@ -40,6 +40,7 @@ import { assertAiQuota, type AiContext } from "../services/ai/usage-meter";
 import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
 import { errorCode, errorMessage, errorProperty } from "../errors";
 import { todayDubai } from "@shared/accounting-date";
+import { reconcileReceiptAmounts } from "@shared/receipt-amounts";
 
 const log = createLogger("ocr");
 
@@ -566,21 +567,14 @@ function buildResult(
     aiResult.vatPercentage === null || aiResult.vatPercentage === undefined
       ? 5
       : parseNonNegative(aiResult.vatPercentage);
-  let total = parseNonNegative(aiResult.total);
+  const total = parseNonNegative(aiResult.total);
 
-  // Reconcile amounts if any are missing
-  if (total === 0 && subtotal > 0) {
-    total = parseFloat((subtotal + vatAmount).toFixed(2));
-  }
-  const derivedSubtotal =
-    subtotal > 0
-      ? subtotal
-      : total > 0
-        ? parseFloat((total / (1 + vatPercentage / 100)).toFixed(2))
-        : 0;
-  const derivedVat =
-    vatAmount > 0 ? vatAmount : parseFloat(((derivedSubtotal * vatPercentage) / 100).toFixed(2));
-  const derivedTotal = total > 0 ? total : parseFloat((derivedSubtotal + derivedVat).toFixed(2));
+  // Reconcile missing amounts in integer fils (half-up) so subtotal + VAT === total exactly.
+  const {
+    subtotal: derivedSubtotal,
+    vatAmount: derivedVat,
+    total: derivedTotal,
+  } = reconcileReceiptAmounts({ subtotal, vatAmount, total, vatPercentage });
 
   const category =
     typeof aiResult.category === "string" && validCategories.includes(aiResult.category)

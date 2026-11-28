@@ -1,5 +1,7 @@
 import { normalizeForLabelMatching } from "./arabic-text";
 import { uaeToday } from "./uae-date";
+import { roundHalfUp } from "./money";
+import { reconcileReceiptAmounts } from "./receipt-amounts";
 
 export const UNKNOWN_RECEIPT_MERCHANT = "Unknown Merchant";
 
@@ -107,7 +109,7 @@ const AR_MONTHS: Record<string, number> = {
 const CUR = "(?:AED|DHS?|USD|EUR|GBP|SAR|د\\.?إ|د\\.?ا|درهم)";
 
 function round2(value: number): number {
-  return Number.isFinite(value) ? parseFloat(value.toFixed(2)) : 0;
+  return Number.isFinite(value) ? Number(roundHalfUp(value, 2)) : 0;
 }
 
 function parseAmount(raw: string | undefined): number {
@@ -352,22 +354,12 @@ export function parseReceiptOcrText(
     /\b5\s*%\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
   ]);
 
-  const derivedSubtotal =
-    subtotal > 0
-      ? subtotal
-      : vatAmount > 0 && fallbackTotal > 0
-        ? round2(fallbackTotal - vatAmount)
-        : fallbackTotal > 0
-          ? round2(fallbackTotal / 1.05)
-          : 0;
-  const derivedVat =
-    vatAmount > 0 ? vatAmount : fallbackTotal > 0 ? round2(fallbackTotal - derivedSubtotal) : 0;
-  const derivedTotal =
-    fallbackTotal > 0
-      ? fallbackTotal
-      : derivedSubtotal > 0
-        ? round2(derivedSubtotal + derivedVat)
-        : 0;
+  // Integer-fils reconciliation (half-up) so subtotal + VAT === total exactly.
+  const {
+    subtotal: derivedSubtotal,
+    vatAmount: derivedVat,
+    total: derivedTotal,
+  } = reconcileReceiptAmounts({ subtotal, vatAmount, total: fallbackTotal, vatPercentage: 5 });
 
   const { trn: supplierTrn, issue: supplierTrnIssue } = extractSupplierTrn(normalizedText);
   const simplifiedInvoice =
