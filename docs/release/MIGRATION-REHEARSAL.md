@@ -203,6 +203,13 @@ skipping" or "already exists, skipping" (idempotent DDL guards) are omitted.
 | `repair-misposted-payments.ts --json` | 0                            | `[]`                                                                   |
 | `find-header-posting-accounts.sql`    | pre: **error**; post: 0 rows | see finding 4                                                          |
 
+`rehearse.sh` runs the five scripts above with `--fail-on-findings`: each exits 1 when it reports at least one
+actionable finding (default runs, for other callers, still exit 0 with findings; 2 is bad usage), so step 2c
+fails on findings and not only on crashes. For `find-inverted-rates.mjs`, rows 0094 already handled
+(`rewritten`, quarantined `legacy_unscoped`) are informational and do not fail the gate. A failing gate logs
+`<name>_findings_file=` with the path of the findings file; the finder's stderr summary is beside it as
+`<file>.err`.
+
 ### Idempotency
 
 - A second `npm run db:migrate` on the migrated snapshot exited 0. The ledger stayed at 123 rows.

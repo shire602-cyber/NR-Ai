@@ -15,10 +15,12 @@
 //   - negativeReceivable:  issued invoices with more credits + payments than total
 //                          (pre-W3-A credit notes on paid invoices, R03-08).
 //
-// Usage: DATABASE_URL=postgres://... node scripts/qa/find-sales-ledger-drift.mjs [--json] [--company <uuid>]
-// Exit codes: 0 for a completed report, 1 for a database failure, 2 for missing configuration.
+// Usage: DATABASE_URL=postgres://... node scripts/qa/find-sales-ledger-drift.mjs [--json] [--company <uuid>] [--fail-on-findings]
+// Exit codes: 0 for a completed report, 1 for a database failure (or, with --fail-on-findings, for
+// any finding in the five lists), 2 for missing configuration.
 
 import pg from "pg";
+import { findingsExitCode } from "./fail-on-findings.mjs";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -136,6 +138,7 @@ try {
     creditNotesOn4010,
     negativeReceivable,
   };
+  process.exitCode = findingsExitCode(process.argv, report, "find-sales-ledger-drift");
   if (asJson) {
     console.log(JSON.stringify(report, null, 2));
   } else {
