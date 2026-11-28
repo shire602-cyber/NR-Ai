@@ -371,15 +371,14 @@ export function parseReceiptOcrText(
     total: derivedTotal,
     mismatch: amountsMismatch,
   } = reconcileReceiptAmounts({ subtotal, vatAmount, total: fallbackTotal, vatPercentage: 5 });
-  const validationIssues: ValidationIssue[] = amountsMismatch
-    ? [
-        {
-          code: "AMOUNT_MISMATCH",
-          severity: "error",
-          message: amountMismatchMessage(derivedSubtotal, derivedVat, derivedTotal, 5),
-        },
-      ]
-    : [];
+  const validationIssues: ValidationIssue[] = [];
+  if (amountsMismatch) {
+    validationIssues.push({
+      code: "AMOUNT_MISMATCH",
+      severity: "error",
+      message: amountMismatchMessage(derivedSubtotal, derivedVat, derivedTotal, 5, vatAmount > 0),
+    });
+  }
 
   const { trn: supplierTrn, issue: supplierTrnIssue } = extractSupplierTrn(normalizedText);
   const simplifiedInvoice =
