@@ -283,7 +283,9 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
     expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual([100, 5, 105]);
     const notes = res.body.validationIssues.filter((i: any) => i.code === "VAT_DERIVED");
     expect(notes).toHaveLength(1);
-    expect(notes[0].message).toMatch(/VAT 5\.00 was calculated at 5%/);
+    expect(notes[0].message).toMatch(
+      /VAT 5\.00 was estimated because the receipt shows no VAT amount: it was added to the subtotal at 5%/
+    );
     expect(res.body.reviewReasonCodes).toContain("VAT_DERIVED");
     expect(res.body.confidenceBand).not.toBe("high");
   });
@@ -304,8 +306,10 @@ describe("R05-22 / R05-17 OCR route uses forced tool-use and returns the extende
     expect([res.body.subtotal, res.body.vatAmount, res.body.total]).toEqual([100, 5, 105]);
     const notes = res.body.validationIssues.filter((i: any) => i.code === "VAT_DERIVED");
     expect(notes).toHaveLength(1);
-    expect(notes[0].message).toMatch(/VAT 5\.00 was worked back from the total at 5%/);
-    expect(notes[0].message).toMatch(/confirm the supplier charged VAT/);
+    expect(notes[0].message).toMatch(
+      /VAT 5\.00 was estimated .* it was worked back from the total at 5%/
+    );
+    expect(notes[0].message).toMatch(/tax invoice showing the VAT amount/);
     expect(res.body.reviewReasonCodes).toContain("VAT_DERIVED");
     expect(res.body.confidenceBand).not.toBe("high");
   });

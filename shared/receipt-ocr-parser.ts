@@ -234,6 +234,20 @@ function findFirstAmount(text: string, patterns: RegExp[]): number {
   return 0;
 }
 
+/**
+ * True when the receipt prints an explicit zero VAT line ("VAT 0% AED 0.00"). `findFirstAmount`
+ * skips zero amounts, so without this an explicit zero reads as "no VAT figure" and gets worked
+ * back at 5%.
+ */
+function hasExplicitZeroVat(text: string, patterns: RegExp[]): boolean {
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      if (/\d/.test(match[1] ?? "") && parseAmount(match[1]) === 0) return true;
+    }
+  }
+  return false;
+}
+
 function findLargestLikelyAmount(lines: string[]): number {
   const amounts: number[] = [];
   for (const line of lines) {
@@ -360,7 +374,7 @@ export function parseReceiptOcrText(
       "g"
     ),
   ]);
-  const vatAmount = findFirstAmount(normalizedText, [
+  const vatPatterns = [
     // The optional "5%" label must be consumed so the percentage is never read as the VAT amount.
     /\b(?:vat|tax|gst)\b(?:\s*@?\s*\d+(?:\.\d+)?\s*%)?[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
     new RegExp(
@@ -368,7 +382,11 @@ export function parseReceiptOcrText(
       "g"
     ),
     /\b5\s*%\b[^\d-]{0,30}(?:AED|DHS?|USD|EUR|GBP|SAR)?\s*(-?\d[\d,]*\.?\d{0,2})/gi,
-  ]);
+  ];
+  const vatAmount = findFirstAmount(normalizedText, vatPatterns);
+  // An explicit zero VAT line is a zero-rated receipt: no 5% back-calculation, no VAT_DERIVED.
+  const vatRate =
+    vatAmount === 0 && fallbackTotal > 0 && hasExplicitZeroVat(normalizedText, vatPatterns) ? 0 : 5;
 
   // Integer-fils reconciliation (half-up) so subtotal + VAT === total exactly.
   const {
@@ -376,7 +394,12 @@ export function parseReceiptOcrText(
     vatAmount: derivedVat,
     total: derivedTotal,
     mismatch: amountsMismatch,
-  } = reconcileReceiptAmounts({ subtotal, vatAmount, total: fallbackTotal, vatPercentage: 5 });
+  } = reconcileReceiptAmounts({
+    subtotal,
+    vatAmount,
+    total: fallbackTotal,
+    vatPercentage: vatRate,
+  });
   const validationIssues: ValidationIssue[] = [];
   if (amountsMismatch) {
     validationIssues.push({
@@ -386,7 +409,7 @@ export function parseReceiptOcrText(
         derivedSubtotal,
         derivedVat,
         derivedTotal,
-        5,
+        vatRate,
         hasVatFigure(vatAmount)
       ),
     });
@@ -396,13 +419,13 @@ export function parseReceiptOcrText(
     subtotal,
     vatAmount,
     total: fallbackTotal,
-    vatPercentage: 5,
+    vatPercentage: vatRate,
   });
   if (vatDerivedFrom) {
     validationIssues.push({
       code: "VAT_DERIVED",
       severity: "warning",
-      message: vatDerivedMessage(derivedVat, 5, vatDerivedFrom),
+      message: vatDerivedMessage(derivedVat, vatRate, vatDerivedFrom),
     });
   }
 

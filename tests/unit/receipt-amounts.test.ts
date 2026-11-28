@@ -292,7 +292,9 @@ describe("amountMismatchMessage / vatDerivedMessage wording", () => {
     expect(isVatDerived({ ...base, total: 105 })).toBe(false);
     expect(isVatDerived({ ...base, vatAmount: 5 })).toBe(false);
     expect(isVatDerived({ ...base, vatPercentage: 0 })).toBe(false);
-    expect(vatDerivedMessage(5, 5)).toMatch(/VAT 5\.00 was calculated at 5%/);
+    expect(vatDerivedMessage(5, 5)).toMatch(
+      /VAT 5\.00 was estimated because the receipt shows no VAT amount: it was added to the subtotal at 5%/
+    );
   });
 
   it("flags a derived VAT for a total-only input too, and says where it came from", () => {
@@ -305,9 +307,10 @@ describe("amountMismatchMessage / vatDerivedMessage wording", () => {
       "subtotal"
     );
     const m = vatDerivedMessage(5, 5, "total");
-    expect(m).toMatch(/VAT 5\.00 was worked back from the total at 5%/);
-    expect(m).toMatch(/confirm the supplier charged VAT/);
-    expect(vatDerivedMessage(5, 5)).toMatch(/calculated at 5% of the subtotal/);
+    expect(m).toMatch(/VAT 5\.00 was estimated .* it was worked back from the total at 5%/);
+    expect(m).toMatch(/tax invoice showing the VAT amount/);
+    expect(m).not.toMatch(/look for their TRN/);
+    expect(vatDerivedMessage(5, 5)).toMatch(/added to the subtotal at 5%/);
   });
 
   it("treats sub-fil VAT as not read, consistently (fils helper)", () => {
@@ -322,7 +325,17 @@ describe("amountMismatchMessage / vatDerivedMessage wording", () => {
     const p = parseReceiptOcrText("Cafe\nTotal AED 105.00");
     expect([p.subtotal, p.vatAmount, p.total]).toEqual([100, 5, 105]);
     expect(p.validationIssues.map((i) => i.code)).toContain("VAT_DERIVED");
-    expect(p.confidenceBand).not.toBe("high");
+  });
+
+  it("the parser treats an explicit zero VAT line as zero-rated (no 5% back-calculation, no VAT_DERIVED)", () => {
+    for (const text of [
+      "Cafe\nVAT 0% AED 0.00\nTotal AED 105.00",
+      "Cafe\nTotal AED 105.00\nVAT 0.00",
+    ]) {
+      const p = parseReceiptOcrText(text);
+      expect([p.subtotal, p.vatAmount, p.total]).toEqual([105, 0, 105]);
+      expect(p.validationIssues.map((i) => i.code)).not.toContain("VAT_DERIVED");
+    }
   });
 
   it("the parser does not flag a receipt that shows its VAT", () => {
