@@ -334,6 +334,7 @@
   "serverErrors.IMPORT_UNKNOWN_COLUMNS": "يحتوي الملف على أعمدة غير معروفة. استخدم أعمدة القالب.",
   "serverErrors.INBOUND_ALREADY_CONVERTED": "تم تسجيل إشعار المورد الدائن هذا كرصيد مورد بالفعل.",
   "serverErrors.INBOUND_ARCHIVE_MISSING": "ملف مستند المورد الأصلي مفقود، لذلك لا يمكن تحويله.",
+  "serverErrors.INBOUND_BILL_QUANTITY_PRECISION": "يحتوي أحد بنود هذه الفاتورة الإلكترونية على كمية بأكثر من خانتين عشريتين، ولا يمكن حفظها في الفاتورة. أدخل فاتورة المورد يدويًا باستخدام إجماليات البنود من الفاتورة الأصلية، أو اطلب من المورد إعادة إرسالها.",
   "serverErrors.INBOUND_DOCUMENT_NOT_FOUND": "تعذّر العثور على مستند المورد.",
   "serverErrors.INBOUND_NOT_CREDIT_NOTE": "مستند المورد هذا ليس إشعارًا دائنًا.",
   "serverErrors.INBOUND_NOT_REVIEWABLE": "لا يمكن تحويل إلا مستند المورد المستلَم والمتحقَّق منه.",
