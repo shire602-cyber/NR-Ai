@@ -1113,5 +1113,6 @@
   "serverErrors.DEBIT_NOTE_ASSET_RECOSTED": "This debit note lowered the cost of a fixed asset. Adjust the asset before voiding the note.",
   "serverErrors.FX_RECONCILIATION_UNSUPPORTED": "This foreign-currency account cannot be reconciled yet because some ledger entries on it have no amount in the account currency. Reconcile it after correcting those entries, or use a base-currency statement.",
   "serverErrors.FAF_RANGE_TOO_LONG": "The FTA audit file covers at most 366 days. Choose a shorter date range.",
-  "serverErrors.INVALID_RANGE": "The start date must be on or before the end date."
+  "serverErrors.INVALID_RANGE": "The start date must be on or before the end date.",
+  "serverErrors.INBOUND_BILL_QUANTITY_PRECISION": "Enter the bill using the line totals from the original invoice. A quantity exceeds the precision supported by the bill editor. Contact support if you need help."
 }
