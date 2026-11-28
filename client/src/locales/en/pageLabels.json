@@ -19,7 +19,7 @@
   "pageLabels.receiptIssueCurrency": "Check the currency on the original receipt.",
   "pageLabels.receiptIssueTrn": "Check the supplier’s 15-digit UAE tax registration number.",
   "pageLabels.receiptIssueVat": "Check the VAT rate shown on the receipt.",
-  "pageLabels.receiptIssueVatDerived": "VAT was calculated at 5% of the subtotal because the receipt shows no VAT or total. Check it against the receipt.",
+  "pageLabels.receiptIssueVatDerived": "VAT was calculated from the receipt amounts at the stated rate because the receipt shows no VAT figure (from the subtotal, or worked back from the total). Check it against the receipt and confirm the supplier charged VAT (look for their TRN on it).",
   "pageLabels.receiptIssueGeneral": "Compare the extracted details with the original receipt.",
   "pageLabels.receiptImageAttached": "Enter the receipt details. The selected image will be saved with the expense.",
   "pageLabels.receiptDocumentNumber": "Invoice or receipt number",

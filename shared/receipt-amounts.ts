@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Receipt amount reconciliation in integer fils (shared/money.ts policy).
  *
  * OCR/AI extraction often returns only some of subtotal / VAT / total. This fills the gaps so
@@ -102,18 +102,30 @@ export function reconcileReceiptAmounts(input: ReceiptAmountsInput): {
 }
 
 /**
- * True when only a subtotal was supplied, so `reconcileReceiptAmounts` calculated VAT (and the
- * total) from the rate. The caller adds a review note: the VAT is an assumption, not a read figure.
+ * Which single figure the receipt gave when `reconcileReceiptAmounts` had to work VAT out from
+ * the rate: "subtotal" (VAT added on top) or "total" (VAT backed out of the total). Null when a
+ * VAT figure was read, both subtotal and total were given, or the rate is 0. The caller adds a
+ * review note: the VAT is an assumption, not a read figure. For a total-only receipt it matters
+ * most, because an unregistered supplier's receipt would otherwise book a 5% input-VAT claim.
  */
-export function isVatDerived(input: ReceiptAmountsInput): boolean {
-  return (
-    fils(input.subtotal) > 0 &&
-    fils(input.vatAmount) === 0 &&
-    fils(input.total) === 0 &&
-    input.vatPercentage > 0
-  );
+export function vatDerivedSource(input: ReceiptAmountsInput): "subtotal" | "total" | null {
+  if (fils(input.vatAmount) > 0 || !(input.vatPercentage > 0)) return null;
+  const s = fils(input.subtotal);
+  const t = fils(input.total);
+  if (s > 0 && t === 0) return "subtotal";
+  if (t > 0 && s === 0) return "total";
+  return null;
 }
 
+/** True when VAT was calculated from the rate (see `vatDerivedSource`). */
+export function isVatDerived(input: ReceiptAmountsInput): boolean {
+  return vatDerivedSource(input) !== null;
+}
+
+/** True when a VAT figure was supplied, measured in whole fils like the reconciler. */
+export function hasVatFigure(vatAmount: number): boolean {
+  return fils(vatAmount) > 0;
+}
 function money2(n: number): string {
   return n.toFixed(2);
 }
@@ -138,7 +150,18 @@ export function amountMismatchMessage(
   return `${base}. This receipt is zero-rated, so the total should equal the subtotal; check for a fee or discount.`;
 }
 
-/** Review note when VAT was calculated from the subtotal because the receipt gave no VAT or total. */
-export function vatDerivedMessage(vatAmount: number, vatPercentage: number): string {
-  return `VAT ${money2(vatAmount)} was calculated at ${vatPercentage}% of the subtotal because the receipt shows no VAT or total. Check it against the receipt.`;
+/**
+ * Review note when VAT was calculated from the rate because the receipt gave no VAT figure:
+ * from the subtotal (no VAT or total shown) or worked back from a total-only receipt.
+ */
+export function vatDerivedMessage(
+  vatAmount: number,
+  vatPercentage: number,
+  source: "subtotal" | "total" = "subtotal"
+): string {
+  const how =
+    source === "total"
+      ? `worked back from the total at ${vatPercentage}% because the receipt shows no VAT or subtotal`
+      : `calculated at ${vatPercentage}% of the subtotal because the receipt shows no VAT or total`;
+  return `VAT ${money2(vatAmount)} was ${how}. Check it against the receipt and confirm the supplier charged VAT (look for their TRN on it).`;
 }
