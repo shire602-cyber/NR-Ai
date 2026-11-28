@@ -124,8 +124,8 @@ describe("bad-debt relief claims list and eligible invoices", () => {
     const r = await list(t);
     const row = r.body[0];
     expect(row.status).toBe("claimed");
-    expect(row.remainingRelief).toBeGreaterThan(0);
-    expect(row.remainingRelief).toBeLessThan(50);
+    // 300 of 1,050 paid recovers 14.29 of the 50.00 relief, leaving exactly 35.71.
+    expect(row.remainingRelief).toBe(35.71);
     const restored = await h.sql<{ f: string }>(
       `SELECT COALESCE(SUM(ROUND((jl.credit - jl.debit) * 100)), 0)::text AS f
          FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id
@@ -135,6 +135,33 @@ describe("bad-debt relief claims list and eligible invoices", () => {
       [t.company.id]
     );
     expect(Math.round(row.remainingRelief * 100)).toBe(5000 - Number(restored[0].f));
+
+    // Reversing posts exactly the remaining figure the screen showed, to the fil.
+    const rev = await t.as.post(
+      `/api/companies/${t.company.id}/vat/bad-debt-relief/${row.id}/reverse`,
+      { date: "2026-09-15", reason: "Customer paid" }
+    );
+    expect(rev.status, rev.text).toBe(200);
+    const manual = await h.sql<{ f: string }>(
+      `SELECT COALESCE(SUM(ROUND((jl.credit - jl.debit) * 100)), 0)::text AS f
+         FROM bad_debt_relief_claims c
+         JOIN journal_lines jl ON jl.entry_id = c.reversal_entry_id
+        WHERE c.id = $1 AND jl.system_vat`,
+      [row.id]
+    );
+    expect(Number(manual[0].f)).toBe(3571);
+  });
+
+  it("answers 404 when another tenant reverses a claim it does not own", async () => {
+    const a = await setup("BDR-rev-a");
+    const c = await claim(a.t, a.invoiceId);
+    const b = await h.createTenant({ name: "BDR-rev-b", planId: "professional" });
+    const rev = await b.as.post(
+      `/api/companies/${b.company.id}/vat/bad-debt-relief/${c.id}/reverse`,
+      { date: "2026-10-05", reason: "Not mine" }
+    );
+    expect(rev.status, rev.text).toBe(404);
+    expect((await list(a.t)).body[0]).toMatchObject({ status: "claimed", remainingRelief: 50 });
   });
 
   it("never exposes another tenant's claims or invoices", async () => {

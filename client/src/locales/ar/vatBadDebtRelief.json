@@ -44,11 +44,10 @@
   "vatBadDebtRelief.createConfirm": "إرسال الطلب",
   "vatBadDebtRelief.createDone": "تم تسجيل مطالبة الإعفاء",
   "vatBadDebtRelief.createFailed": "تعذّر تسجيل المطالبة",
-  "vatBadDebtRelief.noPermission": "لا يتيح دورك طلب الإعفاء أو عكسه.",
   "vatBadDebtRelief.openInvoice": "فتح الفاتورة {invoice}",
   "vatBadDebtRelief.reverseBodyNothing": "استردّت دفعات العميل كامل الإعفاء على الفاتورة {invoice}. عكس المطالبة يُغلقها فقط؛ لا تُضاف ضريبة أخرى ولا يُسجَّل قيد في الدفتر.",
   "vatBadDebtRelief.reasonPayment": "تم استلام دفعة بعد المطالبة بإعفاء الديون المعدومة",
   "vatBadDebtRelief.periodNeutral": "يُدرج في إقرار ضريبة القيمة المضافة عن الفترة التي يقع فيها {date}",
-  "vatBadDebtRelief.reversalPeriodRecovered": "استُردّ عبر دفعات العميل، في إقرارات تواريخ الدفعات",
+  "vatBadDebtRelief.reversalPeriodRecovered": "استُردّ عبر دفعات العميل، في إقرار الفترة التي تقع فيها كل دفعة، أو في أول فترة مفتوحة إذا كان ذلك الإقرار قد قُدّم",
   "vatBadDebtRelief.createCapNote": "تُعرض أحدث 500 فاتورة مؤهلة فقط، ولا تظهر الفواتير الأقدم هنا."
 }

@@ -44,11 +44,10 @@
   "vatBadDebtRelief.createConfirm": "Submit claim",
   "vatBadDebtRelief.createDone": "Relief claim recorded",
   "vatBadDebtRelief.createFailed": "The claim could not be recorded",
-  "vatBadDebtRelief.noPermission": "Your role cannot claim or reverse relief.",
   "vatBadDebtRelief.openInvoice": "Open invoice {invoice}",
   "vatBadDebtRelief.reverseBodyNothing": "Customer payments have already recovered all of the relief on invoice {invoice}. Reversing the claim closes it; no further VAT is added back and no ledger entry is posted.",
   "vatBadDebtRelief.reasonPayment": "Payment received after bad-debt relief was claimed",
   "vatBadDebtRelief.periodNeutral": "Reported in the VAT return for the period containing {date}",
-  "vatBadDebtRelief.reversalPeriodRecovered": "Recovered over customer payments, in the returns for each payment date",
+  "vatBadDebtRelief.reversalPeriodRecovered": "Recovered over customer payments, in the VAT return for the period containing each payment date, or the next open period if that return is already filed",
   "vatBadDebtRelief.createCapNote": "Showing the 500 most recent eligible invoices. Older ones are not listed here."
 }
