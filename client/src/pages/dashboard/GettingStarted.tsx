@@ -244,10 +244,11 @@ export function GettingStarted({
           {unknownCount > 0 ? (
             <p
               className="mt-1 flex flex-wrap items-center gap-2 text-small text-muted-foreground"
-              role="status"
               data-testid="getting-started-unknown-note"
             >
-              <span>{formatMessage(tt["dashboard.gsUnknownNote"], { count: unknownCount })}</span>
+              <span role="status">
+                {formatMessage(tt["dashboard.gsUnknownNote"], { count: unknownCount })}
+              </span>
               <Button
                 variant="outline"
                 size="sm"
@@ -314,6 +315,9 @@ export function GettingStarted({
                   >
                     {step.title}
                     {done ? <span className="sr-only"> · {tt["dashboard.gsDone"]}</span> : null}
+                    {step.status === "loading" ? (
+                      <span className="sr-only"> · {tt["dashboard.gsChecking"]}</span>
+                    ) : null}
                   </span>
                   <span className="hidden truncate text-caption text-muted-foreground sm:block">
                     {step.hint}

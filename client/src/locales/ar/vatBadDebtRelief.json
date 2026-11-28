@@ -60,6 +60,6 @@
   "vatBadDebtRelief.periodStatus.unverified": "مقفل، لم يُتحقق بعد من عضوية مجموعة ضريبة القيمة المضافة",
   "vatBadDebtRelief.partialRecoveredLead": "استُردّ جزئيًا عبر دفعات العميل، في:",
   "vatBadDebtRelief.addBackAmount": "صافي المبلغ المُضاف: {amount}",
-  "vatBadDebtRelief.claimedAgainAmount": "أُعيد المطالبة بالإعفاء: {amount} (استرداد مُعكوس يخفّض المبلغ المُضاف)",
+  "vatBadDebtRelief.claimedAgainAmount": "أُعيدت المطالبة بالإعفاء: {amount} (استرداد معكوس يخفّض المبلغ المُضاف)",
   "vatBadDebtRelief.netNilLead": "المبالغ المُضافة والاستردادات المعكوسة، في:"
 }

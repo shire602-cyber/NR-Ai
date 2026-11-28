@@ -132,7 +132,7 @@ it("payment at 2026-11-27T21:30Z: journal, FX rate and bank rate all use 2026-11
   expect(fxLines).toHaveLength(1);
   expect(fils(fxLines[0].credit)).toBe(37000 - 36725);
   expect(fils(fxLines[0].debit)).toBe(0);
-  // Cash leg in the bank's own currency: 370.00 AED / 4.1 = 90.2439 EUR. cashLegFor divides and
+  // Cash leg in the bank's own currency: 370.00 AED / 4.1 = 90.2439 EUR. cashTag (server/storage/sales.ts) divides and
   // rounds half-up to whole fils (the foreign amount is stored with two decimals): 90.24.
   const [cashForeign] = await h.sql<{ fd: string }>(
     `SELECT foreign_debit::text AS fd FROM journal_lines WHERE entry_id = $1 AND account_id = $2`,
